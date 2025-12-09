@@ -1,0 +1,40 @@
+Package: bouncer
+Type: Package
+Title: Cricket Analytics with Player ELO Rating System
+Version: 0.1.0
+Authors@R: person("Your", "Name", email = "your.email@example.com",
+                  role = c("aut", "cre"))
+Description: Advanced cricket analytics featuring a novel player ELO rating system.
+    Calculates batting and bowling ELO ratings at the ball-by-ball level, with
+    multi-dimensional ratings (overall, format-specific, opposition-adjusted).
+    Provides expected runs and wicket probability predictions for any batter-bowler
+    matchup, accounting for context (venue, match phase, conditions). Includes
+    data management functions to download and parse cricket data from Cricsheet,
+    storing it in a DuckDB database for efficient querying.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.3
+Imports:
+    DBI,
+    duckdb (>= 0.9.0),
+    dplyr,
+    tidyr,
+    rlang,
+    cli,
+    jsonlite,
+    httr2,
+    curl,
+    arrow,
+    zip,
+    tools,
+    utils
+Suggests:
+    ggplot2,
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+URL: https://github.com/yourusername/bouncerverse
+BugReports: https://github.com/yourusername/bouncerverse/issues

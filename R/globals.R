@@ -1,0 +1,37 @@
+# Global Variable Declarations for R CMD check
+
+# Declare global variables used in dplyr/tidyr operations
+utils::globalVariables(c(
+  "match_id",
+  "match_type",
+  "match_date",
+  "player_id",
+  "batter_id",
+  "bowler_id",
+  "batting_team",
+  "bowling_team",
+  "venue",
+  "innings",
+  "over",
+  "ball",
+  "runs_batter",
+  "runs_total",
+  "is_wicket",
+  "wicket_kind",
+  "elo_batting",
+  "elo_bowling",
+  "elo_batting_test",
+  "elo_batting_odi",
+  "elo_batting_t20",
+  "elo_bowling_test",
+  "elo_bowling_odi",
+  "elo_bowling_t20",
+  "delivery_id",
+  "season",
+  "team1",
+  "team2",
+  "outcome_winner",
+  "total_runs",
+  "wickets_fallen",
+  "n"
+))
