@@ -2,38 +2,45 @@
 % Please edit documentation in R/cricsheet_download.R
 \name{download_all_cricsheet_data}
 \alias{download_all_cricsheet_data}
-\title{Download All Cricsheet JSON Data}
+\title{Download All Cricsheet JSON Data (Incremental with Size Comparison)}
 \usage{
-download_all_cricsheet_data(output_path = NULL, keep_zip = TRUE)
+download_all_cricsheet_data(output_path = NULL, keep_zip = FALSE)
 }
 \arguments{
 \item{output_path}{Directory to extract files. If NULL, uses bouncerdata directory.}
 
-\item{keep_zip}{Logical. Keep the ZIP file after extraction. Default TRUE.}
+\item{keep_zip}{Logical. Keep the ZIP file after extraction. Default FALSE (saves ~93MB).}
 }
 \value{
-Character vector of extracted JSON file paths
+List with:
+\itemize{
+\item all_files: Character vector of all JSON file paths
+\item new_files: Character vector of newly extracted filenames
+\item changed_files: Character vector of updated filenames (size changed)
+\item unchanged_count: Count of files that didn't change
+}
 }
 \description{
 Downloads the complete all_json.zip from Cricsheet containing ALL matches
-(all formats, all leagues, all genders) in a single download.
+(all formats, all leagues, all genders) with smart incremental updates.
 }
 \details{
-This is the recommended method for initial setup as it:
+This function:
 \itemize{
-\item Downloads all data in one HTTP request
-\item Includes all match types (Test, ODI, T20, leagues)
-\item Includes both genders
-\item Is more efficient than multiple separate downloads
-\item Stores ZIP in bouncerdata directory as a reference
+\item Always downloads the ZIP (fast, ~30 seconds)
+\item Compares file sizes to detect NEW and CHANGED files
+\item Extracts only files that are new or have changed size
+\item Returns information about what changed for database cleanup
 }
+
+Test matches update daily as play progresses - same filename, new content.
+Size comparison detects these updates.
 }
 \examples{
 \dontrun{
-# Download all cricket data
-json_files <- download_all_cricsheet_data()
-
-# Download to specific location
-json_files <- download_all_cricsheet_data(output_path = "~/cricket_data")
+# Download and get info about changes
+result <- download_all_cricsheet_data()
+cat("New matches:", length(result$new_files), "\n")
+cat("Updated matches:", length(result$changed_files), "\n")
 }
 }

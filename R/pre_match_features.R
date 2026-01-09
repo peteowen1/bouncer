@@ -900,7 +900,7 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
 #'
 #' @param team Character. Team name
 #' @param as_of_date Date. Get skills as of this date
-#' @param team_skill_dt data.table. Pre-loaded team skill data from {format}_team_skill
+#' @param team_skill_dt data.table. Pre-loaded team skill data (e.g., t20_team_skill table)
 #'
 #' @return List with runs_skill and wicket_skill
 #' @export
@@ -935,7 +935,7 @@ get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
 #'
 #' @param venue_name Character. Venue name (normalized)
 #' @param as_of_date Date. Get skills as of this date
-#' @param venue_skill_dt data.table. Pre-loaded venue skill data from {format}_venue_skill
+#' @param venue_skill_dt data.table. Pre-loaded venue skill data (e.g., t20_venue_skill table)
 #'
 #' @return List with run_rate_skill, wicket_rate_skill, boundary_rate, dot_rate
 #' @export

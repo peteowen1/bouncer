@@ -290,12 +290,22 @@ calculate_unified_margin <- function(team1_score, team2_score,
 
   # Runs win: team batting first won
   if (win_type == "runs") {
+    # Validation: runs win means team1 scored more than team2
+    if (!is.na(team1_score) && !is.na(team2_score) && team1_score <= team2_score) {
+      cli::cli_warn("Runs win but team1_score ({team1_score}) <= team2_score ({team2_score}). This is invalid - team1 must have scored more.")
+    }
+
     margin <- team1_score - team2_score
     return(margin)
   }
 
   # Wickets win: team batting second won
   if (win_type == "wickets") {
+    # Validation: wickets win means team2 passed team1's score
+    if (!is.na(team2_score) && !is.na(team1_score) && team2_score <= team1_score) {
+      cli::cli_warn("Wickets win but team2_score ({team2_score}) <= team1_score ({team1_score}). This is invalid - team2 must have passed the target.")
+    }
+
     # Project what team2 would have scored
     if (use_advanced_projection) {
       projected_team2 <- project_chaser_final_score_advanced(
@@ -349,10 +359,14 @@ calculate_unified_margin <- function(team1_score, team2_score,
 #'   - wickets_remaining (optional, derived from outcome_by_wickets)
 #'   - match_type
 #'   - outcome_method (optional, for Super Over detection)
+#'   - gender (optional, for advanced projection)
+#'   - team_type (optional, for advanced projection)
+#' @param use_advanced_projection Logical. If TRUE, uses the optimized score projection
+#'   formula for wickets wins. If FALSE (default), uses simple resource-based projection.
 #'
 #' @return Numeric. Unified margin
 #' @export
-calculate_match_margin <- function(match_data) {
+calculate_match_margin <- function(match_data, use_advanced_projection = FALSE) {
 
   # Extract scores
   team1_score <- match_data$team1_score %||%
@@ -396,6 +410,10 @@ calculate_match_margin <- function(match_data) {
   # Format
   format <- match_data$match_type %||% match_data$format %||% "t20"
 
+  # Gender and team_type for advanced projection
+  gender <- match_data$gender %||% "male"
+  team_type <- match_data$team_type %||% "international"
+
   # Super Over handling
   outcome_method <- match_data$outcome_method %||% ""
   super_over_margin <- NULL
@@ -411,7 +429,10 @@ calculate_match_margin <- function(match_data) {
     wickets_remaining = wickets_remaining,
     win_type = win_type,
     format = format,
-    super_over_margin = super_over_margin
+    super_over_margin = super_over_margin,
+    use_advanced_projection = use_advanced_projection,
+    gender = gender,
+    team_type = team_type
   )
 }
 

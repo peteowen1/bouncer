@@ -4,7 +4,7 @@
 \alias{batch_load_matches}
 \title{Batch Load Matches}
 \usage{
-batch_load_matches(file_paths, path = NULL, batch_size = 100, progress = TRUE)
+batch_load_matches(file_paths, path = NULL, batch_size = 500, progress = TRUE)
 }
 \arguments{
 \item{file_paths}{Character vector of paths to JSON files}

@@ -6,12 +6,12 @@
 \usage{
 install_all_bouncer_data(
   db_path = NULL,
-  fresh = TRUE,
+  fresh = FALSE,
   match_types = NULL,
   genders = NULL,
   download_path = NULL,
   keep_downloads = FALSE,
-  batch_size = 100
+  batch_size = 500
 )
 }
 \arguments{
@@ -51,11 +51,11 @@ This function:
 }
 \examples{
 \dontrun{
-# Install ALL cricket data with fresh start (recommended)
+# Update with new matches (default - incremental)
 install_all_bouncer_data()
 
-# Incremental update (skip existing matches)
-install_all_bouncer_data(fresh = FALSE)
+# Fresh start - delete DB and reload everything
+install_all_bouncer_data(fresh = TRUE)
 
 # Install only specific match types
 install_all_bouncer_data(match_types = c("ODI", "T20"))

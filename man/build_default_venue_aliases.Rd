@@ -13,6 +13,7 @@ build_default_venue_aliases(conn)
 Invisibly returns number of aliases created
 }
 \description{
-Creates default alias mappings from known venue variations.
-Includes common abbreviations and alternative names.
+Creates default alias mappings from the bundled venue_aliases.csv file.
+The CSV file is located at inst/extdata/venue_aliases.csv and can be
+edited to add new aliases without modifying code.
 }

@@ -82,8 +82,8 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
 #' @param format Character. Format type: "t20", "odi", or "test"
 #'
 #' @return Matrix with 7 columns representing probabilities for each outcome:
-#'   [1] P(wicket), [2] P(0 runs), [3] P(1 run), [4] P(2 runs),
-#'   [5] P(3 runs), [6] P(4 runs), [7] P(6 runs)
+#'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
+#'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
 #' @export
 #'
@@ -286,8 +286,8 @@ load_full_model <- function(format = c("t20", "odi", "test"),
 #' @param format Character. Format type: "t20", "odi", or "test"
 #'
 #' @return Matrix with 7 columns representing probabilities for each outcome:
-#'   [1] P(wicket), [2] P(0 runs), [3] P(1 run), [4] P(2 runs),
-#'   [5] P(3 runs), [6] P(4 runs), [7] P(6 runs)
+#'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
+#'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
 #' @export
 #'

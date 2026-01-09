@@ -26,6 +26,8 @@ List with parameters:
 \item CROSS_TIER_K_BOOST: K multiplier for cross-tier matches
 \item OPP_K_BOOST, OPP_K_REDUCE: Opponent-weighted K modifiers
 \item HOME_ADVANTAGE: ELO points added for home team
+\item MOV_EXPONENT, MOV_BASE_OFFSET, MOV_DENOM_BASE: MOV G-factor params
+\item MOV_ELO_FACTOR, MOV_MIN, MOV_MAX: MOV bounds and ELO adjustment
 \item PROPAGATION_ENABLED, PROPAGATION_FACTOR: Propagation settings
 \item CORR_THRESHOLD, CORR_W_*: Correlation matrix settings
 }

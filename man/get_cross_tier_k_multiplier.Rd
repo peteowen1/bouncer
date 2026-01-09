@@ -4,15 +4,26 @@
 \alias{get_cross_tier_k_multiplier}
 \title{Get Cross-Tier K-Factor Multiplier}
 \usage{
-get_cross_tier_k_multiplier(tier1, tier2)
+get_cross_tier_k_multiplier(
+  tier1,
+  tier2,
+  boost_per_tier = CROSS_TIER_K_BOOST,
+  max_multiplier = CROSS_TIER_K_MAX_MULTIPLIER
+)
 }
 \arguments{
 \item{tier1}{Integer. Tier of team 1 (1-4).}
 
 \item{tier2}{Integer. Tier of team 2 (1-4).}
+
+\item{boost_per_tier}{Numeric. K-factor boost per tier difference.
+Default uses package constant CROSS_TIER_K_BOOST (0.5).}
+
+\item{max_multiplier}{Numeric. Maximum K multiplier.
+Default uses package constant CROSS_TIER_K_MAX_MULTIPLIER (2.5).}
 }
 \value{
-Numeric. K-factor multiplier (1.0 for same tier, up to 2.5).
+Numeric. K-factor multiplier (1.0 for same tier, up to max_multiplier).
 }
 \description{
 Calculates the K-factor multiplier for matches between teams from

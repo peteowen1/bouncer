@@ -9,7 +9,7 @@ load_filtered_matches(
   db_path,
   match_types = NULL,
   genders = NULL,
-  batch_size = 100
+  batch_size = 500
 )
 }
 \arguments{

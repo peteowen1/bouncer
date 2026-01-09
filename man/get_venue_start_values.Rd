@@ -13,5 +13,10 @@ get_venue_start_values(format = "t20")
 Named list with start values for all four metrics
 }
 \description{
-Returns starting venue skill index values (calibrated averages) for a format.
+Returns starting venue skill index values for a format.
+}
+\details{
+For residual-based indices (run_rate, wicket_rate), starts at 0
+(no deviation from context-expected).
+For raw EMA indices (boundary_rate, dot_rate), uses calibrated averages.
 }

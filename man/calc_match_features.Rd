@@ -11,7 +11,9 @@ calc_match_features(
   batter_skills,
   bowler_skills,
   player_participation_dt,
-  venue_stats_dt
+  venue_stats_dt,
+  team_skill_dt = NULL,
+  venue_skill_dt = NULL
 )
 }
 \arguments{
@@ -28,6 +30,10 @@ calc_match_features(
 \item{player_participation_dt}{data.table. Pre-loaded player participation data}
 
 \item{venue_stats_dt}{data.table. Pre-loaded venue statistics}
+
+\item{team_skill_dt}{data.table. Pre-loaded team per-delivery skills (optional)}
+
+\item{venue_skill_dt}{data.table. Pre-loaded venue skills (optional)}
 }
 \value{
 data.frame with one row of features

@@ -33,7 +33,7 @@
 #'   - bowling_team_runs_skill, bowling_team_wicket_skill
 #' @param venue_skills List with venue skills:
 #'   - venue_run_rate, venue_wicket_rate, venue_boundary_rate, venue_dot_rate
-#' @param mode Character. "categorical" (draw outcome) or "expected" (use E[runs])
+#' @param mode Character. "categorical" (draw outcome) or "expected" (use expected runs)
 #'
 #' @return List with outcome details:
 #'   - runs: runs scored (0-6, or fractional if mode = "expected")

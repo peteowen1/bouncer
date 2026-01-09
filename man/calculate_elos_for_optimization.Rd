@@ -13,13 +13,20 @@ calculate_elos_for_optimization(
   opp_k_boost = 0,
   opp_k_reduce = 0,
   home_advantage = 0,
+  mov_exponent = 0.7,
+  mov_base_offset = 5,
+  mov_denom_base = 10,
+  mov_elo_factor = 0.004,
+  mov_min = 0.5,
+  mov_max = 2.5,
   return_final_elos = FALSE,
   elo_divisor = 400
 )
 }
 \arguments{
 \item{matches}{Data frame of matches with columns:
-match_id, team1_id, team2_id, team1_wins, event_name, event_tier, home_team}
+match_id, team1_id, team2_id, team1_wins, event_name, event_tier, home_team,
+unified_margin (optional, for MOV calculation)}
 
 \item{k_max}{Maximum K factor for new teams}
 
@@ -35,14 +42,26 @@ match_id, team1_id, team2_id, team1_wins, event_name, event_tier, home_team}
 
 \item{home_advantage}{ELO points added to home team for probability calculation}
 
+\item{mov_exponent}{Exponent for margin in MOV calculation (default 0.7)}
+
+\item{mov_base_offset}{Base offset for MOV numerator (default 5)}
+
+\item{mov_denom_base}{Denominator base for MOV (default 10)}
+
+\item{mov_elo_factor}{ELO adjustment factor for favorite bias (default 0.004)}
+
+\item{mov_min}{Minimum MOV multiplier (default 0.5)}
+
+\item{mov_max}{Maximum MOV multiplier (default 2.5)}
+
 \item{return_final_elos}{If TRUE, also returns final ELO values per team}
 
 \item{elo_divisor}{ELO divisor (default 400, standard ELO)}
 }
 \value{
 Data frame with match_id, team1_wins, exp_win_prob, team1_elo_before,
-team2_elo_before, cross_tier_weight. If return_final_elos=TRUE, returns a
-list with match_results and final_elos.
+team2_elo_before, cross_tier_weight, mov_multiplier. If return_final_elos=TRUE,
+returns a list with match_results and final_elos.
 }
 \description{
 Calculates team ELO ratings for a set of matches using specified parameters.
@@ -55,5 +74,6 @@ Features:
 \item Home advantage
 \item Cross-tier K boost
 \item Dynamic K decay based on matches played
+\item Margin of Victory (MOV) multiplier for rating changes
 }
 }

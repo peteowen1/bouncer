@@ -279,22 +279,21 @@ DRAW_MOV_MULTIPLIER <- 1.0       # No margin adjustment for draws
 #   resource_used = 1 - resource_remaining
 
 # Expected Initial Score (EIS) by format/gender/team_type
-# These are default agnostic values (format averages)
-# Will be calibrated from actual data during optimization
-EIS_T20_MALE_INTL <- 160       # Average T20I first innings score
-EIS_T20_MALE_CLUB <- 165       # Average franchise T20 (IPL, BBL, etc.)
-EIS_T20_FEMALE_INTL <- 130     # Average WT20I first innings
-EIS_T20_FEMALE_CLUB <- 135     # Average women's franchise T20
+# Calibrated from actual data (January 2026 optimization)
+EIS_T20_MALE_INTL <- 146.5     # Actual T20I first innings average
+EIS_T20_MALE_CLUB <- 160.7     # Actual franchise T20 (IPL, BBL, etc.)
+EIS_T20_FEMALE_INTL <- 115.2   # Actual WT20I first innings
+EIS_T20_FEMALE_CLUB <- 136.0   # Actual women's franchise T20
 
-EIS_ODI_MALE_INTL <- 260       # Average ODI first innings
-EIS_ODI_MALE_CLUB <- 250       # Average domestic ODI
-EIS_ODI_FEMALE_INTL <- 210     # Average WODI first innings
-EIS_ODI_FEMALE_CLUB <- 200     # Average women's domestic ODI
+EIS_ODI_MALE_INTL <- 238.7     # Actual ODI first innings
+EIS_ODI_MALE_CLUB <- 253.8     # Actual domestic ODI
+EIS_ODI_FEMALE_INTL <- 215.2   # Actual WODI first innings
+EIS_ODI_FEMALE_CLUB <- 225.1   # Actual women's domestic ODI
 
-EIS_TEST_MALE_INTL <- 350      # Average Test first innings
-EIS_TEST_MALE_CLUB <- 320      # Average first-class innings
-EIS_TEST_FEMALE_INTL <- 250    # Average Women's Test innings
-EIS_TEST_FEMALE_CLUB <- 220    # Average women's multi-day
+EIS_TEST_MALE_INTL <- 342.4    # Actual Test first innings
+EIS_TEST_MALE_CLUB <- 305.9    # Actual first-class innings
+EIS_TEST_FEMALE_INTL <- 287.0  # Actual Women's Test innings
+EIS_TEST_FEMALE_CLUB <- 250.0  # Estimated (insufficient data)
 
 # Default projection parameters (before optimization)
 # These are reasonable starting points for the formula

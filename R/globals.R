@@ -254,6 +254,26 @@ utils::globalVariables(c(
   "last_delivery_count"
 ))
 
+# Team skill variables (from team_skill_index.R and agnostic_model.R)
+utils::globalVariables(c(
+  "batting_team_runs_skill",
+  "batting_team_wicket_skill",
+  "bowling_team_runs_skill",
+  "bowling_team_wicket_skill",
+  "batting_team_balls",
+  "bowling_team_balls",
+  "format_t20",
+  "format_odi",
+  "batter_experience",
+  "bowler_experience",
+  "team1_team_runs_skill",
+  "team2_team_runs_skill",
+  "team1_team_wicket_skill",
+  "team2_team_wicket_skill",
+  "venue_run_rate_skill",
+  "venue_wicket_rate_skill"
+))
+
 # Score projection constants (from constants.R and score_projection.R)
 utils::globalVariables(c(
   # EIS constants
@@ -293,6 +313,7 @@ utils::globalVariables(c(
   # Score projection table columns
   "current_score",
   "balls_remaining",
+  "balls_bowled",
   "wickets_remaining",
   "resource_remaining",
   "resource_used",
@@ -302,5 +323,6 @@ utils::globalVariables(c(
   "projected_full",
   "final_innings_total",
   "projection_change_agnostic",
-  "projection_change_full"
+  "projection_change_full",
+  "avg_score"
 ))

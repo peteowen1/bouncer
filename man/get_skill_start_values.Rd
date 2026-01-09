@@ -10,8 +10,18 @@ get_skill_start_values(format = "t20")
 \item{format}{Character. Format: "t20", "odi", or "test"}
 }
 \value{
-Named list with start_runs and start_survival
+Named list with:
+\itemize{
+\item scoring_index: Starting scoring index (0 = neutral)
+\item survival_rate: Starting survival rate (format average)
+\item economy_index: Starting economy index (0 = neutral)
+\item strike_rate: Starting strike rate (format wicket rate)
+}
 }
 \description{
-Returns starting skill index values (calibrated averages) for a format.
+Returns starting skill values for a format.
+\itemize{
+\item Indices (scoring/economy): Start at 0 (neutral deviation from expected)
+\item Rates (survival/strike): Start at format average probability
+}
 }
