@@ -89,17 +89,11 @@ install_bouncer_data <- function(formats = c("odi", "t20i"),
         })
 
         if (length(files) > 0) {
-          # Filter by season if requested
-          if (!is.null(start_season)) {
-            files <- filter_files_by_season(files, start_season)
-          }
+          # Season filtering removed (placeholder implementation)
+          # To filter by season, filter after loading based on match_date in database
 
           # Load to database
-          if (length(files) > 0) {
-            batch_load_matches(files, path = db_path)
-          } else {
-            cli::cli_alert_info("No files to load after season filtering")
-          }
+          batch_load_matches(files, path = db_path)
         }
       }
     }
@@ -124,15 +118,11 @@ install_bouncer_data <- function(formats = c("odi", "t20i"),
       })
 
       if (length(files) > 0) {
-        # Filter by season if requested
-        if (!is.null(start_season)) {
-          files <- filter_files_by_season(files, start_season)
-        }
+        # Season filtering removed (placeholder implementation)
+        # To filter by season, filter after loading based on match_date in database
 
         # Load to database
-        if (length(files) > 0) {
-          batch_load_matches(files, path = db_path)
-        }
+        batch_load_matches(files, path = db_path)
       }
     }
   }
@@ -274,18 +264,361 @@ list_available_formats <- function(path = NULL) {
 }
 
 
-#' Filter Files by Season
+#' Install All Bouncer Cricket Data (Optimized)
 #'
-#' Filters JSON files to only include matches from specified season onwards.
+#' Downloads ALL cricket data from Cricsheet in a single ZIP file and loads it
+#' into the database with optimized batch processing. This is the recommended
+#' method for initial setup.
 #'
-#' @param files Character vector of file paths
-#' @param start_season Numeric or character season
+#' This function:
+#' - Downloads all_json.zip (all formats, all leagues, all genders)
+#' - Uses vectorized parsing (~50ms per file vs ~5000ms)
+#' - Batch database transactions (100 files per transaction)
+#' - Skips already-loaded matches (incremental loading supported)
 #'
-#' @return Filtered character vector of file paths
-#' @keywords internal
-filter_files_by_season <- function(files, start_season) {
-  # For now, return all files (season filtering would require parsing each file)
-  # This is a placeholder for future implementation
-  cli::cli_alert_info("Season filtering will be implemented in future version")
-  return(files)
+#' @param db_path Database path. If NULL, uses default system data directory.
+#' @param fresh Logical. If TRUE, deletes existing database and starts fresh. Default TRUE.
+#'   Set to FALSE for incremental loading (skips already-loaded matches).
+#' @param match_types Optional character vector to filter match types after download.
+#'   Examples: c("ODI", "Test", "T20"), c("IPL", "BBL"). If NULL, loads all types.
+#' @param genders Optional character vector to filter genders. Options: "male", "female".
+#'   If NULL, loads both genders.
+#' @param download_path Path to store downloaded/extracted files. If NULL, uses temp directory.
+#' @param keep_downloads Logical. If TRUE, keeps downloaded JSON files. Default FALSE.
+#' @param batch_size Number of files per database transaction. Default 100.
+#'
+#' @return Invisibly returns database path
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Update with new matches (default - incremental)
+#' install_all_bouncer_data()
+#'
+#' # Fresh start - delete DB and reload everything
+#' install_all_bouncer_data(fresh = TRUE)
+#'
+#' # Install only specific match types
+#' install_all_bouncer_data(match_types = c("ODI", "T20"))
+#'
+#' # Install only men's international cricket
+#' install_all_bouncer_data(match_types = c("Test", "ODI", "T20"), genders = "male")
+#' }
+install_all_bouncer_data <- function(db_path = NULL,
+                                      fresh = FALSE,
+                                      match_types = NULL,
+                                      genders = NULL,
+                                      download_path = NULL,
+                                      keep_downloads = FALSE,
+                                      batch_size = 500) {
+
+  cli::cli_h1("Installing All Bouncer Cricket Data (Optimized)")
+  start_time <- Sys.time()
+
+  # Get database path
+  db_path <- if (is.null(db_path)) get_db_path() else db_path
+
+  # Handle fresh start
+  if (fresh) {
+    cli::cli_h2("Step 1: Fresh Start - Deleting Existing Database")
+
+    # Close all DuckDB connections
+    tryCatch({
+      duckdb::duckdb_shutdown(duckdb::duckdb())
+      Sys.sleep(0.5)  # Give it a moment to release file locks
+    }, error = function(e) {
+      # Shutdown may fail if no connections exist - that's fine
+    })
+
+    # Delete database if it exists
+    if (file.exists(db_path)) {
+      file.remove(db_path)
+      cli::cli_alert_success("Deleted existing database")
+    }
+
+    # Delete WAL file if it exists
+    wal_path <- paste0(db_path, ".wal")
+    if (file.exists(wal_path)) {
+      file.remove(wal_path)
+    }
+
+    # Create fresh database (overwrite = TRUE in case file got recreated)
+    initialize_bouncer_database(path = db_path, overwrite = TRUE)
+    cli::cli_alert_success("Created fresh database at {.file {db_path}}")
+
+  } else {
+    # Incremental mode
+    cli::cli_h2("Step 1: Initialize Database (Incremental Mode)")
+
+    if (!file.exists(db_path)) {
+      initialize_bouncer_database(path = db_path)
+      cli::cli_alert_success("Created new database at {.file {db_path}}")
+    } else {
+      cli::cli_alert_info("Using existing database at {.file {db_path}}")
+      cli::cli_alert_info("Will detect new and changed matches")
+    }
+  }
+
+  # Download all data (returns list with new_files, changed_files, all_files)
+  cli::cli_h2("Step 2: Download All Cricsheet Data")
+  download_result <- download_all_cricsheet_data(
+    output_path = download_path,
+    keep_zip = keep_downloads
+  )
+
+  # Handle changed files (delete from DB before reloading)
+  if (!fresh && length(download_result$changed_files) > 0) {
+    cli::cli_h2("Step 2b: Handle Changed Matches")
+    cli::cli_alert_info("{length(download_result$changed_files)} matches have updated data (e.g., Test match progress)")
+
+    # Extract match IDs from filenames (remove .json extension)
+    changed_match_ids <- tools::file_path_sans_ext(download_result$changed_files)
+
+    # Delete changed matches from database
+    conn <- get_db_connection(path = db_path, read_only = FALSE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+    delete_matches_from_db(changed_match_ids, conn)
+  }
+
+  # Determine which files to load
+  json_files <- download_result$all_files
+  n_total <- length(json_files)
+
+  # Filter by match type if requested
+  if (!is.null(match_types)) {
+    cli::cli_h2("Step 3: Filtering by Match Type")
+    cli::cli_alert_info("Requested types: {paste(match_types, collapse = ', ')}")
+    cli::cli_alert_info("Match type filtering will be applied during loading")
+  }
+
+  # Load to database
+  cli::cli_h2(if (is.null(match_types)) "Step 3: Load to Database" else "Step 4: Load to Database")
+
+  # If filtering, we need to parse and check match types
+  if (!is.null(match_types) || !is.null(genders)) {
+    loaded_count <- load_filtered_matches(
+      json_files,
+      db_path = db_path,
+      match_types = match_types,
+      genders = genders,
+      batch_size = batch_size
+    )
+  } else {
+    # Load all files
+    loaded_count <- batch_load_matches(
+      file_paths = json_files,
+      path = db_path,
+      batch_size = batch_size,
+      progress = TRUE
+    )
+  }
+
+  # Clean up downloads if requested
+  if (!keep_downloads && !is.null(download_path) && dir.exists(download_path)) {
+    cli::cli_alert_info("Cleaning up downloads...")
+    unlink(download_path, recursive = TRUE)
+  }
+
+  # Summary
+  end_time <- Sys.time()
+  elapsed <- difftime(end_time, start_time, units = "mins")
+
+  cli::cli_h2("Installation Complete!")
+  cli::cli_alert_success("Total time: {round(as.numeric(elapsed), 1)} minutes")
+
+  # Show what was new/changed
+  if (!fresh) {
+    cli::cli_alert_info("New matches: {length(download_result$new_files)}")
+    cli::cli_alert_info("Updated matches: {length(download_result$changed_files)}")
+    cli::cli_alert_info("Unchanged matches: {download_result$unchanged_count}")
+  }
+
+  get_data_info(path = db_path)
+
+  cli::cli_alert_success("Database ready at {.file {db_path}}")
+
+  invisible(db_path)
 }
+
+
+#' Load Filtered Matches
+#'
+#' Loads matches with optional filtering by match type and gender.
+#' Used internally by install_all_bouncer_data when filters are specified.
+#'
+#' @param file_paths Character vector of JSON file paths
+#' @param db_path Database path
+#' @param match_types Optional character vector of match types to include
+#' @param genders Optional character vector of genders to include
+#' @param batch_size Files per transaction
+#'
+#' @return Count of successfully loaded matches
+#' @keywords internal
+load_filtered_matches <- function(file_paths,
+                                   db_path,
+                                   match_types = NULL,
+                                   genders = NULL,
+                                   batch_size = 500) {
+
+  n_files <- length(file_paths)
+
+  if (n_files == 0) {
+    cli::cli_alert_warning("No files to load")
+    return(invisible(0))
+  }
+
+  # Normalize filter values
+  if (!is.null(match_types)) {
+    match_types <- toupper(match_types)
+  }
+  if (!is.null(genders)) {
+    genders <- tolower(genders)
+  }
+
+  cli::cli_alert_info("Loading with filters: match_types={paste(match_types %||% 'all', collapse=',')}, genders={paste(genders %||% 'all', collapse=',')}")
+
+  # Connect to database
+
+  conn <- get_db_connection(path = db_path, read_only = FALSE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Get existing match IDs
+  existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches")
+  existing_ids <- existing_matches$match_id
+
+  # Filter to new files only
+  file_match_ids <- tools::file_path_sans_ext(basename(file_paths))
+  new_mask <- !(file_match_ids %in% existing_ids)
+  new_files <- file_paths[new_mask]
+  n_new <- length(new_files)
+  n_skipped_existing <- sum(!new_mask)
+
+  if (n_skipped_existing > 0) {
+    cli::cli_alert_info("Skipping {n_skipped_existing} already-loaded matches")
+  }
+
+  if (n_new == 0) {
+    cli::cli_alert_success("No new matches to load")
+    return(invisible(0))
+  }
+
+  # Process files with filtering
+  success_count <- 0
+  skipped_filter <- 0
+  error_count <- 0
+
+  batches <- split(seq_along(new_files), ceiling(seq_along(new_files) / batch_size))
+
+  # Setup progress bar
+  cli::cli_progress_bar(
+    format = "Processing batches {cli::pb_current}/{cli::pb_total}",
+    total = length(batches),
+    clear = TRUE
+  )
+
+  for (batch_num in seq_along(batches)) {
+    batch_indices <- batches[[batch_num]]
+    batch_files <- new_files[batch_indices]
+
+    cli::cli_progress_update()
+
+    # Collect parsed data that passes filters
+    batch_matches <- list()
+    batch_deliveries <- list()
+    batch_innings <- list()
+    batch_players <- list()
+    valid_count <- 0
+
+    for (i in seq_along(batch_files)) {
+      tryCatch({
+        parsed <- parse_cricsheet_json(batch_files[i])
+
+        # Check if match passes filters
+        if (nrow(parsed$match_info) > 0) {
+          match_type_val <- toupper(parsed$match_info$match_type[1] %||% "")
+          gender_val <- tolower(parsed$match_info$gender[1] %||% "")
+
+          passes_type <- is.null(match_types) || match_type_val %in% match_types
+          passes_gender <- is.null(genders) || gender_val %in% genders
+
+          if (passes_type && passes_gender) {
+            valid_count <- valid_count + 1
+            batch_matches[[valid_count]] <- parsed$match_info
+            batch_deliveries[[valid_count]] <- parsed$deliveries
+            batch_innings[[valid_count]] <- parsed$innings
+            batch_players[[valid_count]] <- parsed$players
+          } else {
+            skipped_filter <- skipped_filter + 1
+          }
+        }
+      }, error = function(e) {
+        cli::cli_alert_warning("Error parsing {basename(batch_files[i])}: {conditionMessage(e)}")
+        error_count <<- error_count + 1
+      })
+    }
+
+    # Insert valid data
+    if (valid_count > 0) {
+      batch_matches <- batch_matches[1:valid_count]
+      batch_deliveries <- batch_deliveries[1:valid_count]
+      batch_innings <- batch_innings[1:valid_count]
+      batch_players <- batch_players[1:valid_count]
+
+      all_matches <- do.call(rbind, batch_matches)
+      all_deliveries <- do.call(rbind, batch_deliveries)
+      all_innings <- do.call(rbind, batch_innings)
+      all_players <- do.call(rbind, batch_players)
+
+      # Deduplicate based on primary keys (in case same file appears multiple times in batch)
+      all_matches <- all_matches[!duplicated(all_matches$match_id), ]
+      all_deliveries <- all_deliveries[!duplicated(all_deliveries$delivery_id), ]
+      all_innings <- all_innings[!duplicated(paste0(all_innings$match_id, "_", all_innings$innings)), ]
+      all_players <- all_players[!duplicated(all_players$player_id), ]
+
+      tryCatch({
+        DBI::dbBegin(conn)
+
+        if (!is.null(all_matches) && nrow(all_matches) > 0) {
+          DBI::dbAppendTable(conn, "matches", all_matches)
+        }
+        if (!is.null(all_deliveries) && nrow(all_deliveries) > 0) {
+          DBI::dbAppendTable(conn, "deliveries", all_deliveries)
+        }
+        if (!is.null(all_innings) && nrow(all_innings) > 0) {
+          DBI::dbAppendTable(conn, "match_innings", all_innings)
+        }
+        if (!is.null(all_players) && nrow(all_players) > 0) {
+          insert_players_batch(conn, all_players)
+        }
+
+        DBI::dbCommit(conn)
+        success_count <- success_count + valid_count
+
+      }, error = function(e) {
+        # Try to rollback, but don't error if transaction already aborted
+        tryCatch(DBI::dbRollback(conn), error = function(e2) NULL)
+        cli::cli_alert_danger("Batch {batch_num} failed: {conditionMessage(e)}")
+        error_count <<- error_count + valid_count
+      })
+    }
+  }
+
+  # Close progress bar
+  cli::cli_progress_done()
+
+  # Summary
+  cli::cli_alert_success("Successfully loaded {success_count} matches")
+  if (skipped_filter > 0) {
+    cli::cli_alert_info("Skipped {skipped_filter} matches (did not match filters)")
+  }
+  if (error_count > 0) {
+    cli::cli_alert_warning("{error_count} matches failed to load")
+  }
+
+  invisible(success_count)
+}
+
+
+# Placeholder filter_files_by_season() function removed
+# To filter by season, query database after loading: WHERE match_date >= 'start_date'

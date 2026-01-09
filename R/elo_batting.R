@@ -1,5 +1,93 @@
 # Batting ELO Rating Functions
 
+# Internal helper for getting ELO (used by both batting and bowling)
+get_elo_internal <- function(player_id, rating_type, match_type, as_of_date, db_path) {
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Build column name
+  base_col <- paste0("elo_", rating_type)
+  if (match_type == "all") {
+    elo_column <- base_col
+  } else {
+    match_type <- normalize_match_type(match_type)
+    elo_column <- paste0(base_col, "_", match_type)
+  }
+
+  # Build query
+  if (is.null(as_of_date)) {
+    query <- sprintf("
+      SELECT %s
+      FROM player_elo_history
+      WHERE player_id = ?
+      ORDER BY match_date DESC
+      LIMIT 1
+    ", elo_column)
+    result <- DBI::dbGetQuery(conn, query, params = list(player_id))
+  } else {
+    query <- sprintf("
+      SELECT %s
+      FROM player_elo_history
+      WHERE player_id = ?
+        AND match_date <= ?
+      ORDER BY match_date DESC
+      LIMIT 1
+    ", elo_column)
+    result <- DBI::dbGetQuery(conn, query, params = list(player_id, as_of_date))
+  }
+
+  if (nrow(result) == 0) {
+    return(initialize_player_elo(rating_type))
+  }
+  return(result[[1]])
+}
+
+# Internal helper for getting ELO history
+get_elo_history_internal <- function(player_id, rating_type, match_type, start_date, end_date, db_path) {
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Build query
+  where_clauses <- c("player_id = ?")
+  params <- list(player_id)
+
+  if (match_type != "all") {
+    mt <- normalize_match_type(match_type)
+    where_clauses <- c(where_clauses, "match_type = ?")
+    params <- c(params, list(mt))
+  }
+
+  if (!is.null(start_date)) {
+    where_clauses <- c(where_clauses, "match_date >= ?")
+    params <- c(params, list(start_date))
+  }
+
+  if (!is.null(end_date)) {
+    where_clauses <- c(where_clauses, "match_date <= ?")
+    params <- c(params, list(end_date))
+  }
+
+  where_clause <- paste(where_clauses, collapse = " AND ")
+
+  # Select columns based on rating type
+  base_col <- paste0("elo_", rating_type)
+  query <- sprintf("
+    SELECT
+      match_id,
+      match_date,
+      match_type,
+      %s,
+      %s_test,
+      %s_odi,
+      %s_t20
+    FROM player_elo_history
+    WHERE %s
+    ORDER BY match_date ASC
+  ", base_col, base_col, base_col, base_col, where_clause)
+
+  DBI::dbGetQuery(conn, query, params = params)
+}
+
 #' Update Batting ELO from Delivery
 #'
 #' Updates a batter's ELO rating based on a single delivery outcome.
@@ -75,50 +163,7 @@ get_batting_elo <- function(player_id,
                              match_type = "all",
                              as_of_date = NULL,
                              db_path = NULL) {
-
-  conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query based on parameters
-  if (match_type == "all") {
-    elo_column <- "elo_batting"
-  } else {
-    match_type <- normalize_match_type(match_type)
-    elo_column <- paste0("elo_batting_", match_type)
-  }
-
-  # Build query
-  if (is.null(as_of_date)) {
-    # Get latest ELO
-    query <- sprintf("
-      SELECT %s
-      FROM player_elo_history
-      WHERE player_id = ?
-      ORDER BY match_date DESC
-      LIMIT 1
-    ", elo_column)
-
-    result <- DBI::dbGetQuery(conn, query, params = list(player_id))
-  } else {
-    # Get ELO as of date
-    query <- sprintf("
-      SELECT %s
-      FROM player_elo_history
-      WHERE player_id = ?
-        AND match_date <= ?
-      ORDER BY match_date DESC
-      LIMIT 1
-    ", elo_column)
-
-    result <- DBI::dbGetQuery(conn, query, params = list(player_id, as_of_date))
-  }
-
-  if (nrow(result) == 0) {
-    # Player not found, return starting ELO
-    return(initialize_player_elo("batting"))
-  }
-
-  return(result[[1]])
+  get_elo_internal(player_id, "batting", match_type, as_of_date, db_path)
 }
 
 
@@ -153,59 +198,8 @@ get_batting_elo_history <- function(player_id,
                                      start_date = NULL,
                                      end_date = NULL,
                                      db_path = NULL) {
-
-  conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query
-  where_clauses <- c("player_id = ?")
-  params <- list(player_id)
-
-  if (match_type != "all") {
-    match_type <- normalize_match_type(match_type)
-    where_clauses <- c(where_clauses, "match_type = ?")
-    params <- c(params, list(match_type))
-  }
-
-  if (!is.null(start_date)) {
-    where_clauses <- c(where_clauses, "match_date >= ?")
-    params <- c(params, list(start_date))
-  }
-
-  if (!is.null(end_date)) {
-    where_clauses <- c(where_clauses, "match_date <= ?")
-    params <- c(params, list(end_date))
-  }
-
-  where_clause <- paste(where_clauses, collapse = " AND ")
-
-  query <- sprintf("
-    SELECT
-      match_id,
-      match_date,
-      match_type,
-      elo_batting,
-      elo_batting_test,
-      elo_batting_odi,
-      elo_batting_t20
-    FROM player_elo_history
-    WHERE %s
-    ORDER BY match_date ASC
-  ", where_clause)
-
-  result <- DBI::dbGetQuery(conn, query, params = params)
-
-  return(result)
+  get_elo_history_internal(player_id, "batting", match_type, start_date, end_date, db_path)
 }
 
 
-#' Calculate Batting Outcome Score
-#'
-#' Alias for calculate_delivery_outcome_score for batting perspective.
-#'
-#' @inheritParams calculate_delivery_outcome_score
-#' @return Numeric value between 0 and 1
-#' @export
-calculate_batting_outcome_score <- function(runs_batter, is_wicket, is_boundary = FALSE) {
-  calculate_delivery_outcome_score(runs_batter, is_wicket, is_boundary)
-}
+# Wrapper function removed - use calculate_delivery_outcome_score() directly

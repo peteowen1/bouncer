@@ -15,23 +15,29 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.3
 Imports:
     DBI,
     duckdb (>= 0.9.0),
     dplyr,
-    tidyr,
     rlang,
     cli,
     jsonlite,
     httr2,
-    curl,
-    arrow,
     zip,
     tools,
-    utils
+    utils,
+    stats,
+    slider
 Suggests:
+    arrow,
+    chromote,
+    curl,
+    data.table,
     ggplot2,
+    mgcv (>= 1.8-0),
+    tidyr,
+    xgboost (>= 1.7.0),
     testthat (>= 3.0.0),
     knitr,
     rmarkdown

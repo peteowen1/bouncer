@@ -253,67 +253,195 @@ download_league_data <- function(league, output_path = NULL) {
 }
 
 
-#' List Available Datasets
+# Unused list_available_datasets() function removed - check Cricsheet.org directly
+
+
+#' Compare ZIP Contents to Local Files
 #'
-#' Lists available cricket datasets on Cricsheet.
+#' Compares files in a ZIP archive to local files by size.
+#' Used to detect new and changed files for incremental updates.
 #'
-#' @return A data frame with available datasets
+#' @param zip_file Path to the ZIP file
+#' @param local_dir Directory containing local JSON files
+#'
+#' @return List with:
+#'   - new_files: Character vector of filenames in ZIP but not local
+#'   - changed_files: Character vector of filenames that differ in size
+#'   - unchanged_files: Character vector of filenames with same size
+#'   - zip_info: Data frame from zip::zip_list() with file metadata
+#'
+#' @keywords internal
+compare_zip_to_local <- function(zip_file, local_dir) {
+  # Get ZIP contents
+  zip_info <- zip::zip_list(zip_file)
+  zip_json <- zip_info[grepl("\\.json$", zip_info$filename), ]
+
+  if (nrow(zip_json) == 0) {
+    return(list(
+      new_files = character(0),
+      changed_files = character(0),
+      unchanged_files = character(0),
+      zip_info = zip_info
+    ))
+  }
+
+  # Get local file info
+  local_files <- list.files(local_dir, pattern = "\\.json$", full.names = TRUE)
+  local_df <- data.frame(
+    filename = basename(local_files),
+    local_size = file.info(local_files)$size,
+    stringsAsFactors = FALSE
+  )
+
+  # Compare by filename (basename only)
+  zip_df <- data.frame(
+    filename = basename(zip_json$filename),
+    zip_path = zip_json$filename,
+    zip_size = zip_json$uncompressed_size,
+    stringsAsFactors = FALSE
+  )
+
+  # Merge to compare
+  merged <- merge(zip_df, local_df, by = "filename", all.x = TRUE)
+
+  # Categorize
+  new_files <- merged$filename[is.na(merged$local_size)]
+  changed_files <- merged$filename[!is.na(merged$local_size) &
+                                     merged$zip_size != merged$local_size]
+  unchanged_files <- merged$filename[!is.na(merged$local_size) &
+                                       merged$zip_size == merged$local_size]
+
+  list(
+    new_files = new_files,
+    changed_files = changed_files,
+    unchanged_files = unchanged_files,
+    zip_info = zip_json
+  )
+}
+
+
+#' Download All Cricsheet JSON Data (Incremental with Size Comparison)
+#'
+#' Downloads the complete all_json.zip from Cricsheet containing ALL matches
+#' (all formats, all leagues, all genders) with smart incremental updates.
+#'
+#' This function:
+#' - Always downloads the ZIP (fast, ~30 seconds)
+#' - Compares file sizes to detect NEW and CHANGED files
+#' - Extracts only files that are new or have changed size
+#' - Returns information about what changed for database cleanup
+#'
+#' Test matches update daily as play progresses - same filename, new content.
+#' Size comparison detects these updates.
+#'
+#' @param output_path Directory to extract files. If NULL, uses bouncerdata directory.
+#' @param keep_zip Logical. Keep the ZIP file after extraction. Default FALSE (saves ~93MB).
+#'
+#' @return List with:
+#'   - all_files: Character vector of all JSON file paths
+#'   - new_files: Character vector of newly extracted filenames
+#'   - changed_files: Character vector of updated filenames (size changed)
+#'   - unchanged_count: Count of files that didn't change
+#'
 #' @export
 #'
 #' @examples
 #' \dontrun{
-#' # See what's available
-#' datasets <- list_available_datasets()
-#' print(datasets)
+#' # Download and get info about changes
+#' result <- download_all_cricsheet_data()
+#' cat("New matches:", length(result$new_files), "\n")
+#' cat("Updated matches:", length(result$changed_files), "\n")
 #' }
-list_available_datasets <- function() {
-  # Create a data frame of available datasets
-  datasets <- data.frame(
-    category = c(
-      rep("International", 6),
-      rep("Domestic Leagues", 10),
-      rep("Domestic Leagues", 10)
-    ),
-    match_type = c(
-      # International
-      "test", "odi", "t20i",
-      "test", "odi", "t20i",
-      # Male leagues
-      "ipl", "bbl", "cpl", "psl", "hundred", "blast",
-      "ilt20", "msl", "sa20", "vitality_blast",
-      # Female leagues
-      "wbbl", "hundred_women", "blast_women", "wt20_challenge",
-      "wcl", "fairbreak", "womens_cpl", "wpl", "rachael_heyhoe_flint", "charlotte_edwards"
-    ),
-    gender = c(
-      # International
-      "male", "male", "male",
-      "female", "female", "female",
-      # Male leagues
-      rep("male", 10),
-      # Female leagues
-      rep("female", 10)
-    ),
-    description = c(
-      # International
-      "Test matches (men)", "One Day Internationals (men)", "T20 Internationals (men)",
-      "Test matches (women)", "One Day Internationals (women)", "T20 Internationals (women)",
-      # Male leagues
-      "Indian Premier League", "Big Bash League", "Caribbean Premier League",
-      "Pakistan Super League", "The Hundred", "T20 Blast",
-      "International League T20", "Mzansi Super League", "SA20",
-      "Vitality Blast",
-      # Female leagues
-      "Women's Big Bash League", "The Hundred (Women)", "Women's T20 Blast",
-      "Women's T20 Challenge", "Women's Cricket League", "FairBreak Invitational",
-      "Women's Caribbean Premier League", "Women's Premier League",
-      "Rachael Heyhoe Flint Trophy", "Charlotte Edwards Cup"
-    ),
-    stringsAsFactors = FALSE
+download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE) {
+  url <- "https://cricsheet.org/downloads/all_json.zip"
+
+  # Setup paths
+  if (is.null(output_path)) {
+    output_path <- find_bouncerdata_dir(create = TRUE)
+  }
+
+  if (!dir.exists(output_path)) {
+    dir.create(output_path, recursive = TRUE)
+    cli::cli_alert_success("Created directory: {.file {output_path}}")
+  }
+
+  extract_dir <- file.path(output_path, "json_files")
+  zip_file <- file.path(output_path, "all_json.zip")
+
+  cli::cli_h2("Cricsheet Data Sync")
+
+  # Always download the ZIP (fast ~30s, simpler than HTTP HEAD check)
+  cli::cli_alert_info("Downloading from Cricsheet (~93MB)...")
+
+  # Remove old ZIP if exists
+  if (file.exists(zip_file)) {
+    file.remove(zip_file)
+  }
+
+  tryCatch({
+    httr2::request(url) |>
+      httr2::req_user_agent("bouncer R package") |>
+      httr2::req_progress() |>
+      httr2::req_perform(path = zip_file)
+
+    cli::cli_alert_success("Downloaded ZIP file")
+  }, error = function(e) {
+    cli::cli_abort("Failed to download from Cricsheet: {e$message}")
+  })
+
+  # Create extract directory if needed
+  if (!dir.exists(extract_dir)) {
+    dir.create(extract_dir, recursive = TRUE)
+  }
+
+  # Compare ZIP contents to local files by size
+  cli::cli_alert_info("Comparing with local files...")
+  comparison <- compare_zip_to_local(zip_file, extract_dir)
+
+  n_new <- length(comparison$new_files)
+  n_changed <- length(comparison$changed_files)
+  n_unchanged <- length(comparison$unchanged_files)
+  n_total_zip <- nrow(comparison$zip_info)
+
+  cli::cli_alert_info("ZIP contains {n_total_zip} matches")
+  cli::cli_alert_info("Local has {n_unchanged + n_changed} matches")
+  cli::cli_alert_success("NEW: {n_new} | CHANGED: {n_changed} | UNCHANGED: {n_unchanged}")
+
+  # Determine files to extract (new + changed)
+  files_to_extract_names <- c(comparison$new_files, comparison$changed_files)
+
+  if (length(files_to_extract_names) > 0) {
+    # Get full paths from ZIP info
+    files_to_extract <- comparison$zip_info$filename[
+      basename(comparison$zip_info$filename) %in% files_to_extract_names
+    ]
+
+    cli::cli_alert_info("Extracting {length(files_to_extract)} files...")
+    zip::unzip(zip_file, files = files_to_extract, exdir = extract_dir,
+               junkpaths = TRUE)  # junkpaths = TRUE puts files directly in extract_dir
+
+    cli::cli_alert_success("Extracted {n_new} new + {n_changed} changed files")
+  } else {
+    cli::cli_alert_success("No new or changed files to extract")
+  }
+
+  # Clean up ZIP (don't keep by default - saves 93MB)
+  if (!keep_zip && file.exists(zip_file)) {
+    file.remove(zip_file)
+    cli::cli_alert_info("Removed ZIP file (use keep_zip=TRUE to keep)")
+  }
+
+  # Get all JSON files
+  all_files <- list.files(extract_dir, pattern = "\\.json$",
+                          full.names = TRUE, recursive = TRUE)
+
+  cli::cli_alert_success("Total: {length(all_files)} JSON files available")
+
+  # Return detailed info for database updates
+  list(
+    all_files = all_files,
+    new_files = comparison$new_files,
+    changed_files = comparison$changed_files,
+    unchanged_count = n_unchanged
   )
-
-  cli::cli_h2("Available Cricsheet Datasets")
-  print(datasets)
-
-  invisible(datasets)
 }

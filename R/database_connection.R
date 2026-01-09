@@ -27,6 +27,11 @@ get_db_connection <- function(path = NULL, read_only = FALSE) {
 #'
 #' Returns the path to the Bouncer DuckDB database.
 #'
+#' Default location priority:
+#' 1. `../bouncerdata/bouncer.duckdb` (when running from bouncer/ package dir)
+#' 2. `bouncerdata/bouncer.duckdb` (when running from bouncerverse/ root)
+#' 3. Falls back to R user data directory if project paths don't exist
+#'
 #' @param path Character string specifying a custom database path. If NULL,
 #'   returns the default path.
 #'
@@ -46,7 +51,20 @@ get_db_path <- function(path = NULL) {
     return(normalizePath(path, mustWork = FALSE))
   }
 
-  # Return default path
+  # Try project paths first (bouncerdata is sibling to bouncer package)
+  # Priority 1: Running from bouncer/ directory
+  project_path_1 <- file.path("..", "bouncerdata", "bouncer.duckdb")
+  if (file.exists(project_path_1) || file.exists(dirname(project_path_1))) {
+    return(normalizePath(project_path_1, mustWork = FALSE))
+  }
+
+  # Priority 2: Running from bouncerverse/ root directory
+  project_path_2 <- file.path("bouncerdata", "bouncer.duckdb")
+  if (file.exists(project_path_2) || file.exists(dirname(project_path_2))) {
+    return(normalizePath(project_path_2, mustWork = FALSE))
+  }
+
+  # Fallback: R user data directory (for users without project structure)
   data_dir <- tools::R_user_dir("bouncerdata", which = "data")
   file.path(data_dir, "bouncer.duckdb")
 }
@@ -150,44 +168,4 @@ disconnect_bouncer <- function(conn, shutdown = TRUE) {
 }
 
 
-#' Execute Query with Auto-Connection
-#'
-#' Convenience function to execute a query without managing connections.
-#'
-#' @param query Character string with SQL query
-#' @param path Character string specifying the database file path. If NULL,
-#'   uses the default system data directory.
-#' @param ... Additional arguments passed to \code{DBI::dbGetQuery}
-#'
-#' @return Query results as a data frame
-#' @keywords internal
-execute_query <- function(query, path = NULL, ...) {
-  conn <- get_db_connection(path = path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  result <- DBI::dbGetQuery(conn, query, ...)
-
-  return(result)
-}
-
-
-#' Execute Statement with Auto-Connection
-#'
-#' Convenience function to execute a statement (INSERT, UPDATE, etc.) without
-#' managing connections.
-#'
-#' @param statement Character string with SQL statement
-#' @param path Character string specifying the database file path. If NULL,
-#'   uses the default system data directory.
-#' @param ... Additional arguments passed to \code{DBI::dbExecute}
-#'
-#' @return Number of rows affected
-#' @keywords internal
-execute_statement <- function(statement, path = NULL, ...) {
-  conn <- get_db_connection(path = path, read_only = FALSE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  result <- DBI::dbExecute(conn, statement, ...)
-
-  return(result)
-}
+# Unused helper functions removed - use get_db_connection() directly

@@ -79,50 +79,7 @@ get_bowling_elo <- function(player_id,
                              match_type = "all",
                              as_of_date = NULL,
                              db_path = NULL) {
-
-  conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query based on parameters
-  if (match_type == "all") {
-    elo_column <- "elo_bowling"
-  } else {
-    match_type <- normalize_match_type(match_type)
-    elo_column <- paste0("elo_bowling_", match_type)
-  }
-
-  # Build query
-  if (is.null(as_of_date)) {
-    # Get latest ELO
-    query <- sprintf("
-      SELECT %s
-      FROM player_elo_history
-      WHERE player_id = ?
-      ORDER BY match_date DESC
-      LIMIT 1
-    ", elo_column)
-
-    result <- DBI::dbGetQuery(conn, query, params = list(player_id))
-  } else {
-    # Get ELO as of date
-    query <- sprintf("
-      SELECT %s
-      FROM player_elo_history
-      WHERE player_id = ?
-        AND match_date <= ?
-      ORDER BY match_date DESC
-      LIMIT 1
-    ", elo_column)
-
-    result <- DBI::dbGetQuery(conn, query, params = list(player_id, as_of_date))
-  }
-
-  if (nrow(result) == 0) {
-    # Player not found, return starting ELO
-    return(initialize_player_elo("bowling"))
-  }
-
-  return(result[[1]])
+  get_elo_internal(player_id, "bowling", match_type, as_of_date, db_path)
 }
 
 
@@ -157,49 +114,7 @@ get_bowling_elo_history <- function(player_id,
                                      start_date = NULL,
                                      end_date = NULL,
                                      db_path = NULL) {
-
-  conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query
-  where_clauses <- c("player_id = ?")
-  params <- list(player_id)
-
-  if (match_type != "all") {
-    match_type <- normalize_match_type(match_type)
-    where_clauses <- c(where_clauses, "match_type = ?")
-    params <- c(params, list(match_type))
-  }
-
-  if (!is.null(start_date)) {
-    where_clauses <- c(where_clauses, "match_date >= ?")
-    params <- c(params, list(start_date))
-  }
-
-  if (!is.null(end_date)) {
-    where_clauses <- c(where_clauses, "match_date <= ?")
-    params <- c(params, list(end_date))
-  }
-
-  where_clause <- paste(where_clauses, collapse = " AND ")
-
-  query <- sprintf("
-    SELECT
-      match_id,
-      match_date,
-      match_type,
-      elo_bowling,
-      elo_bowling_test,
-      elo_bowling_odi,
-      elo_bowling_t20
-    FROM player_elo_history
-    WHERE %s
-    ORDER BY match_date ASC
-  ", where_clause)
-
-  result <- DBI::dbGetQuery(conn, query, params = params)
-
-  return(result)
+  get_elo_history_internal(player_id, "bowling", match_type, start_date, end_date, db_path)
 }
 
 

@@ -316,8 +316,4 @@ adjust_wicket_for_over <- function(wicket_prob, over_num, match_type) {
   return(wicket_prob)
 }
 
-#' Null-coalescing operator
-#' @keywords internal
-`%||%` <- function(x, y) {
-  if (is.null(x)) y else x
-}
+# Null-coalescing operator is defined in globals.R
