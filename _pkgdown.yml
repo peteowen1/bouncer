@@ -105,3 +105,46 @@ reference:
     contents:
     - simulate_match
     - run_simulations
+    - create_simulation_config
+
+  - title: ELO Ratings
+    desc: Team and player rating functions
+    contents:
+    - get_team_elo
+    - get_player_elo
+    - get_batting_elo
+    - get_bowling_elo
+    - get_dynamic_k
+
+  - title: Database Utilities
+    desc: Database management and info
+    contents:
+    - get_db_path
+    - get_data_info
+    - verify_database
+    - add_prediction_tables
+    - get_all_data_folders
+    - get_match_type_category
+
+  - title: Score Projection
+    desc: Innings score projection utilities
+    contents:
+    - calculate_projection_resource
+    - starts_with("calculate_test")
+    - starts_with("estimate_test")
+    - starts_with("get_test")
+    - test_overs_to_balls
+
+  - title: All Other Functions
+    desc: Additional exported functions
+    contents:
+    - starts_with("calculate_")
+    - starts_with("get_")
+    - starts_with("query_")
+    - starts_with("update_")
+    - starts_with("load_")
+    - starts_with("download_")
+    - starts_with("install_")
+    - starts_with("predict_")
+    - starts_with("simulate_")
+    - matches(".*")
