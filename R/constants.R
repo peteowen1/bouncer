@@ -146,20 +146,48 @@ VENUE_MIN_BALLS_T20 <- 500              # About 4-5 T20 matches
 VENUE_MIN_BALLS_ODI <- 1000             # About 3-4 ODI matches
 VENUE_MIN_BALLS_TEST <- 2000            # About 2 Test matches
 
-# Match type mappings
+# Match type mappings (for internal model format)
 MATCH_TYPE_MAP <- c(
   "Test" = "test",
   "ODI" = "odi",
   "T20" = "t20",
   "T20I" = "t20",
-  "MDM" = "odi",  # Men's Domestic Match
-  "IT20" = "t20"
+  "MDM" = "test",  # Multi-day Match (first-class) - changed to test
+  "IT20" = "t20",
+  "ODM" = "odi"   # One-day Match (domestic)
 )
 
-# Format classification
-FORMAT_TEST <- c("test", "Test")
-FORMAT_ODI <- c("odi", "ODI", "MDM")
+# Format classification (internal model formats)
+FORMAT_TEST <- c("test", "Test", "MDM")
+FORMAT_ODI <- c("odi", "ODI", "ODM")
 FORMAT_T20 <- c("t20", "T20", "T20I", "IT20")
+
+# ============================================================================
+# DATA ORGANIZATION FORMAT CATEGORIES
+# ============================================================================
+# For organizing data into folders and releases
+# Uses long_form/short_form instead of test/odi/t20
+
+# Long form = day-limited matches (Tests, First-class, multi-day)
+FORMAT_LONG_FORM <- c("Test", "MDM")
+
+# Short form = over/ball-limited matches (everything else)
+FORMAT_SHORT_FORM <- c("ODI", "ODM", "T20", "IT20", "T10")
+
+# International match types (for international vs club classification)
+MATCH_TYPE_INTERNATIONAL <- c("Test", "ODI", "IT20")
+
+# All 8 data organization folders
+DATA_FOLDERS <- c(
+ "long_form_male_international",
+ "long_form_male_club",
+ "long_form_female_international",
+ "long_form_female_club",
+ "short_form_male_international",
+ "short_form_male_club",
+ "short_form_female_international",
+ "short_form_female_club"
+)
 
 # ============================================================================
 # PLAYER ELO DYNAMIC K-FACTOR SYSTEM

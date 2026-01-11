@@ -548,3 +548,179 @@ extract_players <- function(players_data) {
   # Remove duplicates
   df[!duplicated(df$player_id), ]
 }
+
+
+# ============================================================================
+# FORMAT CLASSIFICATION HELPERS
+# ============================================================================
+
+#' Get Format Category for Data Organization
+#'
+#' Classifies a match into "long_form" or "short_form" based on match type.
+#' Used for data folder organization and user-facing APIs.
+#'
+#' @param match_type Character. Raw match type from cricsheet
+#'   (e.g., "Test", "ODI", "T20", "IT20", "MDM")
+#'
+#' @return Character: "long_form" or "short_form"
+#'
+#' @details
+#' - long_form: Day-limited matches (Tests, First-class, multi-day)
+#' - short_form: Over/ball-limited matches (ODIs, T20s, The Hundred, etc.)
+#'
+#' @export
+#' @examples
+#' get_format_category("Test")   # "long_form"
+#' get_format_category("ODI")    # "short_form"
+#' get_format_category("T20")    # "short_form"
+#' get_format_category("MDM")    # "long_form" (multi-day match)
+get_format_category <- function(match_type) {
+  # Long form = day-limited (Tests, First-class, multi-day matches)
+  long_form_types <- c("Test", "MDM")
+
+  if (match_type %in% long_form_types) {
+    "long_form"
+  } else {
+    "short_form"
+  }
+}
+
+
+#' Get Model Format for Internal Processing
+#'
+#' Maps a raw match type to the internal format used for modeling.
+#' Keeps test/odi/t20 distinctions for model accuracy.
+#'
+#' @param match_type Character. Raw match type from cricsheet
+#'
+#' @return Character: "test", "odi", or "t20"
+#'
+#' @details
+#' While data organization uses long_form/short_form, models keep
+#' separate test/odi/t20 distinctions because game dynamics differ
+#' significantly between formats (e.g., run rates, wicket rates).
+#'
+#' @export
+#' @examples
+#' get_model_format("Test")   # "test"
+#' get_model_format("ODI")    # "odi"
+#' get_model_format("T20")    # "t20"
+#' get_model_format("IT20")   # "t20"
+#' get_model_format("MDM")    # "test" (first-class treated like Test)
+get_model_format <- function(match_type) {
+  if (match_type %in% c("Test", "MDM")) {
+    return("test")
+  }
+  if (match_type %in% c("ODI", "ODM")) {
+    return("odi")
+  }
+  # Everything else is T20 (T20, IT20, Hundred, T10, etc.)
+  "t20"
+}
+
+
+#' Get Match Type Category (International vs Club)
+#'
+#' Determines if a match is international or club/domestic.
+#'
+#' @param match_type Character. Raw match type from cricsheet
+#'
+#' @return Character: "international" or "club"
+#'
+#' @export
+#' @examples
+#' get_match_type_category("Test")  # "international"
+#' get_match_type_category("ODI")   # "international"
+#' get_match_type_category("T20")   # "club" (franchise T20)
+#' get_match_type_category("IT20")  # "international"
+get_match_type_category <- function(match_type) {
+  # International match types have specific codes
+  international_types <- c("Test", "ODI", "IT20")
+
+  if (match_type %in% international_types) {
+    "international"
+  } else {
+    "club"
+  }
+}
+
+
+#' Classify Match for Data Folder Organization
+#'
+#' Generates a folder name for organizing match JSON files.
+#' Combines format (long_form/short_form), gender, and type (international/club).
+#'
+#' @param match_info Data frame or list with match information.
+#'   Must contain: match_type, gender
+#'
+#' @return Character: folder name like "short_form_male_club"
+#'
+#' @details
+#' The 8 possible folder names are:
+#' - long_form_male_international
+#' - long_form_male_club
+#' - long_form_female_international
+#' - long_form_female_club
+#' - short_form_male_international
+#' - short_form_male_club
+#' - short_form_female_international
+#' - short_form_female_club
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' match_data <- parse_cricsheet_json("12345.json")
+#' folder <- classify_match(match_data$match_info)
+#' # e.g., "short_form_male_club" for an IPL match
+#' }
+classify_match <- function(match_info) {
+  # Handle both data.frame and list input
+  match_type <- if (is.data.frame(match_info)) {
+    match_info$match_type[1]
+  } else {
+    match_info$match_type
+  }
+
+  gender <- if (is.data.frame(match_info)) {
+    match_info$gender[1]
+  } else {
+    match_info$gender
+  }
+
+  # Default to male if gender is missing
+ gender <- gender %||% "male"
+
+  format_cat <- get_format_category(match_type)
+  type_cat <- get_match_type_category(match_type)
+
+  paste(format_cat, gender, type_cat, sep = "_")
+}
+
+
+#' Get All Folder Names for Data Organization
+#'
+#' Returns all 8 folder names used for organizing match data.
+#'
+#' @return Character vector of 8 folder names
+#'
+#' @export
+#' @examples
+#' get_all_data_folders()
+#' # Returns: "long_form_male_international", "long_form_male_club", ...
+get_all_data_folders <- function() {
+  formats <- c("long_form", "short_form")
+  genders <- c("male", "female")
+  types <- c("international", "club")
+
+  folders <- character(8)
+  idx <- 0
+  for (fmt in formats) {
+    for (gnd in genders) {
+      for (typ in types) {
+        idx <- idx + 1
+        folders[idx] <- paste(fmt, gnd, typ, sep = "_")
+      }
+    }
+  }
+  folders
+}
