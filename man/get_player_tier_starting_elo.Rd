@@ -20,9 +20,4 @@ higher than players debuting in development tournaments.
 \details{
 This leverages the existing event tier system from team ELO.
 }
-\examples{
-get_player_tier_starting_elo("Indian Premier League")  # 1525
-get_player_tier_starting_elo("Vitality Blast")         # 1500
-get_player_tier_starting_elo("ACC Qualifier")          # 1450
-get_player_tier_starting_elo("Kwibuka T20")            # 1400
-}
+\keyword{internal}

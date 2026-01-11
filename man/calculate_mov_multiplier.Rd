@@ -53,13 +53,4 @@ while adjusting for favorite bias (favorites are expected to win by more).
 Formula: G = (abs(margin) + BASE_OFFSET)^EXPONENT / (DENOM_BASE + ELO_FACTOR * elo_diff)
 Bounded by MOV_MIN and MOV_MAX.
 }
-\examples{
-# Close game, favorite wins
-calculate_mov_multiplier(10, 1600, 1400, "t20")  # ~0.7
-
-# Blowout, underdog wins
-calculate_mov_multiplier(50, 1400, 1600, "t20")  # ~2.0
-
-# Average margin, even teams
-calculate_mov_multiplier(25, 1500, 1500, "t20")  # ~1.0
-}
+\keyword{internal}

@@ -15,3 +15,4 @@ Named list with match_count, delivery_count, last_match_date
 \description{
 Returns current counts of matches and deliveries in the database.
 }
+\keyword{internal}

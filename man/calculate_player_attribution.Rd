@@ -31,18 +31,4 @@ Data frame with original data plus contribution columns:
 Calculates individual player contributions to predicted runs/wickets
 using zero-ablation.
 }
-\examples{
-\dontrun{
-model <- load_full_model("t20")
-contributions <- calculate_player_attribution(model, deliveries, "t20")
-
-# Aggregate batter contributions
-batter_summary <- contributions \%>\%
-  group_by(batter) \%>\%
-  summarise(
-    total_contribution = sum(batter_contribution),
-    avg_contribution = mean(batter_contribution),
-    n_deliveries = n()
-  )
-}
-}
+\keyword{internal}

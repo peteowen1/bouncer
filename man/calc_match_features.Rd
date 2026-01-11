@@ -42,3 +42,4 @@ data.frame with one row of features
 Calculates all pre-match features for a single match from pre-loaded data.
 Used for bulk feature calculation in the prediction pipeline.
 }
+\keyword{internal}

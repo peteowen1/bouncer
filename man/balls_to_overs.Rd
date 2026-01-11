@@ -15,3 +15,4 @@ Numeric. True decimal overs (e.g., 112 balls = 18.667 overs)
 \description{
 Converts balls to true decimal overs (not cricket notation).
 }
+\keyword{internal}

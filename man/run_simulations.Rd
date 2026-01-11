@@ -21,3 +21,4 @@ List of simulation results
 \description{
 Runs a simulation function multiple times with progress bar.
 }
+\keyword{internal}

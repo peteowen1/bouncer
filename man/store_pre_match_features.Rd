@@ -17,3 +17,4 @@ Invisibly returns number of rows inserted
 \description{
 Stores calculated features in the database.
 }
+\keyword{internal}

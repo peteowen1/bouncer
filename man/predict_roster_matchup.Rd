@@ -42,11 +42,4 @@ List with:
 \description{
 Predicts the outcome of a match between two teams based on roster ELO ratings.
 }
-\examples{
-\dontrun{
-india <- c("V Kohli", "R Sharma", "J Bumrah")
-australia <- c("S Smith", "D Warner", "P Cummins")
-prediction <- predict_roster_matchup(india, australia, "India", "Australia")
-print(paste(prediction$predicted_winner, "win probability:", prediction$team1_win_prob))
-}
-}
+\keyword{internal}

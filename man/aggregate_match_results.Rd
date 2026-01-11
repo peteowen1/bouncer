@@ -19,3 +19,4 @@ List with aggregated statistics
 \description{
 Aggregates results from multiple match simulations.
 }
+\keyword{internal}

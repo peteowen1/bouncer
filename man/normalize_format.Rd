@@ -16,9 +16,4 @@ Character. Canonical format: "t20", "odi", or "test"
 Normalizes various format names to canonical form (t20, odi, test).
 Handles case insensitivity and common aliases.
 }
-\examples{
-normalize_format("T20")    # "t20"
-normalize_format("IT20")   # "t20"
-normalize_format("ODM")    # "odi"
-normalize_format("MDM")    # "test"
-}
+\keyword{internal}

@@ -30,10 +30,4 @@ This function removes data from all related tables:
 \item Simulations: simulation_results (for matches)
 }
 }
-\examples{
-\dontrun{
-conn <- get_db_connection(read_only = FALSE)
-delete_matches_from_db(c("12345", "12346"), conn)
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

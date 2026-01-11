@@ -20,3 +20,4 @@ List with runs_skill and wicket_skill
 Fast lookup of team per-delivery skill indices from pre-loaded data.
 These are the residual-based team skills calculated from the agnostic model.
 }
+\keyword{internal}

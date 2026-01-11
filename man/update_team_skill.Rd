@@ -25,3 +25,4 @@ Formula: new = (1 - alpha) * old + alpha * residual
 \details{
 This converges to the team's true deviation from expected (bounded and stable).
 }
+\keyword{internal}

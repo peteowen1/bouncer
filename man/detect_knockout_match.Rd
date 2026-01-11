@@ -17,3 +17,4 @@ Logical. TRUE if knockout match
 \description{
 Determines if a match is a knockout/playoff match based on event info.
 }
+\keyword{internal}

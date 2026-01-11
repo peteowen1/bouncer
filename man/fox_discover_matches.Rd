@@ -49,3 +49,4 @@ Caches discovered matches to avoid re-checking. Skips API calls for:
 \item Matches with downloaded .rds files
 }
 }
+\keyword{internal}

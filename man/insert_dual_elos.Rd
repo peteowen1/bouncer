@@ -20,3 +20,4 @@ Invisibly returns the number of rows inserted
 \description{
 Inserts dual ELO ratings into the dual_elos table.
 }
+\keyword{internal}

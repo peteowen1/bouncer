@@ -33,9 +33,4 @@ Data frame with player_id and appearance_count for likely XI (top 11 by appearan
 Infers the most likely playing XI for a team based on recent match participation.
 Uses the players who have appeared most frequently in the team's last N matches.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-xi <- get_likely_playing_xi("Chennai Super Kings", as.Date("2024-04-01"), conn)
-}
-}
+\keyword{internal}

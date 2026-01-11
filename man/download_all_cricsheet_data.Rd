@@ -36,11 +36,4 @@ This function:
 Test matches update daily as play progresses - same filename, new content.
 Size comparison detects these updates.
 }
-\examples{
-\dontrun{
-# Download and get info about changes
-result <- download_all_cricsheet_data()
-cat("New matches:", length(result$new_files), "\n")
-cat("Updated matches:", length(result$changed_files), "\n")
-}
-}
+\keyword{internal}

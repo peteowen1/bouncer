@@ -20,3 +20,4 @@ Loads the final ELO state for all players from existing data.
 Used for incremental processing. Correctly handles players who both
 bat and bowl by taking the ELO from their most recent appearance.
 }
+\keyword{internal}

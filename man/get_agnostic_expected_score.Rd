@@ -24,7 +24,4 @@ Numeric. Expected initial score (average first innings total).
 Returns the format/gender/team_type average innings total for agnostic projections.
 This is the expected initial score (EIS) when we don't consider team identity.
 }
-\examples{
-get_agnostic_expected_score("t20", "male", "international")  # ~160
-get_agnostic_expected_score("odi", "female", "club")         # ~200
-}
+\keyword{internal}

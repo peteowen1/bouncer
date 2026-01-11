@@ -19,3 +19,4 @@ Data frame with match fixtures including team ELOs and actual outcomes
 \description{
 Retrieves all matches for a specific event and season from the database.
 }
+\keyword{internal}

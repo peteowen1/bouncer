@@ -36,3 +36,4 @@ List with parameters:
 Loads optimized ELO parameters for a specific category from an RDS file.
 If no optimized parameters exist, returns sensible defaults.
 }
+\keyword{internal}

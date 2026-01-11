@@ -19,10 +19,4 @@ Data frame with outcome counts and percentages
 \description{
 Summarizes match outcomes for a set of matches with counts and percentages.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-summary <- get_outcome_summary(conn, event_filter = "IPL")
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

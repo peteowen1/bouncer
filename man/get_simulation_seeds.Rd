@@ -17,3 +17,4 @@ Integer vector of seeds
 \description{
 Generates a vector of seeds for parallel simulations.
 }
+\keyword{internal}

@@ -19,10 +19,4 @@ List with batter and bowler ELO info and matchup analysis
 \description{
 Compares two players' ELO ratings at a specific delivery.
 }
-\examples{
-\dontrun{
-# Compare batter vs bowler ELOs at delivery
-comparison <- compare_elos_at_delivery(12345, when = "before")
-print(comparison$advantage)  # Who was favored?
-}
-}
+\keyword{internal}

@@ -18,3 +18,4 @@ Invisibly returns TRUE on success
 Loads parsed cricket match data into the database.
 For bulk loading, use batch_load_matches() instead.
 }
+\keyword{internal}

@@ -18,16 +18,4 @@ Formula: E(runs) = sum(prob_i * runs_i) where runs = c(0, 0, 1, 2, 3, 4, 6)
 Converts a 7-category probability distribution into expected runs per delivery.
 Categories: wicket, 0, 1, 2, 3, 4, 6 runs.
 }
-\examples{
-\dontrun{
-# Single delivery
-probs <- c(0.03, 0.45, 0.25, 0.12, 0.02, 0.08, 0.05)
-exp_runs <- calculate_expected_runs(matrix(probs, nrow = 1))
-# Returns: 0*0.03 + 0*0.45 + 1*0.25 + 2*0.12 + 3*0.02 + 4*0.08 + 6*0.05 = 1.17
-
-# Multiple deliveries
-probs_matrix <- matrix(runif(70), nrow = 10, ncol = 7)
-probs_matrix <- probs_matrix / rowSums(probs_matrix)  # Normalize
-exp_runs <- calculate_expected_runs(probs_matrix)
-}
-}
+\keyword{internal}

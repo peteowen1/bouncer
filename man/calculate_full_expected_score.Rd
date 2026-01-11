@@ -51,12 +51,4 @@ Numeric. Predicted expected initial score.
 Predicts expected initial score (EIS) using team skills, venue skills,
 and match context. Used for the "full" projection model.
 }
-\examples{
-# Team with strong batting (+0.2 runs skill) vs weak bowling (+0.1)
-calculate_full_expected_score(
-  batting_team_skills = list(runs_skill = 0.2),
-  bowling_team_skills = list(runs_skill = 0.1),
-  venue_skills = list(run_rate = 0.05),
-  format = "t20"
-)
-}
+\keyword{internal}

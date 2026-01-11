@@ -26,3 +26,4 @@ List with avg_score, chase_rate, n_matches
 \description{
 Fast calculation of venue features from pre-loaded data.table.
 }
+\keyword{internal}

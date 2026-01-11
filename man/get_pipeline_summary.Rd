@@ -15,3 +15,4 @@ Data frame with all step states
 \description{
 Returns summary of all pipeline steps and their last run status.
 }
+\keyword{internal}

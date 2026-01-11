@@ -38,20 +38,4 @@ Calculates features that help the model produce well-calibrated predictions
 at the extremes (near 0\% and 100\% win probability). These features capture
 "game essentially decided" situations that the model might otherwise miss.
 }
-\examples{
-\dontrun{
-# Easy chase: need 20 runs from 30 balls with 8 wickets
-tail_features <- calculate_tail_calibration_features(
-  runs_needed = 20,
-  balls_remaining = 30,
-  wickets_in_hand = 8
-)
-
-# Difficult chase: need 60 runs from 18 balls with 2 wickets
-tail_features <- calculate_tail_calibration_features(
-  runs_needed = 60,
-  balls_remaining = 18,
-  wickets_in_hand = 2
-)
-}
-}
+\keyword{internal}

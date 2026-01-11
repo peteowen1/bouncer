@@ -15,3 +15,4 @@ Character vector of feature column names
 \description{
 Returns feature columns for the two-stage model, including predicted_margin.
 }
+\keyword{internal}

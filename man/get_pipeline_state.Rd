@@ -17,3 +17,4 @@ Data frame with state info, or NULL if step never run
 \description{
 Retrieves the last execution state for a pipeline step.
 }
+\keyword{internal}

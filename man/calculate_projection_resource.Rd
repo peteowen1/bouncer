@@ -5,8 +5,8 @@
 \title{Calculate Projection Resource Remaining}
 \usage{
 calculate_projection_resource(
-  balls_remaining,
   wickets_remaining,
+  balls_remaining,
   format = "t20",
   z = NULL,
   y = NULL,
@@ -14,9 +14,9 @@ calculate_projection_resource(
 )
 }
 \arguments{
-\item{balls_remaining}{Integer. Balls remaining in innings.}
-
 \item{wickets_remaining}{Integer. Wickets in hand (0-10).}
+
+\item{balls_remaining}{Integer. Balls remaining in innings.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
 
@@ -31,12 +31,12 @@ Numeric. Resource percentage remaining (0-1).
 }
 \description{
 Calculates the percentage of batting resources remaining based on
-balls and wickets in hand using parameterized power formula.
+wickets and balls in hand using parameterized power formula.
 }
 \examples{
-# T20: 30 balls (5 overs) left, 8 wickets in hand
-calculate_projection_resource(30, 8, "t20")
+# T20: 8 wickets in hand, 30 balls (5 overs) left
+calculate_projection_resource(8, 30, "t20")
 
-# ODI: 120 balls (20 overs) left, 5 wickets in hand, custom parameters
-calculate_projection_resource(120, 5, "odi", z = 0.85, y = 1.1)
+# ODI: 5 wickets in hand, 120 balls (20 overs) left, custom parameters
+calculate_projection_resource(5, 120, "odi", z = 0.85, y = 1.1)
 }

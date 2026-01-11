@@ -31,12 +31,4 @@ The full model uses all available features:
 
 This is the model used for match simulation where maximum accuracy is needed.
 }
-\examples{
-\dontrun{
-# Load T20 full model
-model <- load_full_model("t20")
-
-# Predict on delivery data with all skill features
-probs <- predict_full_outcome(model, deliveries, format = "t20")
-}
-}
+\keyword{internal}

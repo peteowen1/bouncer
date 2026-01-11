@@ -1,0 +1,167 @@
+---
+title: "Match Analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Match Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+This vignette demonstrates how to analyze completed cricket matches using bouncer. You can examine scorecards, win probability swings, individual performances, and key moments.
+
+## Finding Matches
+
+Query the database to find matches:
+
+```{r}
+library(bouncer)
+
+# Find recent IPL matches
+ipl_matches <- query_matches(
+  event = "Indian Premier League",
+  match_type = "t20",
+  limit = 20
+)
+head(ipl_matches)
+
+# Find matches between specific teams
+mi_vs_csk <- query_matches(
+  team1 = "Mumbai Indians",
+  team2 = "Chennai Super Kings",
+  limit = 10
+)
+```
+
+## Analyzing a Match
+
+Once you have a match ID, analyze it:
+
+```{r}
+# Get comprehensive match analysis
+match <- analyze_match("1234567")
+print(match)
+
+# The result includes:
+# - Match metadata (teams, venue, result)
+# - Innings summaries
+# - Top performers
+# - Key moments
+```
+
+## Delivery-Level Data
+
+Get ball-by-ball data for detailed analysis:
+
+```{r}
+# Query all deliveries from a match
+deliveries <- query_deliveries(match_id = "1234567")
+
+# View first few balls
+head(deliveries)
+
+# Get specific innings
+first_innings <- query_deliveries(
+  match_id = "1234567",
+  innings = 1
+)
+```
+
+## Win Probability Timeline
+
+Visualize how win probability changed during the match:
+
+```{r}
+# Plot win probability over the match
+plot_win_probability("1234567", format = "t20")
+```
+
+The plot shows:
+- Win probability for each team after every delivery
+- Key moments where probability shifted significantly
+- The eventual winner's probability converging to 100%
+
+## Score Progression
+
+View how the score built up:
+
+```{r}
+# Plot score progression
+plot_score_progression("1234567")
+```
+
+This shows:
+- Runs scored over time
+- Wickets falling (marked on the chart)
+- Run rate trends
+
+## Understanding Key Moments
+
+Key moments are deliveries that significantly impacted win probability:
+
+```{r}
+# Get deliveries with large win probability changes
+deliveries <- query_deliveries(match_id = "1234567")
+
+# Find high-impact deliveries
+high_impact <- deliveries[abs(deliveries$win_prob_change) > 0.05, ]
+print(high_impact)
+```
+
+Typical high-impact moments:
+- Wickets of set batters
+- Sixes in crucial overs
+- Dot balls in the death overs
+
+## Comparing Teams
+
+Before analyzing a match, understand the team matchup:
+
+```{r}
+# Compare the two teams
+matchup <- compare_teams("Mumbai Indians", "Chennai Super Kings", format = "t20")
+print(matchup)
+
+# See head-to-head history
+# (included in matchup result)
+```
+
+## Querying Specific Events
+
+Filter deliveries by various criteria:
+
+```{r}
+# Get all sixes in a match
+sixes <- query_deliveries(
+  match_id = "1234567",
+  runs_batter = 6
+)
+
+# Get all wickets
+wickets <- query_deliveries(
+  match_id = "1234567",
+  is_wicket = TRUE
+)
+
+# Get powerplay deliveries (overs 1-6)
+powerplay <- query_deliveries(
+  match_id = "1234567",
+  over_start = 0,
+  over_end = 5
+)
+```
+
+## See Also
+
+- `vignette("getting-started")` - Package overview and setup
+- `vignette("player-analysis")` - Deep dive into player statistics
+- `vignette("predictions")` - Predicting match outcomes

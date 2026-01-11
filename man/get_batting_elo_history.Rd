@@ -29,17 +29,4 @@ Data frame with columns: match_id, match_date, match_type, elo_batting
 \description{
 Retrieves the complete batting ELO rating history for a player.
 }
-\examples{
-\dontrun{
-# Get full batting ELO history
-kohli_history <- get_batting_elo_history("V Kohli")
-
-# Get T20 history for specific period
-kohli_t20_2023 <- get_batting_elo_history(
-  "V Kohli",
-  match_type = "t20",
-  start_date = as.Date("2023-01-01"),
-  end_date = as.Date("2023-12-31")
-)
-}
-}
+\keyword{internal}

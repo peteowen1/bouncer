@@ -24,3 +24,4 @@ final_innings_total, match_id, innings.
 \description{
 Loads deliveries with final innings totals for a specific segment.
 }
+\keyword{internal}

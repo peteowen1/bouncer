@@ -19,3 +19,4 @@ Invisibly returns number of rows inserted
 \description{
 Batch inserts venue skill records into a format-specific table.
 }
+\keyword{internal}

@@ -18,3 +18,4 @@ Character. Canonical venue name
 Looks up canonical venue name from aliases table.
 Falls back to original name if not found.
 }
+\keyword{internal}

@@ -15,3 +15,4 @@ Combined data.frame of all matches
 \description{
 Combine all downloaded Fox Sports match files
 }
+\keyword{internal}

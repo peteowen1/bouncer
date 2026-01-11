@@ -39,19 +39,4 @@ data.frame with additional columns:
 Calculates the change in win probability (2nd innings) or projected score
 (1st innings) caused by each delivery. Positive WPA = good for batting team.
 }
-\examples{
-\dontrun{
-# Load models
-stage1_results <- readRDS("bouncerdata/models/ipl_stage1_results.rds")
-stage2_results <- readRDS("bouncerdata/models/ipl_stage2_results.rds")
-
-# Calculate WPA for match deliveries
-wpa_data <- calculate_delivery_wpa(
-  deliveries = match_data,
-  stage1_model = stage1_results$model,
-  stage2_model = stage2_results$model,
-  stage1_feature_cols = stage1_results$feature_cols,
-  stage2_feature_cols = stage2_results$feature_cols
-)
-}
-}
+\keyword{internal}

@@ -22,3 +22,4 @@ Data frame with skill features added
 Convenience function that adds skill index features to a deliveries
 data frame and fills missing values with starting values.
 }
+\keyword{internal}

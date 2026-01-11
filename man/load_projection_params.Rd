@@ -32,7 +32,4 @@ Loads optimized projection parameters for a format/gender/team_type segment.
 Parameters are loaded from RDS files or database if available,
 otherwise returns defaults.
 }
-\examples{
-params <- load_projection_params("t20", "male", "club")
-params$a  # Weight on EIS component
-}
+\keyword{internal}

@@ -18,3 +18,4 @@ Numeric. Normalized margin (-1 to 1 scale, 0 = tied)
 Normalizes margin to a 0-1 scale based on typical margins for each format.
 Useful for comparing margins across formats or for model training.
 }
+\keyword{internal}

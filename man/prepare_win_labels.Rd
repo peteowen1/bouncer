@@ -20,10 +20,4 @@ Data frame with batting_team_wins column (1 = batting team won,
 Creates binary win/loss labels for the team batting second.
 Handles special cases (ties, no results) by setting label to NA.
 }
-\examples{
-\dontrun{
-deliveries <- prepare_win_labels(deliveries)
-# Remove NA labels for training
-train_data <- deliveries[!is.na(deliveries$batting_team_wins), ]
-}
-}
+\keyword{internal}

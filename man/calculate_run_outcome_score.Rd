@@ -20,3 +20,4 @@ Numeric. Score between 0 and 1
 Converts batter runs into a 0-1 score for ELO update calculation.
 Uses the scoring weights from constants.R.
 }
+\keyword{internal}

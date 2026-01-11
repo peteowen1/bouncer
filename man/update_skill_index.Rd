@@ -20,3 +20,4 @@ Numeric. Updated skill index
 Updates a skill index using exponential moving average.
 new_value = alpha * observation + (1 - alpha) * old_value
 }
+\keyword{internal}

@@ -28,10 +28,4 @@ col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 Generates outcome probability predictions using the agnostic model.
 Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
 }
-\examples{
-\dontrun{
-model <- load_agnostic_model("t20")
-probs <- predict_agnostic_outcome(model, deliveries, "t20")
-exp_runs <- get_agnostic_expected_runs(probs)
-}
-}
+\keyword{internal}

@@ -26,13 +26,4 @@ Data frame with tied match information including has_super_over flag
 \description{
 Queries the database to identify matches that ended in a tie.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-# All ties including super overs
-all_ties <- identify_tied_matches(conn)
-# Only pure ties (no super over)
-pure_ties <- identify_tied_matches(conn, include_super_overs = FALSE)
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

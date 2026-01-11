@@ -19,3 +19,4 @@ data.frame with aggregated ERA statistics
 \description{
 Aggregates ERA across matches for career or season-level analysis.
 }
+\keyword{internal}

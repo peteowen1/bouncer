@@ -17,3 +17,4 @@ Invisibly returns number of rows deleted
 \description{
 Removes all records from a format-specific ELO table.
 }
+\keyword{internal}

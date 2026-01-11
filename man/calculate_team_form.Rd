@@ -32,9 +32,4 @@ Numeric. Win rate (0 to 1), or NA if no matches found
 \description{
 Calculates a team's recent form based on win rate in last N matches.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-form <- calculate_team_form("Chennai Super Kings", as.Date("2024-04-01"), conn = conn)
-}
-}
+\keyword{internal}

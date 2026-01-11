@@ -12,3 +12,4 @@ ChromoteSession object, or NULL if no session is stored
 \description{
 Returns the browser session stored after a reconnection during fox_fetch_matches.
 }
+\keyword{internal}

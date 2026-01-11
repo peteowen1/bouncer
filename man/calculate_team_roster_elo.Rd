@@ -30,9 +30,4 @@ List with elo_batting, elo_bowling, elo_combined, and player_count
 Calculates a team's ELO rating by aggregating player ELOs from the likely XI.
 Returns batting, bowling, and combined ELO.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-elo <- calculate_team_roster_elo("Mumbai Indians", as.Date("2024-04-01"), conn)
-}
-}
+\keyword{internal}

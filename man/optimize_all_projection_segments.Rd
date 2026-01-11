@@ -32,11 +32,4 @@ Named list of results for each segment.
 \description{
 Runs optimization for all format x gender x team_type combinations.
 }
-\examples{
-\dontrun{
-results <- optimize_all_projection_segments(
-  db_path = "../bouncerdata/bouncer.duckdb",
-  sample_frac = 0.3
-)
-}
-}
+\keyword{internal}

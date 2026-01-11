@@ -26,12 +26,4 @@ Data frame with delivery-by-delivery ELO progression
 \description{
 Retrieves a player's ELO progression throughout a specific match.
 }
-\examples{
-\dontrun{
-# See how Kohli's batting ELO changed during a match
-progression <- get_match_elo_progression("12345", "V Kohli", "batting")
-
-# Plot it
-plot(progression$delivery_id, progression$elo_after, type = "l")
-}
-}
+\keyword{internal}

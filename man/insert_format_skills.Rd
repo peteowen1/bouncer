@@ -19,3 +19,4 @@ Invisibly returns number of rows inserted
 \description{
 Batch inserts skill records into a format-specific table.
 }
+\keyword{internal}

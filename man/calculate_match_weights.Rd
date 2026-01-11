@@ -18,3 +18,4 @@ Numeric vector of weights (same length as matches)
 Assigns weights to matches based on importance (knockout stage, elite events).
 Higher weights mean the match contributes more to the log-loss objective.
 }
+\keyword{internal}

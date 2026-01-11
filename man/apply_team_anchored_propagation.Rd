@@ -43,7 +43,4 @@ This addresses the isolated pool problem: if NZ domestic teams have team ELO
 of 1350 but their players average 1600, the players are likely inflated and
 should be pulled down.
 }
-\examples{
-# If NZ domestic team has team_elo = 1350 and avg player ELO = 1600
-# Gap = 250, adjustment = -250 * 0.2 = -50 points per player
-}
+\keyword{internal}

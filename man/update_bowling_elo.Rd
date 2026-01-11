@@ -35,12 +35,4 @@ Numeric. Updated bowling ELO rating
 \description{
 Updates a bowler's ELO rating based on a single delivery outcome.
 }
-\examples{
-# Bowler took a wicket
-update_bowling_elo(1520, 1550, runs_batter = 0, is_wicket = TRUE,
-                    is_boundary = FALSE, match_type = "t20")
-
-# Bowler conceded 6 runs
-update_bowling_elo(1520, 1550, runs_batter = 6, is_wicket = FALSE,
-                    is_boundary = TRUE, match_type = "t20")
-}
+\keyword{internal}

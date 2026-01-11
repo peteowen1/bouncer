@@ -26,8 +26,4 @@ Invisible NULL.
 \description{
 Convenience function to calculate projections for T20, ODI, and Test formats.
 }
-\examples{
-\dontrun{
-calculate_all_format_projections()
-}
-}
+\keyword{internal}

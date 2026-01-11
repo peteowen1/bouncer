@@ -15,3 +15,4 @@ Numeric vector of wicket probabilities.
 \description{
 Extracts the wicket probability (first column) from the outcome distribution.
 }
+\keyword{internal}

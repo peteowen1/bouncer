@@ -38,16 +38,4 @@ Generates outcome probability predictions for deliveries using a trained
 BAM or XGBoost model. Returns expected runs, wicket probability, and
 full probability distribution.
 }
-\examples{
-\dontrun{
-# Load model
-model <- load_outcome_model("shortform", "bam")
-
-# Predict for delivery data
-outcomes <- predict_delivery_outcomes(model, deliveries, "bam", "shortform")
-
-# Access results
-deliveries$exp_runs <- outcomes$exp_runs
-deliveries$exp_wicket_prob <- outcomes$exp_wicket_prob
-}
-}
+\keyword{internal}

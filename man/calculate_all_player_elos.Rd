@@ -29,15 +29,4 @@ Main function to calculate and store ELO ratings for every delivery.
 Supports both fresh calculation (from scratch) and incremental processing
 (resume from last processed match).
 }
-\examples{
-\dontrun{
-  # Test with 10 matches
-  calculate_all_player_elos(match_limit = 10, fresh = TRUE)
-
-  # Process all matches from scratch
-  calculate_all_player_elos(fresh = TRUE)
-
-  # Resume from last processed match (incremental)
-  calculate_all_player_elos(fresh = FALSE)
-}
-}
+\keyword{internal}

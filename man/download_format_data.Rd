@@ -19,12 +19,4 @@ Character vector of extracted file paths
 \description{
 Downloads data for a specific cricket format (Test, ODI, T20I).
 }
-\examples{
-\dontrun{
-# Download all ODI matches
-odi_files <- download_format_data("odi")
-
-# Download women's Test matches
-test_files <- download_format_data("test", gender = "female")
-}
-}
+\keyword{internal}

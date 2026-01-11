@@ -17,3 +17,4 @@ List of batter skill objects
 \description{
 Creates a list of default batter skill objects for simulation.
 }
+\keyword{internal}

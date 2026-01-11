@@ -27,3 +27,4 @@ Data frame with team skill features added
 Convenience function that adds team skill index features to a deliveries
 data frame and fills missing values with starting values (0).
 }
+\keyword{internal}

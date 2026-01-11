@@ -32,3 +32,4 @@ List with batting and bowling skill aggregates
 \description{
 Fast calculation of team skill aggregates from pre-loaded data.
 }
+\keyword{internal}

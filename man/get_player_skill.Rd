@@ -21,3 +21,4 @@ Named list with skill indices, or NULL if not found
 \description{
 Gets the most recent skill index for a player.
 }
+\keyword{internal}

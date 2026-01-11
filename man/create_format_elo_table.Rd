@@ -20,3 +20,4 @@ Invisibly returns TRUE on success
 Creates an ELO table for a specific format. Uses migration pattern to
 add table without affecting existing data.
 }
+\keyword{internal}

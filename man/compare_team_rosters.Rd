@@ -40,11 +40,4 @@ List with:
 \description{
 Compares two team rosters based on player ELO ratings.
 }
-\examples{
-\dontrun{
-india <- c("V Kohli", "R Sharma", "J Bumrah")
-australia <- c("S Smith", "D Warner", "P Cummins")
-comparison <- compare_team_rosters(india, australia, "India", "Australia")
-print(comparison$expected_win_prob)
-}
-}
+\keyword{internal}

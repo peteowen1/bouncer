@@ -23,10 +23,4 @@ col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 Generates outcome probability predictions using the full model with all features.
 Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
 }
-\examples{
-\dontrun{
-model <- load_full_model("t20")
-probs <- predict_full_outcome(model, deliveries, "t20")
-exp_runs <- get_full_expected_runs(probs)
-}
-}
+\keyword{internal}

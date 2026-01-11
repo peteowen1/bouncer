@@ -19,3 +19,4 @@ List with elo_result and elo_roster
 \description{
 Fast lookup of team ELO from pre-loaded data.table.
 }
+\keyword{internal}

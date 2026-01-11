@@ -36,14 +36,4 @@ Combines all K-factor adjustments into a single value:
 \item Opponent strength modifier
 }
 }
-\examples{
-# New batter (50 deliveries) scoring against strong bowler (1600 ELO)
-get_player_adjusted_k(
-  deliveries = 50,
-  player_elo = 1500,
-  opponent_elo = 1600,
-  player_won = TRUE,
-  format = "t20",
-  elo_type = "run"
-)
-}
+\keyword{internal}

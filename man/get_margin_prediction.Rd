@@ -17,10 +17,4 @@ Numeric vector of predicted margins (positive = team1 favored)
 \description{
 Generates margin predictions for prepared feature data using the margin model.
 }
-\examples{
-\dontrun{
-margin_model <- load_margin_model("t20")
-features <- prepare_prediction_features(raw_features)
-pred_margin <- get_margin_prediction(features, margin_model)
-}
-}
+\keyword{internal}

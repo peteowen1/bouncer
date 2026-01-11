@@ -19,3 +19,4 @@ Numeric. Probability that team1 wins (0-1)
 \description{
 Converts ELO ratings to win probability using the standard formula.
 }
+\keyword{internal}

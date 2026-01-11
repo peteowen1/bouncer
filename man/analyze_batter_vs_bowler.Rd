@@ -26,12 +26,4 @@ List with matchup statistics and prediction
 \description{
 Analyzes historical head-to-head between a batter and bowler.
 }
-\examples{
-\dontrun{
-# Analyze Kohli vs Bumrah
-matchup <- analyze_batter_vs_bowler("V Kohli", "J Bumrah")
-
-# T20-specific matchup
-t20_matchup <- analyze_batter_vs_bowler("V Kohli", "J Bumrah", match_type = "t20")
-}
-}
+\keyword{internal}

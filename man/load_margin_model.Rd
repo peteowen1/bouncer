@@ -17,8 +17,4 @@ XGBoost model object or NULL if not found
 \description{
 Loads a trained XGBoost margin regression model for a given format.
 }
-\examples{
-\dontrun{
-margin_model <- load_margin_model("t20")
-}
-}
+\keyword{internal}

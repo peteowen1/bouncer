@@ -27,3 +27,4 @@ Numeric. Calibrated expected wicket probability (0-1)
 Calculates expected wicket probability using ELO difference adjusted by actual
 wicket rates from data.
 }
+\keyword{internal}

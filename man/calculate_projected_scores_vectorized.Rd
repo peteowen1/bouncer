@@ -6,8 +6,8 @@
 \usage{
 calculate_projected_scores_vectorized(
   current_score,
-  balls_remaining,
   wickets_remaining,
+  balls_remaining,
   expected_initial_score,
   a,
   b,
@@ -20,9 +20,9 @@ calculate_projected_scores_vectorized(
 \arguments{
 \item{current_score}{Integer vector. Runs scored so far for each delivery.}
 
-\item{balls_remaining}{Integer vector. Balls remaining for each delivery.}
-
 \item{wickets_remaining}{Integer vector. Wickets in hand for each delivery.}
+
+\item{balls_remaining}{Integer vector. Balls remaining for each delivery.}
 
 \item{expected_initial_score}{Numeric vector or scalar. EIS for each delivery.}
 

@@ -20,3 +20,4 @@ For residual-based indices (run_rate, wicket_rate), starts at 0
 (no deviation from context-expected).
 For raw EMA indices (boundary_rate, dot_rate), uses calibrated averages.
 }
+\keyword{internal}

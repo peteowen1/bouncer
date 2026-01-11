@@ -32,3 +32,4 @@ Invisible NULL.
 \description{
 Saves optimized projection parameters to RDS file.
 }
+\keyword{internal}

@@ -22,10 +22,4 @@ Character. Composite team ID in snake_case
 Creates a standardized team ID combining team name, gender, format, and team type.
 The result is in snake_case format.
 }
-\examples{
-make_team_id("Mumbai Indians", "male", "t20", "club")
-# Returns: "mumbai_indians_male_t20_club"
-
-make_team_id("India", "male", "odi", "international")
-# Returns: "india_male_odi_international"
-}
+\keyword{internal}

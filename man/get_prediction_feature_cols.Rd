@@ -12,6 +12,4 @@ Character vector of feature column names
 \description{
 Returns the list of feature column names used for XGBoost prediction models.
 }
-\examples{
-feature_cols <- get_prediction_feature_cols()
-}
+\keyword{internal}

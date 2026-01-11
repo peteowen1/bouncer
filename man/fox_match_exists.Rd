@@ -19,3 +19,4 @@ Logical TRUE if match has data, FALSE otherwise
 \description{
 Check if a Fox Sports match ID exists
 }
+\keyword{internal}

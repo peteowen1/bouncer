@@ -17,3 +17,4 @@ Data frame with last_delivery_id and last_match_date, or NULL
 \description{
 Gets information about the last processed delivery for incremental updates.
 }
+\keyword{internal}

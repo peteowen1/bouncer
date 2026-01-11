@@ -17,3 +17,4 @@ Data frame with venue skill statistics
 \description{
 Retrieves summary statistics for venue skill indices.
 }
+\keyword{internal}

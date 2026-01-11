@@ -1,0 +1,179 @@
+---
+title: "Player Analysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Player Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+This vignette shows how to analyze individual player performance using bouncer's skill tracking system. The package tracks four key metrics for every player, updated ball-by-ball:
+- **Batting Scoring Index**: Runs per ball vs expected
+- **Batting Survival Rate**: Probability of not getting out
+- **Bowling Economy Index**: Runs conceded vs expected
+- **Bowling Strike Rate**: Wickets per ball
+
+## Looking Up Players
+
+```{r}
+library(bouncer)
+
+# Search for a player by partial name
+search_players("Bumrah")
+
+# Get detailed player info
+bumrah <- get_player("Jasprit Bumrah", format = "t20")
+print(bumrah)
+```
+
+The `get_player()` function returns current skill indices and career statistics.
+
+## Analyzing a Player
+
+For deeper analysis, use `analyze_player()`:
+
+```{r}
+# Comprehensive player analysis
+kohli <- analyze_player("Virat Kohli", format = "t20")
+
+# View batting performance
+print(kohli$batting)
+
+# View skill progression over time
+print(kohli$skill_history)
+```
+
+## Comparing Players
+
+Compare two players head-to-head:
+
+```{r}
+# Compare batting ability
+comparison <- compare_players(
+  player1 = "Virat Kohli",
+  player2 = "Steve Smith",
+  format = "test"
+)
+print(comparison)
+
+# Visualize the comparison
+plot_player_comparison("Virat Kohli", "Steve Smith", format = "test")
+```
+
+The comparison shows:
+- Current skill indices for both players
+- Head-to-head record (if they've faced each other)
+- Statistical summary of key metrics
+
+## Tracking Skill Progression
+
+See how a player's skills have evolved over time:
+
+```{r}
+# Plot skill progression
+plot_skill_progression("Jasprit Bumrah", format = "t20")
+
+# Get raw skill history data
+history <- query_player_stats(
+  player_id = "J Bumrah",
+  match_type = "t20"
+)
+head(history)
+```
+
+## Head-to-Head Records
+
+Query specific batter vs bowler matchups:
+```{r}
+# Kohli vs Bumrah in T20s
+h2h <- query_batter_stats(
+  batter_id = "V Kohli",
+  bowler_id = "J Bumrah",
+  match_type = "t20"
+)
+print(h2h)
+```
+
+## Understanding Skill Indices
+
+### Batting Scoring Index
+
+The batting scoring index measures runs scored per ball relative to what's expected given the match context (over, wickets fallen, venue, etc.).
+
+| Value | Interpretation |
+|-------|----------------|
+| +0.10 | Scores 0.10 extra runs per ball (excellent) |
+| +0.05 | Above average scorer |
+| 0.00 | Average (performs as expected) |
+| -0.05 | Below average scorer |
+
+### Batting Survival Rate
+
+Probability of surviving each ball faced:
+
+| Value | Interpretation |
+|-------|----------------|
+| 0.99 | Gets out ~1% of balls (very resilient) |
+| 0.97 | Gets out ~3% of balls (average) |
+| 0.95 | Gets out ~5% of balls (aggressive/risky) |
+
+### Bowling Economy Index
+
+Runs conceded vs expected (negative is better for bowlers):
+
+| Value | Interpretation |
+|-------|----------------|
+| -0.10 | Concedes 0.10 fewer runs per ball (excellent) |
+| -0.05 | Above average economy |
+| 0.00 | Average |
+| +0.05 | Below average (expensive) |
+
+### Bowling Strike Rate
+
+Wickets taken per ball:
+
+| Value | Interpretation |
+|-------|----------------|
+| 0.06 | Takes wicket ~6% of balls (strike bowler) |
+| 0.04 | Average wicket-taking ability |
+| 0.02 | Lower strike rate (holding bowler) |
+
+## Querying Player Statistics
+
+For detailed statistical analysis:
+
+```{r}
+# Get all T20 innings for a player
+innings <- query_batter_stats(
+  batter_id = "V Kohli",
+  match_type = "t20"
+)
+
+# Filter by event
+ipl_innings <- query_batter_stats(
+  batter_id = "V Kohli",
+  event = "Indian Premier League"
+)
+
+# Get bowling stats
+bowling <- query_bowler_stats(
+  bowler_id = "J Bumrah",
+  match_type = "t20"
+)
+```
+
+## See Also
+
+- `vignette("getting-started")` - Package overview and setup
+- `vignette("predictions")` - Predicting match outcomes
+- `vignette("simulation")` - Match simulation

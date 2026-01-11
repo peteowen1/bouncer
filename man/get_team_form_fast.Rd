@@ -22,3 +22,4 @@ Numeric. Win rate in last n matches (0-1), or NA if no matches
 Fast calculation of team form from pre-loaded data.table.
 Uses composite team_id for proper gender/format separation.
 }
+\keyword{internal}

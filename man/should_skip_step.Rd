@@ -21,3 +21,4 @@ Named list with should_skip (logical), reason (character), and new_data counts
 \description{
 Determines if a pipeline step can be skipped based on data changes.
 }
+\keyword{internal}

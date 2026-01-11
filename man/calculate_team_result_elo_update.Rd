@@ -27,10 +27,4 @@ Numeric. New ELO rating after the match
 Calculates the ELO update for a team based on match result.
 Uses standard ELO formula with team-level K-factor.
 }
-\examples{
-# Team with 1550 ELO beats team with 1450 ELO
-calculate_team_result_elo_update(1550, 1450, won = TRUE)
-
-# Underdog (1400) beats favorite (1600)
-calculate_team_result_elo_update(1400, 1600, won = TRUE)
-}
+\keyword{internal}

@@ -18,9 +18,4 @@ Creates derived features from raw pre-match features for model training
 and prediction. This includes ELO differences, skill index differences,
 form features, and interaction terms.
 }
-\examples{
-\dontrun{
-features <- readRDS("t20_prediction_features.rds")
-prepared <- prepare_prediction_features(features$train)
-}
-}
+\keyword{internal}

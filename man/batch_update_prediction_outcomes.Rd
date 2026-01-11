@@ -15,3 +15,4 @@ Invisibly returns number of predictions updated
 \description{
 Updates outcomes for all predictions where the match has been completed.
 }
+\keyword{internal}

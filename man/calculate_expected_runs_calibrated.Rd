@@ -28,3 +28,4 @@ Calculates expected outcome score using ELO difference adjusted by actual data
 calibration. Uses the mean_outcome_score from calibration data to ensure
 zero-sum ELO updates (what batters gain, bowlers lose).
 }
+\keyword{internal}

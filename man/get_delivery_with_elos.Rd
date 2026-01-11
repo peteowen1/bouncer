@@ -17,10 +17,4 @@ Data frame with delivery details and ELO ratings
 \description{
 Gets complete delivery information including ELO ratings for both players.
 }
-\examples{
-\dontrun{
-# Get full details for a specific delivery
-delivery <- get_delivery_with_elos(12345)
-print(delivery)
-}
-}
+\keyword{internal}

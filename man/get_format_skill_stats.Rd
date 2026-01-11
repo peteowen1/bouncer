@@ -17,3 +17,4 @@ Data frame with skill statistics
 \description{
 Retrieves summary statistics for skill indices.
 }
+\keyword{internal}

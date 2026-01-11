@@ -15,3 +15,4 @@ Character. Format component (t20, odi, test)
 \description{
 Quick extraction of format component from team ID.
 }
+\keyword{internal}

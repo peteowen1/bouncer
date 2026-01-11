@@ -17,3 +17,4 @@ Data frame with event_name, season, and match count
 \description{
 Lists available event/season combinations in the database.
 }
+\keyword{internal}

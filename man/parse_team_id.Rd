@@ -15,8 +15,4 @@ Named list with team, gender, format, team_type components
 \description{
 Extracts components from a composite team ID.
 }
-\examples{
-parse_team_id("mumbai_indians_male_t20_club")
-# Returns: list(team = "mumbai_indians", gender = "male",
-#               format = "t20", team_type = "club")
-}
+\keyword{internal}

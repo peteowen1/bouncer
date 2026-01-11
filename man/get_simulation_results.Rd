@@ -26,3 +26,4 @@ Data frame with simulation results
 \description{
 Retrieves simulation results from the database.
 }
+\keyword{internal}

@@ -17,3 +17,4 @@ Logical. TRUE if parameters match, FALSE otherwise
 \description{
 Compares current parameters to stored parameters.
 }
+\keyword{internal}

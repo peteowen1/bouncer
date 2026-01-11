@@ -18,9 +18,4 @@ Data frame with one row containing all features for the match
 Calculates all pre-match features for a given match. Uses only data
 available before the match date.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-features <- calculate_pre_match_features("1234567", conn)
-}
-}
+\keyword{internal}

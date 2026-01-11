@@ -16,10 +16,4 @@ Numeric vector of wicket probabilities.
 \description{
 Extracts the wicket probability (first column) from the outcome distribution.
 }
-\examples{
-\dontrun{
-probs <- matrix(c(0.03, 0.45, 0.25, 0.12, 0.02, 0.08, 0.05), nrow = 1)
-wicket_prob <- calculate_expected_wicket_prob(probs)
-# Returns: 0.03
-}
-}
+\keyword{internal}

@@ -17,8 +17,4 @@ Logical vector
 \description{
 Returns a logical vector indicating which team_ids match the given format.
 }
-\examples{
-ids <- c("mumbai_indians_male_t20_club", "india_male_odi_international")
-filter_team_ids_by_format(ids, "t20")
-# Returns: c(TRUE, FALSE)
-}
+\keyword{internal}

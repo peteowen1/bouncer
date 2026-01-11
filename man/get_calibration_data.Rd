@@ -17,3 +17,4 @@ List with wicket_rate, mean_runs, run_distribution or NULL if not found
 \description{
 Retrieves stored calibration metrics for a format.
 }
+\keyword{internal}

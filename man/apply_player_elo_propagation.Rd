@@ -36,3 +36,4 @@ Updated player_elos list
 High-level function that applies propagation for both run and wicket ELO.
 Typically called after initial ELO calculation is complete.
 }
+\keyword{internal}

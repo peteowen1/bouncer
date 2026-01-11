@@ -38,20 +38,4 @@ Numeric. Probability of wicket (0 to 1)
 \description{
 Predicts the probability of wicket for a batter vs bowler matchup.
 }
-\examples{
-\dontrun{
-# Basic prediction
-wicket_prob <- predict_wicket_probability(
-  "V Kohli",
-  "J Bumrah",
-  context = list(match_type = "t20")
-)
-
-# Death overs (higher pressure)
-wicket_prob <- predict_wicket_probability(
-  "V Kohli",
-  "J Bumrah",
-  context = list(match_type = "t20", over = 19, phase = "death")
-)
-}
-}
+\keyword{internal}

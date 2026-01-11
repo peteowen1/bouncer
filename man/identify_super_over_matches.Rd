@@ -19,10 +19,4 @@ Data frame with super over match information
 \description{
 Queries the database to identify matches decided by super over.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-super_overs <- identify_super_over_matches(conn, event_filter = "IPL")
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

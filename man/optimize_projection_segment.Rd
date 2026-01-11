@@ -35,3 +35,4 @@ Named list with optimized parameters and metrics, or NULL if insufficient data.
 \description{
 Runs full optimization (grid search + refinement) for a single segment.
 }
+\keyword{internal}

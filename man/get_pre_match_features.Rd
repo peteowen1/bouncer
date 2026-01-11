@@ -26,3 +26,4 @@ Data frame with features
 \description{
 Retrieves pre-match features from the database.
 }
+\keyword{internal}

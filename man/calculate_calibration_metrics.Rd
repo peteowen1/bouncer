@@ -26,9 +26,4 @@ List with calibration metrics:
 Analyzes deliveries table to compute actual wicket rates and run distributions
 for a specific format. Used to calibrate expected values in ELO calculations.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-cal <- calculate_calibration_metrics("t20", conn)
-}
-}
+\keyword{internal}

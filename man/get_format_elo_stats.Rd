@@ -17,3 +17,4 @@ Data frame with ELO statistics
 \description{
 Retrieves summary statistics for ELO ratings in a format table.
 }
+\keyword{internal}

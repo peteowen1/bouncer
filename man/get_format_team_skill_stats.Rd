@@ -17,3 +17,4 @@ Data frame with team skill statistics
 \description{
 Retrieves summary statistics for team skill indices.
 }
+\keyword{internal}

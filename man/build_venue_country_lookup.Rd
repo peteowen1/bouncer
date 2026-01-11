@@ -17,9 +17,4 @@ Creates a lookup table mapping venue names to country names for international ma
 Uses the hard-coded venue map from \code{\link{get_venue_country_map}}, with a fallback
 to mode-based detection (team that plays there most) for unknown venues.
 }
-\examples{
-\dontrun{
-venue_lookup <- build_venue_country_lookup(all_matches)
-venue_lookup[["Wankhede Stadium"]]  # Returns "India"
-}
-}
+\keyword{internal}

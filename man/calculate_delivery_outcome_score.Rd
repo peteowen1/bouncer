@@ -20,20 +20,4 @@ Numeric value between 0 and 1
 Converts a delivery outcome (runs, wicket) into a score between 0 and 1
 for ELO calculation.
 }
-\examples{
-# Wicket - worst outcome for batter
-calculate_delivery_outcome_score(0, is_wicket = TRUE, is_boundary = FALSE)
-# Returns 0.0
-
-# Dot ball
-calculate_delivery_outcome_score(0, is_wicket = FALSE, is_boundary = FALSE)
-# Returns 0.2
-
-# Four runs
-calculate_delivery_outcome_score(4, is_wicket = FALSE, is_boundary = TRUE)
-# Returns ~0.73
-
-# Six runs
-calculate_delivery_outcome_score(6, is_wicket = FALSE, is_boundary = TRUE)
-# Returns 1.0
-}
+\keyword{internal}

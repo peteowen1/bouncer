@@ -29,12 +29,4 @@ Filtered data frame
 \description{
 Applies standard filters to exclude matches that shouldn't be in training.
 }
-\examples{
-\dontrun{
-# Standard filtering (exclude ties and no results, keep DLS and super overs)
-train_data <- filter_for_training(classified_data)
-
-# Exclude DLS matches as well
-train_data <- filter_for_training(classified_data, include_dls = FALSE)
-}
-}
+\keyword{internal}

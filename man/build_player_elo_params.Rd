@@ -19,3 +19,4 @@ List with all parameters needed for ELO calculation.
 Constructs a parameter list for player ELO calculation, including
 both static parameters (scoring weights) and dynamic K-factor settings.
 }
+\keyword{internal}

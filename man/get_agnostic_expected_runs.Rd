@@ -16,3 +16,4 @@ Formula: E(runs) = 0\emph{P(wicket) + 0}P(0) + 1\emph{P(1) + 2}P(2) + 3\emph{P(3
 \description{
 Converts the 7-class probability distribution into expected runs.
 }
+\keyword{internal}

@@ -19,3 +19,4 @@ Numeric. Expected wicket probability for this delivery
 \description{
 Predicts wicket probability for a batter-bowler matchup.
 }
+\keyword{internal}

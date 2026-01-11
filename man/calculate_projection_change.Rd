@@ -36,12 +36,4 @@ Named list with:
 Calculates how a single delivery changes the projected score.
 Used for player attribution (did the player increase/decrease projected score?).
 }
-\examples{
-# Batter hit a six, increasing projection
-calculate_projection_change(
-  projected_before = 150,
-  projected_after = 158,
-  runs_scored = 6,
-  is_wicket = FALSE
-)
-}
+\keyword{internal}

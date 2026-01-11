@@ -19,7 +19,4 @@ Calculates the K-factor for Wicket ELO updates based on player experience.
 Wicket ELO has lower K-factors than Run ELO because wickets are rarer
 but more decisive events.
 }
-\examples{
-get_player_dynamic_k_wicket(0, "t20")    # Returns 16 (max for new player)
-get_player_dynamic_k_wicket(600, "t20")  # Returns ~7.5 (mid-career)
-}
+\keyword{internal}

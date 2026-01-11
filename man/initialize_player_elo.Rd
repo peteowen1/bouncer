@@ -15,7 +15,4 @@ Numeric. Starting ELO rating (default 1500)
 \description{
 Returns the starting ELO rating for a new player.
 }
-\examples{
-initialize_player_elo("batting")
-initialize_player_elo("bowling")
-}
+\keyword{internal}

@@ -22,10 +22,4 @@ Invisibly returns count of successfully loaded matches
 Loads multiple match files into the database with optimal performance.
 Uses single connection, batch transactions, and pre-parse duplicate detection.
 }
-\examples{
-\dontrun{
-# Load all JSON files in a directory
-files <- list.files("cricket_data/", pattern = "\\\\.json$", full.names = TRUE)
-batch_load_matches(files)
-}
-}
+\keyword{internal}

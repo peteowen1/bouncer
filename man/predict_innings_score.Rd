@@ -44,14 +44,4 @@ List with:
 \description{
 Projects the final innings score based on current state and ELO ratings.
 }
-\examples{
-\dontrun{
-batters <- c("V Kohli", "R Sharma", "KL Rahul")
-bowlers <- c("P Cummins", "M Starc", "A Zampa")
-projection <- predict_innings_score(
-  batters, bowlers,
-  current_score = 80, current_wickets = 2, current_overs = 10
-)
-print(projection$projected_score)
-}
-}
+\keyword{internal}

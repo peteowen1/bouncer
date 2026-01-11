@@ -6,10 +6,10 @@
 \usage{
 calculate_projected_score(
   current_score,
-  balls_remaining,
-  wickets_remaining,
-  expected_initial_score = NULL,
+  wickets,
+  overs,
   format = "t20",
+  expected_initial_score = NULL,
   params = NULL,
   gender = "male",
   team_type = "international",
@@ -20,14 +20,15 @@ calculate_projected_score(
 \arguments{
 \item{current_score}{Integer. Runs scored so far in the innings.}
 
-\item{balls_remaining}{Integer. Balls left in innings.}
+\item{wickets}{Integer. Wickets fallen (0-10). Matches scoreboard: "120/3" means wickets=3.}
 
-\item{wickets_remaining}{Integer. Wickets in hand (10 - wickets_fallen).}
+\item{overs}{Numeric. Overs bowled in cricket notation (e.g., 13.4 = 13 overs + 4 balls).
+Matches scoreboard: "(13.4 overs)" means overs=13.4.}
+
+\item{format}{Character. Format: "t20", "odi", or "test".}
 
 \item{expected_initial_score}{Numeric. Expected innings total at start (EIS).
 If NULL, uses agnostic expected score for the format.}
-
-\item{format}{Character. Format: "t20", "odi", or "test".}
 
 \item{params}{Named list. Optimized parameters (a, b, z, y).
 If NULL, loads default parameters.}
@@ -45,27 +46,24 @@ Numeric. Projected final score.
 }
 \description{
 Projects the final innings score from current game state using the
-parameterized resource-based formula.
+parameterized resource-based formula. Input matches scoreboard display.
 }
 \details{
 Formula:
 projected = cs + a * eis * resource_remaining + b * cs * resource_remaining / resource_used
 }
 \examples{
-# T20: 80 runs from 60 balls (10 overs), 7 wickets remaining
+# Scoreboard shows: "India 120/3 (13.4 overs)" in T20
+calculate_projected_score(120, 3, 13.4, "t20")
+
+# With named parameters
 calculate_projected_score(
   current_score = 80,
-  balls_remaining = 60,
-  wickets_remaining = 7,
+  wickets = 3,
+  overs = 10.0,
   format = "t20"
 )
 
 # With custom EIS (e.g., from full model)
-calculate_projected_score(
-  current_score = 80,
-  balls_remaining = 60,
-  wickets_remaining = 7,
-  expected_initial_score = 175,  # Team expected to score high
-  format = "t20"
-)
+calculate_projected_score(80, 3, 10.0, "t20", expected_initial_score = 175)
 }

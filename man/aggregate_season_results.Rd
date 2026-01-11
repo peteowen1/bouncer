@@ -17,3 +17,4 @@ Data frame with team probabilities
 \description{
 Aggregates results from multiple season simulations.
 }
+\keyword{internal}

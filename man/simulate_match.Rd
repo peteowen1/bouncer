@@ -45,11 +45,4 @@ List with:
 Runs a Monte Carlo simulation of a match to estimate win probabilities
 with confidence intervals.
 }
-\examples{
-\dontrun{
-india <- c("V Kohli", "R Sharma", "J Bumrah")
-australia <- c("S Smith", "D Warner", "P Cummins")
-sim <- simulate_match(india, australia, "India", "Australia", n_simulations = 1000)
-print(paste("India wins:", sim$team1_win_pct, "\%"))
-}
-}
+\keyword{internal}

@@ -26,14 +26,4 @@ data.frame with additional columns:
 Calculates how many runs were scored above/below expectation based on
 the match situation. Uses Stage 1 model to derive expected runs.
 }
-\examples{
-\dontrun{
-stage1_results <- readRDS("bouncerdata/models/ipl_stage1_results.rds")
-
-era_data <- calculate_delivery_era(
-  deliveries = match_data,
-  stage1_model = stage1_results$model,
-  stage1_feature_cols = stage1_results$feature_cols
-)
-}
-}
+\keyword{internal}

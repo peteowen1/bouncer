@@ -23,3 +23,4 @@ Invisibly returns number of rows inserted
 \description{
 Batch inserts ELO records into a format-specific table.
 }
+\keyword{internal}

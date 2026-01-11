@@ -38,3 +38,4 @@ Combined data.frame of all matches, or NULL
 \description{
 Includes automatic recovery if browser connection fails.
 }
+\keyword{internal}

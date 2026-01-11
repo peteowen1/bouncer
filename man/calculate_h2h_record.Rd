@@ -32,10 +32,4 @@ List with team1_wins, team2_wins, total_matches, and team1_win_rate
 \description{
 Calculates the head-to-head record between two teams.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-h2h <- calculate_h2h_record("Mumbai Indians", "Chennai Super Kings",
-                             as.Date("2024-04-01"), conn)
-}
-}
+\keyword{internal}

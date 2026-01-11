@@ -19,12 +19,4 @@ Numeric value between 0 and 1 (bowler's perspective)
 \description{
 Converts a delivery outcome to a score from the bowler's perspective (0-1).
 }
-\examples{
-# Wicket - best outcome for bowler
-calculate_bowling_outcome_score(0, is_wicket = TRUE, is_boundary = FALSE)
-# Returns 1.0
-
-# Six runs conceded - worst outcome
-calculate_bowling_outcome_score(6, is_wicket = FALSE, is_boundary = TRUE)
-# Returns 0.0
-}
+\keyword{internal}

@@ -34,16 +34,4 @@ Data with additional rolling feature columns:
 Calculates rolling momentum features over specified ball/over windows.
 Designed for efficient processing of large delivery datasets.
 }
-\examples{
-\dontrun{
-# Add rolling features to delivery data
-deliveries_with_features <- calculate_rolling_features(deliveries)
-
-# Custom windows
-deliveries_with_features <- calculate_rolling_features(
-  deliveries,
-  ball_windows = c(6, 12, 24),
-  over_windows = c(2, 4, 6)
-)
-}
-}
+\keyword{internal}

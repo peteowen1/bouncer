@@ -26,3 +26,4 @@ Data frame with predictions
 \description{
 Retrieves predictions from the database.
 }
+\keyword{internal}

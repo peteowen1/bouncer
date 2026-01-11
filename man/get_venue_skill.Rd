@@ -19,3 +19,4 @@ Named list with skill indices, or NULL if not found
 \description{
 Gets the most recent skill indices for a venue.
 }
+\keyword{internal}

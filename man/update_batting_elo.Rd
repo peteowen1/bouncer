@@ -35,12 +35,4 @@ Numeric. Updated batting ELO rating
 \description{
 Updates a batter's ELO rating based on a single delivery outcome.
 }
-\examples{
-# Batter scored 4 runs
-update_batting_elo(1550, 1520, runs_batter = 4, is_wicket = FALSE,
-                    is_boundary = TRUE, match_type = "t20")
-
-# Batter got out for 0
-update_batting_elo(1550, 1520, runs_batter = 0, is_wicket = TRUE,
-                    is_boundary = FALSE, match_type = "t20")
-}
+\keyword{internal}

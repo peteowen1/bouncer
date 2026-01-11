@@ -21,22 +21,4 @@ Numeric. New ELO rating
 \description{
 Calculates the new ELO rating after a performance.
 }
-\examples{
-# Player performed better than expected
-calculate_elo_update(
-  current_elo = 1500,
-  expected = 0.5,
-  actual = 0.8,
-  k_factor = 24
-)
-# Returns 1507.2 (rating increases)
-
-# Player performed worse than expected
-calculate_elo_update(
-  current_elo = 1500,
-  expected = 0.6,
-  actual = 0.2,
-  k_factor = 24
-)
-# Returns 1490.4 (rating decreases)
-}
+\keyword{internal}

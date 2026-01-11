@@ -26,12 +26,4 @@ Data frame with player rankings
 \description{
 Returns top players ranked by ELO rating.
 }
-\examples{
-\dontrun{
-# Top 20 batters in T20
-top_batters <- rank_players("batting", match_type = "t20", top_n = 20)
-
-# Top 10 bowlers overall
-top_bowlers <- rank_players("bowling", top_n = 10)
-}
-}
+\keyword{internal}

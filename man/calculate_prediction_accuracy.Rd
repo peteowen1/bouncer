@@ -15,10 +15,4 @@ List with accuracy metrics
 \description{
 Calculates accuracy metrics for predictions.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-predictions <- get_predictions(include_outcomes = TRUE, conn = conn)
-metrics <- calculate_prediction_accuracy(predictions)
-}
-}
+\keyword{internal}

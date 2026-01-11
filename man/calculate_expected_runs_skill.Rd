@@ -19,3 +19,4 @@ Numeric. Expected runs for this delivery
 \description{
 Predicts expected runs for a batter-bowler matchup.
 }
+\keyword{internal}

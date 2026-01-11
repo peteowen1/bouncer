@@ -21,3 +21,4 @@ List with match-level and player-level attribution summaries
 \description{
 Calculates attribution summary for a specific match.
 }
+\keyword{internal}

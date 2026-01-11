@@ -18,10 +18,4 @@ Numeric K-factor value
 Calculates the K-factor (learning rate) for ELO updates based on match type
 and player experience.
 }
-\examples{
-# New player in Test match
-calculate_k_factor("test", player_matches = 5)
-
-# Experienced player in T20
-calculate_k_factor("t20", player_matches = 100)
-}
+\keyword{internal}

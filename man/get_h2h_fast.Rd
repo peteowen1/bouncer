@@ -22,3 +22,4 @@ List with team1_wins and total
 Fast calculation of H2H record from pre-loaded data.table.
 Uses composite team_ids for proper gender/format separation.
 }
+\keyword{internal}

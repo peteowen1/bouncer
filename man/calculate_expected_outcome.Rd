@@ -20,12 +20,4 @@ Numeric value between 0 and 1 representing expected outcome
 Calculates the expected outcome for a player matchup using ELO ratings.
 This is the standard ELO formula: E = 1 / (1 + 10^((R_opponent - R_player) / 400))
 }
-\examples{
-# Batter (1600) vs Bowler (1500)
-calculate_expected_outcome(1600, 1500)
-# Returns ~0.64 (batter favored)
-
-# Batter (1400) vs Bowler (1600)
-calculate_expected_outcome(1400, 1600)
-# Returns ~0.24 (bowler favored)
-}
+\keyword{internal}

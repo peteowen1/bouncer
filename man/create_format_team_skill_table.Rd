@@ -19,3 +19,4 @@ Invisibly returns TRUE on success
 \description{
 Creates a team skill index table for a specific format.
 }
+\keyword{internal}

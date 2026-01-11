@@ -13,8 +13,4 @@ Named list where names are venue names and values are country names
 Returns a named list mapping international cricket venue names to country names.
 Country names match team names as they appear in the data (e.g., "West Indies" not "Barbados").
 }
-\examples{
-venue_map <- get_venue_country_map()
-venue_map[["Wankhede Stadium"]]  # Returns "India"
-venue_map[["Kensington Oval"]]   # Returns "West Indies"
-}
+\keyword{internal}

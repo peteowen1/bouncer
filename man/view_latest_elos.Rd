@@ -20,12 +20,4 @@ Invisibly returns a data frame with all latest ELOs
 Displays the latest ELO rankings for all players, showing top performers
 and struggling players for both batting and bowling.
 }
-\examples{
-\dontrun{
-  # View default rankings
-  view_latest_elos()
-
-  # Show top 30 and bottom 5
-  view_latest_elos(top_n = 30, bottom_n = 5)
-}
-}
+\keyword{internal}

@@ -17,3 +17,4 @@ Character vector. Canonical venue names
 \description{
 Batch normalize venue names for efficiency.
 }
+\keyword{internal}

@@ -27,3 +27,4 @@ Invisible NULL.
 Calculates and stores per-delivery score projections for a format.
 Both agnostic (format average EIS) and full (team/venue adjusted) projections.
 }
+\keyword{internal}

@@ -19,12 +19,4 @@ Calculates how many runs were scored above or below expectation.
 Positive ERA = scored more than expected = good for batter
 Negative ERA = scored less than expected = good for bowler
 }
-\examples{
-# Hit a 4 when expected 1.5 runs
-calculate_era(4, 1.5)
-# Returns: 2.5 (scored 2.5 above expectation)
-
-# Dot ball when expected 1.5 runs
-calculate_era(0, 1.5)
-# Returns: -1.5 (scored 1.5 below expectation)
-}
+\keyword{internal}

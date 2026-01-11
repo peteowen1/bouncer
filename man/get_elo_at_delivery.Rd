@@ -29,12 +29,4 @@ Numeric. ELO rating at that delivery (or NA if not found)
 \description{
 Retrieves a player's ELO rating at a specific delivery in a match.
 }
-\examples{
-\dontrun{
-# Get Kohli's batting ELO after delivery #12345
-elo <- get_elo_at_delivery(12345, "V Kohli", when = "after", rating_type = "batting")
-
-# Get Bumrah's bowling ELO before delivery #67890
-elo <- get_elo_at_delivery(67890, "J Bumrah", when = "before", rating_type = "bowling")
-}
-}
+\keyword{internal}

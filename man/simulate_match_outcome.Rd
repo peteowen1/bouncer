@@ -19,3 +19,4 @@ List with winner, loser, margin, and team1_won flag
 \description{
 Simulates a single match outcome based on win probabilities.
 }
+\keyword{internal}

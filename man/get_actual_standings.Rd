@@ -17,3 +17,4 @@ Data frame with actual standings
 \description{
 Calculates the actual final standings from completed fixtures.
 }
+\keyword{internal}

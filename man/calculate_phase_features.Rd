@@ -27,9 +27,4 @@ Data frame with columns:
 \description{
 Identifies game phase (powerplay, middle, death) and related timing features.
 }
-\examples{
-\dontrun{
-phase_data <- calculate_phase_features(over = 12, ball = 3, match_type = "t20")
-# Returns: phase = "middle", overs_into_phase = 6, etc.
-}
-}
+\keyword{internal}

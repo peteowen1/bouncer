@@ -4,23 +4,19 @@
 \alias{calculate_match_margin}
 \title{Calculate Unified Margin for Match Data}
 \usage{
-calculate_match_margin(match_data, use_advanced_projection = FALSE)
+calculate_match_margin(match_data)
 }
 \arguments{
 \item{match_data}{Data frame or list with match information. Expected columns:
 \itemize{
 \item team1_score, team2_score (or innings totals)
 \item outcome_by_runs, outcome_by_wickets
-\item balls_remaining OR overs_remaining (cricket notation, will be converted)
-\item wickets_remaining (optional, derived from outcome_by_wickets)
+\item overs_remaining (cricket notation like 2.3)
 \item match_type
 \item outcome_method (optional, for Super Over detection)
-\item gender (optional, for advanced projection)
-\item team_type (optional, for advanced projection)
+\item gender (optional)
+\item team_type (optional)
 }}
-
-\item{use_advanced_projection}{Logical. If TRUE, uses the optimized score projection
-formula for wickets wins. If FALSE (default), uses simple resource-based projection.}
 }
 \value{
 Numeric. Unified margin
@@ -28,5 +24,5 @@ Numeric. Unified margin
 \description{
 Convenience function to calculate unified margin from match record data.
 Handles extraction of scores, wickets, overs from database columns.
-Converts cricket notation overs to balls internally.
 }
+\keyword{internal}

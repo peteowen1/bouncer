@@ -32,15 +32,4 @@ Data frame with matching deliveries
 \description{
 Finds deliveries where a player's ELO was in a specific range.
 }
-\examples{
-\dontrun{
-# Find when Kohli's batting ELO was at peak (1700+)
-peak_deliveries <- find_deliveries_by_elo_range(
-  "V Kohli",
-  elo_min = 1700,
-  elo_max = 2000,
-  rating_type = "batting",
-  limit = 100
-)
-}
-}
+\keyword{internal}

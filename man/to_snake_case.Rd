@@ -15,7 +15,4 @@ Character vector in snake_case
 \description{
 Converts a string to snake_case: lowercase with spaces replaced by underscores.
 }
-\examples{
-to_snake_case("Mumbai Indians")
-# Returns: "mumbai_indians"
-}
+\keyword{internal}

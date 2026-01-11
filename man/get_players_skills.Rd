@@ -21,3 +21,4 @@ Data frame with player_id and skill indices
 \description{
 Batch fetch of current skill indices for multiple players.
 }
+\keyword{internal}

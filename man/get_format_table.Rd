@@ -17,10 +17,4 @@ Character. Full table name (e.g., "t20_player_elo")
 \description{
 Returns the appropriate table name for player ratings based on match format.
 }
-\examples{
-\dontrun{
-get_format_table("player_elo", "T20")   # returns "t20_player_elo"
-get_format_table("player_skill", "ODI") # returns "odi_player_skill"
-}
-}
 \keyword{internal}

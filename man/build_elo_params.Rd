@@ -15,3 +15,4 @@ Named list of parameters
 \description{
 Creates a list of current ELO parameters from constants.
 }
+\keyword{internal}

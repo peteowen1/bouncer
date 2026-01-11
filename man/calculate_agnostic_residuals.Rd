@@ -35,12 +35,4 @@ Data frame with columns:
 Calculates the residual (actual - expected) for each delivery,
 which is used to update skill indices.
 }
-\examples{
-\dontrun{
-model <- load_agnostic_model("t20")
-residuals <- calculate_agnostic_residuals(model, deliveries, "t20")
-
-# Use residuals to update skill indices (EMA formula)
-new_bsi <- (1 - alpha) * old_bsi + alpha * residuals$runs_residual
-}
-}
+\keyword{internal}

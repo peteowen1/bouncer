@@ -24,9 +24,4 @@ Loaded model object (xgb.Booster for XGBoost, bam for BAM)
 \description{
 Loads a trained outcome prediction model from the models directory.
 }
-\examples{
-\dontrun{
-xgb_model <- load_outcome_model("shortform", "xgb")
-bam_model <- load_outcome_model("longform", "bam")
-}
-}
+\keyword{internal}

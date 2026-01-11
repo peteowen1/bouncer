@@ -17,3 +17,4 @@ Invisibly returns TRUE on success
 \description{
 Stores a prediction in the database.
 }
+\keyword{internal}

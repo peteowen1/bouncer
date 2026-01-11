@@ -15,3 +15,4 @@ Invisibly returns TRUE on success
 \description{
 Creates the pipeline_state table for tracking step execution history.
 }
+\keyword{internal}

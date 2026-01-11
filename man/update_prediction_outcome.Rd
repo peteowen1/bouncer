@@ -17,3 +17,4 @@ Invisibly returns number of predictions updated
 \description{
 Updates a prediction with the actual match outcome.
 }
+\keyword{internal}

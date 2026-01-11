@@ -25,3 +25,4 @@ Returns starting skill values for a format.
 \item Rates (survival/strike): Start at format average probability
 }
 }
+\keyword{internal}

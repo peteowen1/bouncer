@@ -17,7 +17,4 @@ Numeric. Run rate (runs per over)
 \description{
 Simple utility to calculate run rate from runs and balls.
 }
-\examples{
-calculate_run_rate(runs = 85, balls = 60)
-# Returns 8.5 (runs per over)
-}
+\keyword{internal}

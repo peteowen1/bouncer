@@ -17,3 +17,4 @@ Invisibly returns number of rows inserted
 \description{
 Stores calculated calibration metrics in the elo_calibration_metrics table.
 }
+\keyword{internal}

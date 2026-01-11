@@ -34,15 +34,4 @@ Character vector of paths to downloaded (and optionally extracted) files
 \description{
 Downloads cricket match data from Cricsheet in JSON format.
 }
-\examples{
-\dontrun{
-# Download ODI data
-files <- download_cricsheet_data("odi")
-
-# Download women's T20I data
-files <- download_cricsheet_data("t20i", gender = "female")
-
-# Download to specific location
-files <- download_cricsheet_data("ipl", output_path = "~/cricket_data/ipl")
-}
-}
+\keyword{internal}

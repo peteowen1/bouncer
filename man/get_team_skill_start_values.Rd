@@ -16,3 +16,4 @@ Named list with start_runs and start_wicket (both 0 for residual-based)
 Returns starting team skill index values.
 Team skills start at 0 (neutral - no deviation from context-expected).
 }
+\keyword{internal}

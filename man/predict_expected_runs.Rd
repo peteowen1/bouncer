@@ -38,25 +38,4 @@ Numeric. Expected runs for this delivery
 \description{
 Predicts the expected runs for a batter vs bowler matchup based on ELO ratings.
 }
-\examples{
-\dontrun{
-# Basic prediction
-expected_runs <- predict_expected_runs(
-  "V Kohli",
-  "J Bumrah",
-  context = list(match_type = "t20")
-)
-
-# With context
-expected_runs <- predict_expected_runs(
-  "V Kohli",
-  "J Bumrah",
-  context = list(
-    match_type = "t20",
-    venue = "Wankhede Stadium",
-    over = 18,
-    phase = "death"
-  )
-)
-}
-}
+\keyword{internal}

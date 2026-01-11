@@ -31,3 +31,4 @@ Data frame with skill columns joined
 Joins skill indices from the skill table to a deliveries data frame.
 This is the primary way to add skill features to modelling data.
 }
+\keyword{internal}

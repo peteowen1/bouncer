@@ -21,3 +21,4 @@ Invisibly returns TRUE on success
 \description{
 Adds a single alias -> canonical mapping.
 }
+\keyword{internal}

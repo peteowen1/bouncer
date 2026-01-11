@@ -21,7 +21,4 @@ Character vector. Composite team IDs in snake_case
 \description{
 Vectorized version of make_team_id for use with data.table/dplyr.
 }
-\examples{
-# In data.table:
-# dt[, team_id := make_team_id_vec(team, gender, format, team_type)]
-}
+\keyword{internal}

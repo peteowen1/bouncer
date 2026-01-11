@@ -16,12 +16,4 @@ Character. Standardized format: "t20", "odi", or "test"
 Converts various match type strings to standardized format names
 for looking up the correct ELO and skill tables.
 }
-\examples{
-\dontrun{
-normalize_match_format("T20")    # returns "t20"
-normalize_match_format("IT20")   # returns "t20"
-normalize_match_format("ODI")    # returns "odi"
-normalize_match_format("Test")   # returns "test"
-}
-}
 \keyword{internal}

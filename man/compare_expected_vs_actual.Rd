@@ -16,3 +16,4 @@ Data frame with summary statistics
 Creates a summary comparing expected runs (from model) with actual runs,
 broken down by attribution component.
 }
+\keyword{internal}

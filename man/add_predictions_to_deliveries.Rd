@@ -48,23 +48,4 @@ For each delivery, adds 7 columns with prediction probabilities:
 \item {prefix}_6: P(6 runs)
 }
 }
-\examples{
-\dontrun{
-# Add BAM shortform predictions
-add_predictions_to_deliveries(
-  model_path = "data-raw/model_bam_outcome_shortform.rds",
-  model_type = "bam",
-  format = "shortform",
-  column_prefix = "pred_bam"
-)
-
-# Add XGBoost shortform predictions
-add_predictions_to_deliveries(
-  model_path = "data-raw/model_xgb_outcome_shortform.json",
-  model_type = "xgb",
-  format = "shortform",
-  column_prefix = "pred_xgb"
-)
-}
-
-}
+\keyword{internal}

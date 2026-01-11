@@ -30,3 +30,4 @@ Data frame with venue rankings
 \description{
 Returns venues ranked by a specific metric.
 }
+\keyword{internal}

@@ -18,8 +18,4 @@ Invisibly returns TRUE on success
 Adds the unified_margin column to the matches table and margin columns
 to the pre_match_features table if they don't already exist.
 }
-\examples{
-\dontrun{
-add_margin_columns()
-}
-}
+\keyword{internal}

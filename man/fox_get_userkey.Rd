@@ -19,3 +19,4 @@ Character string userkey, or NULL if not found
 \description{
 Get userkey from Fox Sports by visiting a match page
 }
+\keyword{internal}

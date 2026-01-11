@@ -19,3 +19,4 @@ Invisibly returns TRUE
 \description{
 Records the execution state after a pipeline step completes.
 }
+\keyword{internal}

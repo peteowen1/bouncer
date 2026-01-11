@@ -43,3 +43,4 @@ Uses dual lookup approach:
 \item International: Check if venue is in team's country
 }
 }
+\keyword{internal}

@@ -17,3 +17,4 @@ Named list of parameters or NULL if not found
 \description{
 Retrieves stored ELO calculation parameters for a format.
 }
+\keyword{internal}

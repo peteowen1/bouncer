@@ -29,17 +29,4 @@ Data frame with columns: match_id, match_date, match_type, elo_bowling
 \description{
 Retrieves the complete bowling ELO rating history for a player.
 }
-\examples{
-\dontrun{
-# Get full bowling ELO history
-bumrah_history <- get_bowling_elo_history("J Bumrah")
-
-# Get T20 history for specific period
-bumrah_t20_2023 <- get_bowling_elo_history(
-  "J Bumrah",
-  match_type = "t20",
-  start_date = as.Date("2023-01-01"),
-  end_date = as.Date("2023-12-31")
-)
-}
-}
+\keyword{internal}

@@ -46,14 +46,4 @@ When opponent_team_elo is provided, the opponent strength is calculated as
 a blend of individual player ELO (30\%) and team ELO (70\%). Team ELO is more
 reliable because it's anchored through cross-league matches.
 }
-\examples{
-# Batter scores against a 1700 ELO bowler (strong opponent) - boosted gain
-get_player_opponent_k_modifier(1500, 1700, player_won = TRUE)  # 1.2
-
-# Batter scores against a 1100 ELO bowler (weak opponent) - reduced gain
-get_player_opponent_k_modifier(1500, 1100, player_won = TRUE)  # 0.6
-
-# Batter scores against 1500 bowler from 1350 team - weak team reduces gain
-get_player_opponent_k_modifier(1500, 1500, player_won = TRUE,
-                                opponent_team_elo = 1350)  # ~0.74
-}
+\keyword{internal}

@@ -32,10 +32,4 @@ List with:
 \description{
 Aggregates individual player ELO ratings into a team strength metric.
 }
-\examples{
-\dontrun{
-roster <- c("V Kohli", "R Sharma", "KL Rahul", "S Gill", "J Bumrah")
-team_elo <- calculate_roster_elo(roster, match_type = "t20")
-print(team_elo$combined_elo)
-}
-}
+\keyword{internal}

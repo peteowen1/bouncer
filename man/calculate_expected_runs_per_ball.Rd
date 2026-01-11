@@ -31,12 +31,4 @@ Works for both innings:
 \item Innings 2: How many runs per ball needed to reach projected score (and hopefully target)
 }
 }
-\examples{
-# Early in innings: projected 170, scored 30, 90 balls left
-calculate_expected_runs_per_ball(170, 30, 90)
-# Returns: (170 - 30) / 90 = 1.56 expected runs per ball
-
-# Late in innings: projected 165, scored 140, 12 balls left
-calculate_expected_runs_per_ball(165, 140, 12)
-# Returns: (165 - 140) / 12 = 2.08 expected runs per ball
-}
+\keyword{internal}

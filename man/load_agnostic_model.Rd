@@ -26,13 +26,4 @@ context features (match state) with no player/team/venue information.
 This makes it suitable for calculating baseline expectations, where
 actual performance minus expected gives the "skill residual".
 }
-\examples{
-\dontrun{
-# Load T20 agnostic model
-model <- load_agnostic_model("t20")
-
-# Predict on delivery data
-probs <- predict_agnostic_outcome(model, deliveries, format = "t20")
-exp_runs <- get_agnostic_expected_runs(probs)
-}
-}
+\keyword{internal}

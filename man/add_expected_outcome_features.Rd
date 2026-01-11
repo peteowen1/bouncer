@@ -36,18 +36,4 @@ Data frame with additional columns:
 Convenience function that loads a model and adds expected outcome columns
 to a delivery data frame. Designed for use in game-modelling scripts.
 }
-\examples{
-\dontrun{
-# In game-modelling scripts:
-model <- load_outcome_model("shortform", "bam")
-
-deliveries_df <- add_expected_outcome_features(
-  deliveries_df,
-  model = model,
-  model_type = "bam",
-  format = "shortform"
-)
-
-# Now have: exp_runs, exp_wicket_prob, runs_above_expected, wicket_above_expected
-}
-}
+\keyword{internal}

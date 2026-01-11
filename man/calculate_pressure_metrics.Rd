@@ -38,15 +38,4 @@ Data frame with columns:
 \description{
 Calculates required run rate and chase pressure indicators.
 }
-\examples{
-\dontrun{
-# Chasing 180, scored 100/3 with 30 balls left at 6.5 RPO
-pressure <- calculate_pressure_metrics(
-  target = 180,
-  current_runs = 100,
-  current_wickets = 3,
-  balls_remaining = 30,
-  current_run_rate = 6.5
-)
-}
-}
+\keyword{internal}

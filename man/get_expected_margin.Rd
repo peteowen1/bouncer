@@ -22,7 +22,4 @@ Numeric. Expected margin in runs (positive = team1 favored)
 Calculates the expected margin of victory based on the ELO difference
 between two teams. Based on FiveThirtyEight methodology.
 }
-\examples{
-# Team with 100 ELO advantage
-get_expected_margin(1600, 1500, 0, "t20")  # ~6-7 runs
-}
+\keyword{internal}

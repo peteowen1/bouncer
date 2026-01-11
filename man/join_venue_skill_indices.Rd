@@ -27,3 +27,4 @@ Data frame with venue skill columns joined
 \description{
 Joins venue skill indices from the skill table to a deliveries data frame.
 }
+\keyword{internal}

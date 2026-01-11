@@ -17,3 +17,4 @@ Data frame with top 4 teams and their average ELOs
 \description{
 Extracts the top 4 teams from standings for playoff simulation.
 }
+\keyword{internal}

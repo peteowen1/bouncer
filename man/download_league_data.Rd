@@ -18,12 +18,4 @@ Character vector of extracted file paths
 \description{
 Downloads data for a specific cricket league (IPL, BBL, etc.).
 }
-\examples{
-\dontrun{
-# Download IPL data
-ipl_files <- download_league_data("ipl")
-
-# Download Big Bash League data
-bbl_files <- download_league_data("bbl")
-}
-}
+\keyword{internal}

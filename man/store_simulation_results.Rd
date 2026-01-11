@@ -21,3 +21,4 @@ Invisibly returns TRUE on success
 \description{
 Stores simulation results in the database.
 }
+\keyword{internal}

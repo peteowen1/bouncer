@@ -20,10 +20,4 @@ List of integer vectors, each containing row indices for a fold
 Creates cross-validation fold indices grouped by match_id to prevent data leakage.
 All deliveries from the same match are kept in the same fold.
 }
-\examples{
-\dontrun{
-folds <- create_grouped_folds(deliveries, n_folds = 5)
-# folds[[1]] contains row indices for fold 1
-# All deliveries from any given match are in the same fold
-}
-}
+\keyword{internal}

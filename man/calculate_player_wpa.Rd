@@ -31,13 +31,4 @@ data.frame with aggregated WPA statistics:
 \description{
 Aggregates WPA across matches for career or season-level analysis.
 }
-\examples{
-\dontrun{
-# Top batters by career WPA
-batter_wpa <- calculate_player_wpa(wpa_data, role = "batting")
-
-# Bowler WPA by season
-bowler_wpa <- calculate_player_wpa(wpa_data, role = "bowling",
-                                    group_by = c("player_id", "season"))
-}
-}
+\keyword{internal}

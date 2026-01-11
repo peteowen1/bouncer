@@ -25,8 +25,4 @@ data.frame with columns:
 \description{
 Aggregates delivery-level WPA and ERA to match-level totals per player.
 }
-\examples{
-\dontrun{
-match_wpa <- calculate_match_wpa(wpa_data)
-}
-}
+\keyword{internal}

@@ -15,3 +15,4 @@ List with batter_summary and bowler_summary data frames
 \description{
 Aggregates per-delivery contributions to player-level summaries.
 }
+\keyword{internal}

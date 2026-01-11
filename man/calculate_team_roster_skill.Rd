@@ -46,14 +46,4 @@ List with aggregated skill indices:
 Calculates team strength by aggregating player skill indices from the likely XI.
 Uses the t20_player_skill table for EMA-based, drift-proof skill measures.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-skills <- calculate_team_roster_skill(
-  "Mumbai Indians",
-  as.Date("2024-04-01"),
-  conn,
-  event_name = "Indian Premier League"
-)
-}
-}
+\keyword{internal}

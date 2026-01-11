@@ -7,37 +7,35 @@
 calculate_unified_margin(
   team1_score,
   team2_score,
-  balls_remaining = 0,
   wickets_remaining = 0,
+  overs_remaining = 0,
   win_type = "runs",
   format = "t20",
   super_over_margin = NULL,
-  use_advanced_projection = FALSE,
   gender = "male",
   team_type = "international"
 )
 }
 \arguments{
-\item{team1_score}{Integer. Team 1's total (batting first or only innings)}
+\item{team1_score}{Integer. Team 1's total (batting first or only innings).}
 
-\item{team2_score}{Integer. Team 2's total when match ended}
+\item{team2_score}{Integer. Team 2's total when match ended.}
 
-\item{balls_remaining}{Integer. Balls remaining when match ended (0 for runs wins)}
+\item{wickets_remaining}{Integer. Wickets in hand when match ended (0 for runs wins).
+This is how results are reported: "won by 6 wickets" means wickets_remaining=6.}
 
-\item{wickets_remaining}{Integer. Wickets in hand when match ended (0 for runs wins)}
+\item{overs_remaining}{Numeric. Overs remaining in cricket notation (e.g., 2.3 = 2 overs + 3 balls).
+This is how results are reported: "with 2.3 overs to spare" means overs_remaining=2.3.}
 
-\item{win_type}{Character. "runs", "wickets", "tie", or "draw"}
+\item{win_type}{Character. "runs", "wickets", "tie", or "draw".}
 
-\item{format}{Character. Match format}
+\item{format}{Character. Match format: "t20", "odi", or "test".}
 
-\item{super_over_margin}{Integer. If match had Super Over, the run difference (optional)}
+\item{super_over_margin}{Integer. If match had Super Over, the run difference (optional).}
 
-\item{use_advanced_projection}{Logical. If TRUE, uses the optimized score projection
-formula. If FALSE (default), uses simple resource-based projection.}
+\item{gender}{Character. "male" or "female".}
 
-\item{gender}{Character. "male" or "female" (for advanced projection).}
-
-\item{team_type}{Character. "international" or "club" (for advanced projection).}
+\item{team_type}{Character. "international" or "club".}
 }
 \value{
 Numeric. Unified margin in runs-equivalent.
@@ -49,19 +47,7 @@ Positive margin = team1 won, negative margin = team2 won.
 }
 \details{
 For runs wins: margin = team1_score - team2_score
-For wickets wins: project team2's final score, then calculate difference
+For wickets wins: project team2's final score using optimized projection,
+then calculate difference.
 }
-\examples{
-# Team 1 won by 20 runs
-calculate_unified_margin(180, 160, 0, 0, "runs", "t20")
-
-# Team 2 won by 6 wickets with 12 balls (2 overs) left
-calculate_unified_margin(160, 165, 12, 6, "wickets", "t20")
-
-# Using advanced projection
-calculate_unified_margin(160, 165, 12, 6, "wickets", "t20",
-                         use_advanced_projection = TRUE, gender = "male", team_type = "club")
-
-# Tie
-calculate_unified_margin(160, 160, 0, 0, "tie", "t20")
-}
+\keyword{internal}

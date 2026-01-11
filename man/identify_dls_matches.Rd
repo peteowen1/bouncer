@@ -28,10 +28,4 @@ Data frame with DLS match information including:
 \description{
 Queries the database to identify matches affected by DLS method.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-dls_matches <- identify_dls_matches(conn, event_filter = "IPL")
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

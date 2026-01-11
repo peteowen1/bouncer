@@ -18,3 +18,4 @@ List with environments for each skill type, or NULL if no data
 Loads the final venue skill indices for all venues from existing data.
 Used for incremental processing.
 }
+\keyword{internal}

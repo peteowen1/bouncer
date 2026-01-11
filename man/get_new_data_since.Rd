@@ -17,3 +17,4 @@ Named list with new_matches and new_deliveries
 \description{
 Returns counts of new matches and deliveries since a step was last run.
 }
+\keyword{internal}

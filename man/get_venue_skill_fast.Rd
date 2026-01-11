@@ -20,3 +20,4 @@ List with run_rate_skill, wicket_rate_skill, boundary_rate, dot_rate
 Fast lookup of venue skill indices from pre-loaded data.
 These are the residual-based venue skills calculated from the agnostic model.
 }
+\keyword{internal}

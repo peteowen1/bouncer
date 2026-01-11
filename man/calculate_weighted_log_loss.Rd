@@ -22,3 +22,4 @@ Scalar weighted log loss value
 Computes weighted log loss (cross-entropy) for probability predictions.
 Used as the objective function for ELO parameter optimization.
 }
+\keyword{internal}

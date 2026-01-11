@@ -15,3 +15,4 @@ Character string with formatted report
 \description{
 Creates a formatted prediction report for a match.
 }
+\keyword{internal}

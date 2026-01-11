@@ -1,0 +1,215 @@
+---
+title: "Match Simulation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Match Simulation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+This vignette covers bouncer's Monte Carlo simulation capabilities. By simulating matches thousands of times, you can:
+- Estimate win probabilities with uncertainty ranges
+- Understand the distribution of possible outcomes
+- Simulate entire seasons to calculate playoff odds
+
+## Why Simulate?
+
+A single prediction gives one number (e.g., "65% win probability"). Simulation gives you the full distribution: not just who wins, but by how much, and how often various scenarios occur.
+
+## Match Simulation
+
+Simulate a single match many times:
+
+```{r}
+library(bouncer)
+
+# Simulate India vs Australia 10,000 times
+results <- simulate_match_ballbyball(
+  team1 = "India",
+  team2 = "Australia",
+  format = "t20",
+  n_sims = 10000
+)
+
+# View summary
+print(results)
+```
+
+The results include:
+- Win percentage for each team
+- Score distribution (mean, median, percentiles)
+- Margin distribution
+
+## Quick Match Simulation
+
+For faster results with less detail:
+
+```{r}
+# Quick simulation (doesn't simulate ball-by-ball)
+quick_results <- quick_match_simulation(
+  team1 = "India",
+  team2 = "Australia",
+  format = "t20"
+)
+print(quick_results)
+```
+
+## Simulation Configuration
+
+Customize simulation parameters:
+
+```{r}
+# Create custom simulation config
+config <- create_simulation_config(
+  n_sims = 5000,
+  seed = 42,  # For reproducibility
+  format = "t20"
+)
+
+# Use in simulation
+results <- simulate_match_ballbyball(
+  team1 = "Mumbai Indians",
+  team2 = "Chennai Super Kings",
+  format = "t20",
+  config = config
+)
+```
+
+## Innings Simulation
+
+Simulate a single innings:
+
+```{r}
+# Simulate an innings
+innings_result <- simulate_innings(
+  batting_team = "India",
+  bowling_team = "Australia",
+  format = "t20",
+  target = NULL  # First innings, no target
+)
+print(innings_result)
+
+# Simulate a chase
+chase_result <- simulate_innings(
+  batting_team = "Australia",
+  bowling_team = "India",
+  format = "t20",
+  target = 185
+)
+print(chase_result)
+```
+
+## Season Simulation
+
+Simulate an entire tournament:
+
+```{r}
+# Simulate IPL season
+season_results <- simulate_season(
+  event = "Indian Premier League",
+  season = "2024",
+  n_sims = 1000
+)
+
+# View playoff probabilities
+print(season_results$playoff_odds)
+```
+
+### Running Multiple Seasons
+
+For more accurate playoff odds:
+
+```{r}
+# Run 10,000 season simulations
+season_n <- simulate_season_n(
+  event = "Indian Premier League",
+  season = "2024",
+  n_sims = 10000
+)
+
+# Each team's probability of:
+# - Making playoffs
+# - Finishing top 2
+# - Winning the tournament
+print(season_n$summary)
+```
+
+## IPL Playoff Simulation
+
+Simulate the IPL playoff bracket specifically:
+
+```{r}
+# Simulate playoffs with the top 4 teams
+playoff_results <- simulate_ipl_playoffs(
+  qualifier1_teams = c("Gujarat Titans", "Chennai Super Kings"),
+  eliminator_teams = c("Lucknow Super Giants", "Mumbai Indians"),
+  n_sims = 10000,
+  format = "t20"
+)
+
+# Championship probabilities
+print(playoff_results)
+```
+
+## Interpreting Results
+
+### Win Probability Confidence
+
+From 10,000 simulations:
+- If Team A wins 6,500 simulations, we're confident they win ~65% of the time
+- The uncertainty is roughly ±1% for 10,000 sims
+
+### Score Distribution
+
+```{r}
+# Example output interpretation
+# Mean score: 165.3
+# Median score: 164
+# 10th percentile: 142 (bad day)
+# 90th percentile: 188 (good day)
+```
+
+### Margin Distribution
+
+Simulations also show likely winning margins:
+- Median winning margin
+- Probability of close games (< 10 runs or < 2 wickets)
+- Probability of blowouts
+
+## Setting Seeds for Reproducibility
+
+```{r}
+# Same seed = same results
+set.seed(42)
+result1 <- simulate_match_ballbyball("India", "Australia", "t20", n_sims = 100)
+
+set.seed(42)
+result2 <- simulate_match_ballbyball("India", "Australia", "t20", n_sims = 100)
+
+# result1 and result2 are identical
+```
+
+## Computational Considerations
+
+| Simulations | Time (typical) | Use Case |
+|-------------|----------------|----------|
+| 100 | < 1 second | Quick check |
+| 1,000 | ~5 seconds | Reasonable estimate |
+| 10,000 | ~30 seconds | Publication quality |
+| 100,000 | ~5 minutes | High precision research |
+
+## See Also
+
+- `vignette("getting-started")` - Package overview and setup
+- `vignette("predictions")` - Single-point predictions
+- `vignette("match-analysis")` - Analyzing real match data

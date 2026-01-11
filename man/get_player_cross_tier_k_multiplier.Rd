@@ -32,13 +32,4 @@ the K-factor is boosted to speed calibration.
 This uses the same principle as team ELO: cross-tier matches are more
 informative for determining true skill levels.
 }
-\examples{
-# Same tier (both Tier 2 domestic leagues)
-get_player_cross_tier_k_multiplier(2, 2)  # 1.0
-
-# NZ domestic batter (Tier 2) vs IPL bowler (Tier 1) - 1.3x boost
-get_player_cross_tier_k_multiplier(2, 1)  # 1.3
-
-# Development player (Tier 4) vs IPL bowler (Tier 1) - 1.9x boost
-get_player_cross_tier_k_multiplier(4, 1)  # 1.9
-}
+\keyword{internal}

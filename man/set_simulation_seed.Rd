@@ -15,3 +15,4 @@ Invisibly returns the seed
 \description{
 Sets the random seed for reproducible simulations.
 }
+\keyword{internal}

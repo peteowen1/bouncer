@@ -17,3 +17,4 @@ List of bowler skill objects
 \description{
 Creates a list of default bowler skill objects for simulation.
 }
+\keyword{internal}

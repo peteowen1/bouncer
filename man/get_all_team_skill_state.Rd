@@ -18,3 +18,4 @@ List with environments for each skill type
 Loads the final skill indices for all teams from existing data.
 Used for incremental processing.
 }
+\keyword{internal}

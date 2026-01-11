@@ -17,3 +17,4 @@ Creates default alias mappings from the bundled venue_aliases.csv file.
 The CSV file is located at inst/extdata/venue_aliases.csv and can be
 edited to add new aliases without modifying code.
 }
+\keyword{internal}

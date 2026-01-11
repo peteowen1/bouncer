@@ -29,3 +29,4 @@ Invisibly returns TRUE on success
 \description{
 Stores ELO calculation parameters after a run completes.
 }
+\keyword{internal}

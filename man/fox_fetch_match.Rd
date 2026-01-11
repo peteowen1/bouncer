@@ -23,3 +23,4 @@ A data.frame of ball-by-ball data, or NULL if no data
 \description{
 Fetch ball-by-ball data for a single match
 }
+\keyword{internal}

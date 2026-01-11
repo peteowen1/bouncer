@@ -22,10 +22,4 @@ have lower K-factors (more stable ratings).
 \details{
 Formula: K = K_MIN + (K_MAX - K_MIN) * exp(-deliveries / K_HALFLIFE)
 }
-\examples{
-# New player (0 deliveries) gets max K
-get_player_dynamic_k_run(0, "t20")  # Returns 40
-
-# Experienced player (1000 deliveries) gets close to min K
-get_player_dynamic_k_run(1000, "t20")  # Returns ~13
-}
+\keyword{internal}

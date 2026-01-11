@@ -29,9 +29,4 @@ List with avg_score, chase_success_rate, n_matches
 \description{
 Calculates venue-specific features for prediction.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-venue_stats <- calculate_venue_features("Wankhede Stadium", "t20", conn)
-}
-}
+\keyword{internal}

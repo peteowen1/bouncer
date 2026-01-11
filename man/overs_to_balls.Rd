@@ -16,7 +16,4 @@ Integer. Total balls
 Converts overs in cricket notation (e.g., 18.4 = 18 overs + 4 balls)
 to total balls. Cricket notation uses .1-.5 for balls, not true decimals.
 }
-\examples{
-overs_to_balls(18.4)  # Returns 112 (18*6 + 4)
-overs_to_balls(20.0)  # Returns 120
-}
+\keyword{internal}

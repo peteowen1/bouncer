@@ -18,9 +18,4 @@ Invisibly returns TRUE on success
 Creates a table to store dual ELO ratings (survival/scoring for batters,
 strike/economy for bowlers). Can be joined to deliveries via delivery_id.
 }
-\examples{
-\dontrun{
-create_dual_elo_table()
-create_dual_elo_table(overwrite = TRUE)
-}
-}
+\keyword{internal}

@@ -20,13 +20,4 @@ Invisibly returns TRUE on success
 Adds the new skill index columns to an existing pre_match_features table.
 This is a non-destructive migration that preserves all existing data.
 }
-\examples{
-\dontrun{
-# Add skill columns to existing database
-add_skill_columns_to_features()
-
-# Or with existing connection
-conn <- get_db_connection()
-add_skill_columns_to_features(conn = conn)
-}
-}
+\keyword{internal}

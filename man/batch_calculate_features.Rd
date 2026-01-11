@@ -19,10 +19,4 @@ Data frame with features for all matches
 \description{
 Calculates pre-match features for multiple matches efficiently.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-match_ids <- c("1234567", "1234568", "1234569")
-features <- batch_calculate_features(match_ids, conn)
-}
-}
+\keyword{internal}

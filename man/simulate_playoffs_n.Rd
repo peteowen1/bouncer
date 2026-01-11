@@ -21,3 +21,4 @@ Data frame with championship and final appearance probabilities
 \description{
 Runs multiple playoff simulations and aggregates championship probabilities.
 }
+\keyword{internal}

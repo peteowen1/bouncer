@@ -21,3 +21,4 @@ Numeric. Average first innings total.
 \description{
 Computes the actual average first innings score for a segment.
 }
+\keyword{internal}

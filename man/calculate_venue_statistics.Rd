@@ -35,10 +35,4 @@ Data frame with columns:
 \description{
 Calculates historical venue performance metrics from match data.
 }
-\examples{
-\dontrun{
-conn <- get_db_connection()
-venue_stats <- calculate_venue_statistics(conn, match_type = "t20")
-DBI::dbDisconnect(conn, shutdown = TRUE)
-}
-}
+\keyword{internal}

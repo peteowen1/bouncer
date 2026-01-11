@@ -25,10 +25,4 @@ Data frame with additional classification columns:
 Adds outcome classification columns to match data for filtering.
 Identifies DLS matches, super overs, ties, no results, and knockout games.
 }
-\examples{
-\dontrun{
-matches <- classify_match_outcomes(matches)
-# Filter to valid training matches
-valid_matches <- matches[matches$is_valid_for_training, ]
-}
-}
+\keyword{internal}

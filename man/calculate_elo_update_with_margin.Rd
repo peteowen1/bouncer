@@ -39,8 +39,4 @@ Uses the standard ELO formula with a G-factor multiplier.
 \details{
 Formula: new_elo = old_elo + K * G * (actual - expected)
 }
-\examples{
-# Home team wins by 30 runs
-calculate_elo_update_with_margin(1550, 1450, won = TRUE, unified_margin = 30,
-                                  k_factor = 32, home_advantage = 40, format = "t20")
-}
+\keyword{internal}
