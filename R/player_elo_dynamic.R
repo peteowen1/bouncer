@@ -21,14 +21,7 @@
 #' @param format Character. Match format: "t20", "odi", or "test".
 #'
 #' @return Numeric. The K-factor to use for this delivery's ELO update.
-#' @export
-#'
-#' @examples
-#' # New player (0 deliveries) gets max K
-#' get_player_dynamic_k_run(0, "t20")  # Returns 40
-#'
-#' # Experienced player (1000 deliveries) gets close to min K
-#' get_player_dynamic_k_run(1000, "t20")  # Returns ~13
+#' @keywords internal
 get_player_dynamic_k_run <- function(deliveries, format = "t20") {
   format <- tolower(format)
 
@@ -72,11 +65,7 @@ get_player_dynamic_k_run <- function(deliveries, format = "t20") {
 #' @param format Character. Match format: "t20", "odi", or "test".
 #'
 #' @return Numeric. The K-factor to use for this delivery's wicket ELO update.
-#' @export
-#'
-#' @examples
-#' get_player_dynamic_k_wicket(0, "t20")    # Returns 16 (max for new player)
-#' get_player_dynamic_k_wicket(600, "t20")  # Returns ~7.5 (mid-career)
+#' @keywords internal
 get_player_dynamic_k_wicket <- function(deliveries, format = "t20") {
   format <- tolower(format)
 
@@ -130,18 +119,7 @@ get_player_dynamic_k_wicket <- function(deliveries, format = "t20") {
 #' @param team_weight Numeric. Weight for team ELO in blend (default 0.7).
 #'
 #' @return Numeric. A K-factor multiplier (typically 0.5 to 1.5).
-#' @export
-#'
-#' @examples
-#' # Batter scores against a 1700 ELO bowler (strong opponent) - boosted gain
-#' get_player_opponent_k_modifier(1500, 1700, player_won = TRUE)  # 1.2
-#'
-#' # Batter scores against a 1100 ELO bowler (weak opponent) - reduced gain
-#' get_player_opponent_k_modifier(1500, 1100, player_won = TRUE)  # 0.6
-#'
-#' # Batter scores against 1500 bowler from 1350 team - weak team reduces gain
-#' get_player_opponent_k_modifier(1500, 1500, player_won = TRUE,
-#'                                 opponent_team_elo = 1350)  # ~0.74
+#' @keywords internal
 get_player_opponent_k_modifier <- function(player_elo, opponent_elo,
                                             player_won,
                                             opponent_team_elo = NULL,
@@ -188,13 +166,7 @@ get_player_opponent_k_modifier <- function(player_elo, opponent_elo,
 #' @param event_name Character. The event/tournament name.
 #'
 #' @return Numeric. Starting ELO for the player (1400-1525).
-#' @export
-#'
-#' @examples
-#' get_player_tier_starting_elo("Indian Premier League")  # 1525
-#' get_player_tier_starting_elo("Vitality Blast")         # 1500
-#' get_player_tier_starting_elo("ACC Qualifier")          # 1450
-#' get_player_tier_starting_elo("Kwibuka T20")            # 1400
+#' @keywords internal
 get_player_tier_starting_elo <- function(event_name) {
   tier <- get_event_tier(event_name)
   switch(tier,
@@ -220,18 +192,7 @@ get_player_tier_starting_elo <- function(event_name) {
 #' @param elo_type Character. "run" or "wicket" to select K parameters.
 #'
 #' @return Numeric. The final adjusted K-factor.
-#' @export
-#'
-#' @examples
-#' # New batter (50 deliveries) scoring against strong bowler (1600 ELO)
-#' get_player_adjusted_k(
-#'   deliveries = 50,
-#'   player_elo = 1500,
-#'   opponent_elo = 1600,
-#'   player_won = TRUE,
-#'   format = "t20",
-#'   elo_type = "run"
-#' )
+#' @keywords internal
 get_player_adjusted_k <- function(deliveries, player_elo, opponent_elo,
                                    player_won, format = "t20",
                                    elo_type = "run") {
@@ -262,7 +223,7 @@ get_player_adjusted_k <- function(deliveries, player_elo, opponent_elo,
 #'   If FALSE, uses static K-factors from original system.
 #'
 #' @return List with all parameters needed for ELO calculation.
-#' @export
+#' @keywords internal
 build_player_elo_params <- function(format = "t20", use_dynamic_k = TRUE) {
  format <- tolower(format)
 

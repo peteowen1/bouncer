@@ -386,7 +386,7 @@ calculate_runs_diff <- function(match_state) {
 #' @param format Character. Format for default values
 #'
 #' @return List of batter skill objects
-#' @export
+#' @keywords internal
 create_default_batters <- function(n = 11, format = "t20") {
   start_vals <- get_skill_start_values(format)
 
@@ -411,7 +411,7 @@ create_default_batters <- function(n = 11, format = "t20") {
 #' @param format Character. Format for default values
 #'
 #' @return List of bowler skill objects
-#' @export
+#' @keywords internal
 create_default_bowlers <- function(n = 6, format = "t20") {
   start_vals <- get_skill_start_values(format)
 

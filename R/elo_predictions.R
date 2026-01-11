@@ -18,29 +18,7 @@
 #' @param db_path Character. Database path
 #'
 #' @return Numeric. Expected runs for this delivery
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Basic prediction
-#' expected_runs <- predict_expected_runs(
-#'   "V Kohli",
-#'   "J Bumrah",
-#'   context = list(match_type = "t20")
-#' )
-#'
-#' # With context
-#' expected_runs <- predict_expected_runs(
-#'   "V Kohli",
-#'   "J Bumrah",
-#'   context = list(
-#'     match_type = "t20",
-#'     venue = "Wankhede Stadium",
-#'     over = 18,
-#'     phase = "death"
-#'   )
-#' )
-#' }
+#' @keywords internal
 predict_expected_runs <- function(batter_id,
                                    bowler_id,
                                    context = list(match_type = "t20"),
@@ -89,24 +67,7 @@ predict_expected_runs <- function(batter_id,
 #' @inheritParams predict_expected_runs
 #'
 #' @return Numeric. Probability of wicket (0 to 1)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Basic prediction
-#' wicket_prob <- predict_wicket_probability(
-#'   "V Kohli",
-#'   "J Bumrah",
-#'   context = list(match_type = "t20")
-#' )
-#'
-#' # Death overs (higher pressure)
-#' wicket_prob <- predict_wicket_probability(
-#'   "V Kohli",
-#'   "J Bumrah",
-#'   context = list(match_type = "t20", over = 19, phase = "death")
-#' )
-#' }
+#' @keywords internal
 predict_wicket_probability <- function(batter_id,
                                         bowler_id,
                                         context = list(match_type = "t20"),

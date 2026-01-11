@@ -11,16 +11,7 @@
 #' @param db_path Character. Database path
 #'
 #' @return Numeric. ELO rating at that delivery (or NA if not found)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Get Kohli's batting ELO after delivery #12345
-#' elo <- get_elo_at_delivery(12345, "V Kohli", when = "after", rating_type = "batting")
-#'
-#' # Get Bumrah's bowling ELO before delivery #67890
-#' elo <- get_elo_at_delivery(67890, "J Bumrah", when = "before", rating_type = "bowling")
-#' }
+#' @keywords internal
 get_elo_at_delivery <- function(delivery_id,
                                  player_id,
                                  when = "after",
@@ -65,16 +56,7 @@ get_elo_at_delivery <- function(delivery_id,
 #' @param db_path Character. Database path
 #'
 #' @return Data frame with delivery-by-delivery ELO progression
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # See how Kohli's batting ELO changed during a match
-#' progression <- get_match_elo_progression("12345", "V Kohli", "batting")
-#'
-#' # Plot it
-#' plot(progression$delivery_id, progression$elo_after, type = "l")
-#' }
+#' @keywords internal
 get_match_elo_progression <- function(match_id,
                                        player_id,
                                        rating_type = "batting",
@@ -123,14 +105,7 @@ get_match_elo_progression <- function(match_id,
 #' @param db_path Character. Database path
 #'
 #' @return Data frame with delivery details and ELO ratings
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Get full details for a specific delivery
-#' delivery <- get_delivery_with_elos(12345)
-#' print(delivery)
-#' }
+#' @keywords internal
 get_delivery_with_elos <- function(delivery_id, db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
@@ -179,19 +154,7 @@ get_delivery_with_elos <- function(delivery_id, db_path = NULL) {
 #' @param db_path Character. Database path
 #'
 #' @return Data frame with matching deliveries
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Find when Kohli's batting ELO was at peak (1700+)
-#' peak_deliveries <- find_deliveries_by_elo_range(
-#'   "V Kohli",
-#'   elo_min = 1700,
-#'   elo_max = 2000,
-#'   rating_type = "batting",
-#'   limit = 100
-#' )
-#' }
+#' @keywords internal
 find_deliveries_by_elo_range <- function(player_id,
                                           elo_min,
                                           elo_max,
@@ -246,14 +209,7 @@ find_deliveries_by_elo_range <- function(player_id,
 #' @param db_path Character. Database path
 #'
 #' @return List with batter and bowler ELO info and matchup analysis
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Compare batter vs bowler ELOs at delivery
-#' comparison <- compare_elos_at_delivery(12345, when = "before")
-#' print(comparison$advantage)  # Who was favored?
-#' }
+#' @keywords internal
 compare_elos_at_delivery <- function(delivery_id,
                                       when = "before",
                                       db_path = NULL) {

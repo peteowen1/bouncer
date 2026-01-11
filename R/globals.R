@@ -274,6 +274,30 @@ utils::globalVariables(c(
   "venue_wicket_rate_skill"
 ))
 
+# Visualization variables (from plotting functions)
+utils::globalVariables(c(
+  # plot_elo_history
+  "elo_result",
+  # plot_player_comparison
+  "Metric",
+  "Value",
+  "NormValue",
+  "Player",
+  # plot_score_progression
+  "ball_number",
+  "cumulative_runs",
+  # plot_skill_progression
+  "value",
+  "match_num",
+  "skill_type",
+  # plot_team_strength
+  "Skill",
+  "Category",
+  # plot_win_probability
+  "match_ball",
+  "win_prob_after"
+))
+
 # Score projection constants (from constants.R and score_projection.R)
 utils::globalVariables(c(
   # EIS constants

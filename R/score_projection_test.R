@@ -259,14 +259,15 @@ calculate_test_projected_score <- function(current_score,
     match_overs_remaining = match_overs_remaining
   )
 
-  # Convert to balls
-  balls_remaining <- test_overs_to_balls(innings_overs_remaining)
+  # Convert wickets remaining to wickets fallen for new interface
+  wickets_fallen <- 10 - wickets_remaining
 
-  # Use general projection function
+  # Use general projection function with new interface
+  # overs_bowled is the innings progress (already provided as input)
   calculate_projected_score(
     current_score = current_score,
-    balls_remaining = balls_remaining,
-    wickets_remaining = wickets_remaining,
+    wickets = wickets_fallen,
+    overs = overs_bowled,
     expected_initial_score = expected_initial_score,
     format = "test",
     params = params,

@@ -43,7 +43,7 @@ get_team_skill_alpha <- function(format = "t20") {
 #' @param format Character. Format: "t20", "odi", or "test"
 #'
 #' @return Named list with start_runs and start_wicket (both 0 for residual-based)
-#' @export
+#' @keywords internal
 get_team_skill_start_values <- function(format = "t20") {
   # For residual-based indices, starting value is 0 (no deviation from expected)
   list(
@@ -66,7 +66,7 @@ get_team_skill_start_values <- function(format = "t20") {
 #' @param alpha Numeric. Learning rate (0-1). Higher = faster adaptation.
 #'
 #' @return Numeric. Updated skill index
-#' @export
+#' @keywords internal
 update_team_skill <- function(old_skill, actual, expected, alpha) {
   residual <- actual - expected
   (1 - alpha) * old_skill + alpha * residual
@@ -82,7 +82,7 @@ update_team_skill <- function(old_skill, actual, expected, alpha) {
 #' @param overwrite Logical. If TRUE, drops and recreates table. Default FALSE.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 create_format_team_skill_table <- function(format = "t20", conn, overwrite = FALSE) {
 
   table_name <- paste0(format, "_team_skill")
@@ -153,7 +153,7 @@ create_format_team_skill_table <- function(format = "t20", conn, overwrite = FAL
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 insert_format_team_skills <- function(skills_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
@@ -197,7 +197,7 @@ insert_format_team_skills <- function(skills_df, format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with team skill statistics
-#' @export
+#' @keywords internal
 get_format_team_skill_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
@@ -235,7 +235,7 @@ get_format_team_skill_stats <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return List with environments for each skill type
-#' @export
+#' @keywords internal
 get_all_team_skill_state <- function(format = "t20", conn) {
   table_name <- get_skill_table_name(format, "team_skill")
 
@@ -338,7 +338,7 @@ get_all_team_skill_state <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with last_delivery_id and last_match_date, or NULL
-#' @export
+#' @keywords internal
 get_last_processed_team_skill_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_team_skill")
 
@@ -371,7 +371,7 @@ get_last_processed_team_skill_delivery <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Named list with skill indices, or NULL if not found
-#' @export
+#' @keywords internal
 get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
@@ -426,7 +426,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
 #' @param skill_columns Character vector. Which skill columns to join.
 #'
 #' @return Data frame with team skill columns joined
-#' @export
+#' @keywords internal
 join_team_skill_indices <- function(deliveries_df, format = "t20", conn,
                                      skill_columns = c("batting_team_runs_skill",
                                                        "batting_team_wicket_skill",
@@ -488,7 +488,7 @@ join_team_skill_indices <- function(deliveries_df, format = "t20", conn,
 #' @param fill_missing Logical. If TRUE, fills NA with 0 (neutral). Default TRUE.
 #'
 #' @return Data frame with team skill features added
-#' @export
+#' @keywords internal
 add_team_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing = TRUE) {
 
   # Join team skill indices

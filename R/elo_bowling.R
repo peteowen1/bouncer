@@ -13,16 +13,7 @@
 #' @param player_matches Numeric. Number of matches bowler has played
 #'
 #' @return Numeric. Updated bowling ELO rating
-#' @export
-#'
-#' @examples
-#' # Bowler took a wicket
-#' update_bowling_elo(1520, 1550, runs_batter = 0, is_wicket = TRUE,
-#'                     is_boundary = FALSE, match_type = "t20")
-#'
-#' # Bowler conceded 6 runs
-#' update_bowling_elo(1520, 1550, runs_batter = 6, is_wicket = FALSE,
-#'                     is_boundary = TRUE, match_type = "t20")
+#' @keywords internal
 update_bowling_elo <- function(current_bowling_elo,
                                 batting_elo,
                                 runs_batter,
@@ -94,21 +85,7 @@ get_bowling_elo <- function(player_id,
 #' @param db_path Character. Database path. If NULL, uses default.
 #'
 #' @return Data frame with columns: match_id, match_date, match_type, elo_bowling
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Get full bowling ELO history
-#' bumrah_history <- get_bowling_elo_history("J Bumrah")
-#'
-#' # Get T20 history for specific period
-#' bumrah_t20_2023 <- get_bowling_elo_history(
-#'   "J Bumrah",
-#'   match_type = "t20",
-#'   start_date = as.Date("2023-01-01"),
-#'   end_date = as.Date("2023-12-31")
-#' )
-#' }
+#' @keywords internal
 get_bowling_elo_history <- function(player_id,
                                      match_type = "all",
                                      start_date = NULL,
@@ -127,16 +104,7 @@ get_bowling_elo_history <- function(player_id,
 #' @param is_boundary Logical. Whether it was a boundary
 #'
 #' @return Numeric value between 0 and 1 (bowler's perspective)
-#' @export
-#'
-#' @examples
-#' # Wicket - best outcome for bowler
-#' calculate_bowling_outcome_score(0, is_wicket = TRUE, is_boundary = FALSE)
-#' # Returns 1.0
-#'
-#' # Six runs conceded - worst outcome
-#' calculate_bowling_outcome_score(6, is_wicket = FALSE, is_boundary = TRUE)
-#' # Returns 0.0
+#' @keywords internal
 calculate_bowling_outcome_score <- function(runs_batter, is_wicket, is_boundary = FALSE) {
   # Get batter's score and invert it for bowler
   batter_score <- calculate_delivery_outcome_score(runs_batter, is_wicket, is_boundary)

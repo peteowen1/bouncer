@@ -127,7 +127,7 @@ matches <- matches %>%
       outcome_type %in% c("tie", "draw", "no result", "no_result") ~ outcome_type,
       TRUE ~ "unknown"
     ),
-    # Calculate overs remaining for wickets wins
+    # Calculate overs remaining for wickets wins (cricket notation)
     overs_remaining = case_when(
       win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
         pmax(0, overs_per_innings - team2_overs),
@@ -164,8 +164,8 @@ for (i in seq_len(nrow(matches))) {
   calculated_margins[i] <- calculate_unified_margin(
     team1_score = m$team1_score,
     team2_score = m$team2_score,
-    overs_remaining = m$overs_remaining,
     wickets_remaining = m$wickets_remaining,
+    overs_remaining = m$overs_remaining,
     win_type = m$win_type,
     format = m$format
   )

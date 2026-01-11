@@ -18,7 +18,7 @@
 #'   If NULL (default), derives format from match_type column.
 #'
 #' @return List with club_home (named character vector) and venue_country (named character vector)
-#' @export
+#' @keywords internal
 build_home_lookups <- function(all_matches, format = NULL) {
 
   # Format groupings for deriving format from match_type
@@ -92,7 +92,7 @@ build_home_lookups <- function(all_matches, format = NULL) {
 #' @param venue_country_lookup Named vector mapping venue to country
 #'
 #' @return Integer: 1 if team1 is home, -1 if team2 is home, 0 if neutral/unknown
-#' @export
+#' @keywords internal
 detect_home_team <- function(team1, team2, team1_id, team2_id, venue, team_type,
                              club_home_lookup, venue_country_lookup) {
   if (is.na(venue) || venue == "") return(0L)
@@ -131,12 +131,7 @@ detect_home_team <- function(team1, team2, team1_id, team2_id, venue, team_type,
 #' Country names match team names as they appear in the data (e.g., "West Indies" not "Barbados").
 #'
 #' @return Named list where names are venue names and values are country names
-#' @export
-#'
-#' @examples
-#' venue_map <- get_venue_country_map()
-#' venue_map[["Wankhede Stadium"]]  # Returns "India"
-#' venue_map[["Kensington Oval"]]   # Returns "West Indies"
+#' @keywords internal
 get_venue_country_map <- function() {
   list(
     # ===========================================
@@ -854,13 +849,7 @@ get_venue_country_map <- function() {
 #' @param all_matches Data frame of matches with columns: team_type, venue, team1, team2
 #'
 #' @return Named character vector where names are venue names and values are country names
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' venue_lookup <- build_venue_country_lookup(all_matches)
-#' venue_lookup[["Wankhede Stadium"]]  # Returns "India"
-#' }
+#' @keywords internal
 build_venue_country_lookup <- function(all_matches) {
   # Get unique venues from international matches
   intl_matches <- all_matches %>% dplyr::filter(.data$team_type == "international")

@@ -101,16 +101,7 @@ get_elo_history_internal <- function(player_id, rating_type, match_type, start_d
 #' @param player_matches Numeric. Number of matches batter has played
 #'
 #' @return Numeric. Updated batting ELO rating
-#' @export
-#'
-#' @examples
-#' # Batter scored 4 runs
-#' update_batting_elo(1550, 1520, runs_batter = 4, is_wicket = FALSE,
-#'                     is_boundary = TRUE, match_type = "t20")
-#'
-#' # Batter got out for 0
-#' update_batting_elo(1550, 1520, runs_batter = 0, is_wicket = TRUE,
-#'                     is_boundary = FALSE, match_type = "t20")
+#' @keywords internal
 update_batting_elo <- function(current_batting_elo,
                                 bowling_elo,
                                 runs_batter,
@@ -178,21 +169,7 @@ get_batting_elo <- function(player_id,
 #' @param db_path Character. Database path. If NULL, uses default.
 #'
 #' @return Data frame with columns: match_id, match_date, match_type, elo_batting
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Get full batting ELO history
-#' kohli_history <- get_batting_elo_history("V Kohli")
-#'
-#' # Get T20 history for specific period
-#' kohli_t20_2023 <- get_batting_elo_history(
-#'   "V Kohli",
-#'   match_type = "t20",
-#'   start_date = as.Date("2023-01-01"),
-#'   end_date = as.Date("2023-12-31")
-#' )
-#' }
+#' @keywords internal
 get_batting_elo_history <- function(player_id,
                                      match_type = "all",
                                      start_date = NULL,

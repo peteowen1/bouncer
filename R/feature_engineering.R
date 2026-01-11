@@ -23,20 +23,7 @@
 #'     \item rr_last_N_overs: Run rate in last N overs
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Add rolling features to delivery data
-#' deliveries_with_features <- calculate_rolling_features(deliveries)
-#'
-#' # Custom windows
-#' deliveries_with_features <- calculate_rolling_features(
-#'   deliveries,
-#'   ball_windows = c(6, 12, 24),
-#'   over_windows = c(2, 4, 6)
-#' )
-#' }
+#' @keywords internal
 calculate_rolling_features <- function(dt, ball_windows = c(12, 24), over_windows = c(3, 6)) {
 
   df <- as.data.frame(dt)
@@ -121,13 +108,7 @@ calculate_rolling_features <- function(dt, ball_windows = c(12, 24), over_window
 #'     \item balls_remaining: Balls left in innings (NA for Test)
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' phase_data <- calculate_phase_features(over = 12, ball = 3, match_type = "t20")
-#' # Returns: phase = "middle", overs_into_phase = 6, etc.
-#' }
+#' @keywords internal
 calculate_phase_features <- function(over, ball, match_type = "t20") {
 
   match_type <- tolower(match_type)
@@ -216,14 +197,7 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
 #'     \item chase_success_rate: Proportion of successful chases
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' venue_stats <- calculate_venue_statistics(conn, match_type = "t20")
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 calculate_venue_statistics <- function(conn, venue_filter = NULL, match_type = "t20", min_matches = 5) {
 
   # Build venue filter clause
@@ -294,19 +268,7 @@ calculate_venue_statistics <- function(conn, venue_filter = NULL, match_type = "
 #'     \item is_death_chase: TRUE if in last 4 overs of chase
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Chasing 180, scored 100/3 with 30 balls left at 6.5 RPO
-#' pressure <- calculate_pressure_metrics(
-#'   target = 180,
-#'   current_runs = 100,
-#'   current_wickets = 3,
-#'   balls_remaining = 30,
-#'   current_run_rate = 6.5
-#' )
-#' }
+#' @keywords internal
 calculate_pressure_metrics <- function(target, current_runs, current_wickets,
                                        balls_remaining, current_run_rate) {
 
@@ -355,11 +317,7 @@ calculate_pressure_metrics <- function(target, current_runs, current_wickets,
 #'
 #' @return Numeric. Run rate (runs per over)
 #'
-#' @export
-#'
-#' @examples
-#' calculate_run_rate(runs = 85, balls = 60)
-#' # Returns 8.5 (runs per over)
+#' @keywords internal
 calculate_run_rate <- function(runs, balls) {
   overs <- balls / 6
   dplyr::case_when(
@@ -384,16 +342,7 @@ calculate_run_rate <- function(runs, balls) {
 #'
 #' @return Numeric. Expected runs per ball (capped between 0 and 6)
 #'
-#' @export
-#'
-#' @examples
-#' # Early in innings: projected 170, scored 30, 90 balls left
-#' calculate_expected_runs_per_ball(170, 30, 90)
-#' # Returns: (170 - 30) / 90 = 1.56 expected runs per ball
-#'
-#' # Late in innings: projected 165, scored 140, 12 balls left
-#' calculate_expected_runs_per_ball(165, 140, 12)
-#' # Returns: (165 - 140) / 12 = 2.08 expected runs per ball
+#' @keywords internal
 calculate_expected_runs_per_ball <- function(projected_score, current_runs, balls_remaining) {
 
   expected_runs <- dplyr::case_when(
@@ -420,16 +369,7 @@ calculate_expected_runs_per_ball <- function(projected_score, current_runs, ball
 #'
 #' @return Numeric. ERA value (actual - expected)
 #'
-#' @export
-#'
-#' @examples
-#' # Hit a 4 when expected 1.5 runs
-#' calculate_era(4, 1.5)
-#' # Returns: 2.5 (scored 2.5 above expectation)
-#'
-#' # Dot ball when expected 1.5 runs
-#' calculate_era(0, 1.5)
-#' # Returns: -1.5 (scored 1.5 below expectation)
+#' @keywords internal
 calculate_era <- function(actual_runs, expected_runs) {
   actual_runs - expected_runs
 }
@@ -460,24 +400,7 @@ calculate_era <- function(actual_runs, expected_runs) {
 #'     \item balls_surplus: balls_remaining - theoretical_min_balls
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Easy chase: need 20 runs from 30 balls with 8 wickets
-#' tail_features <- calculate_tail_calibration_features(
-#'   runs_needed = 20,
-#'   balls_remaining = 30,
-#'   wickets_in_hand = 8
-#' )
-#'
-#' # Difficult chase: need 60 runs from 18 balls with 2 wickets
-#' tail_features <- calculate_tail_calibration_features(
-#'   runs_needed = 60,
-#'   balls_remaining = 18,
-#'   wickets_in_hand = 2
-#' )
-#' }
+#' @keywords internal
 calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wickets_in_hand) {
 
   # Binary indicators for game decided
@@ -561,14 +484,7 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
 #'
 #' @return List of integer vectors, each containing row indices for a fold
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' folds <- create_grouped_folds(deliveries, n_folds = 5)
-#' # folds[[1]] contains row indices for fold 1
-#' # All deliveries from any given match are in the same fold
-#' }
+#' @keywords internal
 create_grouped_folds <- function(data, n_folds = 5, seed = 42) {
 
   set.seed(seed)

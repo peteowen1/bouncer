@@ -13,12 +13,12 @@
 #              │                                        │
 #              ├──> STEP 3: Player Skill Indices ───────┤
 #              │           (uses agnostic baseline)     │
-#              ├──> STEP 4: Team Skill Indices (NEW) ───┼──> STEP 7: Full Model
+#              ├──> STEP 4: Team Skill Indices ─────────┼──> STEP 7: Full Model
 #              │           (uses agnostic baseline)     │
 #              └──> STEP 5: Venue Skill Indices ────────┤
 #                          (uses agnostic baseline)     │
 #                                                       │
-#   STEP 6: Team ELO (game-level, unchanged) ───────────┤
+#   STEP 6: Team ELO (game-level) ─────────────────────┤
 #                                                       │
 #                                       ┌───────────────┘
 #                                       v
@@ -26,7 +26,9 @@
 #                                       │
 #                       STEP 9: Pre-Match Model Training
 #                                       │
-#                       STEP 10: Ready for Predictions/Simulations
+#                       STEP 10: Optimize Projection Params
+#                                       │
+#                       STEP 11: Calculate Per-Delivery Projections
 #
 # Usage:
 #   source("data-raw/run_full_pipeline.R")
@@ -100,7 +102,7 @@ if (FRESH_START) {
 if (!is.null(STEPS_TO_RUN)) {
   cli::cli_alert_info("Steps: {paste(STEPS_TO_RUN, collapse = ', ')}")
 } else {
-  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 6, 7, 8, 9)")
+  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)")
 }
 cat("\n")
 
@@ -563,6 +565,89 @@ if (should_run(9)) {
 }
 
 
+# Step 10: Projection Parameter Optimization ----
+
+if (should_run(10)) {
+  cli::cli_h1("Step 10: Optimize Projection Parameters")
+
+  # Check if projection params already exist
+  params_file <- file.path(dirname(DATA_RAW_DIR), "bouncerdata/models/projection_params_t20.rds")
+
+  if (file.exists(params_file) && !FRESH_START) {
+    cli::cli_alert_info("Projection parameters already exist at {params_file}")
+    cli::cli_alert_info("Skipping optimization. Set FRESH_START = TRUE to re-optimize.")
+    skipped_steps <- c(skipped_steps, "10_projection_params")
+  } else {
+    step_start <- Sys.time()
+    if (FRESH_START) {
+      cli::cli_alert_success("Running FRESH parameter optimization")
+    } else {
+      cli::cli_alert_success("Running initial parameter optimization")
+    }
+
+    # Source the optimization script
+    source(file.path(DATA_RAW_DIR, "ratings/projection/01_optimize_projection_params.R"), local = TRUE)
+
+    # Update pipeline state
+    conn <- get_db_connection(read_only = FALSE)
+    update_pipeline_state("projection_params", conn, status = "success")
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["10_projection_params"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 10: Projection Parameters", step_times[["10_projection_params"]])
+  }
+}
+
+
+# Step 11: Calculate Per-Delivery Projections ----
+
+if (should_run(11)) {
+  cli::cli_h1("Step 11: Calculate Per-Delivery Projections")
+
+  # If FRESH_START, clear projection tables first
+  if (FRESH_START) {
+    cli::cli_alert_warning("FRESH_START: Clearing projection tables...")
+    conn <- get_db_connection(read_only = FALSE)
+    for (fmt in c("t20", "odi", "test")) {
+      tbl <- paste0(fmt, "_score_projection")
+      if (tbl %in% DBI::dbListTables(conn)) {
+        DBI::dbExecute(conn, paste0("DELETE FROM ", tbl))
+        cli::cli_alert_info("Cleared {tbl}")
+      }
+    }
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+  }
+
+  # Check smart skip
+  conn <- get_db_connection(read_only = TRUE)
+  skip_check <- check_smart_skip("score_projection", 11, conn, delivery_threshold = 0)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+
+  if (skip_check$should_skip && !FRESH_START) {
+    cli::cli_alert_info("Skipped: {skip_check$reason}")
+    skipped_steps <- c(skipped_steps, "11_score_projection")
+  } else {
+    step_start <- Sys.time()
+    if (FRESH_START) {
+      cli::cli_alert_success("Running FRESH projection calculation")
+    } else {
+      cli::cli_alert_success("Running: {skip_check$reason}")
+    }
+
+    # Source the calculation script
+    source(file.path(DATA_RAW_DIR, "ratings/projection/02_calculate_projections.R"), local = TRUE)
+
+    # Update pipeline state
+    conn <- get_db_connection(read_only = FALSE)
+    update_pipeline_state("score_projection", conn, status = "success")
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["11_score_projection"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 11: Score Projections", step_times[["11_score_projection"]])
+  }
+}
+
+
 # Summary ----
 
 total_time <- difftime(Sys.time(), pipeline_start, units = "mins")
@@ -605,8 +690,10 @@ cli::cli_bullets(c(
   "i" = "Models: ../bouncerdata/models/",
   " " = "  - agnostic_outcome_{{format}}.ubj",
   " " = "  - full_outcome_{{format}}.ubj",
+  " " = "  - projection_params_{{format}}.rds",
   "i" = "Features: ../bouncerdata/models/{{format}}_prediction_features.rds",
-  "i" = "Database: ../bouncerdata/bouncer.duckdb"
+  "i" = "Database: ../bouncerdata/bouncer.duckdb",
+  " " = "  - {{format}}_score_projection tables"
 ))
 
 cat("\n")
@@ -615,7 +702,8 @@ cli::cli_bullets(c(
   "i" = "Load models: load_agnostic_model('t20'), load_full_model('t20')",
   "i" = "Simulate match: quick_match_simulation(model, 't20')",
   "i" = "Get predictions: get_pre_match_features(match_id, conn)",
-  "i" = "Calculate attribution: calculate_player_attribution(model, deliveries, 't20')"
+  "i" = "Calculate attribution: calculate_player_attribution(model, deliveries, 't20')",
+  "i" = "Score projection: calculate_projected_score(score, balls, wickets, 't20')"
 ))
 
 cat("\n")

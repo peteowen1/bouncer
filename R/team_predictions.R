@@ -19,14 +19,7 @@
 #'     \item combined_elo: Weighted combination
 #'     \item player_details: Data frame with individual player ELOs
 #'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' roster <- c("V Kohli", "R Sharma", "KL Rahul", "S Gill", "J Bumrah")
-#' team_elo <- calculate_roster_elo(roster, match_type = "t20")
-#' print(team_elo$combined_elo)
-#' }
+#' @keywords internal
 calculate_roster_elo <- function(player_ids,
                                   match_type = "t20",
                                   weights = list(batting = 0.5, bowling = 0.5),
@@ -88,15 +81,7 @@ calculate_roster_elo <- function(player_ids,
 #'     \item overall_advantage: Team with higher combined ELO
 #'     \item expected_win_prob: Win probability for team 1
 #'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' india <- c("V Kohli", "R Sharma", "J Bumrah")
-#' australia <- c("S Smith", "D Warner", "P Cummins")
-#' comparison <- compare_team_rosters(india, australia, "India", "Australia")
-#' print(comparison$expected_win_prob)
-#' }
+#' @keywords internal
 compare_team_rosters <- function(team1_players,
                                   team2_players,
                                   team1_name = "Team 1",
@@ -174,15 +159,7 @@ compare_team_rosters <- function(team1_players,
 #'     \item confidence: Confidence level (difference from 50%)
 #'     \item team_comparison: Full roster comparison
 #'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' india <- c("V Kohli", "R Sharma", "J Bumrah")
-#' australia <- c("S Smith", "D Warner", "P Cummins")
-#' prediction <- predict_roster_matchup(india, australia, "India", "Australia")
-#' print(paste(prediction$predicted_winner, "win probability:", prediction$team1_win_prob))
-#' }
+#' @keywords internal
 predict_roster_matchup <- function(team1_players,
                                    team2_players,
                                    team1_name = "Team 1",
@@ -247,18 +224,7 @@ predict_roster_matchup <- function(team1_players,
 #'     \item run_rate_required: Required run rate (if chasing)
 #'     \item current_run_rate: Current run rate
 #'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' batters <- c("V Kohli", "R Sharma", "KL Rahul")
-#' bowlers <- c("P Cummins", "M Starc", "A Zampa")
-#' projection <- predict_innings_score(
-#'   batters, bowlers,
-#'   current_score = 80, current_wickets = 2, current_overs = 10
-#' )
-#' print(projection$projected_score)
-#' }
+#' @keywords internal
 predict_innings_score <- function(batting_team_players,
                                    bowling_team_players,
                                    current_score = 0,
@@ -350,15 +316,7 @@ predict_innings_score <- function(batting_team_players,
 #'     \item margin_distribution: Distribution of victory margins
 #'     \item confidence_interval: 95% CI for team1 win probability
 #'   }
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' india <- c("V Kohli", "R Sharma", "J Bumrah")
-#' australia <- c("S Smith", "D Warner", "P Cummins")
-#' sim <- simulate_match(india, australia, "India", "Australia", n_simulations = 1000)
-#' print(paste("India wins:", sim$team1_win_pct, "%"))
-#' }
+#' @keywords internal
 simulate_match <- function(team1_players,
                             team2_players,
                             team1_name = "Team 1",

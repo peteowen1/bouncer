@@ -18,14 +18,7 @@
 #' @param progress Logical. If TRUE, shows progress.
 #'
 #' @return Invisibly returns count of successfully loaded matches
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load all JSON files in a directory
-#' files <- list.files("cricket_data/", pattern = "\\.json$", full.names = TRUE)
-#' batch_load_matches(files)
-#' }
+#' @keywords internal
 batch_load_matches <- function(file_paths, path = NULL, batch_size = 500, progress = TRUE) {
   n_files <- length(file_paths)
 
@@ -291,7 +284,7 @@ insert_players_batch <- function(conn, players_df) {
 #' @param path Database path. If NULL, uses default.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 load_match_data <- function(parsed_data, path = NULL) {
   conn <- get_db_connection(path = path, read_only = FALSE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))

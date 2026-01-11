@@ -13,7 +13,7 @@
 #' @param team_tiers (unused, kept for API compatibility)
 #'
 #' @return Numeric vector of weights (same length as matches)
-#' @export
+#' @keywords internal
 calculate_match_weights <- function(matches, team_tiers) {
   weights <- rep(1.0, nrow(matches))
   weights <- weights + ifelse(matches$is_knockout, 1.0, 0)
@@ -56,7 +56,7 @@ calculate_match_weights <- function(matches, team_tiers) {
 #' @return Data frame with match_id, team1_wins, exp_win_prob, team1_elo_before,
 #'   team2_elo_before, cross_tier_weight, mov_multiplier. If return_final_elos=TRUE,
 #'   returns a list with match_results and final_elos.
-#' @export
+#' @keywords internal
 calculate_elos_for_optimization <- function(matches, k_max, k_min, k_halflife, cross_tier_boost,
                                              opp_k_boost = 0, opp_k_reduce = 0,
                                              home_advantage = 0,
@@ -228,7 +228,7 @@ calculate_elos_for_optimization <- function(matches, k_max, k_min, k_halflife, c
 #' @param eps Small epsilon to avoid log(0)
 #'
 #' @return Scalar weighted log loss value
-#' @export
+#' @keywords internal
 calculate_weighted_log_loss <- function(actual, predicted, weights, eps = 1e-7) {
   predicted <- pmax(pmin(predicted, 1 - eps), eps)
   log_losses <- -(actual * log(predicted) + (1 - actual) * log(1 - predicted))
@@ -274,7 +274,7 @@ get_dynamic_k <- function(matches_played, k_max, k_min, k_halflife) {
 #'   - PROPAGATION_ENABLED, PROPAGATION_FACTOR: Propagation settings
 #'   - CORR_THRESHOLD, CORR_W_*: Correlation matrix settings
 #'
-#' @export
+#' @keywords internal
 load_category_params <- function(category_name,
                                   params_dir = file.path("..", "bouncerdata", "models"),
                                   format = "t20") {

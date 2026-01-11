@@ -32,22 +32,7 @@
 #'   - venue_contribution: runs contribution from venue skills
 #'   - context_baseline: expected runs from context alone
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' model <- load_full_model("t20")
-#' contributions <- calculate_player_attribution(model, deliveries, "t20")
-#'
-#' # Aggregate batter contributions
-#' batter_summary <- contributions %>%
-#'   group_by(batter) %>%
-#'   summarise(
-#'     total_contribution = sum(batter_contribution),
-#'     avg_contribution = mean(batter_contribution),
-#'     n_deliveries = n()
-#'   )
-#' }
+#' @keywords internal
 calculate_player_attribution <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -161,7 +146,7 @@ calculate_player_attribution <- function(model, delivery_data, format = c("t20",
 #'
 #' @return Data frame with wicket probability contributions
 #'
-#' @export
+#' @keywords internal
 calculate_wicket_attribution <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -212,7 +197,7 @@ calculate_wicket_attribution <- function(model, delivery_data, format = c("t20",
 #'
 #' @return List with batter_summary and bowler_summary data frames
 #'
-#' @export
+#' @keywords internal
 summarize_player_contributions <- function(attribution_df) {
 
   if (!"batter" %in% names(attribution_df)) {
@@ -267,7 +252,7 @@ summarize_player_contributions <- function(attribution_df) {
 #'
 #' @return Data frame with summary statistics
 #'
-#' @export
+#' @keywords internal
 compare_expected_vs_actual <- function(attribution_df) {
 
   if (!"runs_batter" %in% names(attribution_df)) {
@@ -320,7 +305,7 @@ compare_expected_vs_actual <- function(attribution_df) {
 #'
 #' @return List with match-level and player-level attribution summaries
 #'
-#' @export
+#' @keywords internal
 get_match_attribution <- function(model, match_id, format = "t20", conn) {
 
   # Load delivery data for match

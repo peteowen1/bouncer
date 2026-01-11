@@ -45,7 +45,7 @@ get_venue_alpha <- function(format = "t20") {
 #' @param format Character. Format: "t20", "odi", or "test"
 #'
 #' @return Named list with start values for all four metrics
-#' @export
+#' @keywords internal
 get_venue_start_values <- function(format = "t20") {
   # Residual-based indices start at 0 (no deviation from expected)
   # Raw EMA indices use calibrated format-specific values
@@ -111,7 +111,7 @@ get_venue_min_balls <- function(format = "t20") {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Character. Canonical venue name
-#' @export
+#' @keywords internal
 normalize_venue <- function(venue, conn) {
   if (is.na(venue) || venue == "") {
     return(venue)
@@ -147,7 +147,7 @@ normalize_venue <- function(venue, conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Character vector. Canonical venue names
-#' @export
+#' @keywords internal
 normalize_venues <- function(venues, conn) {
   if (length(venues) == 0) {
     return(character(0))
@@ -199,7 +199,7 @@ normalize_venues <- function(venues, conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of aliases created
-#' @export
+#' @keywords internal
 build_default_venue_aliases <- function(conn) {
   cli::cli_h2("Building venue aliases")
 
@@ -266,7 +266,7 @@ build_default_venue_aliases <- function(conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 add_venue_alias <- function(alias, canonical, country = NULL, conn) {
   if (!"venue_aliases" %in% DBI::dbListTables(conn)) {
     cli::cli_alert_danger("venue_aliases table does not exist")
@@ -301,7 +301,7 @@ add_venue_alias <- function(alias, canonical, country = NULL, conn) {
 #' @param overwrite Logical. If TRUE, drops and recreates table. Default FALSE.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 create_format_venue_skill_table <- function(format = "t20", conn, overwrite = FALSE) {
 
   table_name <- paste0(format, "_venue_skill")
@@ -365,7 +365,7 @@ create_format_venue_skill_table <- function(format = "t20", conn, overwrite = FA
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 insert_format_venue_skills <- function(skills_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
@@ -412,7 +412,7 @@ insert_format_venue_skills <- function(skills_df, format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return List with environments for each skill type, or NULL if no data
-#' @export
+#' @keywords internal
 get_all_venue_skill_state <- function(format = "t20", conn) {
   table_name <- get_skill_table_name(format, "venue_skill")
 
@@ -482,7 +482,7 @@ get_all_venue_skill_state <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with last_delivery_id and last_match_date, or NULL
-#' @export
+#' @keywords internal
 get_last_processed_venue_skill_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_venue_skill")
 
@@ -518,7 +518,7 @@ get_last_processed_venue_skill_delivery <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Named list with skill indices, or NULL if not found
-#' @export
+#' @keywords internal
 get_venue_skill <- function(venue, format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
@@ -563,7 +563,7 @@ get_venue_skill <- function(venue, format = "t20", conn) {
 #' @param skill_columns Character vector. Which skill columns to join.
 #'
 #' @return Data frame with venue skill columns joined
-#' @export
+#' @keywords internal
 join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
                                       skill_columns = c("venue_run_rate",
                                                         "venue_wicket_rate",
@@ -658,7 +658,7 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
 #' @param fill_missing Logical. If TRUE, fills NA with starting values. Default TRUE.
 #'
 #' @return Data frame with venue skill features added
-#' @export
+#' @keywords internal
 add_venue_skill_features <- function(deliveries_df, format = "t20", conn,
                                       fill_missing = TRUE) {
 
@@ -707,7 +707,7 @@ add_venue_skill_features <- function(deliveries_df, format = "t20", conn,
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with venue skill statistics
-#' @export
+#' @keywords internal
 get_format_venue_skill_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
@@ -748,7 +748,7 @@ get_format_venue_skill_stats <- function(format = "t20", conn) {
 #' @param limit Integer. Number of venues to return. Default 20.
 #'
 #' @return Data frame with venue rankings
-#' @export
+#' @keywords internal
 get_venue_rankings <- function(format = "t20", metric = "run_rate", conn,
                                min_balls = NULL, limit = 20) {
 

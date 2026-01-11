@@ -13,13 +13,7 @@
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with one row containing all features for the match
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' features <- calculate_pre_match_features("1234567", conn)
-#' }
+#' @keywords internal
 calculate_pre_match_features <- function(match_id, conn) {
 
   # Get match info
@@ -165,13 +159,7 @@ match_info <- DBI::dbGetQuery(conn, "
 #' @param min_matches Integer. Minimum matches required (default 5)
 #'
 #' @return List with avg_score, chase_success_rate, n_matches
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' venue_stats <- calculate_venue_features("Wankhede Stadium", "t20", conn)
-#' }
+#' @keywords internal
 calculate_venue_features <- function(venue, match_type, conn,
                                       as_of_date = NULL,
                                       min_matches = 5) {
@@ -262,7 +250,7 @@ calculate_venue_features <- function(venue, match_type, conn,
 #' @param event_group Character. Group/stage information
 #'
 #' @return Logical. TRUE if knockout match
-#' @export
+#' @keywords internal
 detect_knockout_match <- function(event_match_number, event_group) {
 
   # Convert to character for pattern matching
@@ -291,14 +279,7 @@ detect_knockout_match <- function(event_match_number, event_group) {
 #' @param progress Logical. Show progress bar (default TRUE)
 #'
 #' @return Data frame with features for all matches
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' match_ids <- c("1234567", "1234568", "1234569")
-#' features <- batch_calculate_features(match_ids, conn)
-#' }
+#' @keywords internal
 batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
 
   n_matches <- length(match_ids)
@@ -351,7 +332,7 @@ batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 store_pre_match_features <- function(features, conn) {
 
   if (nrow(features) == 0) {
@@ -376,7 +357,7 @@ store_pre_match_features <- function(features, conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with features
-#' @export
+#' @keywords internal
 get_pre_match_features <- function(match_id = NULL, event_name = NULL,
                                     match_type = NULL, conn) {
 
@@ -418,13 +399,7 @@ get_pre_match_features <- function(match_id = NULL, event_name = NULL,
 #'   or the format-specific prediction_features.rds file)
 #'
 #' @return Data frame with additional derived feature columns
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' features <- readRDS("t20_prediction_features.rds")
-#' prepared <- prepare_prediction_features(features$train)
-#' }
+#' @keywords internal
 prepare_prediction_features <- function(df) {
   df %>%
     dplyr::mutate(
@@ -514,10 +489,7 @@ prepare_prediction_features <- function(df) {
 #' Returns the list of feature column names used for XGBoost prediction models.
 #'
 #' @return Character vector of feature column names
-#' @export
-#'
-#' @examples
-#' feature_cols <- get_prediction_feature_cols()
+#' @keywords internal
 get_prediction_feature_cols <- function() {
   c(
     # ELO differences (2)
@@ -584,12 +556,7 @@ get_default_models_path <- function() {
 #' @param model_dir Character. Directory containing models. Default: "../bouncerdata/models"
 #'
 #' @return XGBoost model object or NULL if not found
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' margin_model <- load_margin_model("t20")
-#' }
+#' @keywords internal
 load_margin_model <- function(format, model_dir = NULL) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")
@@ -621,14 +588,7 @@ load_margin_model <- function(format, model_dir = NULL) {
 #' @param margin_model XGBoost margin model (from load_margin_model)
 #'
 #' @return Numeric vector of predicted margins (positive = team1 favored)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' margin_model <- load_margin_model("t20")
-#' features <- prepare_prediction_features(raw_features)
-#' pred_margin <- get_margin_prediction(features, margin_model)
-#' }
+#' @keywords internal
 get_margin_prediction <- function(features, margin_model) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")
@@ -662,7 +622,7 @@ get_margin_prediction <- function(features, margin_model) {
 #' @param include_margin Logical. Include predicted_margin feature? Default: TRUE
 #'
 #' @return Character vector of feature column names
-#' @export
+#' @keywords internal
 get_prediction_feature_cols_full <- function(include_margin = TRUE) {
   base_cols <- get_prediction_feature_cols()
 
@@ -688,7 +648,7 @@ get_prediction_feature_cols_full <- function(include_margin = TRUE) {
 #' @param team_elo_dt data.table. Pre-loaded team ELO data
 #'
 #' @return List with elo_result and elo_roster
-#' @export
+#' @keywords internal
 get_team_elo_fast <- function(team, as_of_date, team_elo_dt) {
   idx <- which(team_elo_dt$team_id == team & team_elo_dt$match_date < as_of_date)
   if (length(idx) == 0) {
@@ -714,7 +674,7 @@ get_team_elo_fast <- function(team, as_of_date, team_elo_dt) {
 #' @param n Integer. Number of recent matches to consider (default 5)
 #'
 #' @return Numeric. Win rate in last n matches (0-1), or NA if no matches
-#' @export
+#' @keywords internal
 get_team_form_fast <- function(team_id, as_of_date, matches_dt, n = 5) {
   idx <- which(
     (matches_dt$team1_id == team_id | matches_dt$team2_id == team_id) &
@@ -745,7 +705,7 @@ get_team_form_fast <- function(team_id, as_of_date, matches_dt, n = 5) {
 #' @param matches_dt data.table. Pre-loaded matches data
 #'
 #' @return List with team1_wins and total
-#' @export
+#' @keywords internal
 get_h2h_fast <- function(team1_id, team2_id, as_of_date, matches_dt) {
   idx <- which(
     ((matches_dt$team1_id == team1_id & matches_dt$team2_id == team2_id) |
@@ -775,7 +735,7 @@ get_h2h_fast <- function(team1_id, team2_id, as_of_date, matches_dt) {
 #' @param min_matches Integer. Minimum matches required (default 5)
 #'
 #' @return List with avg_score, chase_rate, n_matches
-#' @export
+#' @keywords internal
 get_venue_features_fast <- function(venue_name, as_of_date, venue_stats_dt, min_matches = 5) {
 
   idx <- which(venue_stats_dt$venue == venue_name & venue_stats_dt$match_date < as_of_date)
@@ -819,7 +779,7 @@ get_venue_features_fast <- function(venue_name, as_of_date, venue_stats_dt, min_
 #' @param n_recent Integer. Number of recent matches to infer roster (default 3)
 #'
 #' @return List with batting and bowling skill aggregates
-#' @export
+#' @keywords internal
 get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
                                   batter_skills, bowler_skills, n_recent = 3) {
   idx <- which(
@@ -903,7 +863,7 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
 #' @param team_skill_dt data.table. Pre-loaded team skill data (e.g., t20_team_skill table)
 #'
 #' @return List with runs_skill and wicket_skill
-#' @export
+#' @keywords internal
 get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
   # Look for batting team or bowling team skills
   idx_batting <- which(team_skill_dt$batting_team_id == team &
@@ -938,7 +898,7 @@ get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
 #' @param venue_skill_dt data.table. Pre-loaded venue skill data (e.g., t20_venue_skill table)
 #'
 #' @return List with run_rate_skill, wicket_rate_skill, boundary_rate, dot_rate
-#' @export
+#' @keywords internal
 get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
   idx <- which(venue_skill_dt$venue == venue_name &
                  venue_skill_dt$match_date < as_of_date)
@@ -981,7 +941,7 @@ get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
 #' @param venue_skill_dt data.table. Pre-loaded venue skills (optional)
 #'
 #' @return data.frame with one row of features
-#' @export
+#' @keywords internal
 calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_skills,
                                  bowler_skills, player_participation_dt, venue_stats_dt,
                                  team_skill_dt = NULL, venue_skill_dt = NULL) {

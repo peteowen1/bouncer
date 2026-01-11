@@ -10,16 +10,7 @@
 #' @param divisor Numeric. ELO divisor constant (default 400)
 #'
 #' @return Numeric value between 0 and 1 representing expected outcome
-#' @export
-#'
-#' @examples
-#' # Batter (1600) vs Bowler (1500)
-#' calculate_expected_outcome(1600, 1500)
-#' # Returns ~0.64 (batter favored)
-#'
-#' # Batter (1400) vs Bowler (1600)
-#' calculate_expected_outcome(1400, 1600)
-#' # Returns ~0.24 (bowler favored)
+#' @keywords internal
 calculate_expected_outcome <- function(player_elo, opponent_elo, divisor = ELO_DIVISOR) {
   1 / (1 + 10^((opponent_elo - player_elo) / divisor))
 }
@@ -34,14 +25,7 @@ calculate_expected_outcome <- function(player_elo, opponent_elo, divisor = ELO_D
 #' @param player_matches Numeric. Number of matches player has played
 #'
 #' @return Numeric K-factor value
-#' @export
-#'
-#' @examples
-#' # New player in Test match
-#' calculate_k_factor("test", player_matches = 5)
-#'
-#' # Experienced player in T20
-#' calculate_k_factor("t20", player_matches = 100)
+#' @keywords internal
 calculate_k_factor <- function(match_type, player_matches = 0) {
   # Base K-factor by match type
   match_type <- tolower(match_type)
@@ -78,26 +62,7 @@ calculate_k_factor <- function(match_type, player_matches = 0) {
 #' @param k_factor Numeric. K-factor for this update
 #'
 #' @return Numeric. New ELO rating
-#' @export
-#'
-#' @examples
-#' # Player performed better than expected
-#' calculate_elo_update(
-#'   current_elo = 1500,
-#'   expected = 0.5,
-#'   actual = 0.8,
-#'   k_factor = 24
-#' )
-#' # Returns 1507.2 (rating increases)
-#'
-#' # Player performed worse than expected
-#' calculate_elo_update(
-#'   current_elo = 1500,
-#'   expected = 0.6,
-#'   actual = 0.2,
-#'   k_factor = 24
-#' )
-#' # Returns 1490.4 (rating decreases)
+#' @keywords internal
 calculate_elo_update <- function(current_elo, expected, actual, k_factor) {
   current_elo + k_factor * (actual - expected)
 }
@@ -110,11 +75,7 @@ calculate_elo_update <- function(current_elo, expected, actual, k_factor) {
 #' @param rating_type Character. Type of rating ("batting" or "bowling")
 #'
 #' @return Numeric. Starting ELO rating (default 1500)
-#' @export
-#'
-#' @examples
-#' initialize_player_elo("batting")
-#' initialize_player_elo("bowling")
+#' @keywords internal
 initialize_player_elo <- function(rating_type = "batting") {
   ELO_START_RATING
 }
@@ -130,24 +91,7 @@ initialize_player_elo <- function(rating_type = "batting") {
 #' @param is_boundary Logical. Whether it was a boundary
 #'
 #' @return Numeric value between 0 and 1
-#' @export
-#'
-#' @examples
-#' # Wicket - worst outcome for batter
-#' calculate_delivery_outcome_score(0, is_wicket = TRUE, is_boundary = FALSE)
-#' # Returns 0.0
-#'
-#' # Dot ball
-#' calculate_delivery_outcome_score(0, is_wicket = FALSE, is_boundary = FALSE)
-#' # Returns 0.2
-#'
-#' # Four runs
-#' calculate_delivery_outcome_score(4, is_wicket = FALSE, is_boundary = TRUE)
-#' # Returns ~0.73
-#'
-#' # Six runs
-#' calculate_delivery_outcome_score(6, is_wicket = FALSE, is_boundary = TRUE)
-#' # Returns 1.0
+#' @keywords internal
 calculate_delivery_outcome_score <- function(runs_batter, is_wicket, is_boundary = FALSE) {
   # Wicket is complete failure for batter (0.0)
   if (is_wicket) {

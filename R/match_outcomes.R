@@ -24,14 +24,7 @@
 #'     \item is_dls_match: Always 1 for these matches
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' dls_matches <- identify_dls_matches(conn, event_filter = "IPL")
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 identify_dls_matches <- function(conn, event_filter = NULL, match_type = "t20") {
 
   where_clauses <- "WHERE LOWER(match_type) = ?"
@@ -90,17 +83,7 @@ identify_dls_matches <- function(conn, event_filter = NULL, match_type = "t20") 
 #'
 #' @return Data frame with tied match information including has_super_over flag
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' # All ties including super overs
-#' all_ties <- identify_tied_matches(conn)
-#' # Only pure ties (no super over)
-#' pure_ties <- identify_tied_matches(conn, include_super_overs = FALSE)
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 identify_tied_matches <- function(conn, event_filter = NULL, match_type = "t20",
                                   include_super_overs = TRUE) {
 
@@ -162,14 +145,7 @@ identify_tied_matches <- function(conn, event_filter = NULL, match_type = "t20",
 #'
 #' @return Data frame with super over match information
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' super_overs <- identify_super_over_matches(conn, event_filter = "IPL")
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 identify_super_over_matches <- function(conn, event_filter = NULL, match_type = "t20") {
 
   where_clauses <- "WHERE LOWER(match_type) = ?"
@@ -226,14 +202,7 @@ identify_super_over_matches <- function(conn, event_filter = NULL, match_type = 
 #'     \item is_valid_for_training: TRUE if match has a clear winner
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' matches <- classify_match_outcomes(matches)
-#' # Filter to valid training matches
-#' valid_matches <- matches[matches$is_valid_for_training, ]
-#' }
+#' @keywords internal
 classify_match_outcomes <- function(matches_df) {
 
   # Pre-compute lowercase versions to avoid issues with NA in tolower()
@@ -275,14 +244,7 @@ classify_match_outcomes <- function(matches_df) {
 #' @return Data frame with batting_team_wins column (1 = batting team won,
 #'   0 = batting team lost, NA = excluded match)
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' deliveries <- prepare_win_labels(deliveries)
-#' # Remove NA labels for training
-#' train_data <- deliveries[!is.na(deliveries$batting_team_wins), ]
-#' }
+#' @keywords internal
 prepare_win_labels <- function(deliveries_df, target_column = "batting_team") {
 
   deliveries_df <- deliveries_df %>%
@@ -311,16 +273,7 @@ prepare_win_labels <- function(deliveries_df, target_column = "batting_team") {
 #'
 #' @return Filtered data frame
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Standard filtering (exclude ties and no results, keep DLS and super overs)
-#' train_data <- filter_for_training(classified_data)
-#'
-#' # Exclude DLS matches as well
-#' train_data <- filter_for_training(classified_data, include_dls = FALSE)
-#' }
+#' @keywords internal
 filter_for_training <- function(data, exclude_ties = TRUE, exclude_no_results = TRUE,
                                 include_dls = TRUE, include_super_overs = TRUE) {
 
@@ -376,14 +329,7 @@ filter_for_training <- function(data, exclude_ties = TRUE, exclude_no_results = 
 #'
 #' @return Data frame with outcome counts and percentages
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' summary <- get_outcome_summary(conn, event_filter = "IPL")
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 get_outcome_summary <- function(conn, event_filter = NULL, match_type = "t20") {
 
   where_clauses <- "WHERE LOWER(match_type) = ?"

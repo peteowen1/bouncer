@@ -11,13 +11,7 @@
 #' @param format Character. Format name to normalize
 #'
 #' @return Character. Canonical format: "t20", "odi", or "test"
-#' @export
-#'
-#' @examples
-#' normalize_format("T20")    # "t20"
-#' normalize_format("IT20")   # "t20"
-#' normalize_format("ODM")    # "odi"
-#' normalize_format("MDM")    # "test"
+#' @keywords internal
 normalize_format <- function(format) {
   format_lower <- tolower(format)
 

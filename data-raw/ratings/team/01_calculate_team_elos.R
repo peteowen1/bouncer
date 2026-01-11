@@ -381,7 +381,7 @@ for (current_format in formats_to_process) {
           outcome_type %in% c("tie", "draw", "no result") ~ outcome_type,
           TRUE ~ "unknown"
         ),
-        # Calculate overs remaining for wickets wins
+        # Calculate overs remaining for wickets wins (cricket notation)
         overs_remaining = case_when(
           win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
             pmax(0, overs_per_innings - team2_overs),
@@ -389,7 +389,7 @@ for (current_format in formats_to_process) {
         ),
         # Calculate unified margin (use stored if available, else calculate)
         calc_unified_margin = mapply(
-          function(t1_score, t2_score, overs_rem, wickets_rem, win_t, fmt, stored_margin) {
+          function(t1_score, t2_score, wickets_rem, overs_rem, win_t, fmt, stored_margin) {
             # Use stored margin if available
             if (!is.na(stored_margin)) return(stored_margin)
             # Skip if missing data
@@ -399,15 +399,15 @@ for (current_format in formats_to_process) {
             calculate_unified_margin(
               team1_score = t1_score,
               team2_score = t2_score,
-              overs_remaining = overs_rem,
               wickets_remaining = wickets_rem,
+              overs_remaining = overs_rem,
               win_type = win_t,
               format = fmt
             )
           },
-          team1_score, team2_score, overs_remaining,
+          team1_score, team2_score,
           ifelse(is.na(outcome_by_wickets), 0L, outcome_by_wickets),
-          win_type, format, unified_margin
+          overs_remaining, win_type, format, unified_margin
         )
       )
 

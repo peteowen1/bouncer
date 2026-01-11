@@ -26,23 +26,7 @@
 #'     \item bowler_wpa: WPA credited to bowler
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load models
-#' stage1_results <- readRDS("bouncerdata/models/ipl_stage1_results.rds")
-#' stage2_results <- readRDS("bouncerdata/models/ipl_stage2_results.rds")
-#'
-#' # Calculate WPA for match deliveries
-#' wpa_data <- calculate_delivery_wpa(
-#'   deliveries = match_data,
-#'   stage1_model = stage1_results$model,
-#'   stage2_model = stage2_results$model,
-#'   stage1_feature_cols = stage1_results$feature_cols,
-#'   stage2_feature_cols = stage2_results$feature_cols
-#' )
-#' }
+#' @keywords internal
 calculate_delivery_wpa <- function(deliveries,
                                    stage1_model,
                                    stage2_model,
@@ -423,18 +407,7 @@ assign_wpa_credit <- function(deliveries, wpa) {
 #'     \item bowler_era: ERA credited to bowler
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' stage1_results <- readRDS("bouncerdata/models/ipl_stage1_results.rds")
-#'
-#' era_data <- calculate_delivery_era(
-#'   deliveries = match_data,
-#'   stage1_model = stage1_results$model,
-#'   stage1_feature_cols = stage1_results$feature_cols
-#' )
-#' }
+#' @keywords internal
 calculate_delivery_era <- function(deliveries, stage1_model, stage1_feature_cols) {
 
   deliveries <- as.data.frame(deliveries)
@@ -584,12 +557,7 @@ assign_era_credit <- function(deliveries, era) {
 #'     \item key_moment_wpa: Highest single-delivery absolute WPA
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' match_wpa <- calculate_match_wpa(wpa_data)
-#' }
+#' @keywords internal
 calculate_match_wpa <- function(wpa_data) {
 
   wpa_data <- as.data.frame(wpa_data)
@@ -653,17 +621,7 @@ calculate_match_wpa <- function(wpa_data) {
 #'     \item clutch_moments: Number of high-impact deliveries (|WPA| > 0.05)
 #'   }
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Top batters by career WPA
-#' batter_wpa <- calculate_player_wpa(wpa_data, role = "batting")
-#'
-#' # Bowler WPA by season
-#' bowler_wpa <- calculate_player_wpa(wpa_data, role = "bowling",
-#'                                     group_by = c("player_id", "season"))
-#' }
+#' @keywords internal
 calculate_player_wpa <- function(wpa_data, role = "both", group_by = "player_id") {
 
   wpa_data <- as.data.frame(wpa_data)
@@ -734,7 +692,7 @@ calculate_player_wpa <- function(wpa_data, role = "both", group_by = "player_id"
 #'
 #' @return data.frame with aggregated ERA statistics
 #'
-#' @export
+#' @keywords internal
 calculate_player_era <- function(era_data, role = "both", group_by = "player_id") {
 
   era_data <- as.data.frame(era_data)

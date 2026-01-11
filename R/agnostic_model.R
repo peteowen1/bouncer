@@ -28,17 +28,7 @@
 #' This makes it suitable for calculating baseline expectations, where
 #' actual performance minus expected gives the "skill residual".
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load T20 agnostic model
-#' model <- load_agnostic_model("t20")
-#'
-#' # Predict on delivery data
-#' probs <- predict_agnostic_outcome(model, deliveries, format = "t20")
-#' exp_runs <- get_agnostic_expected_runs(probs)
-#' }
+#' @keywords internal
 load_agnostic_model <- function(format = c("t20", "odi", "test"),
                                  model_dir = NULL) {
 
@@ -85,14 +75,7 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
 #'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
 #'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' model <- load_agnostic_model("t20")
-#' probs <- predict_agnostic_outcome(model, deliveries, "t20")
-#' exp_runs <- get_agnostic_expected_runs(probs)
-#' }
+#' @keywords internal
 predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -124,7 +107,7 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
 #' @return Numeric vector of expected runs per delivery.
 #'   Formula: E(runs) = 0*P(wicket) + 0*P(0) + 1*P(1) + 2*P(2) + 3*P(3) + 4*P(4) + 6*P(6)
 #'
-#' @export
+#' @keywords internal
 get_agnostic_expected_runs <- function(probs) {
   # Delegate to the existing function in expected_outcomes.R
   calculate_expected_runs(probs)
@@ -139,7 +122,7 @@ get_agnostic_expected_runs <- function(probs) {
 #'
 #' @return Numeric vector of wicket probabilities.
 #'
-#' @export
+#' @keywords internal
 get_agnostic_expected_wicket <- function(probs) {
   # Delegate to the existing function in expected_outcomes.R
   calculate_expected_wicket_prob(probs)
@@ -164,16 +147,7 @@ get_agnostic_expected_wicket <- function(probs) {
 #'   - runs_residual: actual_runs - exp_runs_agnostic
 #'   - wicket_residual: is_wicket - exp_wicket_agnostic
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' model <- load_agnostic_model("t20")
-#' residuals <- calculate_agnostic_residuals(model, deliveries, "t20")
-#'
-#' # Use residuals to update skill indices (EMA formula)
-#' new_bsi <- (1 - alpha) * old_bsi + alpha * residuals$runs_residual
-#' }
+#' @keywords internal
 calculate_agnostic_residuals <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -235,16 +209,7 @@ calculate_agnostic_residuals <- function(model, delivery_data, format = c("t20",
 #'
 #' This is the model used for match simulation where maximum accuracy is needed.
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Load T20 full model
-#' model <- load_full_model("t20")
-#'
-#' # Predict on delivery data with all skill features
-#' probs <- predict_full_outcome(model, deliveries, format = "t20")
-#' }
+#' @keywords internal
 load_full_model <- function(format = c("t20", "odi", "test"),
                              model_dir = NULL) {
 
@@ -289,14 +254,7 @@ load_full_model <- function(format = c("t20", "odi", "test"),
 #'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
 #'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' model <- load_full_model("t20")
-#' probs <- predict_full_outcome(model, deliveries, "t20")
-#' exp_runs <- get_full_expected_runs(probs)
-#' }
+#' @keywords internal
 predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -327,7 +285,7 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
 #'
 #' @return Numeric vector of expected runs per delivery.
 #'
-#' @export
+#' @keywords internal
 get_full_expected_runs <- function(probs) {
   calculate_expected_runs(probs)
 }
@@ -341,7 +299,7 @@ get_full_expected_runs <- function(probs) {
 #'
 #' @return Numeric vector of wicket probabilities.
 #'
-#' @export
+#' @keywords internal
 get_full_expected_wicket <- function(probs) {
   calculate_expected_wicket_prob(probs)
 }

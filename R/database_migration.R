@@ -171,17 +171,7 @@ add_prediction_tables <- function(path = NULL) {
 #'   Ignored if conn is provided.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Add skill columns to existing database
-#' add_skill_columns_to_features()
-#'
-#' # Or with existing connection
-#' conn <- get_db_connection()
-#' add_skill_columns_to_features(conn = conn)
-#' }
+#' @keywords internal
 add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
   # Handle connection - use provided or create new
 

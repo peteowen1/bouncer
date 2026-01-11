@@ -213,17 +213,7 @@ get_cross_tier_k_multiplier <- function(tier1, tier2,
 #' @param boost_per_tier Numeric. K-factor boost per tier difference (default 0.3).
 #' @param max_multiplier Numeric. Maximum K multiplier (default 2.0).
 #' @return Numeric. K-factor multiplier (1.0 for same tier, up to max_multiplier).
-#' @export
-#'
-#' @examples
-#' # Same tier (both Tier 2 domestic leagues)
-#' get_player_cross_tier_k_multiplier(2, 2)  # 1.0
-#'
-#' # NZ domestic batter (Tier 2) vs IPL bowler (Tier 1) - 1.3x boost
-#' get_player_cross_tier_k_multiplier(2, 1)  # 1.3
-#'
-#' # Development player (Tier 4) vs IPL bowler (Tier 1) - 1.9x boost
-#' get_player_cross_tier_k_multiplier(4, 1)  # 1.9
+#' @keywords internal
 get_player_cross_tier_k_multiplier <- function(batter_team_tier,
                                                 bowler_team_tier,
                                                 boost_per_tier = 0.3,

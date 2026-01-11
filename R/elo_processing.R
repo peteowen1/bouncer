@@ -15,19 +15,7 @@
 #' @param batch_size Integer. Number of deliveries to process before committing
 #'
 #' @return Invisibly returns a list of player ELO ratings
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#'   # Test with 10 matches
-#'   calculate_all_player_elos(match_limit = 10, fresh = TRUE)
-#'
-#'   # Process all matches from scratch
-#'   calculate_all_player_elos(fresh = TRUE)
-#'
-#'   # Resume from last processed match (incremental)
-#'   calculate_all_player_elos(fresh = FALSE)
-#' }
+#' @keywords internal
 calculate_all_player_elos <- function(db_path = NULL,
                                        fresh = FALSE,
                                        match_limit = 10,
@@ -559,16 +547,7 @@ show_elo_summary <- function(conn, player_state) {
 #' @param bottom_n Number of bottom players to show (default: 10)
 #'
 #' @return Invisibly returns a data frame with all latest ELOs
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#'   # View default rankings
-#'   view_latest_elos()
-#'
-#'   # Show top 30 and bottom 5
-#'   view_latest_elos(top_n = 30, bottom_n = 5)
-#' }
+#' @keywords internal
 view_latest_elos <- function(db_path = NULL, top_n = 20, bottom_n = 10) {
 
   cli::cli_h2("Latest ELO Rankings")

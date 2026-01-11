@@ -9,7 +9,7 @@
 #' Returns the browser session stored after a reconnection during fox_fetch_matches.
 #'
 #' @return ChromoteSession object, or NULL if no session is stored
-#' @export
+#' @keywords internal
 fox_get_browser <- function() {
   .fox_env$browser
 }
@@ -98,7 +98,7 @@ parse_fox_aggregatestats <- function(json_data, match_id) {
 #' @param sample_match_id A known valid match ID to visit
 #' @param timeout_sec Timeout in seconds (default 60)
 #' @return Character string userkey, or NULL if not found
-#' @export
+#' @keywords internal
 fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
   url <- paste0("https://www.foxsports.com.au/cricket/match-centre/", sample_match_id)
 
@@ -145,7 +145,7 @@ fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
 #' @param max_innings Maximum innings to fetch (default 4 for Tests)
 #' @param delay_seconds Delay between innings requests
 #' @return A data.frame of ball-by-ball data, or NULL if no data
-#' @export
+#' @keywords internal
 fox_fetch_match <- function(browser, match_id, userkey, max_innings = 4, delay_seconds = 1) {
   all_innings_data <- list()
 
@@ -194,7 +194,7 @@ fox_fetch_match <- function(browser, match_id, userkey, max_innings = 4, delay_s
 #' @param match_id Fox Sports match ID to check
 #' @param userkey Valid userkey
 #' @return Logical TRUE if match has data, FALSE otherwise
-#' @export
+#' @keywords internal
 fox_match_exists <- function(browser, match_id, userkey) {
   innings_url <- sprintf(
     "https://statsapi.foxsports.com.au/3.0/api/sports/cricket/matches/%s/aggregatestats.json;fromInnings=1;fromOver=0;fromBall=0;toInnings=1;toOver=10;toBall=6;limit=5?userkey=%s",
@@ -271,7 +271,7 @@ generate_match_id_variants <- function(year, series, match) {
 #' @param cache_file File to cache discovered match IDs (default: output_dir/discovered_matches.rds)
 #' @param verbose Print progress messages
 #' @return Character vector of valid match IDs
-#' @export
+#' @keywords internal
 fox_discover_matches <- function(browser, userkey, years = 2024:2025,
                                   max_series = 15, max_matches = 7,
                                   output_dir = "../bouncerdata/fox_cricket",
@@ -389,7 +389,7 @@ fox_discover_matches <- function(browser, userkey, years = 2024:2025,
 #' @param delay_between Seconds to wait between matches
 #' @param max_consecutive_failures Stop and reconnect after this many failures in a row
 #' @return Combined data.frame of all matches, or NULL
-#' @export
+#' @keywords internal
 fox_fetch_matches <- function(browser, match_ids, userkey, output_dir = "../bouncerdata/fox_cricket",
                                skip_existing = TRUE, refresh_key_every = 10,
                                delay_between = 8, max_consecutive_failures = 3) {
@@ -511,7 +511,7 @@ fox_fetch_matches <- function(browser, match_ids, userkey, output_dir = "../boun
 #'
 #' @param output_dir Directory containing .rds match files (default: bouncerdata/fox_cricket)
 #' @return Combined data.frame of all matches
-#' @export
+#' @keywords internal
 fox_combine_matches <- function(output_dir = "../bouncerdata/fox_cricket") {
   files <- list.files(output_dir, pattern = "^TEST.*\\.rds$", full.names = TRUE)
   if (length(files) == 0) {

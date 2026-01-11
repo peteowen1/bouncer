@@ -39,7 +39,11 @@ STEP 6: Team ELO (game-level, unchanged) ───────────┤
                                     │
                     STEP 9: Pre-Match Model Training
                                     │
-                    STEP 10: Ready for Simulations & Predictions
+                    STEP 10: Optimize Projection Parameters
+                                    │
+                    STEP 11: Calculate Per-Delivery Projections
+                                    │
+                    Ready for Simulations & Predictions
 ```
 
 ---
@@ -223,6 +227,70 @@ batter_contribution <- full_pred - ablated_pred
 
 ---
 
+## Score Projection System
+
+**Location:** `R/score_projection.R`, `data-raw/ratings/projection/`
+
+Projects final innings totals from any game state. Used for:
+- Margin of Victory calculation (wickets wins → runs equivalent)
+- Per-delivery projections stored in database
+- Live score predictions
+
+### Formula
+
+```
+projected = cs + a * eis * resource_remaining + b * cs * resource_remaining / resource_used
+
+where:
+  cs = current score
+  eis = expected initial score (format average)
+  resource_remaining = (balls/max_balls)^z * (wickets/10)^y
+  resource_used = 1 - resource_remaining
+```
+
+### Parameter Optimization
+
+**Location:** `data-raw/ratings/projection/01_optimize_projection_params.R`
+
+Optimizes `a`, `b`, `z`, `y` per segment (format × gender × team_type) using grid search + Nelder-Mead.
+
+**Output:** `bouncerdata/models/projection_params_{segment}.rds`
+
+### Per-Delivery Projections
+
+**Location:** `data-raw/ratings/projection/02_calculate_projections.R`
+
+Calculates and stores projected score for every delivery in the database.
+
+**Output Tables:** `t20_score_projection`, `odi_score_projection`, `test_score_projection`
+
+| Column | Description |
+|--------|-------------|
+| `projected_agnostic` | Score projection using format average EIS |
+| `projected_full` | Score projection using team/venue-adjusted EIS |
+| `projection_change_agnostic` | Change from previous delivery |
+| `resource_remaining` | Resources left (0-1) |
+
+### Unified Margin Calculation
+
+**Location:** `R/margin_calculation.R`
+
+Converts wickets wins to runs-equivalent using projection:
+
+```r
+# Result: "Team2 won by 6 wickets with 2 overs to spare"
+calculate_unified_margin(
+  team1_score = 160,      # Target (team batting first)
+  team2_score = 165,      # Score when chase completed
+  wickets_remaining = 6,  # Wickets in hand
+  overs_remaining = 2.0,  # Overs remaining (cricket notation)
+  win_type = "wickets",
+  format = "t20"
+)  # Returns negative margin (team2 won)
+```
+
+---
+
 ## Component 5: Pre-Game Predictions
 
 **Location:** `data-raw/models/pre-match/`
@@ -258,6 +326,7 @@ batter_contribution <- full_pred - ablated_pred
 | `t20_player_skill` | Player skill indices (residual-based) |
 | `t20_team_skill` | Team skill indices (residual-based) |
 | `t20_venue_skill` | Venue skill indices |
+| `t20_score_projection` | Per-delivery score projections |
 | `team_elo` | Game-level team ELO |
 
 ### Model Output Tables
@@ -272,14 +341,15 @@ batter_contribution <- full_pred - ablated_pred
 ### Model Outputs
 ```
 bouncerdata/models/
-├── agnostic_outcome_t20.ubj      # Agnostic baseline (T20)
-├── agnostic_outcome_odi.ubj      # Agnostic baseline (ODI)
-├── agnostic_outcome_test.ubj     # Agnostic baseline (Test)
-├── full_outcome_t20.ubj          # Full model (T20)
-├── full_outcome_odi.ubj          # Full model (ODI)
-├── full_outcome_test.ubj         # Full model (Test)
-├── t20_prediction_model.ubj      # Pre-match model
-└── *_prediction_features.rds     # Feature data
+├── agnostic_outcome_t20.ubj           # Agnostic baseline (T20)
+├── agnostic_outcome_odi.ubj           # Agnostic baseline (ODI)
+├── agnostic_outcome_test.ubj          # Agnostic baseline (Test)
+├── full_outcome_t20.ubj               # Full model (T20)
+├── full_outcome_odi.ubj               # Full model (ODI)
+├── full_outcome_test.ubj              # Full model (Test)
+├── t20_prediction_model.ubj           # Pre-match model
+├── projection_params_t20_*.rds        # Projection parameters
+└── *_prediction_features.rds          # Feature data
 ```
 
 ---
@@ -315,6 +385,10 @@ source("data-raw/models/ball-outcome/02_train_full_model.R")
 # Step 8-9: Pre-match
 source("data-raw/models/pre-match/02_calculate_pre_match_features.R")
 source("data-raw/models/pre-match/03_train_prediction_model.R")
+
+# Step 10-11: Score Projection
+source("data-raw/ratings/projection/01_optimize_projection_params.R")
+source("data-raw/ratings/projection/02_calculate_projections.R")
 ```
 
 ### Usage Examples
@@ -332,6 +406,29 @@ contributions <- calculate_player_attribution(full_model, deliveries, "t20")
 # Get predictions
 conn <- get_db_connection()
 features <- get_pre_match_features(match_id = "12345", conn = conn)
+
+# Score projection - matches scoreboard display exactly
+# Scoreboard shows: "India 80/3 (10.0 overs)"
+calculate_projected_score(80, 3, 10.0, "t20")
+
+# With named parameters
+calculate_projected_score(
+  current_score = 80,   # 80 runs
+  wickets = 3,          # 3 wickets fallen
+  overs = 10.0,         # 10 overs bowled
+  format = "t20"
+)
+
+# Unified margin - matches result format
+# "Won by 6 wickets with 2 overs to spare"
+calculate_unified_margin(
+  team1_score = 180,
+  team2_score = 185,
+  wickets_remaining = 6,   # 6 wickets in hand
+  overs_remaining = 2.0,   # 2 overs left
+  win_type = "wickets",
+  format = "t20"
+)
 ```
 
 ---
@@ -345,6 +442,7 @@ features <- get_pre_match_features(match_id = "12345", conn = conn)
 | Venue Skill | REQUIRED | - | - | - | - |
 | Full Model | - | REQUIRED | REQUIRED | REQUIRED | - |
 | Pre-Match | - | REQUIRED | Optional | Optional | REQUIRED |
+| Projection | - | - | - | - | - |
 | Simulation | Full Model | REQUIRED | REQUIRED | REQUIRED | - |
 | Attribution | Full Model | REQUIRED | Optional | Optional | - |
 

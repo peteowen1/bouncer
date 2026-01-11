@@ -59,7 +59,7 @@ create_simulation_config <- function(
 #' @param seed Integer. Random seed
 #'
 #' @return Invisibly returns the seed
-#' @export
+#' @keywords internal
 set_simulation_seed <- function(seed) {
   set.seed(seed)
   invisible(seed)
@@ -74,7 +74,7 @@ set_simulation_seed <- function(seed) {
 #' @param base_seed Integer. Base seed (default 42)
 #'
 #' @return Integer vector of seeds
-#' @export
+#' @keywords internal
 get_simulation_seeds <- function(n, base_seed = 42) {
   set.seed(base_seed)
   sample.int(.Machine$integer.max, n)
@@ -92,7 +92,7 @@ get_simulation_seeds <- function(n, base_seed = 42) {
 #' @param team2 Character. Team 2 name
 #'
 #' @return List with winner, loser, margin, and team1_won flag
-#' @export
+#' @keywords internal
 simulate_match_outcome <- function(team1_win_prob, team1, team2) {
   # Simulate outcome
   team1_wins <- stats::runif(1) < team1_win_prob
@@ -131,7 +131,7 @@ simulate_match_outcome <- function(team1_win_prob, team1, team2) {
 #' @param team2 Character. Team 2 name
 #'
 #' @return List with aggregated statistics
-#' @export
+#' @keywords internal
 aggregate_match_results <- function(results, team1, team2) {
   n <- length(results)
   team1_wins <- sum(vapply(results, function(r) r$team1_won, logical(1)))
@@ -159,7 +159,7 @@ aggregate_match_results <- function(results, team1, team2) {
 #'
 #' @return Data frame with team probabilities
 #' @importFrom dplyr group_by summarise mutate arrange desc
-#' @export
+#' @keywords internal
 aggregate_season_results <- function(standings_list) {
   n <- length(standings_list)
 
@@ -202,7 +202,7 @@ aggregate_season_results <- function(standings_list) {
 #'
 #' @return Invisibly returns TRUE on success
 #' @importFrom DBI dbExecute
-#' @export
+#' @keywords internal
 store_simulation_results <- function(config, team_results, match_results = NULL, conn) {
   # Convert results to JSON
   team_results_json <- jsonlite::toJSON(team_results, auto_unbox = TRUE)
@@ -252,7 +252,7 @@ store_simulation_results <- function(config, team_results, match_results = NULL,
 #'
 #' @return Data frame with simulation results
 #' @importFrom DBI dbGetQuery
-#' @export
+#' @keywords internal
 get_simulation_results <- function(simulation_id = NULL, simulation_type = NULL,
                                    event_name = NULL, conn) {
   query <- "SELECT * FROM simulation_results WHERE 1=1"
@@ -295,7 +295,7 @@ get_simulation_results <- function(simulation_id = NULL, simulation_type = NULL,
 #' @param progress Logical. Show progress bar (default TRUE)
 #'
 #' @return List of simulation results
-#' @export
+#' @keywords internal
 run_simulations <- function(n, sim_fn, ..., progress = TRUE) {
   if (progress) {
     cli::cli_progress_bar("Simulating", total = n)
@@ -331,7 +331,7 @@ run_simulations <- function(n, sim_fn, ..., progress = TRUE) {
 #'
 #' @return Data frame with match fixtures including team ELOs and actual outcomes
 #' @importFrom DBI dbGetQuery
-#' @export
+#' @keywords internal
 get_season_fixtures <- function(event_name, season, conn) {
   query <- "
     SELECT
@@ -386,7 +386,7 @@ get_season_fixtures <- function(event_name, season, conn) {
 #'
 #' @return Data frame with event_name, season, and match count
 #' @importFrom DBI dbGetQuery
-#' @export
+#' @keywords internal
 get_available_seasons <- function(event_name = NULL, conn) {
   query <- "
     SELECT
@@ -421,7 +421,7 @@ get_available_seasons <- function(event_name = NULL, conn) {
 #' @param divisor Numeric. ELO divisor (default 400)
 #'
 #' @return Numeric. Probability that team1 wins (0-1)
-#' @export
+#' @keywords internal
 elo_win_probability <- function(team1_elo, team2_elo, divisor = 400) {
   1 / (1 + 10^((team2_elo - team1_elo) / divisor))
 }
@@ -533,7 +533,7 @@ simulate_season_n <- function(fixtures, n_simulations = 1000, seed = NULL,
 #' @param points_for_win Integer. Points awarded for a win (default 2)
 #'
 #' @return Data frame with actual standings
-#' @export
+#' @keywords internal
 get_actual_standings <- function(fixtures, points_for_win = 2) {
   # Get all teams
   all_teams <- unique(c(fixtures$team1, fixtures$team2))
@@ -580,7 +580,7 @@ get_actual_standings <- function(fixtures, points_for_win = 2) {
 #' @param fixtures Data frame. Season fixtures (for ELO lookup)
 #'
 #' @return Data frame with top 4 teams and their average ELOs
-#' @export
+#' @keywords internal
 get_playoff_teams <- function(standings, fixtures) {
   top4 <- standings[1:4, ]
 
@@ -661,7 +661,7 @@ simulate_ipl_playoffs <- function(teams) {
 #' @param progress Logical. Show progress bar (default TRUE)
 #'
 #' @return Data frame with championship and final appearance probabilities
-#' @export
+#' @keywords internal
 simulate_playoffs_n <- function(teams, n_simulations = 10000, seed = NULL,
                                  progress = TRUE) {
   if (!is.null(seed)) {

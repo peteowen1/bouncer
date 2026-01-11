@@ -18,14 +18,6 @@ TEAM_K_FACTOR <- 32
 #'
 #' @return Character. Standardized format: "t20", "odi", or "test"
 #' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' normalize_match_format("T20")    # returns "t20"
-#' normalize_match_format("IT20")   # returns "t20"
-#' normalize_match_format("ODI")    # returns "odi"
-#' normalize_match_format("Test")   # returns "test"
-#' }
 normalize_match_format <- function(match_type) {
   format <- tolower(match_type %||% "t20")
 
@@ -51,12 +43,6 @@ normalize_match_format <- function(match_type) {
 #'
 #' @return Character. Full table name (e.g., "t20_player_elo")
 #' @keywords internal
-#'
-#' @examples
-#' \dontrun{
-#' get_format_table("player_elo", "T20")   # returns "t20_player_elo"
-#' get_format_table("player_skill", "ODI") # returns "odi_player_skill"
-#' }
 get_format_table <- function(base_table, match_type) {
   format <- normalize_match_format(match_type)
   paste0(format, "_", base_table)
@@ -76,13 +62,7 @@ get_format_table <- function(base_table, match_type) {
 #' @param event_name Character. Filter by event name (optional)
 #'
 #' @return Data frame with player_id and appearance_count for likely XI (top 11 by appearances)
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' xi <- get_likely_playing_xi("Chennai Super Kings", as.Date("2024-04-01"), conn)
-#' }
+#' @keywords internal
 get_likely_playing_xi <- function(team, as_of_date, conn,
                                    n_recent_matches = 3,
                                    match_type = NULL,
@@ -165,13 +145,7 @@ get_likely_playing_xi <- function(team, as_of_date, conn,
 #' @param event_name Character. Filter by event name (optional)
 #'
 #' @return List with elo_batting, elo_bowling, elo_combined, and player_count
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' elo <- calculate_team_roster_elo("Mumbai Indians", as.Date("2024-04-01"), conn)
-#' }
+#' @keywords internal
 calculate_team_roster_elo <- function(team, as_of_date, conn,
                                        match_type = NULL,
                                        event_name = NULL) {
@@ -330,14 +304,7 @@ calculate_team_roster_elo <- function(team, as_of_date, conn,
 #' @param k_factor Numeric. K-factor for the update (default TEAM_K_FACTOR)
 #'
 #' @return Numeric. New ELO rating after the match
-#' @export
-#'
-#' @examples
-#' # Team with 1550 ELO beats team with 1450 ELO
-#' calculate_team_result_elo_update(1550, 1450, won = TRUE)
-#'
-#' # Underdog (1400) beats favorite (1600)
-#' calculate_team_result_elo_update(1400, 1600, won = TRUE)
+#' @keywords internal
 calculate_team_result_elo_update <- function(team_elo, opponent_elo, won,
                                               k_factor = TEAM_K_FACTOR) {
   # Calculate expected outcome
@@ -415,13 +382,7 @@ get_team_elo <- function(team_id, as_of_date, elo_type = "result", conn) {
 #' @param event_name Character. Filter by event name (optional)
 #'
 #' @return Numeric. Win rate (0 to 1), or NA if no matches found
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' form <- calculate_team_form("Chennai Super Kings", as.Date("2024-04-01"), conn = conn)
-#' }
+#' @keywords internal
 calculate_team_form <- function(team, as_of_date, n_matches = 5, conn,
                                  match_type = NULL, event_name = NULL) {
 
@@ -479,14 +440,7 @@ calculate_team_form <- function(team, as_of_date, n_matches = 5, conn,
 #' @param event_name Character. Filter by event name (optional)
 #'
 #' @return List with team1_wins, team2_wins, total_matches, and team1_win_rate
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' h2h <- calculate_h2h_record("Mumbai Indians", "Chennai Super Kings",
-#'                              as.Date("2024-04-01"), conn)
-#' }
+#' @keywords internal
 calculate_h2h_record <- function(team1, team2, as_of_date, conn,
                                   match_type = NULL, event_name = NULL) {
 
@@ -559,18 +513,7 @@ calculate_h2h_record <- function(team1, team2, as_of_date, conn,
 #'   - bowler_strike_avg: Average strike rate (wickets/ball) for bowlers
 #'   - n_batters: Number of batters with skill data
 #'   - n_bowlers: Number of bowlers with skill data
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' skills <- calculate_team_roster_skill(
-#'   "Mumbai Indians",
-#'   as.Date("2024-04-01"),
-#'   conn,
-#'   event_name = "Indian Premier League"
-#' )
-#' }
+#' @keywords internal
 calculate_team_roster_skill <- function(team, as_of_date, conn,
                                          format = NULL,
                                          match_type = NULL,
@@ -815,17 +758,7 @@ store_team_elo <- function(team_id, match_id, match_date, match_type, event_name
 #' @param mov_max Numeric. Maximum G value (default from constants)
 #'
 #' @return Numeric. Multiplier (typically 0.5 to 2.5)
-#' @export
-#'
-#' @examples
-#' # Close game, favorite wins
-#' calculate_mov_multiplier(10, 1600, 1400, "t20")  # ~0.7
-#'
-#' # Blowout, underdog wins
-#' calculate_mov_multiplier(50, 1400, 1600, "t20")  # ~2.0
-#'
-#' # Average margin, even teams
-#' calculate_mov_multiplier(25, 1500, 1500, "t20")  # ~1.0
+#' @keywords internal
 calculate_mov_multiplier <- function(unified_margin, winner_elo, loser_elo,
                                       format = "t20",
                                       mov_exponent = MOV_EXPONENT,
@@ -878,12 +811,7 @@ calculate_mov_multiplier <- function(unified_margin, winner_elo, loser_elo,
 #' @param format Character. Match format
 #'
 #' @return Numeric. New ELO rating after the match
-#' @export
-#'
-#' @examples
-#' # Home team wins by 30 runs
-#' calculate_elo_update_with_margin(1550, 1450, won = TRUE, unified_margin = 30,
-#'                                   k_factor = 32, home_advantage = 40, format = "t20")
+#' @keywords internal
 calculate_elo_update_with_margin <- function(team_elo, opponent_elo, won,
                                               unified_margin,
                                               k_factor = TEAM_K_FACTOR,

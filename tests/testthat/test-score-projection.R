@@ -1,49 +1,88 @@
 # Tests for Score Projection Functions
 
 test_that("calculate_projection_resource returns 1 at start of innings", {
-  # T20: 120 balls, 10 wickets
-  resource <- calculate_projection_resource(120, 10, "t20")
+  # T20: 10 wickets, 120 balls (note: parameter order is wickets_remaining, balls_remaining)
+  resource <- calculate_projection_resource(
+    wickets_remaining = 10,
+    balls_remaining = 120,
+    format = "t20"
+  )
   expect_equal(resource, 1, tolerance = 0.001)
 
-  # ODI: 300 balls, 10 wickets
-  resource <- calculate_projection_resource(300, 10, "odi")
+  # ODI: 10 wickets, 300 balls
+  resource <- calculate_projection_resource(
+    wickets_remaining = 10,
+    balls_remaining = 300,
+    format = "odi"
+  )
   expect_equal(resource, 1, tolerance = 0.001)
 })
 
 test_that("calculate_projection_resource returns 0 when no balls left", {
-  resource <- calculate_projection_resource(0, 10, "t20")
+  resource <- calculate_projection_resource(
+    wickets_remaining = 10,
+    balls_remaining = 0,
+    format = "t20"
+  )
   expect_equal(resource, 0)
 
-  resource <- calculate_projection_resource(0, 5, "odi")
+  resource <- calculate_projection_resource(
+    wickets_remaining = 5,
+    balls_remaining = 0,
+    format = "odi"
+  )
   expect_equal(resource, 0)
 })
 
 test_that("calculate_projection_resource returns 0 when no wickets left", {
-  resource <- calculate_projection_resource(60, 0, "t20")
+  resource <- calculate_projection_resource(
+    wickets_remaining = 0,
+    balls_remaining = 60,
+    format = "t20"
+  )
   expect_equal(resource, 0)
 
-  resource <- calculate_projection_resource(120, 0, "odi")
+  resource <- calculate_projection_resource(
+    wickets_remaining = 0,
+    balls_remaining = 120,
+    format = "odi"
+  )
   expect_equal(resource, 0)
 })
 
 test_that("calculate_projection_resource decreases as balls decrease", {
   resources <- sapply(c(120, 90, 60, 30, 0), function(b) {
-    calculate_projection_resource(b, 10, "t20")
+    calculate_projection_resource(
+      wickets_remaining = 10,
+      balls_remaining = b,
+      format = "t20"
+    )
   })
   expect_true(all(diff(resources) <= 0))
 })
 
 test_that("calculate_projection_resource decreases as wickets decrease", {
   resources <- sapply(10:0, function(w) {
-    calculate_projection_resource(60, w, "t20")
+    calculate_projection_resource(
+      wickets_remaining = w,
+      balls_remaining = 60,
+      format = "t20"
+    )
   })
   expect_true(all(diff(resources) <= 0))
 })
 
 test_that("calculate_projection_resource handles custom parameters", {
   # With z=1, y=1, should get simple linear product
-  resource <- calculate_projection_resource(60, 5, "t20", z = 1, y = 1)
-  expected <- (60/120) * (5/10)
+  # 5 wickets remaining, 60 balls remaining
+  resource <- calculate_projection_resource(
+    wickets_remaining = 5,
+    balls_remaining = 60,
+    format = "t20",
+    z = 1,
+    y = 1
+  )
+  expected <- (60/120) * (5/10)  # balls_pct * wickets_pct
   expect_equal(resource, expected, tolerance = 0.001)
 })
 
@@ -79,11 +118,12 @@ test_that("get_agnostic_expected_score handles format aliases", {
 test_that("calculate_projected_score returns EIS at start of innings", {
   eis <- get_agnostic_expected_score("t20", "male", "international")
 
-  # At very start: cs=0, balls=120, wickets=10
+  # At very start: cs=0, wickets fallen=0, overs bowled=0
+  # New interface: wickets = wickets fallen, overs = overs bowled
   projected <- calculate_projected_score(
     current_score = 0,
-    balls_remaining = 120,
-    wickets_remaining = 10,
+    wickets = 0,
+    overs = 0,
     format = "t20"
   )
 
@@ -92,54 +132,80 @@ test_that("calculate_projected_score returns EIS at start of innings", {
 })
 
 test_that("calculate_projected_score returns current score at end", {
-  # All wickets down
+  # All wickets down (10 wickets fallen, 15 overs bowled = 90 balls, 30 remaining)
   projected <- calculate_projected_score(
     current_score = 145,
-    balls_remaining = 30,
-    wickets_remaining = 0,
+    wickets = 10,    # All out
+    overs = 15,      # 90 balls bowled
     format = "t20"
   )
   expect_equal(projected, 145)
 
-  # No balls remaining
+  # No balls remaining (20 overs = 120 balls = all used)
   projected <- calculate_projected_score(
     current_score = 180,
-    balls_remaining = 0,
-    wickets_remaining = 4,
+    wickets = 6,     # 6 wickets fallen
+    overs = 20,      # All overs bowled
     format = "t20"
   )
   expect_equal(projected, 180)
 })
 
 test_that("calculate_projected_score increases with more runs", {
-  proj1 <- calculate_projected_score(50, 60, 8, format = "t20")
-  proj2 <- calculate_projected_score(80, 60, 8, format = "t20")
+  # Same game state (2 wickets fallen, 10 overs bowled), different scores
+  # Old: 60 balls remaining = 10 overs bowled; 8 wickets remaining = 2 fallen
+  proj1 <- calculate_projected_score(
+    current_score = 50,
+    wickets = 2,
+    overs = 10,
+    format = "t20"
+  )
+  proj2 <- calculate_projected_score(
+    current_score = 80,
+    wickets = 2,
+    overs = 10,
+    format = "t20"
+  )
 
   expect_true(proj2 > proj1)
 })
 
-test_that("calculate_projected_score decreases with fewer wickets", {
-  proj1 <- calculate_projected_score(80, 60, 8, format = "t20")
-  proj2 <- calculate_projected_score(80, 60, 4, format = "t20")
+test_that("calculate_projected_score decreases with more wickets fallen", {
+  # Same score and overs, different wickets fallen
+  # Old: 8 wickets remaining = 2 fallen; 4 wickets remaining = 6 fallen
+  proj1 <- calculate_projected_score(
+    current_score = 80,
+    wickets = 2,     # 2 wickets fallen (8 remaining)
+    overs = 10,
+    format = "t20"
+  )
+  proj2 <- calculate_projected_score(
+    current_score = 80,
+    wickets = 6,     # 6 wickets fallen (4 remaining)
+    overs = 10,
+    format = "t20"
+  )
 
+  # More wickets fallen = lower projection
   expect_true(proj2 < proj1)
 })
 
 test_that("calculate_projected_score respects bounds", {
-  # Very low projection should be bounded
+  # Very low projection should be bounded (all out, all overs done)
   projected <- calculate_projected_score(
     current_score = 10,
-    balls_remaining = 0,
-    wickets_remaining = 0,
+    wickets = 10,    # All out
+    overs = 20,      # All overs bowled
     format = "t20"
   )
   expect_true(projected >= PROJ_MIN_SCORE_T20 || projected == 10)
 
   # Projected should be at least current score
+  # 5 wickets fallen, 10 overs bowled (60 balls remaining)
   projected <- calculate_projected_score(
     current_score = 100,
-    balls_remaining = 60,
-    wickets_remaining = 5,
+    wickets = 5,
+    overs = 10,
     format = "t20"
   )
   expect_true(projected >= 100)
@@ -149,16 +215,17 @@ test_that("calculate_projected_score handles all formats", {
   formats <- c("t20", "odi", "test")
 
   for (fmt in formats) {
-    max_balls <- switch(fmt,
-      "t20" = 120,
-      "odi" = 300,
-      "test" = 540
+    max_overs <- switch(fmt,
+      "t20" = 20,
+      "odi" = 50,
+      "test" = 90
     )
 
+    # Test at halfway point (half overs bowled, 3 wickets fallen)
     projected <- calculate_projected_score(
       current_score = 50,
-      balls_remaining = max_balls / 2,
-      wickets_remaining = 7,
+      wickets = 3,               # 3 wickets fallen (7 remaining)
+      overs = max_overs / 2,     # Half overs bowled
       format = fmt
     )
 
@@ -227,22 +294,31 @@ test_that("calculate_projection_change handles wickets", {
 
 test_that("calculate_projected_scores_vectorized matches scalar version", {
   # Test multiple deliveries
+  # Internal representation (used by vectorized function)
   current_scores <- c(0, 50, 100)
   balls_remaining <- c(120, 60, 30)
   wickets_remaining <- c(10, 7, 4)
   eis <- rep(160, 3)
 
+  # Vectorized function uses internal representation
   vectorized <- calculate_projected_scores_vectorized(
-    current_scores, balls_remaining, wickets_remaining, eis,
+    current_scores, wickets_remaining, balls_remaining, eis,
     a = PROJ_DEFAULT_A, b = PROJ_DEFAULT_B,
     z = PROJ_DEFAULT_Z, y = PROJ_DEFAULT_Y,
     max_balls = 120
   )
 
+  # Scalar function uses public interface (wickets fallen, overs bowled)
+  # Convert: wickets = 10 - wickets_remaining, overs = (120 - balls_remaining) / 6
   scalar <- sapply(1:3, function(i) {
+    wickets_fallen <- 10 - wickets_remaining[i]
+    overs_bowled <- (120 - balls_remaining[i]) / 6
     calculate_projected_score(
-      current_scores[i], balls_remaining[i], wickets_remaining[i],
-      expected_initial_score = eis[i], format = "t20",
+      current_score = current_scores[i],
+      wickets = wickets_fallen,
+      overs = overs_bowled,
+      expected_initial_score = eis[i],
+      format = "t20",
       apply_bounds = FALSE
     )
   })

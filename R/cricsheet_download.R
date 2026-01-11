@@ -16,19 +16,7 @@
 #'   Default is TRUE.
 #'
 #' @return Character vector of paths to downloaded (and optionally extracted) files
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Download ODI data
-#' files <- download_cricsheet_data("odi")
-#'
-#' # Download women's T20I data
-#' files <- download_cricsheet_data("t20i", gender = "female")
-#'
-#' # Download to specific location
-#' files <- download_cricsheet_data("ipl", output_path = "~/cricket_data/ipl")
-#' }
+#' @keywords internal
 download_cricsheet_data <- function(match_type,
                                      gender = "male",
                                      data_format = "json",
@@ -184,16 +172,7 @@ get_cricsheet_url <- function(match_type, gender = "male", data_format = "json")
 #' @param output_path Output directory path. If NULL, uses temp directory.
 #'
 #' @return Character vector of extracted file paths
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Download all ODI matches
-#' odi_files <- download_format_data("odi")
-#'
-#' # Download women's Test matches
-#' test_files <- download_format_data("test", gender = "female")
-#' }
+#' @keywords internal
 download_format_data <- function(format, gender = "male", output_path = NULL) {
   format <- tolower(format)
 
@@ -220,16 +199,7 @@ download_format_data <- function(format, gender = "male", output_path = NULL) {
 #' @param output_path Output directory path. If NULL, uses temp directory.
 #'
 #' @return Character vector of extracted file paths
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Download IPL data
-#' ipl_files <- download_league_data("ipl")
-#'
-#' # Download Big Bash League data
-#' bbl_files <- download_league_data("bbl")
-#' }
+#' @keywords internal
 download_league_data <- function(league, output_path = NULL) {
   league <- tolower(league)
 
@@ -343,15 +313,7 @@ compare_zip_to_local <- function(zip_file, local_dir) {
 #'   - changed_files: Character vector of updated filenames (size changed)
 #'   - unchanged_count: Count of files that didn't change
 #'
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Download and get info about changes
-#' result <- download_all_cricsheet_data()
-#' cat("New matches:", length(result$new_files), "\n")
-#' cat("Updated matches:", length(result$changed_files), "\n")
-#' }
+#' @keywords internal
 download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE) {
   url <- "https://cricsheet.org/downloads/all_json.zip"
 

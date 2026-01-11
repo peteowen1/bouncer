@@ -1164,13 +1164,7 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 #' @param overwrite Logical. If TRUE, drops and recreates the table. Default FALSE.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' create_dual_elo_table()
-#' create_dual_elo_table(overwrite = TRUE)
-#' }
+#' @keywords internal
 create_dual_elo_table <- function(path = NULL, overwrite = FALSE) {
   if (is.null(path)) {
     path <- get_default_db_path()
@@ -1231,7 +1225,7 @@ create_dual_elo_table <- function(path = NULL, overwrite = FALSE) {
 #' @param batch_size Integer. Number of rows to insert per transaction.
 #'
 #' @return Invisibly returns the number of rows inserted
-#' @export
+#' @keywords internal
 insert_dual_elos <- function(dt, path = NULL, batch_size = 10000) {
   if (is.null(path)) {
     path <- get_default_db_path()
@@ -1294,12 +1288,7 @@ insert_dual_elos <- function(dt, path = NULL, batch_size = 10000) {
 #' @param path Character. Database file path. If NULL, uses default. Ignored if conn is provided.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' add_margin_columns()
-#' }
+#' @keywords internal
 add_margin_columns <- function(conn = NULL, path = NULL) {
   # If connection provided, use it (caller is responsible for closing)
   own_conn <- is.null(conn)
@@ -1374,14 +1363,7 @@ add_margin_columns <- function(conn = NULL, path = NULL) {
 #' @param verbose Logical. Print progress messages. Default TRUE.
 #'
 #' @return Invisibly returns the number of matches deleted
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection(read_only = FALSE)
-#' delete_matches_from_db(c("12345", "12346"), conn)
-#' DBI::dbDisconnect(conn, shutdown = TRUE)
-#' }
+#' @keywords internal
 delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
   if (length(match_ids) == 0) {
     if (verbose) cli::cli_alert_info("No matches to delete")

@@ -11,7 +11,7 @@
 #' @param conn DBI connection
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 create_pipeline_state_table <- function(conn) {
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS pipeline_state (
@@ -34,7 +34,7 @@ create_pipeline_state_table <- function(conn) {
 #' @param conn DBI connection
 #'
 #' @return Named list with match_count, delivery_count, last_match_date
-#' @export
+#' @keywords internal
 get_data_stats <- function(conn) {
   stats <- DBI::dbGetQuery(conn, "
     SELECT
@@ -59,7 +59,7 @@ get_data_stats <- function(conn) {
 #' @param conn DBI connection
 #'
 #' @return Data frame with state info, or NULL if step never run
-#' @export
+#' @keywords internal
 get_pipeline_state <- function(step_name, conn) {
   # Ensure table exists
   if (!"pipeline_state" %in% DBI::dbListTables(conn)) {
@@ -89,7 +89,7 @@ get_pipeline_state <- function(step_name, conn) {
 #' @param status Character. "success", "failed", or "skipped"
 #'
 #' @return Invisibly returns TRUE
-#' @export
+#' @keywords internal
 update_pipeline_state <- function(step_name, conn, status = "success") {
   # Ensure table exists
   create_pipeline_state_table(conn)
@@ -130,7 +130,7 @@ update_pipeline_state <- function(step_name, conn, status = "success") {
 #' @param conn DBI connection
 #'
 #' @return Named list with new_matches and new_deliveries
-#' @export
+#' @keywords internal
 get_new_data_since <- function(step_name, conn) {
   state <- get_pipeline_state(step_name, conn)
   current <- get_data_stats(conn)
@@ -162,7 +162,7 @@ get_new_data_since <- function(step_name, conn) {
 #' @param match_threshold Integer. Min new matches to require running (default 0)
 #'
 #' @return Named list with should_skip (logical), reason (character), and new_data counts
-#' @export
+#' @keywords internal
 should_skip_step <- function(step_name, conn,
                               delivery_threshold = 0,
                               match_threshold = 0) {
@@ -249,7 +249,7 @@ print_skip_decision <- function(step_name, decision) {
 #' @param conn DBI connection
 #'
 #' @return Data frame with all step states
-#' @export
+#' @keywords internal
 get_pipeline_summary <- function(conn) {
   if (!"pipeline_state" %in% DBI::dbListTables(conn)) {
     return(data.frame())

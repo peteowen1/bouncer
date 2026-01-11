@@ -14,7 +14,7 @@
 #' @param overwrite Logical. If TRUE, drops and recreates table. Default FALSE.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 create_format_elo_table <- function(format = "t20", conn, overwrite = FALSE) {
 
   table_name <- paste0(format, "_player_elo")
@@ -87,7 +87,7 @@ create_format_elo_table <- function(format = "t20", conn, overwrite = FALSE) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 insert_format_elos <- function(elos_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_player_elo")
@@ -130,7 +130,7 @@ insert_format_elos <- function(elos_df, format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with ELO statistics
-#' @export
+#' @keywords internal
 get_format_elo_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_player_elo")
@@ -164,7 +164,7 @@ get_format_elo_stats <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows deleted
-#' @export
+#' @keywords internal
 clear_format_elo_table <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_player_elo")
@@ -193,7 +193,7 @@ clear_format_elo_table <- function(format = "t20", conn) {
 #' @param format Character. Format: "t20", "odi", or "test"
 #'
 #' @return Named list of parameters
-#' @export
+#' @keywords internal
 build_elo_params <- function(format = "t20") {
   # Get format-specific K factors
   k_run <- switch(format,
@@ -243,7 +243,7 @@ build_elo_params <- function(format = "t20") {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Named list of parameters or NULL if not found
-#' @export
+#' @keywords internal
 get_stored_elo_params <- function(format = "t20", conn) {
   # Ensure table exists
   if (!"elo_calculation_params" %in% DBI::dbListTables(conn)) {
@@ -273,7 +273,7 @@ get_stored_elo_params <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 store_elo_params <- function(params, last_delivery_id, last_match_date, total_deliveries, conn) {
   # Ensure table exists
   if (!"elo_calculation_params" %in% DBI::dbListTables(conn)) {
@@ -330,7 +330,7 @@ store_elo_params <- function(params, last_delivery_id, last_match_date, total_de
 #' @param stored Named list of stored parameters
 #'
 #' @return Logical. TRUE if parameters match, FALSE otherwise
-#' @export
+#' @keywords internal
 elo_params_match <- function(current, stored) {
   if (is.null(stored)) {
     return(FALSE)
@@ -363,7 +363,7 @@ elo_params_match <- function(current, stored) {
 #'
 #' @return List with four environments: batter_run_elo, batter_wicket_elo,
 #'   bowler_run_elo, bowler_wicket_elo (separate batting and bowling ELOs)
-#' @export
+#' @keywords internal
 get_all_player_elo_state <- function(format = "t20", conn) {
   table_name <- paste0(format, "_player_elo")
 
@@ -446,7 +446,7 @@ get_all_player_elo_state <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with last_delivery_id and last_match_date, or NULL
-#' @export
+#' @keywords internal
 get_last_processed_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_player_elo")
 

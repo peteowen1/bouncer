@@ -11,11 +11,7 @@
 #' @param x Character vector to convert
 #'
 #' @return Character vector in snake_case
-#' @export
-#'
-#' @examples
-#' to_snake_case("Mumbai Indians")
-#' # Returns: "mumbai_indians"
+#' @keywords internal
 to_snake_case <- function(x) {
 
   x <- tolower(x)
@@ -37,14 +33,7 @@ to_snake_case <- function(x) {
 #' @param team_type Character. Team type ("club" or "international")
 #'
 #' @return Character. Composite team ID in snake_case
-#' @export
-#'
-#' @examples
-#' make_team_id("Mumbai Indians", "male", "t20", "club")
-#' # Returns: "mumbai_indians_male_t20_club"
-#'
-#' make_team_id("India", "male", "odi", "international")
-#' # Returns: "india_male_odi_international"
+#' @keywords internal
 make_team_id <- function(team, gender, format, team_type) {
   paste(
     to_snake_case(team),
@@ -66,11 +55,7 @@ make_team_id <- function(team, gender, format, team_type) {
 #' @param team_type Character vector. Team types
 #'
 #' @return Character vector. Composite team IDs in snake_case
-#' @export
-#'
-#' @examples
-#' # In data.table:
-#' # dt[, team_id := make_team_id_vec(team, gender, format, team_type)]
+#' @keywords internal
 make_team_id_vec <- function(team, gender, format, team_type) {
 
   mapply(make_team_id, team, gender, format, team_type, USE.NAMES = FALSE)
@@ -84,12 +69,7 @@ make_team_id_vec <- function(team, gender, format, team_type) {
 #' @param team_id Character. Composite team ID
 #'
 #' @return Named list with team, gender, format, team_type components
-#' @export
-#'
-#' @examples
-#' parse_team_id("mumbai_indians_male_t20_club")
-#' # Returns: list(team = "mumbai_indians", gender = "male",
-#' #               format = "t20", team_type = "club")
+#' @keywords internal
 parse_team_id <- function(team_id) {
   # Split from the end (team_type, format, gender are known patterns)
   parts <- strsplit(team_id, "_")[[1]]
@@ -116,7 +96,7 @@ if (n < 4) {
 #' @param team_id Character. Composite team ID
 #'
 #' @return Character. Format component (t20, odi, test)
-#' @export
+#' @keywords internal
 get_format_from_team_id <- function(team_id) {
   parts <- strsplit(team_id, "_")[[1]]
   n <- length(parts)
@@ -132,12 +112,7 @@ get_format_from_team_id <- function(team_id) {
 #' @param format Character. Format to match (e.g., "t20")
 #'
 #' @return Logical vector
-#' @export
-#'
-#' @examples
-#' ids <- c("mumbai_indians_male_t20_club", "india_male_odi_international")
-#' filter_team_ids_by_format(ids, "t20")
-#' # Returns: c(TRUE, FALSE)
+#' @keywords internal
 filter_team_ids_by_format <- function(team_ids, format) {
   pattern <- paste0("_", tolower(format), "_")
  grepl(pattern, team_ids, fixed = FALSE)

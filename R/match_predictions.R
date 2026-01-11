@@ -154,7 +154,7 @@ predict_from_elo <- function(features) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 store_prediction <- function(prediction, conn) {
 
   DBI::dbExecute(conn, "
@@ -195,7 +195,7 @@ store_prediction <- function(prediction, conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of predictions updated
-#' @export
+#' @keywords internal
 update_prediction_outcome <- function(match_id, conn) {
 
   # Get actual outcome
@@ -229,7 +229,7 @@ update_prediction_outcome <- function(match_id, conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of predictions updated
-#' @export
+#' @keywords internal
 batch_update_prediction_outcomes <- function(conn) {
 
   # Find predictions without outcomes but where match is complete
@@ -270,7 +270,7 @@ batch_update_prediction_outcomes <- function(conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with predictions
-#' @export
+#' @keywords internal
 get_predictions <- function(match_id = NULL, model_version = NULL,
                              include_outcomes = FALSE, conn) {
 
@@ -308,14 +308,7 @@ get_predictions <- function(match_id = NULL, model_version = NULL,
 #' @param predictions Data frame. Predictions with outcomes
 #'
 #' @return List with accuracy metrics
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' predictions <- get_predictions(include_outcomes = TRUE, conn = conn)
-#' metrics <- calculate_prediction_accuracy(predictions)
-#' }
+#' @keywords internal
 calculate_prediction_accuracy <- function(predictions) {
 
   if (nrow(predictions) == 0 || all(is.na(predictions$prediction_correct))) {
@@ -369,7 +362,7 @@ calculate_prediction_accuracy <- function(predictions) {
 #' @param prediction List. Prediction from predict_match_outcome
 #'
 #' @return Character string with formatted report
-#' @export
+#' @keywords internal
 generate_prediction_report <- function(prediction) {
 
   report <- sprintf(

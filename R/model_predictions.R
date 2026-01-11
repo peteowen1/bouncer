@@ -23,26 +23,7 @@
 #' - {prefix}_4: P(4 runs)
 #' - {prefix}_6: P(6 runs)
 #'
-#' @examples
-#' \dontrun{
-#' # Add BAM shortform predictions
-#' add_predictions_to_deliveries(
-#'   model_path = "data-raw/model_bam_outcome_shortform.rds",
-#'   model_type = "bam",
-#'   format = "shortform",
-#'   column_prefix = "pred_bam"
-#' )
-#'
-#' # Add XGBoost shortform predictions
-#' add_predictions_to_deliveries(
-#'   model_path = "data-raw/model_xgb_outcome_shortform.json",
-#'   model_type = "xgb",
-#'   format = "shortform",
-#'   column_prefix = "pred_xgb"
-#' )
-#' }
-#'
-#' @export
+#' @keywords internal
 add_predictions_to_deliveries <- function(model_path,
                                           model_type = c("bam", "xgb"),
                                           format = c("shortform", "longform"),

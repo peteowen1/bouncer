@@ -385,7 +385,7 @@ apply_player_propagation <- function(player_elos,
 #' @param propagation_factor How much of update to propagate (default 0.15)
 #' @param correlation_threshold Min correlation to propagate (default 0.1)
 #' @return Updated player_elos list
-#' @export
+#' @keywords internal
 apply_player_elo_propagation <- function(player_elos,
                                           delivery_results,
                                           player_opponents,
@@ -450,11 +450,7 @@ apply_player_elo_propagation <- function(player_elos,
 #' @param gap_threshold Numeric. Minimum gap to trigger adjustment (default 50).
 #' @param elo_type Character. "run" or "wicket" to select which ELO to adjust.
 #' @return Updated player_elos list.
-#' @export
-#'
-#' @examples
-#' # If NZ domestic team has team_elo = 1350 and avg player ELO = 1600
-#' # Gap = 250, adjustment = -250 * 0.2 = -50 points per player
+#' @keywords internal
 apply_team_anchored_propagation <- function(player_elos,
                                              team_elos,
                                              player_teams,
@@ -530,7 +526,7 @@ apply_team_anchored_propagation <- function(player_elos,
 #' @param player_teams Named character vector. Maps player_id to team.
 #' @param propagation_factor Numeric. How much to adjust (default 0.2).
 #' @return Updated player_elos list.
-#' @export
+#' @keywords internal
 apply_full_team_anchored_propagation <- function(player_elos,
                                                   team_elos,
                                                   player_teams,

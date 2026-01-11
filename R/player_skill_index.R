@@ -40,7 +40,7 @@ get_skill_alpha <- function(format = "t20") {
 #'   - survival_rate: Starting survival rate (format average)
 #'   - economy_index: Starting economy index (0 = neutral)
 #'   - strike_rate: Starting strike rate (format wicket rate)
-#' @export
+#' @keywords internal
 get_skill_start_values <- function(format = "t20") {
   fmt <- normalize_format(format)
   switch(fmt,
@@ -82,7 +82,7 @@ get_skill_start_values <- function(format = "t20") {
 #' @param alpha Numeric. Learning rate (0-1). Higher = faster adaptation.
 #'
 #' @return Numeric. Updated skill index
-#' @export
+#' @keywords internal
 update_skill_index <- function(old_value, observation, alpha) {
   alpha * observation + (1 - alpha) * old_value
 }
@@ -97,7 +97,7 @@ update_skill_index <- function(old_value, observation, alpha) {
 #' @param base_rate Numeric. Optional calibrated base rate. If NULL, uses average of indices.
 #'
 #' @return Numeric. Expected runs for this delivery
-#' @export
+#' @keywords internal
 calculate_expected_runs_skill <- function(batter_bsi, bowler_bei, base_rate = NULL) {
   if (is.null(base_rate)) {
     # Simple average of batter's scoring and bowler's economy
@@ -122,7 +122,7 @@ calculate_expected_runs_skill <- function(batter_bsi, bowler_bei, base_rate = NU
 #' @param base_rate Numeric. Optional calibrated base wicket rate.
 #'
 #' @return Numeric. Expected wicket probability for this delivery
-#' @export
+#' @keywords internal
 calculate_expected_wicket_skill <- function(batter_bsr, bowler_bsi, base_rate = NULL) {
   # batter_bsr is survival rate (e.g., 0.975 = survives 97.5% of balls)
   # bowler_bsi is strike rate (e.g., 0.03 = takes wicket on 3% of balls)
@@ -154,7 +154,7 @@ calculate_expected_wicket_skill <- function(batter_bsr, bowler_bsi, base_rate = 
 #' @param overwrite Logical. If TRUE, drops and recreates table. Default FALSE.
 #'
 #' @return Invisibly returns TRUE on success
-#' @export
+#' @keywords internal
 create_format_skill_table <- function(format = "t20", conn, overwrite = FALSE) {
 
   table_name <- paste0(format, "_player_skill")
@@ -225,7 +225,7 @@ create_format_skill_table <- function(format = "t20", conn, overwrite = FALSE) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 insert_format_skills <- function(skills_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_player_skill")
@@ -267,7 +267,7 @@ insert_format_skills <- function(skills_df, format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with skill statistics
-#' @export
+#' @keywords internal
 get_format_skill_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_player_skill")
@@ -305,7 +305,7 @@ get_format_skill_stats <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return List with environments for each skill type
-#' @export
+#' @keywords internal
 get_all_player_skill_state <- function(format = "t20", conn) {
   table_name <- get_skill_table_name(format, "player_skill")
 
@@ -408,7 +408,7 @@ get_all_player_skill_state <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with last_delivery_id and last_match_date, or NULL
-#' @export
+#' @keywords internal
 get_last_processed_skill_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_player_skill")
 
@@ -444,7 +444,7 @@ get_last_processed_skill_delivery <- function(format = "t20", conn) {
 #'   bowler_economy_index, bowler_strike_rate, batter_balls_faced, bowler_balls_bowled
 #'
 #' @return Data frame with skill columns joined
-#' @export
+#' @keywords internal
 join_skill_indices <- function(deliveries_df, format = "t20", conn,
                                skill_columns = c("batter_scoring_index",
                                                 "batter_survival_rate",
@@ -539,7 +539,7 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
 #' @param conn DBI connection. Database connection
 #'
 #' @return Named list with skill indices, or NULL if not found
-#' @export
+#' @keywords internal
 get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
 
   table_name <- paste0(format, "_player_skill")
@@ -594,7 +594,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Data frame with player_id and skill indices
-#' @export
+#' @keywords internal
 get_players_skills <- function(player_ids, role = "batter", format = "t20", conn) {
 
   table_name <- paste0(format, "_player_skill")
@@ -654,7 +654,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
 #' @param fill_missing Logical. If TRUE, fills NA with starting values. Default TRUE.
 #'
 #' @return Data frame with skill features added
-#' @export
+#' @keywords internal
 add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing = TRUE) {
 
   # Join skill indices

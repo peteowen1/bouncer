@@ -99,8 +99,9 @@ See \code{vignette("getting-started")} for installation and basic usage.
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/yourusername/bouncerverse}
-  \item Report bugs at \url{https://github.com/yourusername/bouncerverse/issues}
+  \item \url{https://peteowen1.github.io/bouncer/}
+  \item \url{https://github.com/peteowen1/bouncer}
+  \item Report bugs at \url{https://github.com/peteowen1/bouncer/issues}
 }
 
 }

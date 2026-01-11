@@ -19,13 +19,7 @@
 #'   - mean_runs_per_ball: Average batter runs per ball
 #'   - mean_outcome_score: Average outcome score (using scoring weights)
 #'   - run_distribution: Data frame with run value frequencies
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' conn <- get_db_connection()
-#' cal <- calculate_calibration_metrics("t20", conn)
-#' }
+#' @keywords internal
 calculate_calibration_metrics <- function(format = "t20", conn) {
 
   # Query actual outcomes
@@ -102,7 +96,7 @@ calculate_calibration_metrics <- function(format = "t20", conn) {
 #' @param conn DBI connection. Database connection
 #'
 #' @return Invisibly returns number of rows inserted
-#' @export
+#' @keywords internal
 store_calibration_metrics <- function(calibration, conn) {
 
   if (is.null(calibration)) {
@@ -169,7 +163,7 @@ DBI::dbExecute(conn, "
 #' @param conn DBI connection. Database connection
 #'
 #' @return List with wicket_rate, mean_runs, run_distribution or NULL if not found
-#' @export
+#' @keywords internal
 get_calibration_data <- function(format = "t20", conn) {
 
   metrics <- DBI::dbGetQuery(conn, "
@@ -211,7 +205,7 @@ get_calibration_data <- function(format = "t20", conn) {
 #' @param divisor Numeric. ELO divisor (default 400)
 #'
 #' @return Numeric. Calibrated expected outcome score (0-1 scale for ELO update)
-#' @export
+#' @keywords internal
 calculate_expected_runs_calibrated <- function(batter_run_elo,
                                                 bowler_run_elo,
                                                 calibration,
@@ -254,7 +248,7 @@ calculate_expected_runs_calibrated <- function(batter_run_elo,
 #' @param divisor Numeric. ELO divisor (default 400)
 #'
 #' @return Numeric. Calibrated expected wicket probability (0-1)
-#' @export
+#' @keywords internal
 calculate_expected_wicket_calibrated <- function(batter_wicket_elo,
                                                   bowler_wicket_elo,
                                                   calibration,
@@ -288,7 +282,7 @@ calculate_expected_wicket_calibrated <- function(batter_wicket_elo,
 #' @param is_boundary Logical. Whether runs came from boundary (optional)
 #'
 #' @return Numeric. Score between 0 and 1
-#' @export
+#' @keywords internal
 calculate_run_outcome_score <- function(runs, is_wicket, is_boundary = FALSE) {
 
   if (is_wicket) {

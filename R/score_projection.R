@@ -20,10 +20,10 @@
 #' Calculate Projection Resource Remaining
 #'
 #' Calculates the percentage of batting resources remaining based on
-#' balls and wickets in hand using parameterized power formula.
+#' wickets and balls in hand using parameterized power formula.
 #'
-#' @param balls_remaining Integer. Balls remaining in innings.
 #' @param wickets_remaining Integer. Wickets in hand (0-10).
+#' @param balls_remaining Integer. Balls remaining in innings.
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param z Numeric. Power parameter for balls (default from constants).
 #' @param y Numeric. Power parameter for wickets (default from constants).
@@ -33,13 +33,13 @@
 #' @export
 #'
 #' @examples
-#' # T20: 30 balls (5 overs) left, 8 wickets in hand
-#' calculate_projection_resource(30, 8, "t20")
+#' # T20: 8 wickets in hand, 30 balls (5 overs) left
+#' calculate_projection_resource(8, 30, "t20")
 #'
-#' # ODI: 120 balls (20 overs) left, 5 wickets in hand, custom parameters
-#' calculate_projection_resource(120, 5, "odi", z = 0.85, y = 1.1)
-calculate_projection_resource <- function(balls_remaining,
-                                          wickets_remaining,
+#' # ODI: 5 wickets in hand, 120 balls (20 overs) left, custom parameters
+#' calculate_projection_resource(5, 120, "odi", z = 0.85, y = 1.1)
+calculate_projection_resource <- function(wickets_remaining,
+                                          balls_remaining,
                                           format = "t20",
                                           z = NULL,
                                           y = NULL,
@@ -103,11 +103,7 @@ calculate_projection_resource <- function(balls_remaining,
 #' @param team_type Character. "international" or "club" (domestic/franchise).
 #'
 #' @return Numeric. Expected initial score (average first innings total).
-#' @export
-#'
-#' @examples
-#' get_agnostic_expected_score("t20", "male", "international")  # ~160
-#' get_agnostic_expected_score("odi", "female", "club")         # ~200
+#' @keywords internal
 get_agnostic_expected_score <- function(format = "t20",
                                         gender = "male",
                                         team_type = "international") {
@@ -169,11 +165,7 @@ get_agnostic_expected_score <- function(format = "t20",
 #' @param conn DBI connection. Optional database connection to load from DB.
 #'
 #' @return Named list with parameters: a, b, z, y, eis_agnostic.
-#' @export
-#'
-#' @examples
-#' params <- load_projection_params("t20", "male", "club")
-#' params$a  # Weight on EIS component
+#' @keywords internal
 load_projection_params <- function(format = "t20",
                                    gender = "male",
                                    team_type = "international",
@@ -253,17 +245,18 @@ load_projection_params <- function(format = "t20",
 #' Calculate Projected Score
 #'
 #' Projects the final innings score from current game state using the
-#' parameterized resource-based formula.
+#' parameterized resource-based formula. Input matches scoreboard display.
 #'
 #' Formula:
 #'   projected = cs + a * eis * resource_remaining + b * cs * resource_remaining / resource_used
 #'
 #' @param current_score Integer. Runs scored so far in the innings.
-#' @param balls_remaining Integer. Balls left in innings.
-#' @param wickets_remaining Integer. Wickets in hand (10 - wickets_fallen).
+#' @param wickets Integer. Wickets fallen (0-10). Matches scoreboard: "120/3" means wickets=3.
+#' @param overs Numeric. Overs bowled in cricket notation (e.g., 13.4 = 13 overs + 4 balls).
+#'   Matches scoreboard: "(13.4 overs)" means overs=13.4.
+#' @param format Character. Format: "t20", "odi", or "test".
 #' @param expected_initial_score Numeric. Expected innings total at start (EIS).
 #'   If NULL, uses agnostic expected score for the format.
-#' @param format Character. Format: "t20", "odi", or "test".
 #' @param params Named list. Optimized parameters (a, b, z, y).
 #'   If NULL, loads default parameters.
 #' @param gender Character. "male" or "female" (used for defaults).
@@ -275,27 +268,24 @@ load_projection_params <- function(format = "t20",
 #' @export
 #'
 #' @examples
-#' # T20: 80 runs from 60 balls (10 overs), 7 wickets remaining
+#' # Scoreboard shows: "India 120/3 (13.4 overs)" in T20
+#' calculate_projected_score(120, 3, 13.4, "t20")
+#'
+#' # With named parameters
 #' calculate_projected_score(
 #'   current_score = 80,
-#'   balls_remaining = 60,
-#'   wickets_remaining = 7,
+#'   wickets = 3,
+#'   overs = 10.0,
 #'   format = "t20"
 #' )
 #'
 #' # With custom EIS (e.g., from full model)
-#' calculate_projected_score(
-#'   current_score = 80,
-#'   balls_remaining = 60,
-#'   wickets_remaining = 7,
-#'   expected_initial_score = 175,  # Team expected to score high
-#'   format = "t20"
-#' )
+#' calculate_projected_score(80, 3, 10.0, "t20", expected_initial_score = 175)
 calculate_projected_score <- function(current_score,
-                                      balls_remaining,
-                                      wickets_remaining,
-                                      expected_initial_score = NULL,
+                                      wickets,
+                                      overs,
                                       format = "t20",
+                                      expected_initial_score = NULL,
                                       params = NULL,
                                       gender = "male",
                                       team_type = "international",
@@ -310,6 +300,15 @@ calculate_projected_score <- function(current_score,
     current_score <- pmax(0, current_score)
   }
 
+  # Validate wickets (0-10)
+  if (any(wickets < 0 | wickets > 10, na.rm = TRUE)) {
+    cli::cli_warn("wickets should be 0-10 (wickets fallen), clamping")
+    wickets <- pmax(0, pmin(10, wickets))
+  }
+
+  # Convert wickets fallen to wickets remaining
+  wickets_remaining <- 10 - wickets
+
   # Get max balls for format
   max_balls_format <- switch(format_lower,
     "t20" = MAX_BALLS_T20, "it20" = MAX_BALLS_T20,
@@ -318,9 +317,14 @@ calculate_projected_score <- function(current_score,
     MAX_BALLS_T20
   )
 
-  if (any(balls_remaining > max_balls_format, na.rm = TRUE)) {
-    cli::cli_warn("balls_remaining ({max(balls_remaining)}) exceeds max for {format} ({max_balls_format}), clamping")
-    balls_remaining <- pmin(balls_remaining, max_balls_format)
+  # Convert overs bowled (cricket notation) to balls remaining
+  balls_bowled <- overs_to_balls(overs)
+  balls_remaining <- max_balls_format - balls_bowled
+
+  # Validate balls remaining
+  if (any(balls_remaining < 0, na.rm = TRUE)) {
+    cli::cli_warn("overs exceeds max for {format}, clamping")
+    balls_remaining <- pmax(0, balls_remaining)
   }
 
   # Load parameters if not provided
@@ -346,8 +350,8 @@ calculate_projected_score <- function(current_score,
 
   # Calculate resource remaining
   resource_remaining <- calculate_projection_resource(
-    balls_remaining = balls_remaining,
     wickets_remaining = wickets_remaining,
+    balls_remaining = balls_remaining,
     format = format,
     z = z,
     y = y
@@ -424,16 +428,7 @@ calculate_projected_score <- function(current_score,
 #' @param target Integer. Target to chase (innings 2 only, NULL for innings 1).
 #'
 #' @return Numeric. Predicted expected initial score.
-#' @export
-#'
-#' @examples
-#' # Team with strong batting (+0.2 runs skill) vs weak bowling (+0.1)
-#' calculate_full_expected_score(
-#'   batting_team_skills = list(runs_skill = 0.2),
-#'   bowling_team_skills = list(runs_skill = 0.1),
-#'   venue_skills = list(run_rate = 0.05),
-#'   format = "t20"
-#' )
+#' @keywords internal
 calculate_full_expected_score <- function(batting_team_skills = NULL,
                                           bowling_team_skills = NULL,
                                           venue_skills = NULL,
@@ -510,16 +505,7 @@ calculate_full_expected_score <- function(batting_team_skills = NULL,
 #'   - runs_scored: Runs scored
 #'   - is_wicket: Whether wicket fell
 #'   - above_expectation: Whether change was better than expected (optional)
-#' @export
-#'
-#' @examples
-#' # Batter hit a six, increasing projection
-#' calculate_projection_change(
-#'   projected_before = 150,
-#'   projected_after = 158,
-#'   runs_scored = 6,
-#'   is_wicket = FALSE
-#' )
+#' @keywords internal
 calculate_projection_change <- function(projected_before,
                                         projected_after,
                                         runs_scored,
@@ -554,8 +540,8 @@ calculate_projection_change <- function(projected_before,
 #' Used in parameter optimization and batch processing.
 #'
 #' @param current_score Integer vector. Runs scored so far for each delivery.
-#' @param balls_remaining Integer vector. Balls remaining for each delivery.
 #' @param wickets_remaining Integer vector. Wickets in hand for each delivery.
+#' @param balls_remaining Integer vector. Balls remaining for each delivery.
 #' @param expected_initial_score Numeric vector or scalar. EIS for each delivery.
 #' @param a Numeric. Parameter a.
 #' @param b Numeric. Parameter b.
@@ -567,8 +553,8 @@ calculate_projection_change <- function(projected_before,
 #' @return Numeric vector. Projected scores.
 #' @keywords internal
 calculate_projected_scores_vectorized <- function(current_score,
-                                                  balls_remaining,
                                                   wickets_remaining,
+                                                  balls_remaining,
                                                   expected_initial_score,
                                                   a,
                                                   b,
@@ -671,7 +657,7 @@ get_projection_segment_id <- function(format, gender, team_type) {
 #' @param metrics Named list. Optional optimization metrics (train_rmse, etc.).
 #'
 #' @return Invisible NULL.
-#' @export
+#' @keywords internal
 save_projection_params <- function(params,
                                    format,
                                    gender,
@@ -725,7 +711,7 @@ save_projection_params <- function(params,
 #'
 #' @return Data frame with columns: current_score, balls_remaining, wickets_remaining,
 #'   final_innings_total, match_id, innings.
-#' @export
+#' @keywords internal
 load_projection_training_data <- function(conn, format, gender, team_type,
                                           sample_frac = 1.0) {
 
@@ -823,8 +809,8 @@ calculate_projection_rmse <- function(params, data, eis, max_balls) {
   # Calculate projections
   projected <- calculate_projected_scores_vectorized(
     current_score = data$current_score,
-    balls_remaining = data$balls_remaining,
     wickets_remaining = data$wickets_remaining,
+    balls_remaining = data$balls_remaining,
     expected_initial_score = rep(eis, nrow(data)),
     a = a, b = b, z = z, y = y,
     max_balls = max_balls
@@ -948,7 +934,7 @@ refine_projection_params <- function(data, eis, max_balls, initial) {
 #' @param team_type Character. "international" or "club".
 #'
 #' @return Numeric. Average first innings total.
-#' @export
+#' @keywords internal
 calculate_actual_eis <- function(conn, format, gender, team_type) {
 
   format_lower <- tolower(format)
@@ -1005,7 +991,7 @@ calculate_actual_eis <- function(conn, format, gender, team_type) {
 #' @param output_dir Character. Directory to save parameters.
 #'
 #' @return Named list with optimized parameters and metrics, or NULL if insufficient data.
-#' @export
+#' @keywords internal
 optimize_projection_segment <- function(conn, format, gender, team_type,
                                         sample_frac = 0.5,
                                         validation_split = 0.2,
@@ -1121,15 +1107,7 @@ optimize_projection_segment <- function(conn, format, gender, team_type,
 #' @param team_types Character vector. Team types to optimize (default: all).
 #'
 #' @return Named list of results for each segment.
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' results <- optimize_all_projection_segments(
-#'   db_path = "../bouncerdata/bouncer.duckdb",
-#'   sample_frac = 0.3
-#' )
-#' }
+#' @keywords internal
 optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.duckdb",
                                              output_dir = "../bouncerdata/models",
                                              sample_frac = 0.5,
@@ -1216,7 +1194,7 @@ optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.d
 #' @param params_dir Character. Directory with parameter files.
 #'
 #' @return Invisible NULL.
-#' @export
+#' @keywords internal
 calculate_all_delivery_projections <- function(conn, format,
                                                batch_size = 50000,
                                                params_dir = "../bouncerdata/models") {
@@ -1380,8 +1358,8 @@ calculate_all_delivery_projections <- function(conn, format,
 
           # Calculate resource remaining
           rr <- calculate_projection_resource(
-            batch_data$balls_remaining[mask],
-            batch_data$wickets_remaining[mask],
+            wickets_remaining = batch_data$wickets_remaining[mask],
+            balls_remaining = batch_data$balls_remaining[mask],
             format = format,
             z = params$z,
             y = params$y
@@ -1392,8 +1370,8 @@ calculate_all_delivery_projections <- function(conn, format,
           # Calculate agnostic projection
           proj_agnostic <- calculate_projected_scores_vectorized(
             current_score = batch_data$current_score[mask],
-            balls_remaining = batch_data$balls_remaining[mask],
             wickets_remaining = batch_data$wickets_remaining[mask],
+            balls_remaining = batch_data$balls_remaining[mask],
             expected_initial_score = rep(eis, sum(mask)),
             a = params$a, b = params$b, z = params$z, y = params$y,
             max_balls = max_balls
@@ -1496,12 +1474,7 @@ calculate_all_delivery_projections <- function(conn, format,
 #' @param params_dir Character. Directory with parameter files.
 #'
 #' @return Invisible NULL.
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' calculate_all_format_projections()
-#' }
+#' @keywords internal
 calculate_all_format_projections <- function(db_path = "../bouncerdata/bouncer.duckdb",
                                              formats = c("t20", "odi", "test"),
                                              batch_size = 50000,
