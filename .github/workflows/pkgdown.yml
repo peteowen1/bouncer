@@ -46,8 +46,8 @@ jobs:
           path: docs
 
   deploy:
-    # Only deploy from main or dev branch, not PRs
-    if: github.event_name != 'pull_request'
+    # Only deploy from main branch (GitHub Pages environment protection)
+    if: github.ref == 'refs/heads/main'
 
     environment:
       name: github-pages
