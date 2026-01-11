@@ -12,26 +12,40 @@ calculate_player_batting_stats(
 )
 }
 \arguments{
-\item{player_id}{Character. Player identifier}
+\item{player_id}{Character. Player identifier (e.g., "V Kohli", "BA Stokes").
+Use the format from Cricsheet data (typically "First Initial + Surname").}
 
-\item{match_type}{Character. Filter by match type}
+\item{match_type}{Character. Filter by match type: "T20", "ODI", "Test",
+"IT20", "MDM", or NULL for all formats.}
 
-\item{season}{Character. Filter by season}
+\item{season}{Character. Filter by season (e.g., "2023", "2023/24").}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Database path. If NULL, uses default location.}
 }
 \value{
-Data frame with batting metrics
+Data frame with batting metrics:
+\itemize{
+\item balls_faced, runs_scored, dismissals, fours, sixes
+\item batting_average, strike_rate, boundary_percentage
+\item elo_batting (current rating)
+}
 }
 \description{
-Calculates comprehensive batting statistics for a player.
+Calculates comprehensive batting statistics for a player including
+average, strike rate, boundary percentage, and current ELO rating.
 }
 \examples{
 \dontrun{
-# Get all-time batting stats
-kohli_batting <- calculate_player_batting_stats("V Kohli")
+# Get overall batting stats for a player
+kohli_stats <- calculate_player_batting_stats("V Kohli")
 
-# Get T20-specific stats
-kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "t20")
+# Get T20 stats only
+kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "T20")
+
+# Get stats for a specific season
+stokes_2023 <- calculate_player_batting_stats("BA Stokes", season = "2023")
+
+# Get Test stats for a player
+root_tests <- calculate_player_batting_stats("JE Root", match_type = "Test")
 }
 }

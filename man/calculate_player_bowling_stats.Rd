@@ -12,26 +12,40 @@ calculate_player_bowling_stats(
 )
 }
 \arguments{
-\item{player_id}{Character. Player identifier}
+\item{player_id}{Character. Player identifier (e.g., "V Kohli", "BA Stokes").
+Use the format from Cricsheet data (typically "First Initial + Surname").}
 
-\item{match_type}{Character. Filter by match type}
+\item{match_type}{Character. Filter by match type: "T20", "ODI", "Test",
+"IT20", "MDM", or NULL for all formats.}
 
-\item{season}{Character. Filter by season}
+\item{season}{Character. Filter by season (e.g., "2023", "2023/24").}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Database path. If NULL, uses default location.}
 }
 \value{
-Data frame with bowling metrics
+Data frame with bowling metrics:
+\itemize{
+\item balls_bowled, runs_conceded, wickets
+\item bowling_average, economy_rate, strike_rate
+\item elo_bowling (current rating)
+}
 }
 \description{
-Calculates comprehensive bowling statistics for a player.
+Calculates comprehensive bowling statistics for a player including
+average, economy rate, strike rate, and current ELO rating.
 }
 \examples{
 \dontrun{
-# Get all-time bowling stats
-bumrah_bowling <- calculate_player_bowling_stats("J Bumrah")
+# Get overall bowling stats
+bumrah_stats <- calculate_player_bowling_stats("JJ Bumrah")
 
-# Get ODI-specific stats
-bumrah_odi <- calculate_player_bowling_stats("J Bumrah", match_type = "odi")
+# Get T20 bowling stats
+rashid_t20 <- calculate_player_bowling_stats("Rashid Khan", match_type = "T20")
+
+# Get Test bowling stats
+anderson_tests <- calculate_player_bowling_stats("JM Anderson", match_type = "Test")
+
+# Get stats for specific season
+cummins_2023 <- calculate_player_bowling_stats("PJ Cummins", season = "2023")
 }
 }

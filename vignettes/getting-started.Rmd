@@ -1,0 +1,379 @@
+---
+title: "Getting Started with Bouncer"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting Started with Bouncer}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+The **bouncer** package provides comprehensive cricket analytics featuring:
+
+- **Ball-by-ball skill tracking** - Player, team, and venue skill indices updated on every delivery
+- **Residual-based skill indices** - Skills measured as deviation from context-expected performance
+- **Match simulation** - Ball-by-ball simulation using learned skill profiles
+- **Win probability** - Live in-match win probability predictions
+- **Player attribution** - Quantifying individual contributions via zero-ablation
+
+This vignette walks you through installation, data setup, and basic usage.
+
+## Installation
+
+Install the package from GitHub:
+
+```{r install}
+# install.packages("devtools")
+devtools::install_github("peteowen1/bouncerverse", subdir = "bouncer")
+```
+
+## Accessing Data
+
+There are **three ways** to access bouncer data, from easiest to most powerful:
+
+### Option 1: Query Remote Data (No Download)
+
+The simplest option - query parquet files directly from GitHub Releases:
+
+```{r remote-query}
+library(bouncer)
+
+# One-liner queries (creates connection, runs query, closes)
+recent_matches <- query_bouncerdata(
+  "SELECT match_id, team1, team2, match_date, match_type
+   FROM matches
+   WHERE match_type = 'T20'
+   ORDER BY match_date DESC
+   LIMIT 20"
+)
+
+# Get top T20 batters by skill index
+top_batters <- query_bouncerdata(
+  "SELECT player_id, batter_scoring_index, batter_survival_rate
+   FROM t20_player_skill
+   ORDER BY batter_scoring_index DESC
+   LIMIT 10"
+)
+```
+
+For multiple queries, keep the connection open:
+
+```{r remote-connection}
+# Connect once, query many times
+con <- connect_bouncerdata()
+
+matches <- DBI::dbGetQuery(con, "SELECT * FROM matches LIMIT 100")
+players <- DBI::dbGetQuery(con, "SELECT * FROM players LIMIT 100")
+
+# Always disconnect when done
+DBI::dbDisconnect(con, shutdown = TRUE)
+```
+
+### Option 2: Download Parquet Files
+
+For faster repeated queries, download the parquet files locally:
+
+```{r download-parquets}
+# Download all parquet files (~500MB total)
+install_parquets_from_release()
+
+# Or just specific tables
+install_parquets_from_release(tables = c("matches", "deliveries_short_form"))
+```
+
+### Option 3: Build Full Local Database
+
+For the complete experience with all features:
+
+```{r setup-data}
+# Download from Cricsheet and build local DuckDB (30-60 min first time)
+install_all_bouncer_data()
+
+# Or install from GitHub Releases (faster)
+install_bouncerdata_from_release()
+
+# Check what data was loaded
+get_data_info()
+```
+
+### Available Tables
+
+| Table | Description |
+|-------|-------------|
+| `matches` | Match metadata (teams, venue, date, result) |
+| `players` | Player registry |
+| `deliveries_long_form` | Ball-by-ball data for Tests, First-class |
+| `deliveries_short_form` | Ball-by-ball data for T20s, ODIs |
+| `t20_player_skill` | T20 player skill indices |
+| `odi_player_skill` | ODI player skill indices |
+| `test_player_skill` | Test player skill indices |
+| `team_elo` | Team ELO ratings |
+
+## Looking Up Players
+
+Use `get_player()` to look up any player by name:
+```{r player-lookup}
+# Look up a player (partial name match works)
+kohli <- get_player("Virat Kohli")
+print(kohli)
+
+# Get player with T20 skill indices
+kohli_t20 <- get_player("Virat Kohli", format = "t20")
+print(kohli_t20)
+
+# Search for players
+search_players("Smith")
+```
+
+## Looking Up Teams
+
+Use `get_team()` to get a team's current ELO rating:
+
+```{r team-lookup}
+# Get team info
+india <- get_team("India", format = "t20")
+print(india)
+
+# Search for teams
+search_teams("Mumbai")
+```
+
+## Analyzing Players
+
+Get detailed player analysis with `analyze_player()`:
+
+```{r analyze-player}
+# Get comprehensive player analysis
+analysis <- analyze_player("Jasprit Bumrah", format = "t20")
+print(analysis)
+
+# Compare two players
+comparison <- compare_players("Virat Kohli", "Steve Smith", format = "test")
+print(comparison)
+```
+
+## Player Statistics
+
+Get detailed batting and bowling statistics:
+
+```{r player-stats}
+# Batting stats with derived metrics
+kohli_batting <- calculate_player_batting_stats("V Kohli")
+# Returns: balls_faced, runs, average, strike_rate, boundary%, elo_batting
+
+# T20-specific batting stats
+kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "T20")
+
+# Stats for a specific season
+kohli_2023 <- calculate_player_batting_stats("V Kohli", season = "2023")
+
+# Bowling stats
+bumrah_bowling <- calculate_player_bowling_stats("JJ Bumrah")
+# Returns: balls_bowled, runs, wickets, average, economy, strike_rate, elo_bowling
+
+# Test bowling stats
+anderson_tests <- calculate_player_bowling_stats("JM Anderson", match_type = "Test")
+```
+
+## Analyzing Matches
+
+Analyze a completed match with `analyze_match()`:
+
+```{r analyze-match}
+# Get a match ID (you can find these in the database or from Cricsheet)
+match <- analyze_match("1234567")
+print(match)
+```
+
+## Predicting Match Outcomes
+
+Use `predict_match()` to get win probability for an upcoming match:
+
+```{r predict-match}
+# Predict a match outcome
+prediction <- predict_match("India", "Australia", format = "t20")
+print(prediction)
+
+# Compare two teams
+matchup <- compare_teams("India", "Australia", format = "t20")
+print(matchup)
+```
+
+## In-Match Win Probability
+
+Calculate live win probability during a match:
+
+```{r in-match}
+# First innings: Team at 85/2 after 10 overs
+wp <- predict_win_probability(
+  current_score = 85,
+  wickets = 2,
+  overs = 10.0,
+  innings = 1,
+  format = "t20"
+)
+print(wp)
+
+# Second innings: Chasing 180, currently 100/3 after 12.4 overs
+wp <- predict_win_probability(
+  current_score = 100,
+  wickets = 3,
+  overs = 12.4,
+  innings = 2,
+  target = 180,
+  format = "t20"
+)
+print(wp)
+```
+
+## Score Projection
+
+Project the final innings score from any game state:
+
+```{r projection}
+# Scoreboard shows: "India 80/3 (10.0 overs)"
+projected <- calculate_projected_score(
+  current_score = 80,
+  wickets = 3,      # wickets fallen
+  overs = 10.0,     # overs bowled
+  format = "t20"
+)
+print(projected)
+```
+
+## Visualization
+
+The package includes ggplot2-based visualization functions:
+
+```{r visualization}
+library(ggplot2)
+
+# Plot score progression for a match
+plot_score_progression("1234567")
+
+# Plot win probability over a match
+plot_win_probability("1234567", format = "t20")
+
+# Plot a player's skill progression over time
+plot_skill_progression("Virat Kohli", format = "t20")
+
+# Plot team ELO history
+plot_elo_history("India", format = "t20")
+
+# Compare two players visually
+plot_player_comparison("Virat Kohli", "Steve Smith", format = "test")
+```
+
+## Understanding Skill Indices
+
+Bouncer uses **residual-based skill indices** that measure how a player performs relative to what's expected given the match context. Here's how to interpret them:
+
+### Player Skills
+
+| Skill | Meaning | Interpretation |
+|-------|---------|----------------|
+| `batter_scoring_index` | Runs scored vs expected | +0.05 = scores ~0.05 more runs per ball than average |
+| `batter_survival_rate` | Survival probability | 0.98 = gets out ~2% of balls faced |
+| `bowler_economy_index` | Runs conceded vs expected | -0.05 = concedes ~0.05 fewer runs per ball |
+| `bowler_strike_rate` | Wicket probability | 0.05 = takes wicket ~5% of balls bowled |
+
+### Team Skills
+
+| Skill | Meaning |
+|-------|---------|
+| `batting_team_runs_skill` | Team's deviation from expected when batting |
+| `batting_team_wicket_skill` | Team's wicket rate deviation when batting |
+| `bowling_team_runs_skill` | Team's deviation from expected when bowling |
+| `bowling_team_wicket_skill` | Team's wicket rate deviation when bowling |
+
+**Key insight**: A skill index of 0 means "average" (performs as expected). Positive values for batting skills mean better-than-average. For bowling economy, negative is better (conceding fewer runs).
+
+## Querying the Database Directly
+
+For advanced analysis, you can query the database directly using SQL:
+
+```{r database-sql}
+# Connect to local database
+conn <- connect_to_bouncer()
+
+# Run any SQL query
+ipl_matches <- DBI::dbGetQuery(conn, "
+  SELECT match_id, team1, team2, match_date, venue
+  FROM matches
+  WHERE event_name LIKE '%Indian Premier League%'
+  ORDER BY match_date DESC
+  LIMIT 50
+")
+
+# Get ball-by-ball data for a specific match
+deliveries <- DBI::dbGetQuery(conn, "
+  SELECT *
+  FROM deliveries
+  WHERE match_id = '1234567'
+  ORDER BY innings, over, ball
+")
+
+# Aggregate stats
+top_scorers <- DBI::dbGetQuery(conn, "
+  SELECT
+    batter_id,
+    SUM(runs_batter) as total_runs,
+    COUNT(*) as balls_faced,
+    ROUND(SUM(runs_batter) * 100.0 / COUNT(*), 2) as strike_rate
+  FROM deliveries
+  WHERE match_type = 'T20'
+  GROUP BY batter_id
+  HAVING COUNT(*) > 500
+  ORDER BY total_runs DESC
+  LIMIT 20
+")
+
+# Don't forget to disconnect!
+disconnect_bouncer(conn)
+```
+
+Or use the helper functions:
+
+```{r database-helpers}
+# Query specific deliveries with filters
+deliveries <- query_deliveries(
+  batter_id = "V Kohli",
+  match_type = "t20",
+  event = "Indian Premier League",
+  limit = 1000
+)
+
+# Get batting stats
+batting <- query_batter_stats(
+  batter_id = "V Kohli",
+  match_type = "t20"
+)
+
+# Get head-to-head stats
+h2h <- query_batter_stats(
+  batter_id = "V Kohli",
+  bowler_id = "J Bumrah"
+)
+```
+
+## Next Steps
+
+- **Match Analysis**: See `vignette("match-analysis")` for detailed match analysis workflows
+- **Predictions**: See `vignette("predictions")` for pre-match and in-match prediction models
+- **Player Analysis**: See `vignette("player-analysis")` for deep dives into player skill tracking
+- **Simulation**: See `vignette("simulation")` for ball-by-ball match simulation
+
+## Getting Help
+
+- File issues at: https://github.com/peteowen1/bouncerverse/issues
+- View function documentation: `?function_name`
+- View all package functions: `help(package = "bouncer")`

@@ -1,0 +1,107 @@
+url: https://peteowen1.github.io/bouncer/
+
+template:
+  bootstrap: 5
+  bootswatch: flatly
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+  components:
+    github:
+      icon: fa-github
+      href: https://github.com/peteowen1/bouncer
+
+home:
+  title: bouncer - Cricket Analytics in R
+
+articles:
+  - title: Getting Started
+    navbar: ~
+    contents:
+    - getting-started
+
+  - title: Analysis Guides
+    contents:
+    - player-analysis
+    - match-analysis
+    - predictions
+    - simulation
+
+reference:
+  - title: Data Access
+    desc: Connect to and query cricket data
+    contents:
+    - query_bouncerdata
+    - connect_bouncerdata
+    - connect_to_bouncer
+    - disconnect_bouncer
+    - install_bouncerdata_from_release
+    - install_parquets_from_release
+    - install_all_bouncer_data
+    - get_latest_release
+    - update_bouncerdata
+
+  - title: Player Analysis
+    desc: Look up and analyze player performance
+    contents:
+    - get_player
+    - analyze_player
+    - compare_players
+    - search_players
+    - calculate_player_batting_stats
+    - calculate_player_bowling_stats
+
+  - title: Team Analysis
+    desc: Team ratings and matchups
+    contents:
+    - get_team
+    - compare_teams
+    - search_teams
+
+  - title: Match Analysis
+    desc: Analyze completed matches
+    contents:
+    - analyze_match
+
+  - title: Predictions
+    desc: Match outcome and in-game predictions
+    contents:
+    - predict_match
+    - predict_win_probability
+    - calculate_projected_score
+
+  - title: Visualization
+    desc: ggplot2-based cricket charts
+    contents:
+    - theme_bouncer
+    - plot_score_progression
+    - plot_win_probability
+    - plot_skill_progression
+    - plot_player_comparison
+    - plot_elo_history
+    - plot_team_strength
+
+  - title: Database Queries
+    desc: Direct database access for advanced users
+    contents:
+    - query_deliveries
+    - query_batter_stats
+    - query_bowler_stats
+    - query_player_stats
+
+  - title: Data Parsing
+    desc: Parse Cricsheet JSON files
+    contents:
+    - parse_cricsheet_json
+    - classify_match
+    - get_format_category
+    - get_model_format
+    - batch_load_matches
+
+  - title: Simulation
+    desc: Ball-by-ball match simulation
+    contents:
+    - simulate_match
+    - run_simulations

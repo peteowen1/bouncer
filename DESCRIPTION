@@ -36,11 +36,12 @@ Suggests:
     data.table,
     ggplot2,
     mgcv (>= 1.8-0),
+    scales,
     tidyr,
     xgboost (>= 1.7.0),
     testthat (>= 3.0.0),
     knitr,
     rmarkdown
 VignetteBuilder: knitr
-URL: https://github.com/yourusername/bouncerverse
-BugReports: https://github.com/yourusername/bouncerverse/issues
+URL: https://peteowen1.github.io/bouncer/, https://github.com/peteowen1/bouncer
+BugReports: https://github.com/peteowen1/bouncer/issues

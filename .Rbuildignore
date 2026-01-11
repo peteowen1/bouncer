@@ -3,3 +3,6 @@
 ^data-raw$
 ^_ul.*$
 ^model_xgb_outcome_.*\.json$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$

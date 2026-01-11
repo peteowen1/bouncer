@@ -2,23 +2,35 @@
 
 #' Calculate Player Batting Stats
 #'
-#' Calculates comprehensive batting statistics for a player.
+#' Calculates comprehensive batting statistics for a player including
+#' average, strike rate, boundary percentage, and current ELO rating.
 #'
-#' @param player_id Character. Player identifier
-#' @param match_type Character. Filter by match type
-#' @param season Character. Filter by season
-#' @param db_path Character. Database path
+#' @param player_id Character. Player identifier (e.g., "V Kohli", "BA Stokes").
+#'   Use the format from Cricsheet data (typically "First Initial + Surname").
+#' @param match_type Character. Filter by match type: "T20", "ODI", "Test",
+#'   "IT20", "MDM", or NULL for all formats.
+#' @param season Character. Filter by season (e.g., "2023", "2023/24").
+#' @param db_path Character. Database path. If NULL, uses default location.
 #'
-#' @return Data frame with batting metrics
+#' @return Data frame with batting metrics:
+#'   - balls_faced, runs_scored, dismissals, fours, sixes
+#'   - batting_average, strike_rate, boundary_percentage
+#'   - elo_batting (current rating)
+#'
 #' @export
-#'
 #' @examples
 #' \dontrun{
-#' # Get all-time batting stats
-#' kohli_batting <- calculate_player_batting_stats("V Kohli")
+#' # Get overall batting stats for a player
+#' kohli_stats <- calculate_player_batting_stats("V Kohli")
 #'
-#' # Get T20-specific stats
-#' kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "t20")
+#' # Get T20 stats only
+#' kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "T20")
+#'
+#' # Get stats for a specific season
+#' stokes_2023 <- calculate_player_batting_stats("BA Stokes", season = "2023")
+#'
+#' # Get Test stats for a player
+#' root_tests <- calculate_player_batting_stats("JE Root", match_type = "Test")
 #' }
 calculate_player_batting_stats <- function(player_id,
                                             match_type = NULL,
@@ -82,20 +94,30 @@ calculate_player_batting_stats <- function(player_id,
 
 #' Calculate Player Bowling Stats
 #'
-#' Calculates comprehensive bowling statistics for a player.
+#' Calculates comprehensive bowling statistics for a player including
+#' average, economy rate, strike rate, and current ELO rating.
 #'
 #' @inheritParams calculate_player_batting_stats
 #'
-#' @return Data frame with bowling metrics
-#' @export
+#' @return Data frame with bowling metrics:
+#'   - balls_bowled, runs_conceded, wickets
+#'   - bowling_average, economy_rate, strike_rate
+#'   - elo_bowling (current rating)
 #'
+#' @export
 #' @examples
 #' \dontrun{
-#' # Get all-time bowling stats
-#' bumrah_bowling <- calculate_player_bowling_stats("J Bumrah")
+#' # Get overall bowling stats
+#' bumrah_stats <- calculate_player_bowling_stats("JJ Bumrah")
 #'
-#' # Get ODI-specific stats
-#' bumrah_odi <- calculate_player_bowling_stats("J Bumrah", match_type = "odi")
+#' # Get T20 bowling stats
+#' rashid_t20 <- calculate_player_bowling_stats("Rashid Khan", match_type = "T20")
+#'
+#' # Get Test bowling stats
+#' anderson_tests <- calculate_player_bowling_stats("JM Anderson", match_type = "Test")
+#'
+#' # Get stats for specific season
+#' cummins_2023 <- calculate_player_bowling_stats("PJ Cummins", season = "2023")
 #' }
 calculate_player_bowling_stats <- function(player_id,
                                             match_type = NULL,
@@ -157,16 +179,7 @@ calculate_player_bowling_stats <- function(player_id,
 #' @param db_path Character. Database path
 #'
 #' @return List with matchup statistics and prediction
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Analyze Kohli vs Bumrah
-#' matchup <- analyze_batter_vs_bowler("V Kohli", "J Bumrah")
-#'
-#' # T20-specific matchup
-#' t20_matchup <- analyze_batter_vs_bowler("V Kohli", "J Bumrah", match_type = "t20")
-#' }
+#' @keywords internal
 analyze_batter_vs_bowler <- function(batter_id,
                                       bowler_id,
                                       match_type = NULL,
@@ -247,16 +260,7 @@ analyze_batter_vs_bowler <- function(batter_id,
 #' @param db_path Character. Database path
 #'
 #' @return Data frame with player rankings
-#' @export
-#'
-#' @examples
-#' \dontrun{
-#' # Top 20 batters in T20
-#' top_batters <- rank_players("batting", match_type = "t20", top_n = 20)
-#'
-#' # Top 10 bowlers overall
-#' top_bowlers <- rank_players("bowling", top_n = 10)
-#' }
+#' @keywords internal
 rank_players <- function(rating_type = "batting",
                          match_type = "all",
                          top_n = 10,
