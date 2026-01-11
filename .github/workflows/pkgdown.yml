@@ -2,9 +2,9 @@ name: pkgdown
 
 on:
   push:
-    branches: [main, dev]
+    branches: [master, dev]
   pull_request:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
@@ -46,8 +46,8 @@ jobs:
           path: docs
 
   deploy:
-    # Only deploy from main branch (GitHub Pages environment protection)
-    if: github.ref == 'refs/heads/main'
+    # Only deploy from master branch (GitHub Pages environment protection)
+    if: github.ref == 'refs/heads/master'
 
     environment:
       name: github-pages
