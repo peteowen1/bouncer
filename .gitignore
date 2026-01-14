@@ -9,3 +9,11 @@
 .claude/
 CLAUDE.md
 docs
+
+# SSH keys and secrets (never commit!)
+*.key
+*.pem
+ssh-key*
+*.github_pat
+.env
+.secrets
