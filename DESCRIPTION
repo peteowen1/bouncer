@@ -12,6 +12,8 @@ Description: Advanced cricket analytics featuring a novel player ELO rating syst
     data management functions to download and parse cricket data from Cricsheet,
     storing it in a DuckDB database for efficient querying.
 License: MIT + file LICENSE
+Depends:
+    R (>= 4.1.0)
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)

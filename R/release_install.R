@@ -283,14 +283,18 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
   }
   dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # All available tables
+  # All available tables (8-way splits for matches/deliveries)
   all_tables <- c(
-    "matches", "players",
-    "deliveries_long_form", "deliveries_short_form",
+    # Unified tables
+    "players", "team_elo",
+    # Matches - 8 splits
+    paste0("matches_", DATA_FOLDERS),
+    # Deliveries - 8 splits
+    paste0("deliveries_", DATA_FOLDERS),
+    # Skill indices - format-specific
     "test_player_skill", "odi_player_skill", "t20_player_skill",
     "test_team_skill", "odi_team_skill", "t20_team_skill",
-    "test_venue_skill", "odi_venue_skill", "t20_venue_skill",
-    "team_elo"
+    "test_venue_skill", "odi_venue_skill", "t20_venue_skill"
   )
 
   if ("all" %in% tables) {
@@ -448,14 +452,18 @@ connect_bouncerdata <- function(repo = "peteowen1/bouncerdata",
                                  tables = "all") {
 
 
-  # All available tables in weekly releases
+  # All available tables in weekly releases (8-way splits for matches/deliveries)
   all_tables <- c(
-    "matches", "players",
-    "deliveries_long_form", "deliveries_short_form",
+    # Unified tables
+    "players", "team_elo",
+    # Matches - 8 splits
+    paste0("matches_", DATA_FOLDERS),
+    # Deliveries - 8 splits
+    paste0("deliveries_", DATA_FOLDERS),
+    # Skill indices - format-specific
     "test_player_skill", "odi_player_skill", "t20_player_skill",
     "test_team_skill", "odi_team_skill", "t20_team_skill",
-    "test_venue_skill", "odi_venue_skill", "t20_venue_skill",
-    "team_elo"
+    "test_venue_skill", "odi_venue_skill", "t20_venue_skill"
   )
 
   if ("all" %in% tables) {
@@ -472,7 +480,6 @@ connect_bouncerdata <- function(repo = "peteowen1/bouncerdata",
                       repo, release$tag_name)
 
   # Create DuckDB connection
-
   con <- DBI::dbConnect(duckdb::duckdb())
 
   # Install and load httpfs extension for remote file access
@@ -504,7 +511,26 @@ connect_bouncerdata <- function(repo = "peteowen1/bouncerdata",
     })
   }
 
-  cli::cli_alert_success("Connected! Available tables: {paste(views_created, collapse = ', ')}")
+  # Create convenience UNION views for matches and deliveries
+  match_views <- grep("^matches_", views_created, value = TRUE)
+  if (length(match_views) > 0) {
+    union_sql <- paste0("SELECT * FROM ", match_views, collapse = " UNION ALL ")
+    tryCatch({
+      DBI::dbExecute(con, sprintf("CREATE VIEW matches AS %s", union_sql))
+      views_created <- c(views_created, "matches")
+    }, error = function(e) NULL)
+  }
+
+  delivery_views <- grep("^deliveries_", views_created, value = TRUE)
+  if (length(delivery_views) > 0) {
+    union_sql <- paste0("SELECT * FROM ", delivery_views, collapse = " UNION ALL ")
+    tryCatch({
+      DBI::dbExecute(con, sprintf("CREATE VIEW deliveries AS %s", union_sql))
+      views_created <- c(views_created, "deliveries")
+    }, error = function(e) NULL)
+  }
+
+  cli::cli_alert_success("Connected! {length(views_created)} tables available")
   cli::cli_alert_info("Query with: DBI::dbGetQuery(con, 'SELECT * FROM matches LIMIT 10')")
 
   con
@@ -563,15 +589,18 @@ query_bouncerdata <- function(sql, repo = "peteowen1/bouncerdata") {
   DBI::dbExecute(con, "INSTALL httpfs")
   DBI::dbExecute(con, "LOAD httpfs")
 
-  # Replace table names with parquet URLs in the query
-  # This is a simple approach - just create views for common tables
+  # Create views for all available tables (8-way splits)
   tables <- c(
-    "matches", "players",
-    "deliveries_long_form", "deliveries_short_form",
+    # Unified tables
+    "players", "team_elo",
+    # Matches - 8 splits
+    paste0("matches_", DATA_FOLDERS),
+    # Deliveries - 8 splits
+    paste0("deliveries_", DATA_FOLDERS),
+    # Skill indices - format-specific
     "test_player_skill", "odi_player_skill", "t20_player_skill",
     "test_team_skill", "odi_team_skill", "t20_team_skill",
-    "test_venue_skill", "odi_venue_skill", "t20_venue_skill",
-    "team_elo"
+    "test_venue_skill", "odi_venue_skill", "t20_venue_skill"
   )
 
   for (table in tables) {
@@ -583,6 +612,21 @@ query_bouncerdata <- function(sql, repo = "peteowen1/bouncerdata") {
       error = function(e) NULL
     )
   }
+
+  # Create convenience UNION views for 'matches' and 'deliveries'
+  match_tables <- paste0("matches_", DATA_FOLDERS)
+  match_union <- paste0("SELECT * FROM ", match_tables, collapse = " UNION ALL ")
+  tryCatch(
+    DBI::dbExecute(con, sprintf("CREATE VIEW IF NOT EXISTS matches AS %s", match_union)),
+    error = function(e) NULL
+  )
+
+  delivery_tables <- paste0("deliveries_", DATA_FOLDERS)
+  delivery_union <- paste0("SELECT * FROM ", delivery_tables, collapse = " UNION ALL ")
+  tryCatch(
+    DBI::dbExecute(con, sprintf("CREATE VIEW IF NOT EXISTS deliveries AS %s", delivery_union)),
+    error = function(e) NULL
+  )
 
   # Execute query
   DBI::dbGetQuery(con, sql)
