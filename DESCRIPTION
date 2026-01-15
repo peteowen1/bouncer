@@ -19,8 +19,6 @@ LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
-    DBI,
-    duckdb (>= 0.9.0),
     dplyr,
     rlang,
     cli,
@@ -32,6 +30,8 @@ Imports:
     stats,
     slider
 Suggests:
+    DBI,
+    duckdb (>= 0.9.0),
     arrow,
     chromote,
     curl,

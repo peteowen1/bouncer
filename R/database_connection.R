@@ -1,5 +1,30 @@
 # Database Connection Functions for Bouncer
 
+#' Check DuckDB Availability
+#'
+#' Internal helper to check if DuckDB is installed.
+#' Called by database functions since duckdb is in Suggests.
+#'
+#' @return TRUE if available, otherwise stops with error
+#' @keywords internal
+check_duckdb_available <- function() {
+
+  if (!requireNamespace("DBI", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg DBI} is required for database operations.",
+      "i" = "Install with: {.code install.packages('DBI')}"
+    ))
+  }
+  if (!requireNamespace("duckdb", quietly = TRUE)) {
+    cli::cli_abort(c(
+      "Package {.pkg duckdb} is required for database operations.",
+      "i" = "Install with: {.code install.packages('duckdb')}"
+    ))
+  }
+  invisible(TRUE)
+}
+
+
 #' Get Database Connection
 #'
 #' Internal function to get a connection to the Bouncer DuckDB database.
@@ -11,6 +36,7 @@
 #' @return A DuckDB connection object
 #' @keywords internal
 get_db_connection <- function(path = NULL, read_only = FALSE) {
+  check_duckdb_available()
   path <- ensure_db_exists(path)
 
   conn <- DBI::dbConnect(
@@ -119,6 +145,7 @@ ensure_db_exists <- function(path = NULL) {
 #' disconnect_bouncer(conn)
 #' }
 connect_to_bouncer <- function(path = NULL, read_only = FALSE) {
+  check_duckdb_available()
   path <- ensure_db_exists(path)
 
   cli::cli_alert_info("Connecting to database at {.file {path}}")
@@ -156,6 +183,7 @@ connect_to_bouncer <- function(path = NULL, read_only = FALSE) {
 #' disconnect_bouncer(conn)
 #' }
 disconnect_bouncer <- function(conn, shutdown = TRUE) {
+  check_duckdb_available()
   if (!DBI::dbIsValid(conn)) {
     cli::cli_alert_warning("Connection already closed")
     return(invisible(FALSE))
