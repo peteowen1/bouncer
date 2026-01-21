@@ -20,16 +20,16 @@
 #' 3. Only aggregated results come into R memory
 #'
 #' @param table_name Character. Name of the parquet file (without .parquet).
-#' @param sql_template Character. SQL query template with {table} placeholder.
+#' @param sql_template Character. SQL query template with \code{\{table\}} placeholder.
 #' @param release Optional. Release info from get_latest_release().
 #'
 #' @return Data frame with query results.
 #' @keywords internal
 #'
 #' @examples
-#' \dontrun
+#' \dontrun{
 #' # Aggregate bowling stats
-#' sql <- "SELECT bowler_id, COUNT(*) as balls FROM {table} GROUP BY bowler_id"
+#' sql <- "SELECT bowler_id, COUNT(*) as balls FROM \{table\} GROUP BY bowler_id"
 #' result <- query_remote_parquet("deliveries_ODI_male", sql)
 #' }
 query_remote_parquet <- function(table_name, sql_template, release = NULL) {

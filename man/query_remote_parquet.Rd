@@ -9,7 +9,7 @@ query_remote_parquet(table_name, sql_template, release = NULL)
 \arguments{
 \item{table_name}{Character. Name of the parquet file (without .parquet).}
 
-\item{sql_template}{Character. SQL query template with {table} placeholder.}
+\item{sql_template}{Character. SQL query template with \code{\{table\}} placeholder.}
 
 \item{release}{Optional. Release info from get_latest_release().}
 }
@@ -24,6 +24,13 @@ aggregation queries because:
 \item Download is done once with optimized HTTP
 \item DuckDB queries local file (no network latency per query)
 \item Only aggregated results come into R memory
+}
+}
+\examples{
+\dontrun{
+# Aggregate bowling stats
+sql <- "SELECT bowler_id, COUNT(*) as balls FROM \{table\} GROUP BY bowler_id"
+result <- query_remote_parquet("deliveries_ODI_male", sql)
 }
 }
 \keyword{internal}
