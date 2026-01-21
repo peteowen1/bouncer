@@ -5,38 +5,42 @@
 \title{Load Matches Data}
 \usage{
 load_matches(
-  format = "all",
+  match_type = "all",
   gender = "all",
-  type = "all",
+  team_type = "all",
   source = c("local", "remote")
 )
 }
 \arguments{
-\item{format}{Character. "long_form", "short_form", or "all" (default).}
+\item{match_type}{Character or vector. One or more of: "Test", "ODI", "T20",
+"IT20", "MDM", "ODM", or "all" (default).}
 
 \item{gender}{Character. "male", "female", or "all" (default).}
 
-\item{type}{Character. "international", "club", or "all" (default).}
+\item{team_type}{Character. "international", "club", or "all" (default).}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "local" (default) uses local DuckDB.
+"remote" queries GitHub releases via fast download.}
 }
 \value{
-Data frame of matches.
+Data frame of matches, sorted by most recent first.
 }
 \description{
-Load match data from local cache or remote GitHub releases.
-Data is split by format (long/short), gender (male/female),
-and type (international/club).
+Load match data from local DuckDB or remote GitHub releases.
+Filter by match_type, gender, and team_type.
 }
 \examples{
 \dontrun{
-# Load all matches locally
+# Load all matches from local database
 matches <- load_matches()
 
 # Load only T20 international men's matches
-t20i_men <- load_matches("short_form", "male", "international")
+t20i_men <- load_matches("T20", "male", "international")
 
-# Load from GitHub releases
+# Load multiple match types
+limited_overs <- load_matches(c("ODI", "T20"), "male", "international")
+
+# Load from GitHub releases (no local install needed)
 matches <- load_matches(source = "remote")
 }
 }

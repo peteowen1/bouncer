@@ -208,7 +208,7 @@ ALL_MATCH_TYPES <- c("Test", "ODI", "T20", "IT20", "MDM", "ODM")
 #' @param gender Character. "male", "female", or "all" (default).
 #' @param team_type Character. "international", "club", or "all" (default).
 #' @param source Character. "local" (default) uses local DuckDB.
-#'   "remote" queries GitHub releases via httpfs.
+#'   "remote" queries GitHub releases via fast download.
 #'
 #' @return Data frame of matches, sorted by most recent first.
 #'
@@ -231,10 +231,7 @@ load_matches <- function(match_type = "all", gender = "all", team_type = "all",
                          source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query with filters
+  # Build WHERE clause
   where_clauses <- character()
 
   if (!identical(match_type, "all")) {
@@ -254,9 +251,22 @@ load_matches <- function(match_type = "all", gender = "all", team_type = "all",
     ""
   }
 
-  sql <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
-
-  result <- DBI::dbGetQuery(conn, sql)
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Loading matches from remote...")
+    sql_template <- sprintf("SELECT * FROM {table} %s ORDER BY match_date DESC", where_sql)
+    result <- tryCatch({
+      query_remote_parquet("matches", sql_template)
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    sql <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
+    result <- DBI::dbGetQuery(conn, sql)
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No matches found for the specified filters")
@@ -304,48 +314,84 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
                             match_ids = NULL, source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  if (source == "remote") {
+    # Fast remote: download + local query
+    # Deliveries are partitioned by format_gender, so we need the right file
+    if (identical(match_type, "all") || length(match_type) > 1) {
+      cli::cli_abort("Remote deliveries requires a single match_type (e.g., 'T20', 'ODI', 'Test')")
+    }
 
-  # Build query - need to join with matches for filtering
-  # For efficiency, if filtering by match_ids only, query deliveries directly
-  if (!is.null(match_ids) && identical(match_type, "all") &&
-      gender == "all" && team_type == "all") {
-    # Direct query with match_id filter
-    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
-    sql <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", ids_sql)
-  } else {
-    # Need to filter through matches table
+    # Determine the correct parquet file
+    gender_suffix <- if (gender == "all") "male" else gender
+    table_name <- sprintf("deliveries_%s_%s", match_type, gender_suffix)
+
+    cli::cli_alert_info("Loading {table_name} from remote...")
+
+    # Build WHERE clause for direct query (no joins needed - deliveries has match_type)
     where_clauses <- character()
-
-    if (!identical(match_type, "all")) {
-      types_sql <- paste0("'", match_type, "'", collapse = ", ")
-      where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
-    }
-    if (gender != "all") {
-      where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", gender))
-    }
-    if (team_type != "all") {
-      where_clauses <- c(where_clauses, sprintf("m.team_type = '%s'", team_type))
-    }
     if (!is.null(match_ids)) {
       ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
-      where_clauses <- c(where_clauses, sprintf("d.match_id IN (%s)", ids_sql))
+      where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
     }
 
-    if (length(where_clauses) > 0) {
-      where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-      sql <- sprintf(
-        "SELECT d.* FROM deliveries d
-         INNER JOIN matches m ON d.match_id = m.match_id
-         %s", where_sql
-      )
+    where_sql <- if (length(where_clauses) > 0) {
+      paste("WHERE", paste(where_clauses, collapse = " AND "))
     } else {
-      sql <- "SELECT * FROM deliveries"
+      ""
     }
-  }
 
-  result <- DBI::dbGetQuery(conn, sql)
+    sql_template <- sprintf("SELECT * FROM {table} %s", where_sql)
+    result <- tryCatch({
+      query_remote_parquet(table_name, sql_template)
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+    # Build query - need to join with matches for filtering
+    # For efficiency, if filtering by match_ids only, query deliveries directly
+    if (!is.null(match_ids) && identical(match_type, "all") &&
+        gender == "all" && team_type == "all") {
+      # Direct query with match_id filter
+      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      sql <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", ids_sql)
+    } else {
+      # Need to filter through matches table
+      where_clauses <- character()
+
+      if (!identical(match_type, "all")) {
+        types_sql <- paste0("'", match_type, "'", collapse = ", ")
+        where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
+      }
+      if (gender != "all") {
+        where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", gender))
+      }
+      if (team_type != "all") {
+        where_clauses <- c(where_clauses, sprintf("m.team_type = '%s'", team_type))
+      }
+      if (!is.null(match_ids)) {
+        ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+        where_clauses <- c(where_clauses, sprintf("d.match_id IN (%s)", ids_sql))
+      }
+
+      if (length(where_clauses) > 0) {
+        where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
+        sql <- sprintf(
+          "SELECT d.* FROM deliveries d
+           INNER JOIN matches m ON d.match_id = m.match_id
+           %s", where_sql
+        )
+      } else {
+        sql <- "SELECT * FROM deliveries"
+      }
+    }
+
+    result <- DBI::dbGetQuery(conn, sql)
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No deliveries found for the specified filters")
@@ -374,10 +420,20 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
 load_players <- function(source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  result <- DBI::dbGetQuery(conn, "SELECT * FROM players")
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Loading players from remote...")
+    result <- tryCatch({
+      query_remote_parquet("players", "SELECT * FROM {table}")
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    result <- DBI::dbGetQuery(conn, "SELECT * FROM players")
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No players found")
@@ -411,36 +467,76 @@ load_innings <- function(match_type = "all", gender = "all",
                          match_ids = NULL, source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  # Build query with filters via matches join if needed
+  # Build WHERE clause
   where_clauses <- character()
-
-  if (!identical(match_type, "all")) {
-    types_sql <- paste0("'", match_type, "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
-  }
-  if (gender != "all") {
-    where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", gender))
-  }
   if (!is.null(match_ids)) {
     ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("i.match_id IN (%s)", ids_sql))
+    where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
-  if (length(where_clauses) > 0) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT i.* FROM match_innings i
-       INNER JOIN matches m ON i.match_id = m.match_id
-       %s", where_sql
-    )
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
   } else {
-    sql <- "SELECT * FROM match_innings"
+    ""
   }
 
-  result <- DBI::dbGetQuery(conn, sql)
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Loading innings from remote...")
+
+    # Check if match_innings parquet exists
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
+
+    if (!"match_innings" %in% available) {
+      cli::cli_abort("match_innings not available in remote release. Use source='local'.")
+    }
+
+    sql_template <- sprintf("SELECT * FROM {table} %s", where_sql)
+    result <- tryCatch({
+      query_remote_parquet("match_innings", sql_template)
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+
+    # Apply match_type/gender filters after loading if needed (no join available)
+    if (!identical(match_type, "all") || gender != "all") {
+      cli::cli_alert_info("Applying match type/gender filters...")
+      matches <- load_matches(match_type = match_type, gender = gender, source = "remote")
+      result <- result[result$match_id %in% matches$match_id, ]
+    }
+  } else {
+    # Local DuckDB - can do efficient joins
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+    join_where <- character()
+    if (!identical(match_type, "all")) {
+      types_sql <- paste0("'", match_type, "'", collapse = ", ")
+      join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
+    }
+    if (gender != "all") {
+      join_where <- c(join_where, sprintf("m.gender = '%s'", gender))
+    }
+    if (!is.null(match_ids)) {
+      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      join_where <- c(join_where, sprintf("i.match_id IN (%s)", ids_sql))
+    }
+
+    if (length(join_where) > 0) {
+      where_sql <- paste("WHERE", paste(join_where, collapse = " AND "))
+      sql <- sprintf(
+        "SELECT i.* FROM match_innings i
+         INNER JOIN matches m ON i.match_id = m.match_id
+         %s", where_sql
+      )
+    } else {
+      sql <- "SELECT * FROM match_innings"
+    }
+
+    result <- DBI::dbGetQuery(conn, sql)
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No innings data found for the specified filters")
@@ -474,32 +570,73 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
                             source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
+  # Build WHERE clause for match_ids
   where_clauses <- character()
-
-  if (!identical(match_type, "all")) {
-    types_sql <- paste0("'", match_type, "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
-  }
   if (!is.null(match_ids)) {
     ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("p.match_id IN (%s)", ids_sql))
+    where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
-  if (length(where_clauses) > 0) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT p.* FROM innings_powerplays p
-       INNER JOIN matches m ON p.match_id = m.match_id
-       %s", where_sql
-    )
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
   } else {
-    sql <- "SELECT * FROM innings_powerplays"
+    ""
   }
 
-  result <- DBI::dbGetQuery(conn, sql)
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Loading powerplays from remote...")
+
+    # Check if innings_powerplays parquet exists
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
+
+    if (!"innings_powerplays" %in% available) {
+      cli::cli_abort("innings_powerplays not available in remote release. Use source='local'.")
+    }
+
+    sql_template <- sprintf("SELECT * FROM {table} %s", where_sql)
+    result <- tryCatch({
+      query_remote_parquet("innings_powerplays", sql_template)
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+
+    # Apply match_type filter after loading if needed
+    if (!identical(match_type, "all")) {
+      cli::cli_alert_info("Applying match type filter...")
+      matches <- load_matches(match_type = match_type, source = "remote")
+      result <- result[result$match_id %in% matches$match_id, ]
+    }
+  } else {
+    # Local DuckDB - can do efficient joins
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+    join_where <- character()
+    if (!identical(match_type, "all")) {
+      types_sql <- paste0("'", match_type, "'", collapse = ", ")
+      join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
+    }
+    if (!is.null(match_ids)) {
+      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      join_where <- c(join_where, sprintf("p.match_id IN (%s)", ids_sql))
+    }
+
+    if (length(join_where) > 0) {
+      where_sql <- paste("WHERE", paste(join_where, collapse = " AND "))
+      sql <- sprintf(
+        "SELECT p.* FROM innings_powerplays p
+         INNER JOIN matches m ON p.match_id = m.match_id
+         %s", where_sql
+      )
+    } else {
+      sql <- "SELECT * FROM innings_powerplays"
+    }
+
+    result <- DBI::dbGetQuery(conn, sql)
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No powerplay data found for the specified filters")
@@ -534,24 +671,43 @@ load_player_skill <- function(match_format = "all", source = c("local", "remote"
 
   formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  if (source == "remote") {
+    # Fast remote: download + local query for each format
+    cli::cli_alert_info("Loading player skills from remote...")
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
 
-  dfs <- lapply(formats, function(fmt) {
-    table_name <- paste0(fmt, "_player_skill")
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_player_skill")
+      if (!(table_name %in% available)) {
+        return(NULL)
+      }
 
-    # Check if table exists
-    tables <- DBI::dbListTables(conn)
-    if (!(table_name %in% tables)) {
-      return(NULL)
-    }
+      sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
+      tryCatch({
+        query_remote_parquet(table_name, sql_template)
+      }, error = function(e) NULL)
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
-    tryCatch(
-      DBI::dbGetQuery(conn, sql),
-      error = function(e) NULL
-    )
-  })
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_player_skill")
+      tables <- DBI::dbListTables(conn)
+      if (!(table_name %in% tables)) {
+        return(NULL)
+      }
+
+      sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+      tryCatch(
+        DBI::dbGetQuery(conn, sql),
+        error = function(e) NULL
+      )
+    })
+  }
 
   valid_dfs <- Filter(Negate(is.null), dfs)
 
@@ -580,23 +736,43 @@ load_team_skill <- function(match_format = "all", source = c("local", "remote"))
 
   formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  if (source == "remote") {
+    # Fast remote: download + local query for each format
+    cli::cli_alert_info("Loading team skills from remote...")
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
 
-  dfs <- lapply(formats, function(fmt) {
-    table_name <- paste0(fmt, "_team_skill")
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_team_skill")
+      if (!(table_name %in% available)) {
+        return(NULL)
+      }
 
-    tables <- DBI::dbListTables(conn)
-    if (!(table_name %in% tables)) {
-      return(NULL)
-    }
+      sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
+      tryCatch({
+        query_remote_parquet(table_name, sql_template)
+      }, error = function(e) NULL)
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
-    tryCatch(
-      DBI::dbGetQuery(conn, sql),
-      error = function(e) NULL
-    )
-  })
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_team_skill")
+      tables <- DBI::dbListTables(conn)
+      if (!(table_name %in% tables)) {
+        return(NULL)
+      }
+
+      sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+      tryCatch(
+        DBI::dbGetQuery(conn, sql),
+        error = function(e) NULL
+      )
+    })
+  }
 
   valid_dfs <- Filter(Negate(is.null), dfs)
 
@@ -625,23 +801,43 @@ load_venue_skill <- function(match_format = "all", source = c("local", "remote")
 
   formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  if (source == "remote") {
+    # Fast remote: download + local query for each format
+    cli::cli_alert_info("Loading venue skills from remote...")
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
 
-  dfs <- lapply(formats, function(fmt) {
-    table_name <- paste0(fmt, "_venue_skill")
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_venue_skill")
+      if (!(table_name %in% available)) {
+        return(NULL)
+      }
 
-    tables <- DBI::dbListTables(conn)
-    if (!(table_name %in% tables)) {
-      return(NULL)
-    }
+      sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
+      tryCatch({
+        query_remote_parquet(table_name, sql_template)
+      }, error = function(e) NULL)
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
-    tryCatch(
-      DBI::dbGetQuery(conn, sql),
-      error = function(e) NULL
-    )
-  })
+    dfs <- lapply(formats, function(fmt) {
+      table_name <- paste0(fmt, "_venue_skill")
+      tables <- DBI::dbListTables(conn)
+      if (!(table_name %in% tables)) {
+        return(NULL)
+      }
+
+      sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+      tryCatch(
+        DBI::dbGetQuery(conn, sql),
+        error = function(e) NULL
+      )
+    })
+  }
 
   valid_dfs <- Filter(Negate(is.null), dfs)
 
@@ -673,10 +869,20 @@ load_venue_skill <- function(match_format = "all", source = c("local", "remote")
 load_team_elo <- function(source = c("local", "remote")) {
   source <- match.arg(source)
 
-  conn <- get_data_connection(source)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-
-  result <- DBI::dbGetQuery(conn, "SELECT * FROM team_elo")
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Loading team ELO from remote...")
+    result <- tryCatch({
+      query_remote_parquet("team_elo", "SELECT * FROM {table}")
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    result <- DBI::dbGetQuery(conn, "SELECT * FROM team_elo")
+  }
 
   if (nrow(result) == 0) {
     cli::cli_warn("No team ELO data found")
