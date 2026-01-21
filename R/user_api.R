@@ -41,7 +41,9 @@ validate_format <- function(format, allow_null = TRUE) {
 #' @param name_or_id Character. Player name (partial match supported) or player ID.
 #' @param format Character. Format for skill indices: "t20", "odi", or "test".
 #'   If NULL, returns latest skills across all formats.
-#' @param db_path Character. Database path. If NULL, uses default.
+#' @param source Character. "local" (default) uses local DuckDB.
+#'   "remote" queries GitHub releases via fast download.
+#' @param db_path Character. Database path (only used when source = "local").
 #'
 #' @return A `bouncer_player` object containing:
 #'   \itemize{
@@ -63,13 +65,23 @@ validate_format <- function(format, allow_null = TRUE) {
 #' # Get T20-specific skills
 #' kohli_t20 <- get_player("Virat Kohli", format = "t20")
 #'
+#' # Look up from remote (no local install needed)
+#' kohli_remote <- get_player("Virat Kohli", format = "t20", source = "remote")
+#'
 #' # Print shows formatted output
 #' print(kohli)
 #' }
-get_player <- function(name_or_id, format = NULL, db_path = NULL) {
+get_player <- function(name_or_id, format = NULL,
+                       source = c("local", "remote"), db_path = NULL) {
+
+  source <- match.arg(source)
 
   # Validate format if provided
- format <- validate_format(format, allow_null = TRUE)
+  format <- validate_format(format, allow_null = TRUE)
+
+  if (source == "remote") {
+    return(get_player_remote(name_or_id, format))
+  }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
@@ -120,7 +132,75 @@ get_player <- function(name_or_id, format = NULL, db_path = NULL) {
     }
   }
 
-  # Build result object
+  build_player_result(player, skills, format)
+}
+
+
+#' @keywords internal
+get_player_remote <- function(name_or_id, format = NULL) {
+
+  cli::cli_alert_info("Looking up player from remote...")
+
+  # Query players table
+  sql_exact <- sprintf(
+    "SELECT * FROM {table} WHERE player_id = '%s' OR LOWER(player_name) = LOWER('%s') LIMIT 1",
+    name_or_id, name_or_id
+  )
+
+  player <- tryCatch({
+    query_remote_parquet("players", sql_exact)
+  }, error = function(e) {
+    cli::cli_abort("Remote query failed: {e$message}")
+  })
+
+  # If no exact match, try partial match
+  if (nrow(player) == 0) {
+    sql_fuzzy <- sprintf(
+      "SELECT * FROM {table} WHERE LOWER(player_name) LIKE LOWER('%%%s%%') ORDER BY player_name LIMIT 1",
+      name_or_id
+    )
+    player <- tryCatch({
+      query_remote_parquet("players", sql_fuzzy)
+    }, error = function(e) data.frame())
+  }
+
+  if (nrow(player) == 0) {
+    cli::cli_alert_warning("No player found matching '{name_or_id}'")
+    return(NULL)
+  }
+
+  # Get skill indices if format specified
+  skills <- NULL
+  if (!is.null(format)) {
+    format <- tolower(format)
+    skill_table <- paste0(format, "_player_skill")
+
+    # Check if skill table exists in remote
+    available <- tryCatch({
+      get_remote_tables()
+    }, error = function(e) character(0))
+
+    if (skill_table %in% available) {
+      skill_sql <- sprintf(
+        "SELECT batter_scoring_index, batter_survival_rate, bowler_economy_index, bowler_strike_rate, delivery_id
+         FROM {table}
+         WHERE batter_id = '%s' OR bowler_id = '%s'
+         ORDER BY delivery_id DESC
+         LIMIT 1",
+        player$player_id, player$player_id
+      )
+      skills <- tryCatch({
+        query_remote_parquet(skill_table, skill_sql)
+      }, error = function(e) NULL)
+    }
+  }
+
+  build_player_result(player, skills, format)
+}
+
+
+#' @keywords internal
+build_player_result <- function(player, skills, format) {
   # Check if we have valid skill data
   has_skills <- !is.null(skills) && is.data.frame(skills) && nrow(skills) > 0
 
@@ -135,6 +215,7 @@ get_player <- function(name_or_id, format = NULL, db_path = NULL) {
   )
 
   class(result) <- c("bouncer_player", "list")
+  cli::cli_alert_success("Found: {player$player_name}")
   return(result)
 }
 

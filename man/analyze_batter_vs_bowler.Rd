@@ -8,22 +8,41 @@ analyze_batter_vs_bowler(
   batter_id,
   bowler_id,
   match_type = NULL,
+  source = c("local", "remote"),
   db_path = NULL
 )
 }
 \arguments{
-\item{batter_id}{Character. Batter identifier}
+\item{batter_id}{Character. Batter identifier (player_id)}
 
-\item{bowler_id}{Character. Bowler identifier}
+\item{bowler_id}{Character. Bowler identifier (player_id)}
 
-\item{match_type}{Character. Filter by match type}
+\item{match_type}{Character. Filter by match type (e.g., "T20", "ODI", "Test").
+Required for remote source.}
 
-\item{db_path}{Character. Database path}
+\item{source}{Character. "local" (default) uses local DuckDB.
+"remote" queries GitHub releases via fast download.}
+
+\item{db_path}{Character. Database path (only used when source = "local").}
 }
 \value{
-List with matchup statistics and prediction
+List with matchup statistics including balls faced, runs scored,
+dismissals, strike rate, and dismissal rate.
 }
 \description{
 Analyzes historical head-to-head between a batter and bowler.
+Returns stats on all their previous encounters.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# Analyze Kohli vs Bumrah in T20s
+matchup <- analyze_batter_vs_bowler("ba607b88", "12345678", match_type = "T20")
+
+# Remote analysis
+matchup <- analyze_batter_vs_bowler(
+  "ba607b88", "12345678",
+  match_type = "T20",
+  source = "remote"
+)
+}
+}

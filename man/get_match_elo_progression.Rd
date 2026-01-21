@@ -12,18 +12,40 @@ get_match_elo_progression(
 )
 }
 \arguments{
-\item{match_id}{Character. Match identifier}
+\item{match_id}{Character. Match identifier.}
 
-\item{player_id}{Character. Player identifier}
+\item{player_id}{Character. Player identifier.}
 
-\item{rating_type}{Character. "batting" or "bowling"}
+\item{rating_type}{Character. "batting" or "bowling". Default "batting".}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Optional path to the database.}
 }
 \value{
-Data frame with delivery-by-delivery ELO progression
+Data frame with columns:
+\describe{
+\item{delivery_id}{Unique delivery identifier}
+\item{innings}{Innings number}
+\item{over}{Over number}
+\item{ball}{Ball number within the over}
+\item{runs_batter}{Runs scored by batter}
+\item{is_wicket}{Whether a wicket fell}
+\item{elo_before}{Player's ELO before this delivery}
+\item{elo_after}{Player's ELO after this delivery}
+}
 }
 \description{
-Retrieves a player's ELO progression throughout a specific match.
+Retrieves a player's ELO progression throughout a specific match,
+showing how their rating changed delivery-by-delivery.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# Track a player's batting ELO through a match
+progression <- get_match_elo_progression(
+  match_id = "1234567",
+  player_id = "virat_kohli",
+  rating_type = "batting"
+)
+plot(progression$elo_after, type = "l")
+}
+
+}

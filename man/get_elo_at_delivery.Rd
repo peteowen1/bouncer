@@ -13,20 +13,32 @@ get_elo_at_delivery(
 )
 }
 \arguments{
-\item{delivery_id}{Numeric. The unique delivery identifier}
+\item{delivery_id}{Numeric. The unique delivery identifier.}
 
-\item{player_id}{Character. Player identifier}
+\item{player_id}{Character. Player identifier.}
 
 \item{when}{Character. "before" or "after" the delivery. Default "after".}
 
 \item{rating_type}{Character. "batting" or "bowling". Default "batting".}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Optional path to the database.}
 }
 \value{
-Numeric. ELO rating at that delivery (or NA if not found)
+Numeric. ELO rating at that delivery (or NA if not found).
 }
 \description{
 Retrieves a player's ELO rating at a specific delivery in a match.
+Useful for analyzing how a player's rating evolved during specific moments.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# Get Virat Kohli's batting ELO after a specific delivery
+get_elo_at_delivery(
+  delivery_id = 123456,
+  player_id = "virat_kohli",
+  when = "after",
+  rating_type = "batting"
+)
+}
+
+}

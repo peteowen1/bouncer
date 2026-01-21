@@ -74,10 +74,19 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
 
 #' Get Available Remote Tables
 #'
-#' Returns list of parquet files available in the cricsheet release.
+#' Returns list of parquet files available in the GitHub cricsheet release.
+#' Useful for discovering what data is available for remote queries.
 #'
 #' @return Character vector of table names (without .parquet extension).
-#' @keywords internal
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' # See what tables are available remotely
+#' tables <- get_remote_tables()
+#' print(tables)
+#' # Example output: "matches", "players", "deliveries_T20_male", etc.
+#' }
 get_remote_tables <- function() {
   if (!exists("release_info", envir = .bouncer_remote_cache)) {
     release <- get_latest_release(type = "cricsheet")

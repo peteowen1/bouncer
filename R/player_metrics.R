@@ -163,18 +163,46 @@ calculate_player_bowling_stats <- player_bowling_stats
 #' Analyze Batter vs Bowler Matchup
 #'
 #' Analyzes historical head-to-head between a batter and bowler.
+#' Returns stats on all their previous encounters.
 #'
-#' @param batter_id Character. Batter identifier
-#' @param bowler_id Character. Bowler identifier
-#' @param match_type Character. Filter by match type
-#' @param db_path Character. Database path
+#' @param batter_id Character. Batter identifier (player_id)
+#' @param bowler_id Character. Bowler identifier (player_id)
+#' @param match_type Character. Filter by match type (e.g., "T20", "ODI", "Test").
+#'   Required for remote source.
+#' @param source Character. "local" (default) uses local DuckDB.
+#'   "remote" queries GitHub releases via fast download.
+#' @param db_path Character. Database path (only used when source = "local").
 #'
-#' @return List with matchup statistics and prediction
-#' @keywords internal
+#' @return List with matchup statistics including balls faced, runs scored,
+#'   dismissals, strike rate, and dismissal rate.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Analyze Kohli vs Bumrah in T20s
+#' matchup <- analyze_batter_vs_bowler("ba607b88", "12345678", match_type = "T20")
+#'
+#' # Remote analysis
+#' matchup <- analyze_batter_vs_bowler(
+#'   "ba607b88", "12345678",
+#'   match_type = "T20",
+#'   source = "remote"
+#' )
+#' }
 analyze_batter_vs_bowler <- function(batter_id,
                                       bowler_id,
                                       match_type = NULL,
+                                      source = c("local", "remote"),
                                       db_path = NULL) {
+
+  source <- match.arg(source)
+
+  if (source == "remote") {
+    if (is.null(match_type)) {
+      cli::cli_abort("Remote matchup analysis requires match_type (e.g., 'T20', 'ODI', 'Test')")
+    }
+    return(analyze_batter_vs_bowler_remote(batter_id, bowler_id, match_type))
+  }
 
   # Get historical deliveries
   conn <- get_db_connection(path = db_path, read_only = TRUE)
@@ -203,6 +231,40 @@ analyze_batter_vs_bowler <- function(batter_id,
 
   historical <- DBI::dbGetQuery(conn, query, params = params)
 
+  build_matchup_result(batter_id, bowler_id, match_type, historical)
+}
+
+
+#' @keywords internal
+analyze_batter_vs_bowler_remote <- function(batter_id, bowler_id, match_type) {
+
+  table_name <- sprintf("deliveries_%s_male", match_type)
+  cli::cli_alert_info("Analyzing matchup from {table_name}...")
+
+  sql_template <- sprintf("
+    SELECT
+      COUNT(*) as balls_faced,
+      SUM(runs_batter) as runs_scored,
+      SUM(CASE WHEN is_wicket THEN 1 ELSE 0 END) as dismissals,
+      SUM(CASE WHEN is_four THEN 1 ELSE 0 END) as fours,
+      SUM(CASE WHEN is_six THEN 1 ELSE 0 END) as sixes,
+      AVG(runs_batter) as avg_runs_per_ball
+    FROM {table}
+    WHERE batter_id = '%s' AND bowler_id = '%s'
+  ", batter_id, bowler_id)
+
+  historical <- tryCatch({
+    query_remote_parquet(table_name, sql_template)
+  }, error = function(e) {
+    cli::cli_abort("Remote query failed: {e$message}")
+  })
+
+  build_matchup_result(batter_id, bowler_id, match_type, historical)
+}
+
+
+#' @keywords internal
+build_matchup_result <- function(batter_id, bowler_id, match_type, historical) {
   # Calculate metrics
   strike_rate <- if (historical$balls_faced > 0) {
     (historical$runs_scored / historical$balls_faced) * 100
@@ -216,15 +278,7 @@ analyze_batter_vs_bowler <- function(batter_id,
     0
   }
 
-  # Get current prediction
-  prediction <- predict_matchup_outcome(
-    batter_id,
-    bowler_id,
-    context = list(match_type = match_type %||% "t20"),
-    db_path = db_path
-  )
-
-  list(
+  result <- list(
     batter_id = batter_id,
     bowler_id = bowler_id,
     match_type = match_type %||% "all",
@@ -235,23 +289,40 @@ analyze_batter_vs_bowler <- function(batter_id,
       strike_rate = round(strike_rate, 2),
       dismissal_rate = round(dismissal_rate, 2),
       boundaries = historical$fours + historical$sixes
-    ),
-    prediction = prediction
+    )
   )
+
+  if (historical$balls_faced > 0) {
+    cli::cli_alert_success("Found {historical$balls_faced} deliveries in matchup history")
+  } else {
+    cli::cli_alert_warning("No head-to-head history found")
+  }
+
+  result
 }
 
 
-#' Rank Players by ELO
+#' Rank Players by ELO Rating
 #'
-#' Returns top players ranked by ELO rating.
+#' Returns top players ranked by their most recent ELO rating.
+#' Requires local database with player_elo_history table.
 #'
 #' @param rating_type Character. "batting" or "bowling"
-#' @param match_type Character. Match type filter
-#' @param top_n Integer. Number of players to return
-#' @param db_path Character. Database path
+#' @param match_type Character. "all" for overall, or specific format: "t20", "odi", "test"
+#' @param top_n Integer. Number of players to return (default 10)
+#' @param db_path Character. Database path. If NULL, uses default.
 #'
-#' @return Data frame with player rankings
-#' @keywords internal
+#' @return Data frame with columns: rank, player_id, elo_rating, last_match_date
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Top 10 batters overall
+#' top_batters <- rank_players("batting", top_n = 10)
+#'
+#' # Top 20 T20 bowlers
+#' top_t20_bowlers <- rank_players("bowling", match_type = "t20", top_n = 20)
+#' }
 rank_players <- function(rating_type = "batting",
                          match_type = "all",
                          top_n = 10,

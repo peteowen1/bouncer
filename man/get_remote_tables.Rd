@@ -10,6 +10,14 @@ get_remote_tables()
 Character vector of table names (without .parquet extension).
 }
 \description{
-Returns list of parquet files available in the cricsheet release.
+Returns list of parquet files available in the GitHub cricsheet release.
+Useful for discovering what data is available for remote queries.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# See what tables are available remotely
+tables <- get_remote_tables()
+print(tables)
+# Example output: "matches", "players", "deliveries_T20_male", etc.
+}
+}
