@@ -1,174 +1,265 @@
 # Data Loader Functions
 #
-# User-facing functions for loading bouncer data from local cache or remote
-# GitHub releases. Follows the pannadata pattern with source = "local"/"remote".
+# User-facing functions for loading bouncer data from local DuckDB or remote
+# GitHub releases. Uses DuckDB for both - local queries the database file,
+# remote uses httpfs to query parquet files directly from GitHub.
+#
+# All functions use source = "local" (default) or "remote".
 
-# Session-level cache for remote parquet data
+# Session-level cache for remote connection setup
 .bouncer_remote_cache <- new.env(parent = emptyenv())
 
 
-#' Get Remote Parquet Cache Directory
+#' Fast Remote Parquet Query
 #'
-#' Downloads parquet files from GitHub releases to a temporary directory
-#' and caches the path for the session lifetime. Subsequent calls return
-#' the cached path without re-downloading.
+#' Downloads a parquet file from GitHub releases to a temp file, then runs
+#' a SQL query on it using DuckDB. This is ~7x faster than httpfs for
+#' aggregation queries because:
+#' 1. Download is done once with optimized HTTP
+#' 2. DuckDB queries local file (no network latency per query)
+#' 3. Only aggregated results come into R memory
 #'
-#' @param repo Character. GitHub repository. Default "peteowen1/bouncerdata".
-#' @param tag Character. Release tag. Default "core" for core data.
-#' @param force Logical. Force re-download even if cached.
+#' @param table_name Character. Name of the parquet file (without .parquet).
+#' @param sql_template Character. SQL query template with {table} placeholder.
+#' @param release Optional. Release info from get_latest_release().
 #'
-#' @return Path to directory containing parquet files.
+#' @return Data frame with query results.
 #' @keywords internal
-get_remote_parquet_cache <- function(repo = "peteowen1/bouncerdata",
-                                      tag = "core",
-                                      force = FALSE) {
-
-  cache_key <- paste0("parquet_", gsub("[^a-zA-Z0-9]", "_", tag))
-
-  # Return cached path if available
-  if (!force && exists(cache_key, envir = .bouncer_remote_cache)) {
-    cached_path <- get(cache_key, envir = .bouncer_remote_cache)
-    if (dir.exists(cached_path)) {
-      return(cached_path)
+#'
+#' @examples
+#' \dontrun
+#' # Aggregate bowling stats
+#' sql <- "SELECT bowler_id, COUNT(*) as balls FROM {table} GROUP BY bowler_id"
+#' result <- query_remote_parquet("deliveries_ODI_male", sql)
+#' }
+query_remote_parquet <- function(table_name, sql_template, release = NULL) {
+  # Get release info (use cache)
+  if (is.null(release)) {
+    if (!exists("release_info", envir = .bouncer_remote_cache)) {
+      cli::cli_alert_info("Finding latest GitHub release...")
+      release <- get_latest_release(type = "cricsheet")
+      assign("release_info", release, envir = .bouncer_remote_cache)
+    } else {
+      release <- get("release_info", envir = .bouncer_remote_cache)
     }
   }
 
-  cli::cli_alert_info("Downloading parquet files from GitHub releases ({tag})...")
+  # Build URL
+  parquet_url <- sprintf(
+    "https://github.com/peteowen1/bouncerdata/releases/download/%s/%s.parquet",
+    release$tag_name, table_name
+  )
 
-  # Fetch specific release by tag
-  url <- sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag)
+  # Download to temp file
+  temp_file <- tempfile(fileext = ".parquet")
+  on.exit(unlink(temp_file), add = TRUE)
 
-  resp <- httr2::request(url) |>
-    httr2::req_headers(Accept = "application/vnd.github.v3+json") |>
-    httr2::req_user_agent("bouncer R package") |>
-    httr2::req_timeout(30) |>
-    httr2::req_perform()
+  httr2::request(parquet_url) |>
+    httr2::req_timeout(300) |>
+    httr2::req_perform(path = temp_file)
 
-  release <- httr2::resp_body_json(resp)
-  actual_tag <- release$tag_name
+  # Normalize path for DuckDB (use forward slashes on all platforms)
+  temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = TRUE)
 
-  # Create temp directory for this session
-  cache_dir <- file.path(tempdir(), paste0("bouncerdata_remote_", actual_tag))
+  # Run SQL query with DuckDB
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  if (dir.exists(cache_dir) && !force) {
-    # Already downloaded in this session
-    assign(cache_key, cache_dir, envir = .bouncer_remote_cache)
-    cli::cli_alert_success("Using cached remote data: {cache_dir}")
-    return(cache_dir)
-  }
+  # Replace {table} placeholder with actual file path
+  sql <- gsub("\\{table\\}", sprintf("'%s'", temp_file_normalized), sql_template)
 
-  dir.create(cache_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Download all parquet files
-  for (asset in release$assets) {
-    if (grepl("\\.parquet$", asset$name)) {
-      dest_path <- file.path(cache_dir, asset$name)
-      cli::cli_alert_info("  Downloading {asset$name}...")
-      download_release_asset(asset$browser_download_url, dest_path, show_progress = FALSE)
-    }
-  }
-
-  # Cache the path
-  assign(cache_key, cache_dir, envir = .bouncer_remote_cache)
-
-  cli::cli_alert_success("Downloaded {length(list.files(cache_dir))} parquet files")
-  cache_dir
+  DBI::dbGetQuery(conn, sql)
 }
 
 
-#' Get Local Parquet Directory
+#' Get Available Remote Tables
 #'
-#' Returns the path to local parquet files.
+#' Returns list of parquet files available in the cricsheet release.
 #'
-#' @return Path to local parquet directory.
+#' @return Character vector of table names (without .parquet extension).
 #' @keywords internal
-get_local_parquet_dir <- function() {
-  data_dir <- find_bouncerdata_dir()
-  file.path(data_dir, "parquet")
+get_remote_tables <- function() {
+  if (!exists("release_info", envir = .bouncer_remote_cache)) {
+    release <- get_latest_release(type = "cricsheet")
+    assign("release_info", release, envir = .bouncer_remote_cache)
+  } else {
+    release <- get("release_info", envir = .bouncer_remote_cache)
+  }
+
+  assets <- sapply(release$assets, function(a) a$name)
+  parquets <- assets[grepl("\\.parquet$", assets)]
+  tools::file_path_sans_ext(parquets)
 }
 
 
-#' Apply Data Filters
+#' Get Data Connection
 #'
-#' Internal function to filter data by format, gender, and type.
+#' Internal helper to get a DuckDB connection for data loading.
+#' For local: connects to the bouncer.duckdb file.
+#' For remote: creates an in-memory DuckDB with httpfs views to GitHub parquet.
 #'
-#' @param data Data frame with match_type, gender, team_type columns.
-#' @param format "long_form", "short_form", or "all"
-#' @param gender "male", "female", or "all"
-#' @param type "international", "club", or "all"
+#' @param source Character. "local" or "remote".
 #'
-#' @return Filtered data frame.
+#' @return A DuckDB connection. Caller is responsible for disconnecting.
 #' @keywords internal
-apply_data_filters <- function(data, format = "all", gender = "all", type = "all") {
-  if (format != "all") {
-    if (format == "long_form") {
-      data <- data[data$match_type %in% FORMAT_LONG_FORM, ]
-    } else if (format == "short_form") {
-      data <- data[!data$match_type %in% FORMAT_LONG_FORM, ]
-    }
+get_data_connection <- function(source = c("local", "remote")) {
+
+  source <- match.arg(source)
+
+
+  if (source == "local") {
+    # Connect to local DuckDB
+    conn <- get_db_connection(read_only = TRUE)
+    return(conn)
   }
 
-  if (gender != "all") {
-    data <- data[data$gender == gender, ]
-  }
 
-  if (type != "all") {
-    data <- data[data$team_type == type, ]
-  }
+  # Remote: Create connection with httpfs views
 
-  data
+  conn <- create_remote_connection()
+  return(conn)
 }
+
+
+#' Create Remote Connection with GitHub Parquet Views
+#'
+#' Creates a DuckDB connection with httpfs extension loaded and views
+#' pointing to parquet files on GitHub releases.
+#'
+#' @return A DuckDB connection with views for all tables.
+#' @keywords internal
+create_remote_connection <- function() {
+  # Get release info (cache it for the session)
+  if (!exists("release_info", envir = .bouncer_remote_cache)) {
+    cli::cli_alert_info("Finding latest GitHub release...")
+    release <- get_latest_release(type = "cricsheet")
+    assign("release_info", release, envir = .bouncer_remote_cache)
+  } else {
+    release <- get("release_info", envir = .bouncer_remote_cache)
+  }
+
+  base_url <- sprintf("https://github.com/peteowen1/bouncerdata/releases/download/%s",
+                      release$tag_name)
+
+  # Create DuckDB connection
+
+conn <- DBI::dbConnect(duckdb::duckdb())
+
+  # Install and load httpfs extension
+  DBI::dbExecute(conn, "INSTALL httpfs")
+  DBI::dbExecute(conn, "LOAD httpfs")
+
+  # Get list of available parquet files from release assets
+  available_assets <- sapply(release$assets, function(a) a$name)
+  parquet_assets <- available_assets[grepl("\\.parquet$", available_assets)]
+
+  # Create views for each parquet file
+  for (asset_name in parquet_assets) {
+    table_name <- tools::file_path_sans_ext(asset_name)
+    parquet_url <- sprintf("%s/%s", base_url, asset_name)
+
+    view_sql <- sprintf("CREATE VIEW %s AS SELECT * FROM '%s'",
+                        table_name, parquet_url)
+    tryCatch(
+      DBI::dbExecute(conn, view_sql),
+      error = function(e) NULL
+    )
+  }
+
+  # Create unified 'matches' view (UNION ALL of all matches_* tables)
+  match_views <- grep("^matches_", parquet_assets, value = TRUE)
+  match_views <- tools::file_path_sans_ext(match_views)
+  if (length(match_views) > 0) {
+    union_sql <- paste0("SELECT * FROM ", match_views, collapse = " UNION ALL ")
+    tryCatch(
+      DBI::dbExecute(conn, sprintf("CREATE VIEW matches AS %s", union_sql)),
+      error = function(e) NULL
+    )
+  }
+
+  # Create unified 'deliveries' view
+  delivery_views <- grep("^deliveries_", parquet_assets, value = TRUE)
+  delivery_views <- tools::file_path_sans_ext(delivery_views)
+  if (length(delivery_views) > 0) {
+    union_sql <- paste0("SELECT * FROM ", delivery_views, collapse = " UNION ALL ")
+    tryCatch(
+      DBI::dbExecute(conn, sprintf("CREATE VIEW deliveries AS %s", union_sql)),
+      error = function(e) NULL
+    )
+  }
+
+  cli::cli_alert_success("Connected to remote data (release: {release$tag_name})")
+  conn
+}
+
+
+#' All Valid Match Types
+#' @keywords internal
+ALL_MATCH_TYPES <- c("Test", "ODI", "T20", "IT20", "MDM", "ODM")
 
 
 #' Load Matches Data
 #'
-#' Load match data from local cache or remote GitHub releases.
-#' Optionally filter by format (long/short), gender (male/female),
-#' and type (international/club).
+#' Load match data from local DuckDB or remote GitHub releases.
+#' Filter by match_type, gender, and team_type.
 #'
-#' @param format Character. "long_form", "short_form", or "all" (default).
+#' @param match_type Character or vector. One or more of: "Test", "ODI", "T20",
+#'   "IT20", "MDM", "ODM", or "all" (default).
 #' @param gender Character. "male", "female", or "all" (default).
-#' @param type Character. "international", "club", or "all" (default).
-#' @param source Character. "local" (default) or "remote".
+#' @param team_type Character. "international", "club", or "all" (default).
+#' @param source Character. "local" (default) uses local DuckDB.
+#'   "remote" queries GitHub releases via httpfs.
 #'
-#' @return Data frame of matches.
+#' @return Data frame of matches, sorted by most recent first.
 #'
 #' @export
 #' @examples
 #' \dontrun{
-#' # Load all matches locally
+#' # Load all matches from local database
 #' matches <- load_matches()
 #'
 #' # Load only T20 international men's matches
-#' t20i_men <- load_matches("short_form", "male", "international")
+#' t20i_men <- load_matches("T20", "male", "international")
 #'
-#' # Load from GitHub releases
+#' # Load multiple match types
+#' limited_overs <- load_matches(c("ODI", "T20"), "male", "international")
+#'
+#' # Load from GitHub releases (no local install needed)
 #' matches <- load_matches(source = "remote")
 #' }
-load_matches <- function(format = "all", gender = "all", type = "all",
+load_matches <- function(match_type = "all", gender = "all", team_type = "all",
                          source = c("local", "remote")) {
   source <- match.arg(source)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Build query with filters
+  where_clauses <- character()
+
+  if (!identical(match_type, "all")) {
+    types_sql <- paste0("'", match_type, "'", collapse = ", ")
+    where_clauses <- c(where_clauses, sprintf("match_type IN (%s)", types_sql))
+  }
+  if (gender != "all") {
+    where_clauses <- c(where_clauses, sprintf("gender = '%s'", gender))
+  }
+  if (team_type != "all") {
+    where_clauses <- c(where_clauses, sprintf("team_type = '%s'", team_type))
+  }
+
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
   } else {
-    get_remote_parquet_cache()
+    ""
   }
 
-  path <- file.path(base_dir, "matches.parquet")
+  sql <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
 
-  if (!file.exists(path)) {
-    cli::cli_warn("Matches data not found at {path}")
-    return(data.frame())
-  }
-
-  result <- arrow::read_parquet(path)
-
-  # Apply filters if specified
-  result <- apply_data_filters(result, format, gender, type)
+  result <- DBI::dbGetQuery(conn, sql)
 
   if (nrow(result) == 0) {
-    cli::cli_warn("No match data found for the specified filters")
+    cli::cli_warn("No matches found for the specified filters")
     return(data.frame())
   }
 
@@ -179,53 +270,85 @@ load_matches <- function(format = "all", gender = "all", type = "all",
 
 #' Load Deliveries Data
 #'
-#' Load ball-by-ball delivery data from local cache or remote GitHub releases.
-#' Optionally filter by format (long/short), gender (male/female),
-#' and type (international/club).
+#' Load ball-by-ball delivery data from local DuckDB or remote GitHub releases.
+#' Filter by match_type, gender, team_type, and specific match_ids.
 #'
-#' @inheritParams load_matches
+#' @param match_type Character or vector. One or more of: "Test", "ODI", "T20",
+#'   "IT20", "MDM", "ODM", or "all" (default).
+#' @param gender Character. "male", "female", or "all" (default).
+#' @param team_type Character. "international", "club", or "all" (default).
+#' @param match_ids Character vector. Optional filter for specific match_ids.
+#' @param source Character. "local" (default) or "remote".
 #'
 #' @return Data frame of deliveries.
 #'
 #' @export
 #' @examples
 #' \dontrun{
-#' # Load all deliveries locally
+#' # Load all deliveries from local database
 #' deliveries <- load_deliveries()
 #'
 #' # Load only T20 men's deliveries
-#' t20_men <- load_deliveries("short_form", "male")
+#' t20_men <- load_deliveries("T20", "male")
 #'
-#' # Load IPL deliveries (short form, male, club)
-#' ipl <- load_deliveries("short_form", "male", "club")
+#' # Load IPL deliveries (T20, male, club)
+#' ipl <- load_deliveries("T20", "male", "club")
+#'
+#' # Load specific matches
+#' subset <- load_deliveries(match_ids = c("1234567", "1234568"))
 #'
 #' # Load from GitHub releases
 #' deliveries <- load_deliveries(source = "remote")
 #' }
-load_deliveries <- function(format = "all", gender = "all", type = "all",
-                            source = c("local", "remote")) {
+load_deliveries <- function(match_type = "all", gender = "all", team_type = "all",
+                            match_ids = NULL, source = c("local", "remote")) {
   source <- match.arg(source)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Build query - need to join with matches for filtering
+  # For efficiency, if filtering by match_ids only, query deliveries directly
+  if (!is.null(match_ids) && identical(match_type, "all") &&
+      gender == "all" && team_type == "all") {
+    # Direct query with match_id filter
+    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+    sql <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", ids_sql)
   } else {
-    get_remote_parquet_cache()
+    # Need to filter through matches table
+    where_clauses <- character()
+
+    if (!identical(match_type, "all")) {
+      types_sql <- paste0("'", match_type, "'", collapse = ", ")
+      where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
+    }
+    if (gender != "all") {
+      where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", gender))
+    }
+    if (team_type != "all") {
+      where_clauses <- c(where_clauses, sprintf("m.team_type = '%s'", team_type))
+    }
+    if (!is.null(match_ids)) {
+      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      where_clauses <- c(where_clauses, sprintf("d.match_id IN (%s)", ids_sql))
+    }
+
+    if (length(where_clauses) > 0) {
+      where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
+      sql <- sprintf(
+        "SELECT d.* FROM deliveries d
+         INNER JOIN matches m ON d.match_id = m.match_id
+         %s", where_sql
+      )
+    } else {
+      sql <- "SELECT * FROM deliveries"
+    }
   }
 
-  path <- file.path(base_dir, "deliveries.parquet")
-
-  if (!file.exists(path)) {
-    cli::cli_warn("Deliveries data not found at {path}")
-    return(data.frame())
-  }
-
-  result <- arrow::read_parquet(path)
-
-  # Apply filters if specified
-  result <- apply_data_filters(result, format, gender, type)
+  result <- DBI::dbGetQuery(conn, sql)
 
   if (nrow(result) == 0) {
-    cli::cli_warn("No delivery data found for the specified filters")
+    cli::cli_warn("No deliveries found for the specified filters")
     return(data.frame())
   }
 
@@ -236,7 +359,7 @@ load_deliveries <- function(format = "all", gender = "all", type = "all",
 
 #' Load Players Data
 #'
-#' Load the player registry from local cache or remote GitHub releases.
+#' Load the player registry from local DuckDB or remote GitHub releases.
 #'
 #' @param source Character. "local" (default) or "remote".
 #'
@@ -251,21 +374,139 @@ load_deliveries <- function(format = "all", gender = "all", type = "all",
 load_players <- function(source = c("local", "remote")) {
   source <- match.arg(source)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
-  } else {
-    get_remote_parquet_cache()
-  }
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  path <- file.path(base_dir, "players.parquet")
+  result <- DBI::dbGetQuery(conn, "SELECT * FROM players")
 
-  if (!file.exists(path)) {
-    cli::cli_warn("Players data not found at {path}")
+  if (nrow(result) == 0) {
+    cli::cli_warn("No players found")
     return(data.frame())
   }
 
-  result <- arrow::read_parquet(path)
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} players")
+  result
+}
+
+
+#' Load Match Innings Data
+#'
+#' Load innings-level summaries from local DuckDB or remote GitHub releases.
+#' Includes target info, super over flags, and absent hurt data.
+#'
+#' @param match_type Character or vector. Filter by match type.
+#' @param gender Character. "male", "female", or "all".
+#' @param match_ids Character vector. Filter for specific matches.
+#' @param source Character. "local" (default) or "remote".
+#'
+#' @return Data frame of innings summaries.
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' innings <- load_innings()
+#' t20_innings <- load_innings(match_type = "T20")
+#' }
+load_innings <- function(match_type = "all", gender = "all",
+                         match_ids = NULL, source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Build query with filters via matches join if needed
+  where_clauses <- character()
+
+  if (!identical(match_type, "all")) {
+    types_sql <- paste0("'", match_type, "'", collapse = ", ")
+    where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
+  }
+  if (gender != "all") {
+    where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", gender))
+  }
+  if (!is.null(match_ids)) {
+    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+    where_clauses <- c(where_clauses, sprintf("i.match_id IN (%s)", ids_sql))
+  }
+
+  if (length(where_clauses) > 0) {
+    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
+    sql <- sprintf(
+      "SELECT i.* FROM match_innings i
+       INNER JOIN matches m ON i.match_id = m.match_id
+       %s", where_sql
+    )
+  } else {
+    sql <- "SELECT * FROM match_innings"
+  }
+
+  result <- DBI::dbGetQuery(conn, sql)
+
+  if (nrow(result) == 0) {
+    cli::cli_warn("No innings data found for the specified filters")
+    return(data.frame())
+  }
+
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} innings records")
+  result
+}
+
+
+#' Load Powerplays Data
+#'
+#' Load powerplay periods from local DuckDB or remote GitHub releases.
+#' Contains powerplay boundaries for each innings.
+#'
+#' @param match_type Character or vector. Filter by match type.
+#' @param match_ids Character vector. Filter for specific matches.
+#' @param source Character. "local" (default) or "remote".
+#'
+#' @return Data frame with powerplay periods (powerplay_id, match_id, innings,
+#'   from_over, to_over, powerplay_type).
+#'
+#' @export
+#' @examples
+#' \dontrun{
+#' powerplays <- load_powerplays()
+#' t20_powerplays <- load_powerplays(match_type = "T20")
+#' }
+load_powerplays <- function(match_type = "all", match_ids = NULL,
+                            source = c("local", "remote")) {
+  source <- match.arg(source)
+
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  where_clauses <- character()
+
+  if (!identical(match_type, "all")) {
+    types_sql <- paste0("'", match_type, "'", collapse = ", ")
+    where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
+  }
+  if (!is.null(match_ids)) {
+    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+    where_clauses <- c(where_clauses, sprintf("p.match_id IN (%s)", ids_sql))
+  }
+
+  if (length(where_clauses) > 0) {
+    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
+    sql <- sprintf(
+      "SELECT p.* FROM innings_powerplays p
+       INNER JOIN matches m ON p.match_id = m.match_id
+       %s", where_sql
+    )
+  } else {
+    sql <- "SELECT * FROM innings_powerplays"
+  }
+
+  result <- DBI::dbGetQuery(conn, sql)
+
+  if (nrow(result) == 0) {
+    cli::cli_warn("No powerplay data found for the specified filters")
+    return(data.frame())
+  }
+
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} powerplay records")
   result
 }
 
@@ -291,23 +532,25 @@ load_players <- function(source = c("local", "remote")) {
 load_player_skill <- function(match_format = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else match_format
+  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
-  } else {
-    get_remote_parquet_cache()
-  }
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   dfs <- lapply(formats, function(fmt) {
-    path <- file.path(base_dir, paste0(fmt, "_player_skill.parquet"))
-    if (file.exists(path)) {
-      df <- arrow::read_parquet(path)
-      df$format <- fmt
-      df
-    } else {
-      NULL
+    table_name <- paste0(fmt, "_player_skill")
+
+    # Check if table exists
+    tables <- DBI::dbListTables(conn)
+    if (!(table_name %in% tables)) {
+      return(NULL)
     }
+
+    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+    tryCatch(
+      DBI::dbGetQuery(conn, sql),
+      error = function(e) NULL
+    )
   })
 
   valid_dfs <- Filter(Negate(is.null), dfs)
@@ -335,23 +578,24 @@ load_player_skill <- function(match_format = "all", source = c("local", "remote"
 load_team_skill <- function(match_format = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else match_format
+  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
-  } else {
-    get_remote_parquet_cache()
-  }
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   dfs <- lapply(formats, function(fmt) {
-    path <- file.path(base_dir, paste0(fmt, "_team_skill.parquet"))
-    if (file.exists(path)) {
-      df <- arrow::read_parquet(path)
-      df$format <- fmt
-      df
-    } else {
-      NULL
+    table_name <- paste0(fmt, "_team_skill")
+
+    tables <- DBI::dbListTables(conn)
+    if (!(table_name %in% tables)) {
+      return(NULL)
     }
+
+    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+    tryCatch(
+      DBI::dbGetQuery(conn, sql),
+      error = function(e) NULL
+    )
   })
 
   valid_dfs <- Filter(Negate(is.null), dfs)
@@ -379,23 +623,24 @@ load_team_skill <- function(match_format = "all", source = c("local", "remote"))
 load_venue_skill <- function(match_format = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else match_format
+  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
-  } else {
-    get_remote_parquet_cache()
-  }
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   dfs <- lapply(formats, function(fmt) {
-    path <- file.path(base_dir, paste0(fmt, "_venue_skill.parquet"))
-    if (file.exists(path)) {
-      df <- arrow::read_parquet(path)
-      df$format <- fmt
-      df
-    } else {
-      NULL
+    table_name <- paste0(fmt, "_venue_skill")
+
+    tables <- DBI::dbListTables(conn)
+    if (!(table_name %in% tables)) {
+      return(NULL)
     }
+
+    sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
+    tryCatch(
+      DBI::dbGetQuery(conn, sql),
+      error = function(e) NULL
+    )
   })
 
   valid_dfs <- Filter(Negate(is.null), dfs)
@@ -413,7 +658,7 @@ load_venue_skill <- function(match_format = "all", source = c("local", "remote")
 
 #' Load Team ELO Ratings
 #'
-#' Load team ELO ratings from local cache or remote GitHub releases.
+#' Load team ELO ratings from local DuckDB or remote GitHub releases.
 #'
 #' @param source Character. "local" (default) or "remote".
 #'
@@ -428,29 +673,25 @@ load_venue_skill <- function(match_format = "all", source = c("local", "remote")
 load_team_elo <- function(source = c("local", "remote")) {
   source <- match.arg(source)
 
-  base_dir <- if (source == "local") {
-    get_local_parquet_dir()
-  } else {
-    get_remote_parquet_cache()
-  }
+  conn <- get_data_connection(source)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  path <- file.path(base_dir, "team_elo.parquet")
+  result <- DBI::dbGetQuery(conn, "SELECT * FROM team_elo")
 
-  if (!file.exists(path)) {
-    cli::cli_warn("Team ELO data not found at {path}")
+  if (nrow(result) == 0) {
+    cli::cli_warn("No team ELO data found")
     return(data.frame())
   }
 
-  result <- arrow::read_parquet(path)
   cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} team ELO records")
   result
 }
 
 
-#' Clear Remote Parquet Cache
+#' Clear Remote Data Cache
 #'
-#' Clears the session-level cache of remote parquet data, forcing
-#' the next load to re-download from GitHub.
+#' Clears the session-level cache of remote release info, forcing
+#' the next load to re-fetch from GitHub.
 #'
 #' @return Invisible NULL.
 #'
@@ -461,6 +702,6 @@ load_team_elo <- function(source = c("local", "remote")) {
 #' }
 clear_remote_cache <- function() {
   rm(list = ls(envir = .bouncer_remote_cache), envir = .bouncer_remote_cache)
-  cli::cli_alert_success("Remote parquet cache cleared")
+  cli::cli_alert_success("Remote data cache cleared")
   invisible(NULL)
 }
