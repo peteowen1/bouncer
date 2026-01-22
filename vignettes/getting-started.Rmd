@@ -40,42 +40,45 @@ devtools::install_github("peteowen1/bouncerverse", subdir = "bouncer")
 
 There are **three ways** to access bouncer data, from easiest to most powerful:
 
-### Option 1: Query Remote Data (No Download)
+### Option 1: Query Local Database
 
-The simplest option - query parquet files directly from GitHub Releases:
+Connect to your local DuckDB database:
 
-```{r remote-query}
+```{r local-query}
 library(bouncer)
 
-# One-liner queries (creates connection, runs query, closes)
-recent_matches <- query_bouncerdata(
-  "SELECT match_id, team1, team2, match_date, match_type
-   FROM matches
-   WHERE match_type = 'T20'
-   ORDER BY match_date DESC
-   LIMIT 20"
-)
+# Connect to local database
+conn <- connect_to_bouncer()
+
+# Run SQL queries
+recent_matches <- DBI::dbGetQuery(conn, "
+  SELECT match_id, team1, team2, match_date, match_type
+  FROM matches
+  WHERE match_type = 'T20'
+  ORDER BY match_date DESC
+  LIMIT 20
+")
 
 # Get top T20 batters by skill index
-top_batters <- query_bouncerdata(
-  "SELECT player_id, batter_scoring_index, batter_survival_rate
-   FROM t20_player_skill
-   ORDER BY batter_scoring_index DESC
-   LIMIT 10"
-)
-```
-
-For multiple queries, keep the connection open:
-
-```{r remote-connection}
-# Connect once, query many times
-con <- connect_bouncerdata()
-
-matches <- DBI::dbGetQuery(con, "SELECT * FROM matches LIMIT 100")
-players <- DBI::dbGetQuery(con, "SELECT * FROM players LIMIT 100")
+top_batters <- DBI::dbGetQuery(conn, "
+  SELECT player_id, batter_scoring_index, batter_survival_rate
+  FROM t20_player_skill
+  ORDER BY batter_scoring_index DESC
+  LIMIT 10
+")
 
 # Always disconnect when done
-DBI::dbDisconnect(con, shutdown = TRUE)
+disconnect_bouncer(conn)
+```
+
+Or use the helper functions for common queries:
+
+```{r helper-queries}
+# Query matches with filters
+matches <- query_matches(match_type = "T20", limit = 20)
+
+# Query deliveries with filters
+deliveries <- query_deliveries(batter_id = "V Kohli", match_type = "T20")
 ```
 
 ### Option 2: Download Parquet Files
@@ -166,22 +169,61 @@ print(comparison)
 Get detailed batting and bowling statistics:
 
 ```{r player-stats}
-# Batting stats with derived metrics
-kohli_batting <- calculate_player_batting_stats("V Kohli")
-# Returns: balls_faced, runs, average, strike_rate, boundary%, elo_batting
+# Get all players' batting stats (min 100 balls faced)
+all_batters <- player_batting_stats()
 
-# T20-specific batting stats
-kohli_t20 <- calculate_player_batting_stats("V Kohli", match_type = "T20")
+# Get T20 batting stats for all players
+t20_batters <- player_batting_stats(match_type = "T20")
 
-# Stats for a specific season
-kohli_2023 <- calculate_player_batting_stats("V Kohli", season = "2023")
+# Get stats for a specific player
+kohli_batting <- player_batting_stats("V Kohli")
 
-# Bowling stats
-bumrah_bowling <- calculate_player_bowling_stats("JJ Bumrah")
-# Returns: balls_bowled, runs, wickets, average, economy, strike_rate, elo_bowling
+# T20-specific batting stats for a player
+kohli_t20 <- player_batting_stats("V Kohli", match_type = "T20")
 
-# Test bowling stats
-anderson_tests <- calculate_player_bowling_stats("JM Anderson", match_type = "Test")
+# Get all players' bowling stats
+all_bowlers <- player_bowling_stats()
+
+# Bowling stats for a specific player
+bumrah_bowling <- player_bowling_stats("JJ Bumrah")
+
+# Test bowling stats for a specific player
+anderson_tests <- player_bowling_stats("JM Anderson", match_type = "Test")
+```
+
+## Team Statistics
+
+Get aggregated team statistics:
+
+```{r team-stats}
+# Get all teams' batting stats
+all_teams_batting <- team_batting_stats()
+
+# Get T20 batting stats for all teams
+t20_teams <- team_batting_stats(match_type = "T20")
+
+# Get stats for a specific team
+india_batting <- team_batting_stats("India")
+india_bowling <- team_bowling_stats("India")
+
+# Head-to-head record
+h2h <- head_to_head("India", "Australia")
+h2h_tests <- head_to_head("England", "Australia", match_type = "Test")
+```
+
+## Venue Statistics
+
+Get venue-level statistics:
+
+```{r venue-stats}
+# Get all venues
+all_venues <- venue_stats()
+
+# Get T20 venue stats
+t20_venues <- venue_stats(match_type = "T20")
+
+# Get stats for a specific venue
+mcg <- venue_stats("MCG")
 ```
 
 ## Analyzing Matches

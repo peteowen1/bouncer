@@ -48,22 +48,16 @@ kohli_elo <- get_player_elo("V Kohli", match_type = "t20")
 bumrah_elo <- get_player_elo("J Bumrah", match_type = "t20")
 
 # Step 3: Predict matchup outcomes
-expected_runs <- predict_expected_runs(
-  batter_id = "V Kohli",
-  bowler_id = "J Bumrah",
+matchup <- predict_matchup_outcome(
+  batter = "V Kohli",
+  bowler = "J Bumrah",
   context = list(
     match_type = "t20",
-    venue = "Wankhede Stadium",
     over = 18,
     phase = "death"
   )
 )
-
-wicket_prob <- predict_wicket_probability(
-  batter_id = "V Kohli",
-  bowler_id = "J Bumrah",
-  context = list(match_type = "t20", over = 18)
-)
+# Returns expected runs, wicket probability, and advantage
 
 # Step 4: Analyze matchups
 head_to_head <- analyze_batter_vs_bowler("V Kohli", "J Bumrah")
@@ -79,34 +73,41 @@ match_prediction <- predict_match_outcome(
 
 ## Core Functions
 
-### ELO Rating System
+### Skill & ELO System
 
-- `calculate_expected_outcome()` - Expected performance based on ELO difference
-- `calculate_k_factor()` - Learning rate for ELO updates
-- `calculate_elo_update()` - Update player rating after performance
 - `get_player_elo()` - Retrieve current player ELO ratings
-- `get_player_elo_history()` - Historical ELO progression
+- `get_team_elo()` - Retrieve current team ELO ratings
+- `get_batting_elo()` - Get batting-specific ELO
+- `get_bowling_elo()` - Get bowling-specific ELO
+- `get_elo_at_delivery()` - ELO at any specific ball
+- `get_match_elo_progression()` - Track ELO changes during a match
+- `plot_skill_progression()` - Visualize skill over time
 
 ### Predictions
 
-- `predict_expected_runs()` - Expected runs for batter vs bowler
-- `predict_wicket_probability()` - Probability of dismissal
-- `predict_matchup_outcome()` - Full batter-bowler matchup prediction
-- `predict_innings_score()` - Team total prediction
-- `predict_match_outcome()` - Win probability and margin
+- `predict_match()` - Pre-match win probability
+- `predict_match_outcome()` - Detailed match outcome prediction
+- `predict_matchup_outcome()` - Batter vs bowler prediction
+- `predict_win_probability()` - In-match win probability
+- `calculate_projected_score()` - Project innings total from current state
 
 ### Player Analytics
 
-- `calculate_player_batting_stats()` - Aggregate batting metrics
-- `calculate_player_bowling_stats()` - Aggregate bowling metrics
+- `player_batting_stats()` - Aggregate batting metrics (one player or all)
+- `player_bowling_stats()` - Aggregate bowling metrics (one player or all)
 - `analyze_batter_vs_bowler()` - Historical head-to-head analysis
 - `rank_players()` - Player rankings by ELO
 
 ### Team Analytics
 
-- `calculate_roster_elo()` - Team strength from player ELOs
-- `compare_team_rosters()` - Team vs team comparison
-- `simulate_match()` - Monte Carlo match simulation
+- `team_batting_stats()` - Aggregate team batting metrics (one team or all)
+- `team_bowling_stats()` - Aggregate team bowling metrics (one team or all)
+- `head_to_head()` - Historical team vs team record
+- `compare_teams()` - Team comparison with win probability
+
+### Venue Analytics
+
+- `venue_stats()` - Venue scoring rates and conditions (one venue or all)
 
 ## How the ELO System Works
 
@@ -214,17 +215,19 @@ bouncerdata/              # Data storage directory (not a package)
 - ✅ DuckDB database schema
 - ✅ Data loading pipeline
 
-**Phase 2 (In Progress)**: Core ELO system
-- ✅ Base ELO algorithm
-- ⏳ Batting/bowling ELO updates
-- ⏳ ELO history tracking
-- ⏳ Basic predictions
+**Phase 2 (Complete)**: Core Skill System
+- ✅ Residual-based skill indices
+- ✅ Ball-by-ball skill tracking
+- ✅ Team and venue skill indices
+- ✅ Basic predictions
 
-**Phase 3 (Planned)**: Advanced features
-- ⏳ Multi-layer ELO (format, opposition, venue)
-- ⏳ Context-aware predictions
-- ⏳ Player analytics toolkit
-- ⏳ Team modeling and match prediction
+**Phase 3 (Complete)**: Advanced Features
+- ✅ Format-specific skills (T20, ODI, Test)
+- ✅ Context-aware score projection
+- ✅ Player analytics (`compare_players()`, `analyze_player()`)
+- ✅ Match simulation (ball-by-ball)
+- ✅ Season simulation
+- ✅ Visualization functions
 
 ## Contributing
 
@@ -245,10 +248,10 @@ MIT
 If you use bouncer in research or publications, please cite:
 
 ```
-@software{bouncer2024,
+@software{bouncer2026,
   title = {bouncer: Cricket Analytics with Player ELO Rating System},
-  author = {Your Name},
-  year = {2024},
-  url = {https://github.com/yourusername/bouncerverse}
+  author = {Pete Owen},
+  year = {2026},
+  url = {https://github.com/peteowen1/bouncerverse}
 }
 ```
