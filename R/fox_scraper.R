@@ -176,39 +176,27 @@ parse_fox_details <- function(json_data, match_id) {
   md <- json_data$match_details
   if (is.null(md)) return(NULL)
 
-  # Extract venue info
- venue <- md$venue
-  venue_id <- venue$id %||% NA
-  venue_name <- venue$name %||% NA
-  venue_city <- venue$city %||% NA
-  venue_country <- venue$country %||% NA
-  venue_state <- venue$state %||% NA
-
-  # Extract team info
+  venue <- md$venue
   team_a <- md$team_A
   team_b <- md$team_B
 
-  # Extract player of match
+  # Extract player of match (first entry if exists)
   pom <- json_data$performers$player_of_the_match
-  pom_id <- if (!is.null(pom) && length(pom) > 0) pom[[1]]$id else NA
-  pom_name <- if (!is.null(pom) && length(pom) > 0) pom[[1]]$full_name else NA
+  has_pom <- !is.null(pom) && length(pom) > 0
 
-  # Extract umpires
+  # Helper to extract referee by type
+  get_referee <- function(refs, type) {
+    if (is.null(refs)) return(NA)
+    matches <- refs[vapply(refs, function(r) r$type == type, logical(1))]
+    if (length(matches) == 0) return(NA)
+    if (type == "Umpire") {
+      paste(vapply(matches, function(r) r$full_name, character(1)), collapse = ", ")
+    } else {
+      matches[[1]]$full_name
+    }
+  }
+
   refs <- json_data$referees
-  umpires <- if (!is.null(refs)) {
-    ump_names <- sapply(refs[sapply(refs, function(r) r$type == "Umpire")], function(r) r$full_name)
-    if (length(ump_names) > 0) paste(ump_names, collapse = ", ") else NA
-  } else NA
-
-  third_umpire <- if (!is.null(refs)) {
-    tu <- refs[sapply(refs, function(r) r$type == "3rd Umpire")]
-    if (length(tu) > 0) tu[[1]]$full_name else NA
-  } else NA
-
-  match_referee <- if (!is.null(refs)) {
-    mr <- refs[sapply(refs, function(r) r$type == "Match Referee")]
-    if (length(mr) > 0) mr[[1]]$full_name else NA
-  } else NA
 
   data.frame(
     match_id = match_id,
@@ -217,11 +205,11 @@ parse_fox_details <- function(json_data, match_id) {
     match_day = md$match_day %||% NA,
     match_result = md$match_result %||% NA,
     match_note = md$match_note %||% NA,
-    venue_id = venue_id,
-    venue_name = venue_name,
-    venue_city = venue_city,
-    venue_country = venue_country,
-    venue_state = venue_state,
+    venue_id = venue$id %||% NA,
+    venue_name = venue$name %||% NA,
+    venue_city = venue$city %||% NA,
+    venue_country = venue$country %||% NA,
+    venue_state = venue$state %||% NA,
     weather = md$weather %||% NA,
     pitch_state = md$pitch_state %||% NA,
     surface_state = md$surface_state %||% NA,
@@ -234,11 +222,11 @@ parse_fox_details <- function(json_data, match_id) {
     team_b_code = team_b$code %||% NA,
     toss_winner_id = md$won_toss_team_id %||% NA,
     toss_elected_bat = md$won_toss_team_elected_to_bat %||% NA,
-    player_of_match_id = pom_id,
-    player_of_match_name = pom_name,
-    umpires = umpires,
-    third_umpire = third_umpire,
-    match_referee = match_referee,
+    player_of_match_id = if (has_pom) pom[[1]]$id else NA,
+    player_of_match_name = if (has_pom) pom[[1]]$full_name else NA,
+    umpires = get_referee(refs, "Umpire"),
+    third_umpire = get_referee(refs, "3rd Umpire"),
+    match_referee = get_referee(refs, "Match Referee"),
     stringsAsFactors = FALSE
   )
 }
@@ -288,6 +276,36 @@ fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
   return(trap_env$userkey)
 }
 
+#' Fetch JSON endpoint via browser and parse result
+#'
+#' Shared helper for fetching Fox Sports API endpoints.
+#'
+#' @param browser A ChromoteSession object
+#' @param url Full API URL to fetch
+#' @param parse_fn Function to parse the JSON response
+#' @param match_id Match ID to pass to parse function
+#' @return Parsed data.frame or NULL on error
+#' @keywords internal
+fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
+  js_fetch <- sprintf("
+    (async () => {
+      try {
+        const response = await fetch('%s');
+        return await response.json();
+      } catch(e) {
+        return {error: e.message};
+      }
+    })();
+  ", url)
+
+  tryCatch({
+    result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 30)
+    json_data <- result$result$value
+    if (!is.null(json_data$error)) return(NULL)
+    parse_fn(json_data, match_id)
+  }, error = function(e) NULL)
+}
+
 #' Fetch player squad data for a single match
 #'
 #' Fetches the players.json endpoint which contains full squad information
@@ -299,34 +317,11 @@ fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
 #' @return A data.frame of player data for both teams, or NULL if no data
 #' @keywords internal
 fox_fetch_match_players <- function(browser, match_id, userkey) {
-  players_url <- sprintf(
+  url <- sprintf(
     "https://statsapi.foxsports.com.au/3.0/api/sports/cricket/matches/%s/players.json?userkey=%s",
     match_id, userkey
   )
-
-  js_fetch <- sprintf("
-    (async () => {
-      try {
-        const response = await fetch('%s');
-        return await response.json();
-      } catch(e) {
-        return {error: e.message};
-      }
-    })();
-  ", players_url)
-
-  tryCatch({
-    result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 30)
-    json_data <- result$result$value
-
-    if (!is.null(json_data$error)) {
-      return(NULL)
-    }
-
-    parse_fox_players(json_data, match_id)
-  }, error = function(e) {
-    NULL
-  })
+  fox_fetch_endpoint(browser, url, parse_fox_players, match_id)
 }
 
 #' Fetch match details/metadata for a single match
@@ -340,34 +335,11 @@ fox_fetch_match_players <- function(browser, match_id, userkey) {
 #' @return A single-row data.frame of match details, or NULL if no data
 #' @keywords internal
 fox_fetch_match_details <- function(browser, match_id, userkey) {
-  details_url <- sprintf(
+  url <- sprintf(
     "https://statsapi.foxsports.com.au/3.0/api/sports/cricket/matches/%s/details.json?userkey=%s",
     match_id, userkey
   )
-
-  js_fetch <- sprintf("
-    (async () => {
-      try {
-        const response = await fetch('%s');
-        return await response.json();
-      } catch(e) {
-        return {error: e.message};
-      }
-    })();
-  ", details_url)
-
-  tryCatch({
-    result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 30)
-    json_data <- result$result$value
-
-    if (!is.null(json_data$error)) {
-      return(NULL)
-    }
-
-    parse_fox_details(json_data, match_id)
-  }, error = function(e) {
-    NULL
-  })
+  fox_fetch_endpoint(browser, url, parse_fox_details, match_id)
 }
 
 #' Fetch ball-by-ball data for a single match
@@ -384,17 +356,13 @@ fox_fetch_match_details <- function(browser, match_id, userkey) {
 #' @keywords internal
 fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_innings = NULL,
                             delay_seconds = 1, include_players = FALSE, include_details = FALSE) {
-  # Use format-specific max_innings if not provided
   if (is.null(max_innings)) {
-    if (format %in% names(FOX_FORMATS)) {
-      max_innings <- FOX_FORMATS[[format]]$max_innings
-    } else {
-      max_innings <- 4  # Default fallback for Tests
-    }
+    max_innings <- FOX_FORMATS[[format]]$max_innings %||% 4
   }
+
   all_innings_data <- list()
 
-  for (inning_num in 1:max_innings) {
+  for (inning_num in seq_len(max_innings)) {
     innings_url <- sprintf(
       "https://statsapi.foxsports.com.au/3.0/api/sports/cricket/matches/%s/aggregatestats.json;fromInnings=%d;fromOver=0;fromBall=0;toInnings=%d;toOver=999;toBall=6;limit=500?userkey=%s",
       match_id, inning_num, inning_num, userkey
@@ -417,46 +385,36 @@ fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_inn
           all_innings_data[[inning_num]] <- innings_df
         }
       }
-    }, error = function(e) {
-      # Silently skip errors for individual innings
-    })
+    }, error = function(e) NULL)
 
-    # Delay between innings requests
     Sys.sleep(delay_seconds + runif(1, 0.5, 2))
   }
 
-  # Process ball-by-ball data
-  balls_data <- NULL
-  if (length(all_innings_data) > 0) {
-    balls_data <- dplyr::bind_rows(all_innings_data)
-    balls_data <- balls_data %>% dplyr::arrange(innings, running_over, ball)
+  balls_data <- if (length(all_innings_data) > 0) {
+    dplyr::bind_rows(all_innings_data) %>% dplyr::arrange(innings, running_over, ball)
+  } else {
+    NULL
   }
 
-  # If no extras requested, return just the balls data (backward compatible)
   if (!include_players && !include_details) {
     return(balls_data)
   }
 
-  # Fetch additional data if requested
-  players_data <- NULL
-  details_data <- NULL
-
-  if (include_players) {
-    Sys.sleep(0.5)  # Brief delay
-    players_data <- fox_fetch_match_players(browser, match_id, userkey)
+  players_data <- if (include_players) {
+    Sys.sleep(0.5)
+    fox_fetch_match_players(browser, match_id, userkey)
+  } else {
+    NULL
   }
 
-  if (include_details) {
-    Sys.sleep(0.5)  # Brief delay
-    details_data <- fox_fetch_match_details(browser, match_id, userkey)
+  details_data <- if (include_details) {
+    Sys.sleep(0.5)
+    fox_fetch_match_details(browser, match_id, userkey)
+  } else {
+    NULL
   }
 
-  # Return as a list when extras are included
-  list(
-    balls = balls_data,
-    players = players_data,
-    details = details_data
-  )
+  list(balls = balls_data, players = players_data, details = details_data)
 }
 
 #' Check if a Fox Sports match ID exists
@@ -510,23 +468,19 @@ fox_match_exists <- function(browser, match_id, userkey) {
 #' @return Character vector of possible match IDs to try
 #' @keywords internal
 generate_match_id_variants <- function(year, series, match, format = "TEST") {
-  # Validate format
- if (!format %in% names(FOX_FORMATS)) {
+  if (!format %in% names(FOX_FORMATS)) {
     stop("Unknown format: ", format, ". Valid formats: ", paste(names(FOX_FORMATS), collapse = ", "))
   }
 
   prefix <- FOX_FORMATS[[format]]$prefix
   series_str <- sprintf("%02d", series)
   match_str <- sprintf("%02d", match)
-
-  # Pattern A: with hyphen and season suffix (e.g., TEST2025-260604)
   season_suffix <- sprintf("%02d", (year %% 100) + 1)
-  pattern_a <- sprintf("%s%d-%s%s%s", prefix, year, season_suffix, series_str, match_str)
 
-  # Pattern B: no hyphen, just year (e.g., TEST20250501)
-  pattern_b <- sprintf("%s%d%s%s", prefix, year, series_str, match_str)
-
-  return(c(pattern_a, pattern_b))
+  c(
+    sprintf("%s%d-%s%s%s", prefix, year, season_suffix, series_str, match_str),
+    sprintf("%s%d%s%s", prefix, year, series_str, match_str)
+  )
 }
 
 #' Discover valid match IDs by enumeration
@@ -719,14 +673,15 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
   for (i in seq_along(match_ids)) {
     match_id <- match_ids[i]
 
-    # Check which files already exist
+    # Check which files already exist (either .rds or .parquet)
     output_file <- file.path(format_dir, paste0(match_id, file_ext))
-    balls_exists <- file.exists(file.path(format_dir, paste0(match_id, ".rds"))) ||
-                    file.exists(file.path(format_dir, paste0(match_id, ".parquet")))
-    players_exists <- file.exists(file.path(format_dir, paste0(match_id, "_players.rds"))) ||
-                      file.exists(file.path(format_dir, paste0(match_id, "_players.parquet")))
-    details_exists <- file.exists(file.path(format_dir, paste0(match_id, "_details.rds"))) ||
-                      file.exists(file.path(format_dir, paste0(match_id, "_details.parquet")))
+    file_exists <- function(suffix) {
+      file.exists(file.path(format_dir, paste0(match_id, suffix, ".rds"))) ||
+        file.exists(file.path(format_dir, paste0(match_id, suffix, ".parquet")))
+    }
+    balls_exists <- file_exists("")
+    players_exists <- file_exists("_players")
+    details_exists <- file_exists("_details")
 
     # Determine what we need to fetch
     need_balls <- !skip_existing || !balls_exists
@@ -790,11 +745,7 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
       Sys.sleep(2 + runif(1, 1, 2))
     }
 
-    # Build status message
-    fetch_parts <- c()
-    if (need_balls) fetch_parts <- c(fetch_parts, "balls")
-    if (need_players) fetch_parts <- c(fetch_parts, "players")
-    if (need_details) fetch_parts <- c(fetch_parts, "details")
+    fetch_parts <- c(if (need_balls) "balls", if (need_players) "players", if (need_details) "details")
     cli::cli_alert("[{i}/{length(match_ids)}] Fetching {match_id} ({paste(fetch_parts, collapse = ', ')})...")
 
     # Initialize data holders
@@ -837,44 +788,22 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
       }
     }
 
+    # Helper to save data in appropriate format
+    save_data <- function(data, suffix) {
+      if (is.null(data) || nrow(data) == 0) return(FALSE)
+      out_path <- file.path(format_dir, paste0(match_id, suffix, file_ext))
+      if (use_parquet) arrow::write_parquet(data, out_path) else saveRDS(data, out_path)
+      TRUE
+    }
+
     saved_files <- c()
-
-    # Save ball-by-ball data if we fetched it
-    if (!is.null(balls_data) && nrow(balls_data) > 0) {
+    if (save_data(balls_data, "")) {
       results[[match_id]] <- balls_data
-
-      if (use_parquet) {
-        arrow::write_parquet(balls_data, output_file)
-      } else {
-        saveRDS(balls_data, output_file)
-      }
       saved_files <- c(saved_files, "balls")
-      fetch_success <- TRUE
     }
-
-    # Save players data if available
-    if (!is.null(players_data) && nrow(players_data) > 0) {
-      players_file <- file.path(format_dir, paste0(match_id, "_players", file_ext))
-      if (use_parquet) {
-        arrow::write_parquet(players_data, players_file)
-      } else {
-        saveRDS(players_data, players_file)
-      }
-      saved_files <- c(saved_files, "players")
-      fetch_success <- TRUE
-    }
-
-    # Save details data if available
-    if (!is.null(details_data) && nrow(details_data) > 0) {
-      details_file <- file.path(format_dir, paste0(match_id, "_details", file_ext))
-      if (use_parquet) {
-        arrow::write_parquet(details_data, details_file)
-      } else {
-        saveRDS(details_data, details_file)
-      }
-      saved_files <- c(saved_files, "details")
-      fetch_success <- TRUE
-    }
+    if (save_data(players_data, "_players")) saved_files <- c(saved_files, "players")
+    if (save_data(details_data, "_details")) saved_files <- c(saved_files, "details")
+    fetch_success <- length(saved_files) > 0
 
     if (fetch_success) {
       cli::cli_alert_success("  Saved: {paste(saved_files, collapse = ', ')}")
