@@ -57,6 +57,7 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_ind
   # Create database and schema
   cli::cli_alert_info("Initializing DuckDB database...")
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = FALSE))  # Don't shutdown - allows subsequent connections
 
@@ -1231,6 +1232,7 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 
   cli::cli_alert_success("Database found at {.file {path}}")
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -1306,6 +1308,7 @@ create_dual_elo_table <- function(path = NULL, overwrite = FALSE) {
     return(invisible(FALSE))
   }
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -1361,6 +1364,7 @@ insert_dual_elos <- function(dt, path = NULL, batch_size = 10000) {
     path <- get_default_db_path()
   }
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -1434,6 +1438,7 @@ ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
       return(invisible(FALSE))
     }
 
+    check_duckdb_available()
     conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
   }
