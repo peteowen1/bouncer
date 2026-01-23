@@ -177,16 +177,31 @@ FORMAT_SHORT_FORM <- c("ODI", "ODM", "T20", "IT20", "T10")
 # International match types (for international vs club classification)
 MATCH_TYPE_INTERNATIONAL <- c("Test", "ODI", "IT20")
 
-# All 8 data organization folders
+# All data partition folders (match_type × gender × team_type)
+# Based on actual partitions created by daily scraper
 DATA_FOLDERS <- c(
- "long_form_male_international",
- "long_form_male_club",
- "long_form_female_international",
- "long_form_female_club",
- "short_form_male_international",
- "short_form_male_club",
- "short_form_female_international",
- "short_form_female_club"
+  # Test format
+  "Test_male_international",
+  "Test_female_international",
+  # ODI format
+  "ODI_male_international",
+  "ODI_female_international",
+  # T20 format (includes franchise leagues)
+  "T20_male_international",
+  "T20_male_club",
+  "T20_female_international",
+  "T20_female_club",
+  # IT20 (domestic T20 internationals)
+  "IT20_male_international",
+  "IT20_female_international",
+  # MDM (multi-day matches / first-class)
+  "MDM_male_international",
+  "MDM_male_club",
+  "MDM_female_international",
+  "MDM_female_club",
+  # ODM (domestic one-day)
+  "ODM_male_international",
+  "ODM_male_club"
 )
 
 # ============================================================================

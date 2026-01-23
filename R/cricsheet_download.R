@@ -314,7 +314,7 @@ compare_zip_to_local <- function(zip_file, local_dir) {
 #'   - unchanged_count: Count of files that didn't change
 #'
 #' @keywords internal
-download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE) {
+download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE, fresh = FALSE) {
   url <- "https://cricsheet.org/downloads/all_json.zip"
 
   # Setup paths
@@ -356,35 +356,63 @@ download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE) {
     dir.create(extract_dir, recursive = TRUE)
   }
 
-  # Compare ZIP contents to local files by size
-  cli::cli_alert_info("Comparing with local files...")
-  comparison <- compare_zip_to_local(zip_file, extract_dir)
+  if (fresh) {
+    # Fresh mode: skip comparison, extract everything
+    cli::cli_alert_info("Fresh install - extracting all files...")
 
-  n_new <- length(comparison$new_files)
-  n_changed <- length(comparison$changed_files)
-  n_unchanged <- length(comparison$unchanged_files)
-  n_total_zip <- nrow(comparison$zip_info)
+    # Clear existing JSON files
+    old_files <- list.files(extract_dir, pattern = "\\.json$", full.names = TRUE)
+    if (length(old_files) > 0) {
+      file.remove(old_files)
+      cli::cli_alert_info("Removed {length(old_files)} old files")
+    }
 
-  cli::cli_alert_info("ZIP contains {n_total_zip} matches")
-  cli::cli_alert_info("Local has {n_unchanged + n_changed} matches")
-  cli::cli_alert_success("NEW: {n_new} | CHANGED: {n_changed} | UNCHANGED: {n_unchanged}")
+    # Extract all
+    zip::unzip(zip_file, exdir = extract_dir, junkpaths = TRUE)
 
-  # Determine files to extract (new + changed)
-  files_to_extract_names <- c(comparison$new_files, comparison$changed_files)
+    zip_info <- zip::zip_list(zip_file)
+    n_extracted <- sum(grepl("\\.json$", zip_info$filename))
+    cli::cli_alert_success("Extracted {n_extracted} JSON files")
 
-  if (length(files_to_extract_names) > 0) {
-    # Get full paths from ZIP info
-    files_to_extract <- comparison$zip_info$filename[
-      basename(comparison$zip_info$filename) %in% files_to_extract_names
-    ]
+    # For fresh mode, all files are "new"
+    new_files <- basename(zip_info$filename[grepl("\\.json$", zip_info$filename)])
+    changed_files <- character(0)
+    n_unchanged <- 0L
 
-    cli::cli_alert_info("Extracting {length(files_to_extract)} files...")
-    zip::unzip(zip_file, files = files_to_extract, exdir = extract_dir,
-               junkpaths = TRUE)  # junkpaths = TRUE puts files directly in extract_dir
-
-    cli::cli_alert_success("Extracted {n_new} new + {n_changed} changed files")
   } else {
-    cli::cli_alert_success("No new or changed files to extract")
+    # Incremental mode: compare and extract only new/changed
+    cli::cli_alert_info("Comparing with local files...")
+    comparison <- compare_zip_to_local(zip_file, extract_dir)
+
+    n_new <- length(comparison$new_files)
+    n_changed <- length(comparison$changed_files)
+    n_unchanged <- length(comparison$unchanged_files)
+    n_total_zip <- nrow(comparison$zip_info)
+
+    cli::cli_alert_info("ZIP contains {n_total_zip} matches")
+    cli::cli_alert_info("Local has {n_unchanged + n_changed} matches")
+    cli::cli_alert_success("NEW: {n_new} | CHANGED: {n_changed} | UNCHANGED: {n_unchanged}")
+
+    # Determine files to extract (new + changed)
+    files_to_extract_names <- c(comparison$new_files, comparison$changed_files)
+
+    if (length(files_to_extract_names) > 0) {
+      # Get full paths from ZIP info
+      files_to_extract <- comparison$zip_info$filename[
+        basename(comparison$zip_info$filename) %in% files_to_extract_names
+      ]
+
+      cli::cli_alert_info("Extracting {length(files_to_extract)} files...")
+      zip::unzip(zip_file, files = files_to_extract, exdir = extract_dir,
+                 junkpaths = TRUE)
+
+      cli::cli_alert_success("Extracted {n_new} new + {n_changed} changed files")
+    } else {
+      cli::cli_alert_success("No new or changed files to extract")
+    }
+
+    new_files <- comparison$new_files
+    changed_files <- comparison$changed_files
   }
 
   # Clean up ZIP (don't keep by default - saves 93MB)
@@ -402,8 +430,8 @@ download_all_cricsheet_data <- function(output_path = NULL, keep_zip = FALSE) {
   # Return detailed info for database updates
   list(
     all_files = all_files,
-    new_files = comparison$new_files,
-    changed_files = comparison$changed_files,
+    new_files = new_files,
+    changed_files = changed_files,
     unchanged_count = n_unchanged
   )
 }

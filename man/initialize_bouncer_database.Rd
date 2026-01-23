@@ -4,13 +4,25 @@
 \alias{initialize_bouncer_database}
 \title{Initialize Bouncer Database}
 \usage{
-initialize_bouncer_database(path = NULL, overwrite = FALSE)
+initialize_bouncer_database(
+  path = NULL,
+  overwrite = FALSE,
+  skip_indexes = FALSE,
+  verbose = FALSE
+)
 }
 \arguments{
 \item{path}{Character string specifying the database file path. If NULL,
 uses the default system data directory.}
 
 \item{overwrite}{Logical. If TRUE, overwrites existing database. Default FALSE.}
+
+\item{skip_indexes}{Logical. If TRUE, skips index creation. Useful when
+bulk loading data (indexes are faster to create after data is loaded).
+Default FALSE.}
+
+\item{verbose}{Logical. If TRUE, shows progress for each table/index creation.
+Default FALSE for cleaner output.}
 }
 \value{
 Invisibly returns the database path
@@ -25,5 +37,11 @@ initialize_bouncer_database()
 
 # Initialize in custom location
 initialize_bouncer_database("~/cricket_data/bouncer.duckdb")
+
+# Initialize without indexes (for bulk loading)
+initialize_bouncer_database(skip_indexes = TRUE)
+
+# Initialize with detailed progress
+initialize_bouncer_database(verbose = TRUE)
 }
 }

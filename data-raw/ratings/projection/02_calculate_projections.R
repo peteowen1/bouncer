@@ -16,7 +16,7 @@ devtools::load_all()
 
 # Calculate projections for all formats
 calculate_all_format_projections(
-  db_path = "../bouncerdata/bouncer.duckdb",
+  db_path = get_db_path(),
   formats = c("t20", "odi", "test"),
   batch_size = 50000
 )

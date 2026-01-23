@@ -4,7 +4,11 @@
 \alias{download_all_cricsheet_data}
 \title{Download All Cricsheet JSON Data (Incremental with Size Comparison)}
 \usage{
-download_all_cricsheet_data(output_path = NULL, keep_zip = FALSE)
+download_all_cricsheet_data(
+  output_path = NULL,
+  keep_zip = FALSE,
+  fresh = FALSE
+)
 }
 \arguments{
 \item{output_path}{Directory to extract files. If NULL, uses bouncerdata directory.}

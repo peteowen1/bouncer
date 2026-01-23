@@ -322,13 +322,8 @@ install_all_bouncer_data <- function(db_path = NULL,
   if (fresh) {
     cli::cli_h2("Step 1: Fresh Start - Deleting Existing Database")
 
-    # Close all DuckDB connections
-    tryCatch({
-      duckdb::duckdb_shutdown(duckdb::duckdb())
-      Sys.sleep(0.5)  # Give it a moment to release file locks
-    }, error = function(e) {
-      # Shutdown may fail if no connections exist - that's fine
-    })
+    # Close all DuckDB connections using our utility function
+    force_close_duckdb()
 
     # Delete database if it exists
     if (file.exists(db_path)) {
@@ -342,8 +337,9 @@ install_all_bouncer_data <- function(db_path = NULL,
       file.remove(wal_path)
     }
 
-    # Create fresh database (overwrite = TRUE in case file got recreated)
-    initialize_bouncer_database(path = db_path, overwrite = TRUE)
+    # Create fresh database without indexes (skip_indexes=TRUE)
+    # Indexes will be created AFTER bulk loading for better performance
+    initialize_bouncer_database(path = db_path, overwrite = TRUE, skip_indexes = TRUE, verbose = FALSE)
     cli::cli_alert_success("Created fresh database at {.file {db_path}}")
 
   } else {
@@ -351,7 +347,7 @@ install_all_bouncer_data <- function(db_path = NULL,
     cli::cli_h2("Step 1: Initialize Database (Incremental Mode)")
 
     if (!file.exists(db_path)) {
-      initialize_bouncer_database(path = db_path)
+      initialize_bouncer_database(path = db_path, verbose = FALSE)
       cli::cli_alert_success("Created new database at {.file {db_path}}")
     } else {
       cli::cli_alert_info("Using existing database at {.file {db_path}}")
@@ -361,10 +357,13 @@ install_all_bouncer_data <- function(db_path = NULL,
 
   # Download all data (returns list with new_files, changed_files, all_files)
   cli::cli_h2("Step 2: Download All Cricsheet Data")
+  t_download_start <- Sys.time()
   download_result <- download_all_cricsheet_data(
     output_path = download_path,
-    keep_zip = keep_downloads
+    keep_zip = keep_downloads,
+    fresh = fresh
   )
+  t_download <- as.numeric(difftime(Sys.time(), t_download_start, units = "secs"))
 
   # Handle changed files (delete from DB before reloading)
   if (!fresh && length(download_result$changed_files) > 0) {
@@ -395,6 +394,19 @@ install_all_bouncer_data <- function(db_path = NULL,
   # Load to database
   cli::cli_h2(if (is.null(match_types)) "Step 3: Load to Database" else "Step 4: Load to Database")
 
+  # ============================================================================
+  # OPTIMIZATION: Drop indexes before bulk load, recreate after
+  # This provides ~3-5x speedup for large bulk loads
+  # For fresh installs, indexes weren't created yet (skip_indexes=TRUE above)
+  # ============================================================================
+  if (!fresh) {
+    conn_for_index <- get_db_connection(path = db_path, read_only = FALSE)
+    drop_bulk_load_indexes(conn_for_index, verbose = TRUE)
+    DBI::dbDisconnect(conn_for_index, shutdown = TRUE)
+  }
+
+  t_load_start <- Sys.time()
+
   # If filtering, we need to parse and check match types
   if (!is.null(match_types) || !is.null(genders)) {
     loaded_count <- load_filtered_matches(
@@ -405,7 +417,7 @@ install_all_bouncer_data <- function(db_path = NULL,
       batch_size = batch_size
     )
   } else {
-    # Load all files
+    # Load all files (uses parallel parsing + Arrow bulk writes + data.table rbindlist)
     loaded_count <- batch_load_matches(
       file_paths = json_files,
       path = db_path,
@@ -413,6 +425,16 @@ install_all_bouncer_data <- function(db_path = NULL,
       progress = TRUE
     )
   }
+
+  t_load <- as.numeric(difftime(Sys.time(), t_load_start, units = "secs"))
+
+  # Recreate indexes after bulk load
+  cli::cli_alert_info("Rebuilding indexes...")
+  t_index_start <- Sys.time()
+  conn_for_index <- get_db_connection(path = db_path, read_only = FALSE)
+  create_indexes(conn_for_index)
+  DBI::dbDisconnect(conn_for_index, shutdown = TRUE)
+  t_index <- as.numeric(difftime(Sys.time(), t_index_start, units = "secs"))
 
   # Clean up downloads if requested
   if (!keep_downloads && !is.null(download_path) && dir.exists(download_path)) {
@@ -423,8 +445,26 @@ install_all_bouncer_data <- function(db_path = NULL,
   # Summary
   end_time <- Sys.time()
   elapsed <- difftime(end_time, start_time, units = "mins")
+  elapsed_secs <- as.numeric(elapsed) * 60
 
   cli::cli_h2("Installation Complete!")
+
+  # Step-by-step timing breakdown
+  cli::cli_rule("Timing Breakdown")
+
+  # Format time helper
+  fmt_time <- function(secs) {
+    if (secs >= 60) {
+      sprintf("%.1f min", secs / 60)
+    } else {
+      sprintf("%.1f sec", secs)
+    }
+  }
+
+  cli::cli_alert_info("Download:       {fmt_time(t_download)} ({round(t_download/elapsed_secs*100)}%)")
+  cli::cli_alert_info("Parse & Load:   {fmt_time(t_load)} ({round(t_load/elapsed_secs*100)}%)")
+  cli::cli_alert_info("Build Indexes:  {fmt_time(t_index)} ({round(t_index/elapsed_secs*100)}%)")
+  cli::cli_rule()
   cli::cli_alert_success("Total time: {round(as.numeric(elapsed), 1)} minutes")
 
   # Show what was new/changed
@@ -528,6 +568,7 @@ load_filtered_matches <- function(file_paths,
     batch_deliveries <- list()
     batch_innings <- list()
     batch_players <- list()
+    batch_powerplays <- list()
     valid_count <- 0
 
     for (i in seq_along(batch_files)) {
@@ -548,6 +589,7 @@ load_filtered_matches <- function(file_paths,
             batch_deliveries[[valid_count]] <- parsed$deliveries
             batch_innings[[valid_count]] <- parsed$innings
             batch_players[[valid_count]] <- parsed$players
+            batch_powerplays[[valid_count]] <- parsed$powerplays
           } else {
             skipped_filter <- skipped_filter + 1
           }
@@ -564,17 +606,22 @@ load_filtered_matches <- function(file_paths,
       batch_deliveries <- batch_deliveries[1:valid_count]
       batch_innings <- batch_innings[1:valid_count]
       batch_players <- batch_players[1:valid_count]
+      batch_powerplays <- batch_powerplays[1:valid_count]
 
       all_matches <- do.call(rbind, batch_matches)
       all_deliveries <- do.call(rbind, batch_deliveries)
       all_innings <- do.call(rbind, batch_innings)
       all_players <- do.call(rbind, batch_players)
+      all_powerplays <- do.call(rbind, batch_powerplays)
 
       # Deduplicate based on primary keys (in case same file appears multiple times in batch)
       all_matches <- all_matches[!duplicated(all_matches$match_id), ]
       all_deliveries <- all_deliveries[!duplicated(all_deliveries$delivery_id), ]
       all_innings <- all_innings[!duplicated(paste0(all_innings$match_id, "_", all_innings$innings)), ]
       all_players <- all_players[!duplicated(all_players$player_id), ]
+      if (!is.null(all_powerplays) && nrow(all_powerplays) > 0) {
+        all_powerplays <- all_powerplays[!duplicated(all_powerplays$powerplay_id), ]
+      }
 
       tryCatch({
         DBI::dbBegin(conn)
@@ -590,6 +637,9 @@ load_filtered_matches <- function(file_paths,
         }
         if (!is.null(all_players) && nrow(all_players) > 0) {
           insert_players_batch(conn, all_players)
+        }
+        if (!is.null(all_powerplays) && nrow(all_powerplays) > 0) {
+          DBI::dbAppendTable(conn, "innings_powerplays", all_powerplays)
         }
 
         DBI::dbCommit(conn)

@@ -13,14 +13,19 @@ parse_cricsheet_json(file_path)
 A list with parsed data:
 \itemize{
 \item match_info: data frame with match metadata
-\item innings: data frame with innings summaries
-\item deliveries: data frame with ball-by-ball data
+\item innings: data frame with innings summaries (includes target, super_over, absent_hurt)
+\item deliveries: data frame with ball-by-ball data (includes DRS reviews, substitute fielders, replacements)
 \item players: data frame with player information
+\item powerplays: data frame with powerplay periods per innings
 }
 }
 \description{
 Parses a Cricsheet JSON file with optimized vectorized operations.
 Uses pre-allocation and single-pass parsing for high performance.
+}
+\details{
+For faster parsing, install the optional RcppSimdJson package:
+\code{install.packages("RcppSimdJson")} (5-15x faster than jsonlite).
 }
 \examples{
 \dontrun{

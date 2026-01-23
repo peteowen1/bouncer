@@ -13,7 +13,7 @@ load_team_elo(source = c("local", "remote"))
 Data frame of team ELO ratings.
 }
 \description{
-Load team ELO ratings from local cache or remote GitHub releases.
+Load team ELO ratings from local DuckDB or remote GitHub releases.
 }
 \examples{
 \dontrun{

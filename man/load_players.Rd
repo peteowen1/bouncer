@@ -13,7 +13,7 @@ load_players(source = c("local", "remote"))
 Data frame of players.
 }
 \description{
-Load the player registry from local cache or remote GitHub releases.
+Load the player registry from local DuckDB or remote GitHub releases.
 }
 \examples{
 \dontrun{

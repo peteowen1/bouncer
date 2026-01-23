@@ -5,18 +5,22 @@
 \title{Load Deliveries Data}
 \usage{
 load_deliveries(
-  format = "all",
+  match_type = "all",
   gender = "all",
-  type = "all",
+  team_type = "all",
+  match_ids = NULL,
   source = c("local", "remote")
 )
 }
 \arguments{
-\item{format}{Character. "long_form", "short_form", or "all" (default).}
+\item{match_type}{Character or vector. One or more of: "Test", "ODI", "T20",
+"IT20", "MDM", "ODM", or "all" (default).}
 
 \item{gender}{Character. "male", "female", or "all" (default).}
 
-\item{type}{Character. "international", "club", or "all" (default).}
+\item{team_type}{Character. "international", "club", or "all" (default).}
+
+\item{match_ids}{Character vector. Optional filter for specific match_ids.}
 
 \item{source}{Character. "local" (default) or "remote".}
 }
@@ -24,15 +28,22 @@ load_deliveries(
 Data frame of deliveries.
 }
 \description{
-Load ball-by-ball delivery data from local cache or remote GitHub releases.
+Load ball-by-ball delivery data from local DuckDB or remote GitHub releases.
+Filter by match_type, gender, team_type, and specific match_ids.
 }
 \examples{
 \dontrun{
-# Load all deliveries locally
+# Load all deliveries from local database
 deliveries <- load_deliveries()
 
-# Load only IPL deliveries (short form, male, club)
-ipl <- load_deliveries("short_form", "male", "club")
+# Load only T20 men's deliveries
+t20_men <- load_deliveries("T20", "male")
+
+# Load IPL deliveries (T20, male, club)
+ipl <- load_deliveries("T20", "male", "club")
+
+# Load specific matches
+subset <- load_deliveries(match_ids = c("1234567", "1234568"))
 
 # Load from GitHub releases
 deliveries <- load_deliveries(source = "remote")

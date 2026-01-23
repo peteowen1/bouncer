@@ -7,6 +7,11 @@
 #' @param path Character string specifying the database file path. If NULL,
 #'   uses the default system data directory.
 #' @param overwrite Logical. If TRUE, overwrites existing database. Default FALSE.
+#' @param skip_indexes Logical. If TRUE, skips index creation. Useful when
+#'   bulk loading data (indexes are faster to create after data is loaded).
+#'   Default FALSE.
+#' @param verbose Logical. If TRUE, shows progress for each table/index creation.
+#'   Default FALSE for cleaner output.
 #'
 #' @return Invisibly returns the database path
 #' @export
@@ -18,8 +23,14 @@
 #'
 #' # Initialize in custom location
 #' initialize_bouncer_database("~/cricket_data/bouncer.duckdb")
+#'
+#' # Initialize without indexes (for bulk loading)
+#' initialize_bouncer_database(skip_indexes = TRUE)
+#'
+#' # Initialize with detailed progress
+#' initialize_bouncer_database(verbose = TRUE)
 #' }
-initialize_bouncer_database <- function(path = NULL, overwrite = FALSE) {
+initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_indexes = FALSE, verbose = FALSE) {
   if (is.null(path)) {
     path <- get_default_db_path()
   }
@@ -50,10 +61,12 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE) {
   on.exit(DBI::dbDisconnect(conn, shutdown = FALSE))  # Don't shutdown - allows subsequent connections
 
   # Create schema
-  create_schema(conn)
+  create_schema(conn, verbose = verbose)
 
-  # Create indexes
-  create_indexes(conn)
+  # Create indexes (skip if bulk loading - they'll be created after data load)
+  if (!skip_indexes) {
+    create_indexes(conn, verbose = verbose)
+  }
 
   cli::cli_alert_success("Database initialized at {.file {path}}")
 
@@ -70,7 +83,7 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE) {
 #' @param create Logical. Whether to create directory if not found. Default TRUE.
 #'
 #' @return Character string with directory path
-#' @keywords internal
+#' @export
 find_bouncerdata_dir <- function(create = TRUE) {
   cwd <- normalizePath(getwd(), winslash = "/")
 
@@ -143,14 +156,23 @@ get_default_db_path <- function() {
 #' Creates all tables needed for cricket data storage.
 #'
 #' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress for each table. Default TRUE.
 #'
 #' @return Invisibly returns TRUE on success
 #' @keywords internal
-create_schema <- function(conn) {
-  cli::cli_h2("Creating database schema")
+create_schema <- function(conn, verbose = TRUE) {
+  if (verbose) cli::cli_h2("Creating database schema")
+
+  # Helper to log table creation
+
+  log_table <- function(name) {
+    if (verbose) cli::cli_alert_info("Creating {name} table...")
+  }
+
+  table_count <- 0
 
   # Create matches table
-  cli::cli_alert_info("Creating matches table...")
+  log_table("matches")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS matches (
       match_id VARCHAR PRIMARY KEY,
@@ -181,16 +203,19 @@ create_schema <- function(conn) {
       outcome_by_runs INTEGER,
       outcome_by_wickets INTEGER,
       outcome_method VARCHAR,
-      unified_margin DOUBLE,  -- Runs-equivalent margin (MOV)
 
       -- Match Officials
       umpire1 VARCHAR,
       umpire2 VARCHAR,
       tv_umpire VARCHAR,
       referee VARCHAR,
+      reserve_umpire VARCHAR,
 
       -- Player of Match
       player_of_match_id VARCHAR,
+
+      -- Data Quality
+      missing_data VARCHAR,
 
       -- Event Info
       event_name VARCHAR,
@@ -205,7 +230,7 @@ create_schema <- function(conn) {
   ")
 
   # Create deliveries table
-  cli::cli_alert_info("Creating deliveries table...")
+  log_table("deliveries")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS deliveries (
       -- Primary Keys
@@ -256,21 +281,31 @@ create_schema <- function(conn) {
       player_out_id VARCHAR,
       fielder1_id VARCHAR,
       fielder2_id VARCHAR,
+      fielder1_is_sub BOOLEAN,
+      fielder2_is_sub BOOLEAN,
+
+      -- DRS Review Information
+      has_review BOOLEAN,
+      review_by VARCHAR,
+      review_umpire VARCHAR,
+      review_batter VARCHAR,
+      review_decision VARCHAR,
+
+      -- Player Replacement (concussion sub, impact player)
+      has_replacement BOOLEAN,
+      replacement_in VARCHAR,
+      replacement_out VARCHAR,
+      replacement_reason VARCHAR,
+      replacement_role VARCHAR,
 
       -- Match State (running totals)
       total_runs INTEGER,
-      wickets_fallen INTEGER,
-
-      -- ELO Ratings (before this delivery)
-      batter_elo_before DOUBLE,
-      bowler_elo_before DOUBLE,
-      batter_elo_after DOUBLE,
-      bowler_elo_after DOUBLE
+      wickets_fallen INTEGER
     )
   ")
 
   # Create players table
-  cli::cli_alert_info("Creating players table...")
+  log_table("players")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS players (
       player_id VARCHAR PRIMARY KEY,
@@ -283,7 +318,7 @@ create_schema <- function(conn) {
   ")
 
   # Create match_innings table
-  cli::cli_alert_info("Creating match_innings table...")
+  log_table("match_innings")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS match_innings (
       match_id VARCHAR,
@@ -295,12 +330,44 @@ create_schema <- function(conn) {
       total_overs DECIMAL(5,1),  -- Supports up to 9999.9 (Test innings can exceed 100 overs)
       declared BOOLEAN,
       forfeited BOOLEAN,
+      target_runs INTEGER,       -- Chase target (2nd innings only in limited overs)
+      target_overs INTEGER,      -- Overs available for chase (may differ from match overs due to DLS)
+      is_super_over BOOLEAN,     -- TRUE for super over innings
+      absent_hurt VARCHAR,       -- JSON array of player names who couldn't bat
       PRIMARY KEY (match_id, innings)
     )
   ")
 
+  # Create innings_powerplays table
+  log_table("innings_powerplays")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS innings_powerplays (
+      powerplay_id VARCHAR PRIMARY KEY,  -- {match_id}_{innings}_{seq}
+      match_id VARCHAR NOT NULL,
+      innings INTEGER NOT NULL,
+      from_over REAL NOT NULL,           -- e.g., 0.1
+      to_over REAL NOT NULL,             -- e.g., 9.6
+      powerplay_type VARCHAR NOT NULL    -- 'mandatory', 'batting', 'bowling'
+    )
+  ")
+
+  # Create match_metrics table (derived/calculated match data, separate from raw data)
+  log_table("match_metrics")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS match_metrics (
+      match_id VARCHAR PRIMARY KEY,
+
+      -- Margin of Victory (calculated from outcome)
+      unified_margin DOUBLE,
+
+      -- Future: other calculated match-level metrics can go here
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP
+    )
+  ")
+
   # Create player_elo_history table
-  cli::cli_alert_info("Creating player_elo_history table...")
+  log_table("player_elo_history")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS player_elo_history (
       player_id VARCHAR,
@@ -329,7 +396,7 @@ create_schema <- function(conn) {
   ")
 
   # Create team_elo table
-  cli::cli_alert_info("Creating team_elo table...")
+  log_table("team_elo")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS team_elo (
       team_id VARCHAR,
@@ -354,7 +421,7 @@ create_schema <- function(conn) {
   ")
 
   # Create pre_match_features table
-  cli::cli_alert_info("Creating pre_match_features table...")
+  log_table("pre_match_features")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS pre_match_features (
       match_id VARCHAR PRIMARY KEY,
@@ -413,7 +480,7 @@ create_schema <- function(conn) {
   ")
 
   # Create pre_match_predictions table
-  cli::cli_alert_info("Creating pre_match_predictions table...")
+  log_table("pre_match_predictions")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS pre_match_predictions (
       prediction_id VARCHAR PRIMARY KEY,
@@ -434,7 +501,7 @@ create_schema <- function(conn) {
   ")
 
   # Create simulation_results table
-  cli::cli_alert_info("Creating simulation_results table...")
+  log_table("simulation_results")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS simulation_results (
       simulation_id VARCHAR PRIMARY KEY,
@@ -451,7 +518,7 @@ create_schema <- function(conn) {
   ")
 
   # Create format-specific ELO tables (T20)
-  cli::cli_alert_info("Creating t20_player_elo table...")
+  log_table("t20_player_elo")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS t20_player_elo (
       delivery_id VARCHAR PRIMARY KEY,
@@ -481,7 +548,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ELO calibration metrics table
-  cli::cli_alert_info("Creating elo_calibration_metrics table...")
+  log_table("elo_calibration_metrics")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS elo_calibration_metrics (
       format VARCHAR,
@@ -495,7 +562,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ELO normalization log table
-  cli::cli_alert_info("Creating elo_normalization_log table...")
+  log_table("elo_normalization_log")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS elo_normalization_log (
       normalization_id VARCHAR PRIMARY KEY,
@@ -511,7 +578,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ELO calculation params table (for incremental updates)
-  cli::cli_alert_info("Creating elo_calculation_params table...")
+  log_table("elo_calculation_params")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS elo_calculation_params (
       format VARCHAR PRIMARY KEY,
@@ -535,7 +602,7 @@ create_schema <- function(conn) {
   ")
 
   # Create T20 player skill table (EMA-based, drift-proof)
-  cli::cli_alert_info("Creating t20_player_skill table...")
+  log_table("t20_player_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS t20_player_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -567,7 +634,7 @@ create_schema <- function(conn) {
   ")
 
   # Create skill calculation params table
-  cli::cli_alert_info("Creating skill_calculation_params table...")
+  log_table("skill_calculation_params")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS skill_calculation_params (
       format VARCHAR PRIMARY KEY,
@@ -582,7 +649,7 @@ create_schema <- function(conn) {
   ")
 
   # Create venue_aliases table for venue name normalization
-  cli::cli_alert_info("Creating venue_aliases table...")
+  log_table("venue_aliases")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS venue_aliases (
       alias VARCHAR PRIMARY KEY,
@@ -593,7 +660,7 @@ create_schema <- function(conn) {
   ")
 
   # Create T20 venue skill table (EMA-based venue characteristics)
-  cli::cli_alert_info("Creating t20_venue_skill table...")
+  log_table("t20_venue_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS t20_venue_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -619,7 +686,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ODI venue skill table
-  cli::cli_alert_info("Creating odi_venue_skill table...")
+  log_table("odi_venue_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS odi_venue_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -645,7 +712,7 @@ create_schema <- function(conn) {
   ")
 
   # Create Test venue skill table
-  cli::cli_alert_info("Creating test_venue_skill table...")
+  log_table("test_venue_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS test_venue_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -671,7 +738,7 @@ create_schema <- function(conn) {
   ")
 
   # Create venue skill calculation params table
-  cli::cli_alert_info("Creating venue_skill_calculation_params table...")
+  log_table("venue_skill_calculation_params")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS venue_skill_calculation_params (
       format VARCHAR PRIMARY KEY,
@@ -688,7 +755,7 @@ create_schema <- function(conn) {
   ")
 
   # Create T20 team skill table (per-delivery team skill indices)
-  cli::cli_alert_info("Creating t20_team_skill table...")
+  log_table("t20_team_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS t20_team_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -720,7 +787,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ODI team skill table
-  cli::cli_alert_info("Creating odi_team_skill table...")
+  log_table("odi_team_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS odi_team_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -746,7 +813,7 @@ create_schema <- function(conn) {
   ")
 
   # Create Test team skill table
-  cli::cli_alert_info("Creating test_team_skill table...")
+  log_table("test_team_skill")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS test_team_skill (
       delivery_id VARCHAR PRIMARY KEY,
@@ -772,7 +839,7 @@ create_schema <- function(conn) {
   ")
 
   # Create team skill calculation params table
-  cli::cli_alert_info("Creating team_skill_calculation_params table...")
+  log_table("team_skill_calculation_params")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS team_skill_calculation_params (
       format VARCHAR PRIMARY KEY,
@@ -787,7 +854,7 @@ create_schema <- function(conn) {
   ")
 
   # Create projection parameters table
-  cli::cli_alert_info("Creating projection_params table...")
+  log_table("projection_params")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS projection_params (
       segment_id VARCHAR PRIMARY KEY,
@@ -816,7 +883,7 @@ create_schema <- function(conn) {
   ")
 
   # Create T20 score projection table (per-delivery projections)
-  cli::cli_alert_info("Creating t20_score_projection table...")
+  log_table("t20_score_projection")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS t20_score_projection (
       delivery_id VARCHAR PRIMARY KEY,
@@ -852,7 +919,7 @@ create_schema <- function(conn) {
   ")
 
   # Create ODI score projection table
-  cli::cli_alert_info("Creating odi_score_projection table...")
+  log_table("odi_score_projection")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS odi_score_projection (
       delivery_id VARCHAR PRIMARY KEY,
@@ -882,7 +949,7 @@ create_schema <- function(conn) {
   ")
 
   # Create Test score projection table
-  cli::cli_alert_info("Creating test_score_projection table...")
+  log_table("test_score_projection")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS test_score_projection (
       delivery_id VARCHAR PRIMARY KEY,
@@ -912,7 +979,7 @@ create_schema <- function(conn) {
   ")
 
   # Create pipeline state table (for smart caching)
-  cli::cli_alert_info("Creating pipeline_state table...")
+  log_table("pipeline_state")
   DBI::dbExecute(conn, "
     CREATE TABLE IF NOT EXISTS pipeline_state (
       step_name VARCHAR PRIMARY KEY,
@@ -924,7 +991,56 @@ create_schema <- function(conn) {
     )
   ")
 
-  cli::cli_alert_success("Schema created successfully")
+  n_tables <- length(DBI::dbListTables(conn))
+  cli::cli_alert_success("Schema created successfully ({n_tables} tables)")
+  invisible(TRUE)
+}
+
+
+#' Drop Bulk Load Indexes
+#'
+#' Drops indexes on core tables (matches, deliveries, players, match_innings)
+#' to speed up bulk data loading. Call create_indexes() after loading to restore.
+#'
+#' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress messages. Default TRUE.
+#'
+#' @return Invisibly returns TRUE on success
+#' @keywords internal
+drop_bulk_load_indexes <- function(conn, verbose = TRUE) {
+  if (verbose) cli::cli_alert_info("Dropping indexes for bulk loading...")
+
+
+  # Get all existing indexes
+  indexes <- tryCatch({
+    DBI::dbGetQuery(conn, "SELECT index_name FROM duckdb_indexes()")
+  }, error = function(e) {
+    data.frame(index_name = character(0))
+  })
+
+  # Indexes on core tables that slow down bulk inserts
+  core_index_patterns <- c(
+    "idx_matches_",
+    "idx_deliveries_",
+    "idx_players_"
+  )
+
+  dropped_count <- 0
+  for (idx_name in indexes$index_name) {
+    # Check if this is a core table index
+    is_core <- any(sapply(core_index_patterns, function(p) grepl(p, idx_name)))
+
+    if (is_core) {
+      tryCatch({
+        DBI::dbExecute(conn, sprintf("DROP INDEX IF EXISTS %s", idx_name))
+        dropped_count <- dropped_count + 1
+      }, error = function(e) {
+        if (verbose) cli::cli_alert_warning("Could not drop index {idx_name}: {e$message}")
+      })
+    }
+  }
+
+  if (verbose) cli::cli_alert_success("Dropped {dropped_count} indexes")
   invisible(TRUE)
 }
 
@@ -934,21 +1050,29 @@ create_schema <- function(conn) {
 #' Creates indexes on key columns for query performance.
 #'
 #' @param conn A DuckDB connection object
+#' @param core_only Logical. If TRUE, only creates indexes on core tables
+#'   (matches, deliveries, players). Default FALSE creates all indexes.
+#' @param verbose Logical. If TRUE, shows progress for each index group. Default TRUE.
 #'
 #' @return Invisibly returns TRUE on success
 #' @keywords internal
-create_indexes <- function(conn) {
-  cli::cli_h2("Creating indexes")
+create_indexes <- function(conn, core_only = FALSE, verbose = TRUE) {
+  if (verbose) cli::cli_h2("Creating indexes")
+
+  # Helper to log index creation
+  log_index <- function(name) {
+    if (verbose) cli::cli_alert_info("Creating {name} indexes...")
+  }
 
   # Matches indexes
-  cli::cli_alert_info("Creating matches indexes...")
+  log_index("matches")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_venue ON matches(venue)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_type ON matches(match_type)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season)")
 
   # Deliveries indexes
-  cli::cli_alert_info("Creating deliveries indexes...")
+  log_index("deliveries")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_match ON deliveries(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_batter ON deliveries(batter_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_bowler ON deliveries(bowler_id)")
@@ -957,110 +1081,115 @@ create_indexes <- function(conn) {
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_venue ON deliveries(venue)")
 
   # Players indexes
-  cli::cli_alert_info("Creating players indexes...")
+  log_index("players")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_players_name ON players(player_name)")
 
+  # Innings powerplays indexes
+  log_index("innings_powerplays")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_match ON innings_powerplays(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_innings ON innings_powerplays(match_id, innings)")
+
   # Player ELO indexes
-  cli::cli_alert_info("Creating player_elo_history indexes...")
+  log_index("player_elo_history")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_elo_player_date ON player_elo_history(player_id, match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_elo_match_type ON player_elo_history(match_type)")
 
   # Team ELO indexes
-  cli::cli_alert_info("Creating team_elo indexes...")
+  log_index("team_elo")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_date ON team_elo(team_id, match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_event ON team_elo(event_name)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_type ON team_elo(match_type)")
 
   # Pre-match features indexes
-  cli::cli_alert_info("Creating pre_match_features indexes...")
+  log_index("pre_match_features")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_prematch_date ON pre_match_features(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_prematch_event ON pre_match_features(event_name)")
 
   # Pre-match predictions indexes
-  cli::cli_alert_info("Creating pre_match_predictions indexes...")
+  log_index("pre_match_predictions")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_predictions_match ON pre_match_predictions(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_predictions_date ON pre_match_predictions(prediction_date)")
 
   # Simulation results indexes
-  cli::cli_alert_info("Creating simulation_results indexes...")
+  log_index("simulation_results")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_simulation_type ON simulation_results(simulation_type)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_simulation_event ON simulation_results(event_name)")
 
   # T20 player ELO indexes
-  cli::cli_alert_info("Creating t20_player_elo indexes...")
+  log_index("t20_player_elo")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_elo_match ON t20_player_elo(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_elo_batter ON t20_player_elo(batter_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_elo_bowler ON t20_player_elo(bowler_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_elo_date ON t20_player_elo(match_date)")
 
   # T20 player skill indexes
-  cli::cli_alert_info("Creating t20_player_skill indexes...")
+  log_index("t20_player_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_skill_match ON t20_player_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_skill_batter ON t20_player_skill(batter_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_skill_bowler ON t20_player_skill(bowler_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_skill_date ON t20_player_skill(match_date)")
 
   # Venue aliases index
-  cli::cli_alert_info("Creating venue_aliases indexes...")
+  log_index("venue_aliases")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_venue_aliases_canonical ON venue_aliases(canonical_venue)")
 
   # T20 venue skill indexes
-  cli::cli_alert_info("Creating t20_venue_skill indexes...")
+  log_index("t20_venue_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_venue_skill_match ON t20_venue_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_venue_skill_venue ON t20_venue_skill(venue)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_venue_skill_date ON t20_venue_skill(match_date)")
 
   # ODI venue skill indexes
-  cli::cli_alert_info("Creating odi_venue_skill indexes...")
+  log_index("odi_venue_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_venue_skill_match ON odi_venue_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_venue_skill_venue ON odi_venue_skill(venue)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_venue_skill_date ON odi_venue_skill(match_date)")
 
   # Test venue skill indexes
-  cli::cli_alert_info("Creating test_venue_skill indexes...")
+  log_index("test_venue_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_venue_skill_match ON test_venue_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_venue_skill_venue ON test_venue_skill(venue)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_venue_skill_date ON test_venue_skill(match_date)")
 
   # T20 team skill indexes
-  cli::cli_alert_info("Creating t20_team_skill indexes...")
+  log_index("t20_team_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_team_skill_match ON t20_team_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_team_skill_batting ON t20_team_skill(batting_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_team_skill_bowling ON t20_team_skill(bowling_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_team_skill_date ON t20_team_skill(match_date)")
 
   # ODI team skill indexes
-  cli::cli_alert_info("Creating odi_team_skill indexes...")
+  log_index("odi_team_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_team_skill_match ON odi_team_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_team_skill_batting ON odi_team_skill(batting_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_team_skill_bowling ON odi_team_skill(bowling_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_team_skill_date ON odi_team_skill(match_date)")
 
   # Test team skill indexes
-  cli::cli_alert_info("Creating test_team_skill indexes...")
+  log_index("test_team_skill")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_team_skill_match ON test_team_skill(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_team_skill_batting ON test_team_skill(batting_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_team_skill_bowling ON test_team_skill(bowling_team_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_team_skill_date ON test_team_skill(match_date)")
 
   # Projection params indexes
-  cli::cli_alert_info("Creating projection_params indexes...")
+  log_index("projection_params")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_projection_params_format ON projection_params(format)")
 
   # T20 score projection indexes
-  cli::cli_alert_info("Creating t20_score_projection indexes...")
+  log_index("t20_score_projection")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_proj_match ON t20_score_projection(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_proj_date ON t20_score_projection(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_proj_team ON t20_score_projection(batting_team_id)")
 
   # ODI score projection indexes
-  cli::cli_alert_info("Creating odi_score_projection indexes...")
+  log_index("odi_score_projection")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_proj_match ON odi_score_projection(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_proj_date ON odi_score_projection(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_proj_team ON odi_score_projection(batting_team_id)")
 
   # Test score projection indexes
-  cli::cli_alert_info("Creating test_score_projection indexes...")
+  log_index("test_score_projection")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_proj_match ON test_score_projection(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_proj_date ON test_score_projection(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_proj_team ON test_score_projection(batting_team_id)")
@@ -1107,10 +1236,11 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 
   # Get list of tables
   tables <- DBI::dbListTables(conn)
-  expected_tables <- c("matches", "deliveries", "players", "match_innings", "player_elo_history",
-                       "team_elo", "pre_match_features", "pre_match_predictions", "simulation_results",
-                       "t20_player_elo", "elo_calibration_metrics", "elo_normalization_log",
-                       "elo_calculation_params", "t20_player_skill", "skill_calculation_params",
+  expected_tables <- c("matches", "deliveries", "players", "match_innings", "innings_powerplays",
+                       "match_metrics", "player_elo_history", "team_elo", "pre_match_features",
+                       "pre_match_predictions", "simulation_results", "t20_player_elo",
+                       "elo_calibration_metrics", "elo_normalization_log", "elo_calculation_params",
+                       "t20_player_skill", "skill_calculation_params",
                        "venue_aliases", "t20_venue_skill", "odi_venue_skill", "test_venue_skill",
                        "venue_skill_calculation_params", "t20_team_skill", "odi_team_skill",
                        "test_team_skill", "team_skill_calculation_params",
@@ -1279,17 +1409,17 @@ insert_dual_elos <- function(dt, path = NULL, batch_size = 10000) {
 }
 
 
-#' Add Margin of Victory Columns to Existing Database
+#' Ensure Match Metrics Table Exists
 #'
-#' Adds the unified_margin column to the matches table and margin columns
-#' to the pre_match_features table if they don't already exist.
+#' Ensures the match_metrics table exists for storing calculated match data
+#' like unified_margin. Also ensures pre_match_features has margin columns.
 #'
 #' @param conn DBI connection. If provided, uses this connection (does not close it).
 #' @param path Character. Database file path. If NULL, uses default. Ignored if conn is provided.
 #'
 #' @return Invisibly returns TRUE on success
 #' @keywords internal
-add_margin_columns <- function(conn = NULL, path = NULL) {
+ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
   # If connection provided, use it (caller is responsible for closing)
   own_conn <- is.null(conn)
 
@@ -1308,18 +1438,24 @@ add_margin_columns <- function(conn = NULL, path = NULL) {
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
   }
 
-  cli::cli_h2("Adding margin of victory columns")
+  cli::cli_h2("Ensuring match_metrics table exists")
 
+  # Check if match_metrics table exists
+  tables <- DBI::dbListTables(conn)
 
-  # Check if matches table has unified_margin column
-  matches_cols <- DBI::dbGetQuery(conn, "SELECT column_name FROM information_schema.columns WHERE table_name = 'matches'")$column_name
-
-  if (!"unified_margin" %in% matches_cols) {
-    cli::cli_alert_info("Adding unified_margin column to matches table...")
-    DBI::dbExecute(conn, "ALTER TABLE matches ADD COLUMN unified_margin DOUBLE")
-    cli::cli_alert_success("Added unified_margin column to matches")
+  if (!"match_metrics" %in% tables) {
+    log_table("match_metrics")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS match_metrics (
+        match_id VARCHAR PRIMARY KEY,
+        unified_margin DOUBLE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      )
+    ")
+    cli::cli_alert_success("Created match_metrics table")
   } else {
-    cli::cli_alert_info("unified_margin column already exists in matches")
+    cli::cli_alert_info("match_metrics table already exists")
   }
 
   # Check if pre_match_features table has margin columns
@@ -1329,20 +1465,35 @@ add_margin_columns <- function(conn = NULL, path = NULL) {
     cli::cli_alert_info("Adding expected_margin column to pre_match_features table...")
     DBI::dbExecute(conn, "ALTER TABLE pre_match_features ADD COLUMN expected_margin DOUBLE")
     cli::cli_alert_success("Added expected_margin column to pre_match_features")
-  } else {
-    cli::cli_alert_info("expected_margin column already exists in pre_match_features")
   }
 
   if (!"actual_margin" %in% pmf_cols) {
     cli::cli_alert_info("Adding actual_margin column to pre_match_features table...")
     DBI::dbExecute(conn, "ALTER TABLE pre_match_features ADD COLUMN actual_margin DOUBLE")
     cli::cli_alert_success("Added actual_margin column to pre_match_features")
-  } else {
-    cli::cli_alert_info("actual_margin column already exists in pre_match_features")
   }
 
-  cli::cli_alert_success("Margin of victory columns ready")
+  cli::cli_alert_success("Match metrics tables ready")
   invisible(TRUE)
+}
+
+
+#' Add Margin of Victory Columns to Existing Database
+#'
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' This function is deprecated. Use ensure_match_metrics_table() instead.
+#' Margin data is now stored in the match_metrics table, not in matches.
+#'
+#' @param conn DBI connection.
+#' @param path Character. Database file path.
+#'
+#' @return Invisibly returns TRUE on success
+#' @keywords internal
+add_margin_columns <- function(conn = NULL, path = NULL) {
+  cli::cli_alert_warning("add_margin_columns() is deprecated - use ensure_match_metrics_table()")
+  ensure_match_metrics_table(conn = conn, path = path)
 }
 
 
@@ -1381,6 +1532,7 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
     # Core tables
     "deliveries",
     "match_innings",
+    "match_metrics",
     # Skill index tables
     "t20_player_skill",
     "odi_player_skill",

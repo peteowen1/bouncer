@@ -4,10 +4,12 @@
 \alias{create_schema}
 \title{Create Database Schema}
 \usage{
-create_schema(conn)
+create_schema(conn, verbose = TRUE)
 }
 \arguments{
 \item{conn}{A DuckDB connection object}
+
+\item{verbose}{Logical. If TRUE, shows progress for each table. Default TRUE.}
 }
 \value{
 Invisibly returns TRUE on success

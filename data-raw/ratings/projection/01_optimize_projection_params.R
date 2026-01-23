@@ -14,7 +14,7 @@ devtools::load_all()
 
 # Run optimization for all segments
 results <- optimize_all_projection_segments(
-  db_path = "../bouncerdata/bouncer.duckdb",
-  output_dir = "../bouncerdata/models",
+  db_path = get_db_path(),
+  output_dir = file.path(find_bouncerdata_dir(), "models"),
   sample_frac = 0.5
 )

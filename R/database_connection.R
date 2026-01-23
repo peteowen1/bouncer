@@ -196,4 +196,53 @@ disconnect_bouncer <- function(conn, shutdown = TRUE) {
 }
 
 
-# Unused helper functions removed - use get_db_connection() directly
+#' Force Close All DuckDB Connections
+#'
+#' Emergency function to release file locks when you get
+#' "file is being used by another process" errors.
+#'
+#' This function:
+#' 1. Forces garbage collection to finalize orphaned connections
+#' 2. Attempts to shutdown any DuckDB driver instances
+#'
+#' If the file is still locked after calling this, restart R with Ctrl+Shift+F10.
+#'
+#' @return Invisibly returns TRUE
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # If you get a file lock error:
+#' force_close_duckdb()
+#'
+#' # Then retry your operation
+#' install_all_bouncer_data(fresh = TRUE)
+#' }
+force_close_duckdb <- function() {
+  check_duckdb_available()
+
+
+  # Step 1: Force garbage collection to finalize any orphaned connection objects
+
+# R's finalizers will call disconnect on any unreferenced connections
+  gc()
+  gc()  # Second pass catches objects freed by first pass
+
+  # Step 2: Try to shutdown any active DuckDB instances
+  # Note: duckdb::duckdb() creates a new driver each time, so this may not
+  # catch the actual driver holding the lock, but it's worth trying
+  tryCatch({
+    drv <- duckdb::duckdb()
+    DBI::dbDisconnect(drv, shutdown = TRUE)
+  }, error = function(e) {
+    # Ignore errors - driver may not exist or already be shutdown
+  })
+
+  # Small delay to let OS release file handles
+  Sys.sleep(0.5)
+
+  cli::cli_alert_success("Attempted to close all DuckDB connections")
+  cli::cli_alert_info("If file is still locked, restart R with {.kbd Ctrl+Shift+F10}")
+
+  invisible(TRUE)
+}

@@ -2,7 +2,7 @@
 % Please edit documentation in R/data_loaders.R
 \name{clear_remote_cache}
 \alias{clear_remote_cache}
-\title{Clear Remote Parquet Cache}
+\title{Clear Remote Data Cache}
 \usage{
 clear_remote_cache()
 }
@@ -10,8 +10,8 @@ clear_remote_cache()
 Invisible NULL.
 }
 \description{
-Clears the session-level cache of remote parquet data, forcing
-the next load to re-download from GitHub.
+Clears the session-level cache of remote release info, forcing
+the next load to re-fetch from GitHub.
 }
 \examples{
 \dontrun{
