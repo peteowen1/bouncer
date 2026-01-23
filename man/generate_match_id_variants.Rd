@@ -4,7 +4,7 @@
 \alias{generate_match_id_variants}
 \title{Generate possible match IDs for a given year/series/match}
 \usage{
-generate_match_id_variants(year, series, match)
+generate_match_id_variants(year, series, match, format = "TEST")
 }
 \arguments{
 \item{year}{The year}
@@ -12,6 +12,8 @@ generate_match_id_variants(year, series, match)
 \item{series}{The series number}
 
 \item{match}{The match number within the series}
+
+\item{format}{Cricket format code (default "TEST"). See FOX_FORMATS for options.}
 }
 \value{
 Character vector of possible match IDs to try
@@ -19,8 +21,8 @@ Character vector of possible match IDs to try
 \description{
 Fox Sports uses two URL patterns:
 \itemize{
-\item Pattern A: TEST2025-260604 (hyphen + season suffix like "26" for 2025-26)
-\item Pattern B: TEST20250501 (no hyphen, just year)
+\item Pattern A: \{PREFIX\}2025-260604 (hyphen + season suffix like "26" for 2025-26)
+\item Pattern B: \{PREFIX\}20250501 (no hyphen, just year)
 }
 }
 \keyword{internal}
