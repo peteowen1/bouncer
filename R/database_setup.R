@@ -1444,7 +1444,7 @@ ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
   tables <- DBI::dbListTables(conn)
 
   if (!"match_metrics" %in% tables) {
-    log_table("match_metrics")
+    cli::cli_alert_info("Creating match_metrics table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS match_metrics (
         match_id VARCHAR PRIMARY KEY,
