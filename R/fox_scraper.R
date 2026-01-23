@@ -445,14 +445,8 @@ fox_match_exists <- function(browser, match_id, userkey) {
   tryCatch({
     result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 10)
     json_data <- result$result$value
-
-    if (!is.null(json_data$innings_list) && length(json_data$innings_list) > 0) {
-      return(TRUE)
-    }
-    return(FALSE)
-  }, error = function(e) {
-    return(FALSE)
-  })
+    !is.null(json_data$innings_list) && length(json_data$innings_list) > 0
+  }, error = function(e) FALSE)
 }
 
 #' Generate possible match IDs for a given year/series/match
@@ -595,11 +589,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
           }
         }
 
-        if (!match_found && match == 1) {
-          break
-        } else if (!match_found) {
-          break
-        }
+        if (!match_found) break
         # No delay after cached matches - only API calls need delays
       }
     }
