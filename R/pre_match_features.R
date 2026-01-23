@@ -4,6 +4,180 @@
 # All features use only data available BEFORE the match starts.
 
 
+#' Detect Neutral Venue
+#'
+#' Determines if a match is being played at a neutral venue (neither team's home).
+#' For international matches, checks if the venue country matches either team name.
+#' For club matches, checks if the venue is either team's most-played venue.
+#'
+#' @param venue Character. Venue name
+#' @param team1 Character. Name of team 1
+#' @param team2 Character. Name of team 2
+#' @param team_type Character. Either "club" or "international"
+#' @param conn DBI connection. Database connection (required for club matches)
+#' @param match_date Date. Match date (for club home venue calculation)
+#'
+#' @return Logical. TRUE if neutral venue, FALSE if home venue for either team
+#' @keywords internal
+detect_neutral_venue <- function(venue, team1, team2, team_type, conn = NULL, match_date = NULL) {
+  if (is.null(venue) || is.na(venue) || venue == "") {
+    return(NA)
+  }
+
+  if (team_type == "international") {
+    # Use the hard-coded venue-country map
+    venue_country_map <- get_venue_country_map()
+
+    # Find venue country (case-insensitive substring match)
+    venue_country <- NULL
+    for (venue_name in names(venue_country_map)) {
+      if (grepl(venue_name, venue, fixed = TRUE) || grepl(venue, venue_name, fixed = TRUE)) {
+        venue_country <- venue_country_map[[venue_name]]
+        break
+      }
+    }
+
+    if (is.null(venue_country)) {
+      # Venue not found in map - assume neutral
+      return(TRUE)
+    }
+
+    # Check if venue country matches either team
+    if (venue_country == team1 || venue_country == team2) {
+      return(FALSE)  # Home venue for one of the teams
+    } else {
+      return(TRUE)   # Neutral venue
+    }
+
+  } else if (team_type == "club" && !is.null(conn)) {
+    # For club matches, check if venue is either team's most-played venue
+    # Query historical data to find home venue for each team
+
+    query <- "
+      SELECT team, venue, COUNT(*) as n_matches
+      FROM (
+        SELECT team1 as team, venue FROM matches
+        WHERE team_type = 'club' AND venue IS NOT NULL AND venue != ''
+        UNION ALL
+        SELECT team2 as team, venue FROM matches
+        WHERE team_type = 'club' AND venue IS NOT NULL AND venue != ''
+      ) t
+      WHERE team IN (?, ?)
+      GROUP BY team, venue
+      ORDER BY team, n_matches DESC
+    "
+
+    params <- list(team1, team2)
+
+    if (!is.null(match_date)) {
+      # Only consider matches before this date
+      query <- "
+        SELECT team, venue, COUNT(*) as n_matches
+        FROM (
+          SELECT team1 as team, venue FROM matches
+          WHERE team_type = 'club' AND venue IS NOT NULL AND venue != '' AND match_date < ?
+          UNION ALL
+          SELECT team2 as team, venue FROM matches
+          WHERE team_type = 'club' AND venue IS NOT NULL AND venue != '' AND match_date < ?
+        ) t
+        WHERE team IN (?, ?)
+        GROUP BY team, venue
+        ORDER BY team, n_matches DESC
+      "
+      params <- list(match_date, match_date, team1, team2)
+    }
+
+    home_venues <- tryCatch({
+      DBI::dbGetQuery(conn, query, params = params)
+    }, error = function(e) {
+      return(data.frame())
+    })
+
+    if (nrow(home_venues) == 0) {
+      return(NA)  # No historical data
+    }
+
+    # Get most-played venue for each team
+    team1_home <- home_venues$venue[home_venues$team == team1][1]
+    team2_home <- home_venues$venue[home_venues$team == team2][1]
+
+    # Check if current venue is either team's home
+    if ((!is.na(team1_home) && venue == team1_home) ||
+        (!is.na(team2_home) && venue == team2_home)) {
+      return(FALSE)  # Home venue
+    } else {
+      return(TRUE)   # Neutral venue
+    }
+  }
+
+  # Default to NA if we can't determine
+  return(NA)
+}
+
+
+#' Detect Neutral Venue (Fast Version)
+#'
+#' Fast version of neutral venue detection using pre-built lookups.
+#' This is the inverse of \code{\link{detect_home_team}} - returns TRUE when
+#' detect_home_team would return 0.
+#'
+#' @param venue Character. Venue name
+#' @param team1 Character. Name of team 1
+#' @param team2 Character. Name of team 2
+#' @param team1_id Character. Composite ID of team 1
+#' @param team2_id Character. Composite ID of team 2
+#' @param team_type Character. Either "club" or "international"
+#' @param club_home_lookup Named vector mapping team_id to home venue
+#' @param venue_country_lookup Named vector mapping venue to country
+#'
+#' @return Logical. TRUE if neutral venue, FALSE if home venue for either team
+#' @keywords internal
+detect_neutral_venue_fast <- function(venue, team1, team2, team1_id, team2_id, team_type,
+                                       club_home_lookup = NULL, venue_country_lookup = NULL) {
+  if (is.na(venue) || venue == "") {
+    return(NA)
+  }
+
+  # Use detect_home_team if lookups are available
+  if (!is.null(club_home_lookup) || !is.null(venue_country_lookup)) {
+    home_team <- detect_home_team(
+      team1 = team1,
+      team2 = team2,
+      team1_id = team1_id,
+      team2_id = team2_id,
+      venue = venue,
+      team_type = team_type,
+      club_home_lookup = club_home_lookup %||% character(0),
+      venue_country_lookup = venue_country_lookup %||% character(0)
+    )
+    return(home_team == 0L)
+  }
+
+  # Fallback: For international matches, use the venue-country map directly
+  if (team_type == "international") {
+    venue_country_map <- get_venue_country_map()
+
+    # Find venue country
+    venue_country <- NULL
+    for (venue_name in names(venue_country_map)) {
+      if (grepl(venue_name, venue, fixed = TRUE) || grepl(venue, venue_name, fixed = TRUE)) {
+        venue_country <- venue_country_map[[venue_name]]
+        break
+      }
+    }
+
+    if (is.null(venue_country)) {
+      return(TRUE)  # Unknown venue - assume neutral
+    }
+
+    return(venue_country != team1 && venue_country != team2)
+  }
+
+  # For club matches without lookups, return NA
+  return(NA)
+}
+
+
 #' Calculate Pre-Match Features
 #'
 #' Calculates all pre-match features for a given match. Uses only data
@@ -20,7 +194,7 @@ calculate_pre_match_features <- function(match_id, conn) {
 match_info <- DBI::dbGetQuery(conn, "
     SELECT match_id, match_date, match_type, event_name, venue,
            team1, team2, toss_winner, toss_decision,
-           event_match_number, event_group
+           event_match_number, event_group, team_type
     FROM matches
     WHERE match_id = ?
   ", params = list(match_id))
@@ -86,6 +260,10 @@ match_info <- DBI::dbGetQuery(conn, "
   team1_won_toss <- as.integer(!is.na(toss_winner) && toss_winner == team1)
   toss_elect_bat <- as.integer(!is.na(toss_decision) && tolower(toss_decision) == "bat")
 
+  # Detect neutral venue
+  team_type <- match_info$team_type %||% "international"
+  is_neutral <- detect_neutral_venue(venue, team1, team2, team_type, conn, match_date)
+
   # Build feature row
   features <- data.frame(
     match_id = match_id,
@@ -133,7 +311,7 @@ match_info <- DBI::dbGetQuery(conn, "
 
     # Match context
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,  # TODO: detect neutral venues
+    is_neutral_venue = is_neutral %||% FALSE,
 
     # Toss features
     team1_won_toss = team1_won_toss,
@@ -939,12 +1117,15 @@ get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
 #' @param venue_stats_dt data.table. Pre-loaded venue statistics
 #' @param team_skill_dt data.table. Pre-loaded team per-delivery skills (optional)
 #' @param venue_skill_dt data.table. Pre-loaded venue skills (optional)
+#' @param club_home_lookup Named vector mapping team_id to home venue (optional)
+#' @param venue_country_lookup Named vector mapping venue to country (optional)
 #'
 #' @return data.frame with one row of features
 #' @keywords internal
 calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_skills,
                                  bowler_skills, player_participation_dt, venue_stats_dt,
-                                 team_skill_dt = NULL, venue_skill_dt = NULL) {
+                                 team_skill_dt = NULL, venue_skill_dt = NULL,
+                                 club_home_lookup = NULL, venue_country_lookup = NULL) {
   # Extract match data
 
   match_id <- matches_with_outcome$match_id[i]
@@ -1003,6 +1184,23 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
   # Knockout
   is_knockout <- detect_knockout_match(event_match_number, event_group)
 
+  # Neutral venue detection
+  team_type <- if ("team_type" %in% names(matches_with_outcome)) {
+    matches_with_outcome$team_type[i] %||% "international"
+  } else {
+    "international"
+  }
+  is_neutral <- detect_neutral_venue_fast(
+    venue = venue,
+    team1 = team1,
+    team2 = team2,
+    team1_id = team1_id,
+    team2_id = team2_id,
+    team_type = team_type,
+    club_home_lookup = club_home_lookup,
+    venue_country_lookup = venue_country_lookup
+  )
+
   data.frame(
     match_id = match_id,
     match_date = match_date,
@@ -1050,7 +1248,7 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
     venue_dot_rate = venue_skill$dot_rate,
 
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,
+    is_neutral_venue = is_neutral %||% FALSE,
     team1_won_toss = team1_won_toss,
     toss_elect_bat = toss_elect_bat,
     created_at = Sys.time(),
