@@ -113,21 +113,13 @@ get_remote_tables <- function() {
 #' @return A DuckDB connection. Caller is responsible for disconnecting.
 #' @keywords internal
 get_data_connection <- function(source = c("local", "remote")) {
-
   source <- match.arg(source)
 
-
   if (source == "local") {
-    # Connect to local DuckDB
-    conn <- get_db_connection(read_only = TRUE)
-    return(conn)
+    return(get_db_connection(read_only = TRUE))
   }
 
-
-  # Remote: Create connection with httpfs views
-
-  conn <- create_remote_connection()
-  return(conn)
+  create_remote_connection()
 }
 
 
