@@ -12,6 +12,7 @@ insert_players_batch(conn, players_df)
 \item{players_df}{Data frame with player data}
 }
 \description{
-Inserts players efficiently, skipping duplicates using INSERT OR IGNORE.
+Inserts players efficiently using bulk operations.
+Filters out existing players first, then bulk inserts new ones.
 }
 \keyword{internal}

@@ -4,15 +4,18 @@
 \alias{extract_players}
 \title{Extract Players}
 \usage{
-extract_players(players_data)
+extract_players(players_data, registry = NULL)
 }
 \arguments{
 \item{players_data}{Players section from JSON info}
+
+\item{registry}{Registry section from JSON info (contains unique player IDs)}
 }
 \value{
 Data frame with player information
 }
 \description{
 Extracts player information from JSON with deduplication.
+Uses the registry to get unique player IDs when available.
 }
 \keyword{internal}

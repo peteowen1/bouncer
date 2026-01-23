@@ -10,6 +10,7 @@ query_matches(
   team = NULL,
   venue = NULL,
   date_range = NULL,
+  source = c("local", "remote"),
   db_path = NULL
 )
 }
@@ -24,7 +25,10 @@ query_matches(
 
 \item{date_range}{Date vector of length 2. c(start_date, end_date)}
 
-\item{db_path}{Character. Database path}
+\item{source}{Character. "local" (default) uses local DuckDB.
+"remote" queries GitHub releases via fast download.}
+
+\item{db_path}{Character. Database path (only used when source = "local").}
 }
 \value{
 Data frame with match data
@@ -45,5 +49,8 @@ recent_t20 <- query_matches(
   match_type = "t20",
   date_range = c(as.Date("2024-01-01"), as.Date("2024-12-31"))
 )
+
+# Query from remote (no local install needed)
+remote_matches <- query_matches(match_type = "T20", source = "remote")
 }
 }

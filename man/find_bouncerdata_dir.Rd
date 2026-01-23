@@ -17,4 +17,3 @@ Finds or creates the bouncerdata directory for storing data files.
 Prefers project-local directory (bouncerverse/bouncerdata) if it exists,
 otherwise falls back to system data directory.
 }
-\keyword{internal}

@@ -4,15 +4,30 @@
 \alias{fox_combine_matches}
 \title{Combine all downloaded Fox Sports match files}
 \usage{
-fox_combine_matches(output_dir = "../bouncerdata/fox_cricket")
+fox_combine_matches(
+  format = "TEST",
+  output_dir = "../bouncerdata/fox_cricket",
+  use_parquet = TRUE,
+  include_players = TRUE,
+  include_details = TRUE
+)
 }
 \arguments{
-\item{output_dir}{Directory containing .rds match files (default: bouncerdata/fox_cricket)}
+\item{format}{Cricket format code (default "TEST"). See fox_list_formats().}
+
+\item{output_dir}{Base directory containing match files (default: bouncerdata/fox_cricket)}
+
+\item{use_parquet}{Save combined file as parquet (default TRUE). Requires arrow package.}
+
+\item{include_players}{Also combine player files (default TRUE)}
+
+\item{include_details}{Also combine details files (default TRUE)}
 }
 \value{
-Combined data.frame of all matches
+Combined data.frame of all ball-by-ball data (players/details saved separately)
 }
 \description{
-Combine all downloaded Fox Sports match files
+Reads both .rds and .parquet files, outputs as parquet by default.
+Combines balls, players, and details files separately.
 }
 \keyword{internal}

@@ -8,4 +8,17 @@
 # Claude Code
 .claude/
 CLAUDE.md
+tmpclaude-*
 docs
+
+# Internal setup docs (not for repo)
+*_SETUP.md
+*_NOTES.md
+
+# SSH keys and secrets (never commit!)
+*.key
+*.pem
+ssh-key*
+*.github_pat
+.env
+.secrets

@@ -4,22 +4,30 @@
 \alias{batch_load_matches}
 \title{Batch Load Matches}
 \usage{
-batch_load_matches(file_paths, path = NULL, batch_size = 500, progress = TRUE)
+batch_load_matches(
+  file_paths,
+  path = NULL,
+  batch_size = 100,
+  progress = TRUE,
+  parallel = TRUE
+)
 }
 \arguments{
 \item{file_paths}{Character vector of paths to JSON files}
 
 \item{path}{Database path. If NULL, uses default.}
 
-\item{batch_size}{Number of files per transaction (default 100)}
+\item{batch_size}{Number of files per Parquet batch (default 100 for frequent progress updates)}
 
 \item{progress}{Logical. If TRUE, shows progress.}
+
+\item{parallel}{Logical. If TRUE and future/furrr are available, uses parallel parsing.}
 }
 \value{
 Invisibly returns count of successfully loaded matches
 }
 \description{
 Loads multiple match files into the database with optimal performance.
-Uses single connection, batch transactions, and pre-parse duplicate detection.
+Uses Parquet intermediate files to minimize memory usage and maximize speed.
 }
 \keyword{internal}

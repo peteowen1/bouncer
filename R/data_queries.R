@@ -9,7 +9,9 @@
 #' @param team Character. Filter matches involving this team
 #' @param venue Character. Filter by venue/stadium
 #' @param date_range Date vector of length 2. c(start_date, end_date)
-#' @param db_path Character. Database path
+#' @param source Character. "local" (default) uses local DuckDB.
+#'   "remote" queries GitHub releases via fast download.
+#' @param db_path Character. Database path (only used when source = "local").
 #'
 #' @return Data frame with match data
 #' @export
@@ -27,55 +29,73 @@
 #'   match_type = "t20",
 #'   date_range = c(as.Date("2024-01-01"), as.Date("2024-12-31"))
 #' )
+#'
+#' # Query from remote (no local install needed)
+#' remote_matches <- query_matches(match_type = "T20", source = "remote")
 #' }
 query_matches <- function(match_type = NULL,
                           season = NULL,
                           team = NULL,
                           venue = NULL,
                           date_range = NULL,
+                          source = c("local", "remote"),
                           db_path = NULL) {
 
-  conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  source <- match.arg(source)
 
-  # Build WHERE clause
+  # Build WHERE clause (used by both local and remote)
   where_clauses <- character()
-  params <- list()
 
   if (!is.null(match_type)) {
-    match_type <- normalize_match_type(match_type)
-    where_clauses <- c(where_clauses, "LOWER(match_type) = ?")
-    params <- c(params, list(match_type))
+    mt <- normalize_match_type(match_type)
+    where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", mt))
   }
 
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, "season = ?")
-    params <- c(params, list(as.character(season)))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", as.character(season)))
   }
 
   if (!is.null(team)) {
-    where_clauses <- c(where_clauses, "(team1 = ? OR team2 = ?)")
-    params <- c(params, list(team, team))
+    where_clauses <- c(where_clauses, sprintf("(team1 = '%s' OR team2 = '%s')", team, team))
   }
 
   if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, "LOWER(venue) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", venue, "%")))
+    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", venue))
   }
 
   if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, "match_date BETWEEN ? AND ?")
-    params <- c(params, list(date_range[1], date_range[2]))
+    where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
+                                               date_range[1], date_range[2]))
   }
 
-  # Build query
-  query <- "SELECT * FROM matches"
-  if (length(where_clauses) > 0) {
-    query <- paste(query, "WHERE", paste(where_clauses, collapse = " AND "))
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
+  } else {
+    ""
   }
-  query <- paste(query, "ORDER BY match_date DESC")
 
-  result <- DBI::dbGetQuery(conn, query, params = params)
+  if (source == "remote") {
+    # Fast remote: download + local query
+    cli::cli_alert_info("Querying matches from remote...")
+    sql_template <- sprintf("SELECT * FROM {table} %s ORDER BY match_date DESC", where_sql)
+    result <- tryCatch({
+      query_remote_parquet("matches", sql_template)
+    }, error = function(e) {
+      cli::cli_abort("Remote query failed: {e$message}")
+    })
+  } else {
+    # Local DuckDB
+    conn <- get_db_connection(path = db_path, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+    query <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
+    result <- DBI::dbGetQuery(conn, query)
+  }
+
+  if (nrow(result) > 0) {
+    cli::cli_alert_success("Found {format(nrow(result), big.mark=',')} matches")
+  }
+
   return(result)
 }
 
@@ -85,20 +105,25 @@ query_matches <- function(match_type = NULL,
 #' Query ball-by-ball delivery data with flexible filters.
 #'
 #' @param match_id Character. Specific match ID
-#' @param match_type Character. Filter by match type (e.g., "t20", "odi", "test")
+#' @param match_type Character. Filter by match type (e.g., "t20", "odi", "test").
+#'   Required for remote source (deliveries are partitioned by format).
 #' @param player_id Character. Filter by batter or bowler (either role)
 #' @param batter_id Character. Filter by specific batter
 #' @param bowler_id Character. Filter by specific bowler
 #' @param season Character or numeric. Filter by season
 #' @param venue Character. Filter by venue/stadium (partial match)
 #' @param city Character. Filter by city (partial match)
-#' @param country Character. Filter by country (uses venue-to-country mapping)
-#' @param event Character. Filter by event name (partial match, e.g., "Premier League")
+#' @param country Character. Filter by country (uses venue-to-country mapping).
+#'   Not available for remote source.
+#' @param event Character. Filter by event name (partial match, e.g., "Premier League").
+#'   Not available for remote source.
 #' @param date_range Date vector of length 2. c(start_date, end_date)
 #' @param batting_team Character. Filter by batting team
 #' @param bowling_team Character. Filter by bowling team
 #' @param limit Integer. Limit number of results
-#' @param db_path Character. Database path
+#' @param source Character. "local" (default) uses local DuckDB.
+#'   "remote" queries GitHub releases via fast download.
+#' @param db_path Character. Database path (only used when source = "local").
 #'
 #' @return Data frame with delivery data
 #' @export
@@ -120,6 +145,14 @@ query_matches <- function(match_type = NULL,
 #'   bowler_id = "J Bumrah",
 #'   event = "Indian Premier League"
 #' )
+#'
+#' # Query from remote (requires match_type)
+#' t20_balls <- query_deliveries(
+#'   match_type = "T20",
+#'   batter_id = "ba607b88",
+#'   source = "remote",
+#'   limit = 1000
+#' )
 #' }
 query_deliveries <- function(match_id = NULL,
                               match_type = NULL,
@@ -135,7 +168,20 @@ query_deliveries <- function(match_id = NULL,
                               batting_team = NULL,
                               bowling_team = NULL,
                               limit = NULL,
+                              source = c("local", "remote"),
                               db_path = NULL) {
+
+  source <- match.arg(source)
+
+  if (source == "remote") {
+    return(query_deliveries_remote(
+      match_id = match_id, match_type = match_type, player_id = player_id,
+      batter_id = batter_id, bowler_id = bowler_id, season = season,
+      venue = venue, city = city, date_range = date_range,
+      batting_team = batting_team, bowling_team = bowling_team, limit = limit,
+      country = country, event = event
+    ))
+  }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
@@ -239,6 +285,104 @@ query_deliveries <- function(match_id = NULL,
   }
 
   result <- DBI::dbGetQuery(conn, query, params = params)
+  return(result)
+}
+
+
+#' @keywords internal
+query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
+                                     player_id = NULL, batter_id = NULL,
+                                     bowler_id = NULL, season = NULL,
+                                     venue = NULL, city = NULL,
+                                     date_range = NULL, batting_team = NULL,
+                                     bowling_team = NULL, limit = NULL,
+                                     country = NULL, event = NULL) {
+
+  # Remote requires match_type (deliveries are partitioned)
+  if (is.null(match_type)) {
+    cli::cli_abort("Remote deliveries query requires match_type (e.g., 'T20', 'ODI', 'Test')")
+  }
+
+  # Warn about unsupported filters
+
+  if (!is.null(country)) {
+    cli::cli_warn("country filter not available for remote queries (ignoring)")
+  }
+  if (!is.null(event)) {
+    cli::cli_warn("event filter not available for remote queries (ignoring)")
+  }
+
+  # Determine parquet file
+  table_name <- sprintf("deliveries_%s_male", match_type)
+  cli::cli_alert_info("Querying {table_name} from remote...")
+
+  # Build WHERE clause
+  where_clauses <- character()
+
+  if (!is.null(match_id)) {
+    where_clauses <- c(where_clauses, sprintf("match_id = '%s'", match_id))
+  }
+
+  if (!is.null(player_id)) {
+    where_clauses <- c(where_clauses, sprintf("(batter_id = '%s' OR bowler_id = '%s')", player_id, player_id))
+  }
+
+  if (!is.null(batter_id)) {
+    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", batter_id))
+  }
+
+  if (!is.null(bowler_id)) {
+    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", bowler_id))
+  }
+
+  if (!is.null(season)) {
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", as.character(season)))
+  }
+
+  if (!is.null(venue)) {
+    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", venue))
+  }
+
+  if (!is.null(city)) {
+    where_clauses <- c(where_clauses, sprintf("LOWER(city) LIKE LOWER('%%%s%%')", city))
+  }
+
+  if (!is.null(date_range) && length(date_range) == 2) {
+    where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
+                                               date_range[1], date_range[2]))
+  }
+
+  if (!is.null(batting_team)) {
+    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", batting_team))
+  }
+
+  if (!is.null(bowling_team)) {
+    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", bowling_team))
+  }
+
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
+  } else {
+    ""
+  }
+
+  limit_sql <- if (!is.null(limit)) sprintf("LIMIT %d", limit) else ""
+
+  sql_template <- sprintf(
+    "SELECT * FROM {table} %s ORDER BY match_date DESC, delivery_id ASC %s",
+    where_sql, limit_sql
+  )
+
+  result <- tryCatch({
+    query_remote_parquet(table_name, sql_template)
+  }, error = function(e) {
+    cli::cli_abort("Remote query failed: {e$message}")
+  })
+
+  if (nrow(result) > 0) {
+    cli::cli_alert_success("Found {format(nrow(result), big.mark=',')} deliveries")
+  }
+
   return(result)
 }
 
@@ -474,11 +618,11 @@ query_batter_stats <- function(batter_id = NULL,
     params <- c(params, list(bowling_team))
   }
 
-  # Build FROM clause
+  # Build FROM clause (always join players table for names)
   if (needs_match_join) {
-    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id"
+    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id LEFT JOIN players p ON d.batter_id = p.player_id"
   } else {
-    from_clause <- "FROM deliveries d"
+    from_clause <- "FROM deliveries d LEFT JOIN players p ON d.batter_id = p.player_id"
   }
 
   # Build WHERE clause string
@@ -492,6 +636,7 @@ query_batter_stats <- function(batter_id = NULL,
   if (single_player) {
     query <- sprintf("
       SELECT
+        p.player_name,
         COUNT(*) as balls_faced,
         COALESCE(SUM(d.runs_batter), 0) as runs_scored,
         SUM(CASE WHEN d.is_wicket AND d.player_out_id = d.batter_id THEN 1 ELSE 0 END) as dismissals,
@@ -500,11 +645,13 @@ query_batter_stats <- function(batter_id = NULL,
         COALESCE(SUM(CASE WHEN d.is_six THEN 1 ELSE 0 END), 0) as sixes
       %s
       %s
+      GROUP BY p.player_name
     ", from_clause, where_clause)
   } else {
     query <- sprintf("
       SELECT
         d.batter_id,
+        p.player_name,
         COUNT(*) as balls_faced,
         COALESCE(SUM(d.runs_batter), 0) as runs_scored,
         SUM(CASE WHEN d.is_wicket AND d.player_out_id = d.batter_id THEN 1 ELSE 0 END) as dismissals,
@@ -513,7 +660,7 @@ query_batter_stats <- function(batter_id = NULL,
         COALESCE(SUM(CASE WHEN d.is_six THEN 1 ELSE 0 END), 0) as sixes
       %s
       %s
-      GROUP BY d.batter_id
+      GROUP BY d.batter_id, p.player_name
       HAVING COUNT(*) >= %d
       ORDER BY runs_scored DESC
     ", from_clause, where_clause, min_balls)
@@ -526,6 +673,7 @@ query_batter_stats <- function(batter_id = NULL,
     if (single_player) {
       return(data.frame(
         batter_id = batter_id,
+        player_name = NA_character_,
         balls_faced = 0L,
         runs_scored = 0L,
         dismissals = 0L,
@@ -541,6 +689,7 @@ query_batter_stats <- function(batter_id = NULL,
     } else {
       return(data.frame(
         batter_id = character(),
+        player_name = character(),
         balls_faced = integer(),
         runs_scored = integer(),
         dismissals = integer(),
@@ -561,6 +710,7 @@ query_batter_stats <- function(batter_id = NULL,
                                     round(result$runs_scored / result$dismissals, 2),
                                     NA_real_)
   result$runs_per_ball <- round(result$runs_scored / result$balls_faced, 4)
+  result$wickets_per_ball <- round(result$dismissals / result$balls_faced, 4)
   result$strike_rate <- round((result$runs_scored / result$balls_faced) * 100, 2)
   result$wicket_pct <- round((result$dismissals / result$balls_faced) * 100, 4)
 
@@ -716,11 +866,11 @@ query_bowler_stats <- function(bowler_id = NULL,
     params <- c(params, list(bowling_team))
   }
 
-  # Build FROM clause
+  # Build FROM clause (always join players table for names)
   if (needs_match_join) {
-    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id"
+    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id LEFT JOIN players p ON d.bowler_id = p.player_id"
   } else {
-    from_clause <- "FROM deliveries d"
+    from_clause <- "FROM deliveries d LEFT JOIN players p ON d.bowler_id = p.player_id"
   }
 
   # Build WHERE clause string
@@ -734,24 +884,27 @@ query_bowler_stats <- function(bowler_id = NULL,
   if (single_player) {
     query <- sprintf("
       SELECT
+        p.player_name,
         COUNT(*) as balls_bowled,
         COALESCE(SUM(d.runs_total), 0) as runs_conceded,
         SUM(CASE WHEN d.is_wicket THEN 1 ELSE 0 END) as wickets,
         SUM(CASE WHEN d.runs_total = 0 THEN 1 ELSE 0 END) as dots
       %s
       %s
+      GROUP BY p.player_name
     ", from_clause, where_clause)
   } else {
     query <- sprintf("
       SELECT
         d.bowler_id,
+        p.player_name,
         COUNT(*) as balls_bowled,
         COALESCE(SUM(d.runs_total), 0) as runs_conceded,
         SUM(CASE WHEN d.is_wicket THEN 1 ELSE 0 END) as wickets,
         SUM(CASE WHEN d.runs_total = 0 THEN 1 ELSE 0 END) as dots
       %s
       %s
-      GROUP BY d.bowler_id
+      GROUP BY d.bowler_id, p.player_name
       HAVING COUNT(*) >= %d
       ORDER BY wickets DESC
     ", from_clause, where_clause, min_balls)
@@ -764,6 +917,7 @@ query_bowler_stats <- function(bowler_id = NULL,
     if (single_player) {
       return(data.frame(
         bowler_id = bowler_id,
+        player_name = NA_character_,
         balls_bowled = 0L,
         runs_conceded = 0L,
         wickets = 0L,
@@ -778,6 +932,7 @@ query_bowler_stats <- function(bowler_id = NULL,
     } else {
       return(data.frame(
         bowler_id = character(),
+        player_name = character(),
         balls_bowled = integer(),
         runs_conceded = integer(),
         wickets = integer(),
@@ -797,6 +952,7 @@ query_bowler_stats <- function(bowler_id = NULL,
                                     round(result$runs_conceded / result$wickets, 2),
                                     NA_real_)
   result$runs_per_ball <- round(result$runs_conceded / result$balls_bowled, 4)
+  result$wickets_per_ball <- round(result$wickets / result$balls_bowled, 4)
   result$economy_rate <- round((result$runs_conceded / result$balls_bowled) * 6, 2)
   result$wicket_pct <- round((result$wickets / result$balls_bowled) * 100, 4)
   result$strike_rate <- ifelse(result$wickets > 0,

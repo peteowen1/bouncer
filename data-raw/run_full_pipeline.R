@@ -70,7 +70,7 @@ FRESH_START <- FALSE # TRUE
 # - c(3, 4, 5) = fresh start for player, team, venue skill indices
 # This is useful when you want incremental mode for most steps but need to
 # recalculate specific steps from scratch (e.g., after changing parameters)
-FRESH_STEPS <- c(6) # NULL
+FRESH_STEPS <- NULL
 
 # Formats to process (don't change unless you have a specific reason)
 FORMATS <- c("t20", "odi", "test")

@@ -4,12 +4,19 @@
 \alias{download_all_cricsheet_data}
 \title{Download All Cricsheet JSON Data (Incremental with Size Comparison)}
 \usage{
-download_all_cricsheet_data(output_path = NULL, keep_zip = FALSE)
+download_all_cricsheet_data(
+  output_path = NULL,
+  keep_zip = FALSE,
+  fresh = FALSE
+)
 }
 \arguments{
 \item{output_path}{Directory to extract files. If NULL, uses bouncerdata directory.}
 
 \item{keep_zip}{Logical. Keep the ZIP file after extraction. Default FALSE (saves ~93MB).}
+
+\item{fresh}{Logical. If TRUE, extracts all files (ignores existing). If FALSE (default),
+only extracts new or changed files based on size comparison.}
 }
 \value{
 List with:

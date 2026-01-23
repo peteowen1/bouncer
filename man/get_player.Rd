@@ -4,7 +4,12 @@
 \alias{get_player}
 \title{Get Player Information}
 \usage{
-get_player(name_or_id, format = NULL, db_path = NULL)
+get_player(
+  name_or_id,
+  format = NULL,
+  source = c("local", "remote"),
+  db_path = NULL
+)
 }
 \arguments{
 \item{name_or_id}{Character. Player name (partial match supported) or player ID.}
@@ -12,7 +17,10 @@ get_player(name_or_id, format = NULL, db_path = NULL)
 \item{format}{Character. Format for skill indices: "t20", "odi", or "test".
 If NULL, returns latest skills across all formats.}
 
-\item{db_path}{Character. Database path. If NULL, uses default.}
+\item{source}{Character. "local" (default) uses local DuckDB.
+"remote" queries GitHub releases via fast download.}
+
+\item{db_path}{Character. Database path (only used when source = "local").}
 }
 \value{
 A \code{bouncer_player} object containing:
@@ -36,6 +44,9 @@ kohli <- get_player("Kohli")  # Also works
 
 # Get T20-specific skills
 kohli_t20 <- get_player("Virat Kohli", format = "t20")
+
+# Look up from remote (no local install needed)
+kohli_remote <- get_player("Virat Kohli", format = "t20", source = "remote")
 
 # Print shows formatted output
 print(kohli)

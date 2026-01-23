@@ -54,16 +54,6 @@ if (is.null(DB_PATH)) {
   cli::cli_alert_info("Database: {.file {DB_PATH}}")
 }
 
-## Confirm before proceeding ----
-if (interactive() && FRESH_START) {
-  cli::cli_alert_warning("This will download ~400MB and may take 30-60 minutes")
-  response <- readline(prompt = "Continue? (y/n): ")
-  if (tolower(response) != "y") {
-    cli::cli_alert_warning("Download cancelled")
-    stop("User cancelled download", call. = FALSE)
-  }
-}
-
 ## Run installation ----
 # This function:
 # 1. Downloads all_json.zip from Cricsheet (~400MB)

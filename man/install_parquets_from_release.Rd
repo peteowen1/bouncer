@@ -2,7 +2,7 @@
 % Please edit documentation in R/release_install.R
 \name{install_parquets_from_release}
 \alias{install_parquets_from_release}
-\title{Install Parquet Files from Weekly Release}
+\title{Install Parquet Files from Core Release}
 \usage{
 install_parquets_from_release(
   repo = "peteowen1/bouncerdata",
@@ -15,10 +15,9 @@ install_parquets_from_release(
 \item{repo}{Character. GitHub repository. Default "peteowen1/bouncerdata".}
 
 \item{tables}{Character vector. Tables to download, or "all".
-Options: "matches", "deliveries_long_form", "deliveries_short_form",
-"players", "test_player_skill", "odi_player_skill", "t20_player_skill",
-"test_team_skill", "odi_team_skill", "t20_team_skill",
-"test_venue_skill", "odi_venue_skill", "t20_venue_skill", "team_elo"}
+Options: "matches", "players", "team_elo", or delivery partitions like
+"deliveries_T20_male_club", "deliveries_Test_male_international", etc.
+See DATA_FOLDERS constant for all available partitions.}
 
 \item{data_dir}{Character. Directory to store parquet files.}
 
@@ -28,7 +27,7 @@ Options: "matches", "deliveries_long_form", "deliveries_short_form",
 Character vector of downloaded file paths.
 }
 \description{
-Downloads pre-built parquet files from the weekly release.
+Downloads pre-built parquet files from the core release.
 These can be queried directly with DuckDB or Arrow without
 building a local database.
 }
@@ -37,9 +36,9 @@ building a local database.
 # Download all parquet files
 install_parquets_from_release()
 
-# Download only matches and deliveries
+# Download only matches and T20 deliveries
 install_parquets_from_release(
-  tables = c("matches", "deliveries_short_form")
+  tables = c("matches", "deliveries_T20_male_club")
 )
 }
 }

@@ -14,22 +14,44 @@ find_deliveries_by_elo_range(
 )
 }
 \arguments{
-\item{player_id}{Character. Player identifier}
+\item{player_id}{Character. Player identifier.}
 
-\item{elo_min}{Numeric. Minimum ELO}
+\item{elo_min}{Numeric. Minimum ELO rating.}
 
-\item{elo_max}{Numeric. Maximum ELO}
+\item{elo_max}{Numeric. Maximum ELO rating.}
 
-\item{rating_type}{Character. "batting" or "bowling"}
+\item{rating_type}{Character. "batting" or "bowling". Default "batting".}
 
-\item{limit}{Integer. Max results to return}
+\item{limit}{Integer. Maximum results to return. Default 100.}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Optional path to the database.}
 }
 \value{
-Data frame with matching deliveries
+Data frame with columns:
+\describe{
+\item{delivery_id}{Unique delivery identifier}
+\item{match_id}{Match identifier}
+\item{match_date}{Date of the match}
+\item{match_type}{Format (T20, ODI, Test, etc.)}
+\item{innings}{Innings number}
+\item{over}{Over number}
+\item{ball}{Ball number}
+\item{elo}{Player's ELO at this delivery}
+}
 }
 \description{
 Finds deliveries where a player's ELO was in a specific range.
+Useful for analyzing performance at different skill levels.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# Find deliveries when a player was at peak form (ELO > 1600)
+peak_deliveries <- find_deliveries_by_elo_range(
+  player_id = "virat_kohli",
+  elo_min = 1600,
+  elo_max = 2000,
+  rating_type = "batting"
+)
+}
+
+}

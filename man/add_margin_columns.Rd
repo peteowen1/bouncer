@@ -7,15 +7,17 @@
 add_margin_columns(conn = NULL, path = NULL)
 }
 \arguments{
-\item{conn}{DBI connection. If provided, uses this connection (does not close it).}
+\item{conn}{DBI connection.}
 
-\item{path}{Character. Database file path. If NULL, uses default. Ignored if conn is provided.}
+\item{path}{Character. Database file path.}
 }
 \value{
 Invisibly returns TRUE on success
 }
 \description{
-Adds the unified_margin column to the matches table and margin columns
-to the pre_match_features table if they don't already exist.
+\ifelse{html}{\href{https://lifecycle.r-lib.org/articles/stages.html#deprecated}{\figure{lifecycle-deprecated.svg}{options: alt='[Deprecated]'}}}{\strong{[Deprecated]}}
+
+This function is deprecated. Use ensure_match_metrics_table() instead.
+Margin data is now stored in the match_metrics table, not in matches.
 }
 \keyword{internal}

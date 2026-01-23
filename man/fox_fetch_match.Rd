@@ -4,7 +4,16 @@
 \alias{fox_fetch_match}
 \title{Fetch ball-by-ball data for a single match}
 \usage{
-fox_fetch_match(browser, match_id, userkey, max_innings = 4, delay_seconds = 1)
+fox_fetch_match(
+  browser,
+  match_id,
+  userkey,
+  format = "TEST",
+  max_innings = NULL,
+  delay_seconds = 1,
+  include_players = FALSE,
+  include_details = FALSE
+)
 }
 \arguments{
 \item{browser}{A ChromoteSession object}
@@ -13,12 +22,18 @@ fox_fetch_match(browser, match_id, userkey, max_innings = 4, delay_seconds = 1)
 
 \item{userkey}{Valid userkey from fox_get_userkey()}
 
-\item{max_innings}{Maximum innings to fetch (default 4 for Tests)}
+\item{format}{Cricket format code (default "TEST"). Used to determine max_innings if not specified.}
+
+\item{max_innings}{Maximum innings to fetch (default: from format config)}
 
 \item{delay_seconds}{Delay between innings requests}
+
+\item{include_players}{Also fetch player squad data (default FALSE)}
+
+\item{include_details}{Also fetch match details/metadata (default FALSE)}
 }
 \value{
-A data.frame of ball-by-ball data, or NULL if no data
+A data.frame of ball-by-ball data, or a list with balls/players/details if extras requested
 }
 \description{
 Fetch ball-by-ball data for a single match

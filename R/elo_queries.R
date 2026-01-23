@@ -3,15 +3,28 @@
 #' Get Player ELO at Specific Delivery
 #'
 #' Retrieves a player's ELO rating at a specific delivery in a match.
+#' Useful for analyzing how a player's rating evolved during specific moments.
 #'
-#' @param delivery_id Numeric. The unique delivery identifier
-#' @param player_id Character. Player identifier
+#' @param delivery_id Numeric. The unique delivery identifier.
+#' @param player_id Character. Player identifier.
 #' @param when Character. "before" or "after" the delivery. Default "after".
 #' @param rating_type Character. "batting" or "bowling". Default "batting".
-#' @param db_path Character. Database path
+#' @param db_path Character. Optional path to the database.
 #'
-#' @return Numeric. ELO rating at that delivery (or NA if not found)
-#' @keywords internal
+#' @return Numeric. ELO rating at that delivery (or NA if not found).
+#'
+#' @examples
+#' \dontrun{
+#' # Get Virat Kohli's batting ELO after a specific delivery
+#' get_elo_at_delivery(
+#'   delivery_id = 123456,
+#'   player_id = "virat_kohli",
+#'   when = "after",
+#'   rating_type = "batting"
+#' )
+#' }
+#'
+#' @export
 get_elo_at_delivery <- function(delivery_id,
                                  player_id,
                                  when = "after",
@@ -48,15 +61,38 @@ get_elo_at_delivery <- function(delivery_id,
 
 #' Get ELO Progression During Match
 #'
-#' Retrieves a player's ELO progression throughout a specific match.
+#' Retrieves a player's ELO progression throughout a specific match,
+#' showing how their rating changed delivery-by-delivery.
 #'
-#' @param match_id Character. Match identifier
-#' @param player_id Character. Player identifier
-#' @param rating_type Character. "batting" or "bowling"
-#' @param db_path Character. Database path
+#' @param match_id Character. Match identifier.
+#' @param player_id Character. Player identifier.
+#' @param rating_type Character. "batting" or "bowling". Default "batting".
+#' @param db_path Character. Optional path to the database.
 #'
-#' @return Data frame with delivery-by-delivery ELO progression
-#' @keywords internal
+#' @return Data frame with columns:
+#' \describe{
+#'   \item{delivery_id}{Unique delivery identifier}
+#'   \item{innings}{Innings number}
+#'   \item{over}{Over number}
+#'   \item{ball}{Ball number within the over}
+#'   \item{runs_batter}{Runs scored by batter}
+#'   \item{is_wicket}{Whether a wicket fell}
+#'   \item{elo_before}{Player's ELO before this delivery}
+#'   \item{elo_after}{Player's ELO after this delivery}
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Track a player's batting ELO through a match
+#' progression <- get_match_elo_progression(
+#'   match_id = "1234567",
+#'   player_id = "virat_kohli",
+#'   rating_type = "batting"
+#' )
+#' plot(progression$elo_after, type = "l")
+#' }
+#'
+#' @export
 get_match_elo_progression <- function(match_id,
                                        player_id,
                                        rating_type = "batting",
@@ -145,16 +181,39 @@ get_delivery_with_elos <- function(delivery_id, db_path = NULL) {
 #' Find Deliveries by ELO Range
 #'
 #' Finds deliveries where a player's ELO was in a specific range.
+#' Useful for analyzing performance at different skill levels.
 #'
-#' @param player_id Character. Player identifier
-#' @param elo_min Numeric. Minimum ELO
-#' @param elo_max Numeric. Maximum ELO
-#' @param rating_type Character. "batting" or "bowling"
-#' @param limit Integer. Max results to return
-#' @param db_path Character. Database path
+#' @param player_id Character. Player identifier.
+#' @param elo_min Numeric. Minimum ELO rating.
+#' @param elo_max Numeric. Maximum ELO rating.
+#' @param rating_type Character. "batting" or "bowling". Default "batting".
+#' @param limit Integer. Maximum results to return. Default 100.
+#' @param db_path Character. Optional path to the database.
 #'
-#' @return Data frame with matching deliveries
-#' @keywords internal
+#' @return Data frame with columns:
+#' \describe{
+#'   \item{delivery_id}{Unique delivery identifier}
+#'   \item{match_id}{Match identifier}
+#'   \item{match_date}{Date of the match}
+#'   \item{match_type}{Format (T20, ODI, Test, etc.)}
+#'   \item{innings}{Innings number}
+#'   \item{over}{Over number}
+#'   \item{ball}{Ball number}
+#'   \item{elo}{Player's ELO at this delivery}
+#' }
+#'
+#' @examples
+#' \dontrun{
+#' # Find deliveries when a player was at peak form (ELO > 1600)
+#' peak_deliveries <- find_deliveries_by_elo_range(
+#'   player_id = "virat_kohli",
+#'   elo_min = 1600,
+#'   elo_max = 2000,
+#'   rating_type = "batting"
+#' )
+#' }
+#'
+#' @export
 find_deliveries_by_elo_range <- function(player_id,
                                           elo_min,
                                           elo_max,

@@ -19,13 +19,15 @@ query_deliveries(
   batting_team = NULL,
   bowling_team = NULL,
   limit = NULL,
+  source = c("local", "remote"),
   db_path = NULL
 )
 }
 \arguments{
 \item{match_id}{Character. Specific match ID}
 
-\item{match_type}{Character. Filter by match type (e.g., "t20", "odi", "test")}
+\item{match_type}{Character. Filter by match type (e.g., "t20", "odi", "test").
+Required for remote source (deliveries are partitioned by format).}
 
 \item{player_id}{Character. Filter by batter or bowler (either role)}
 
@@ -39,9 +41,11 @@ query_deliveries(
 
 \item{city}{Character. Filter by city (partial match)}
 
-\item{country}{Character. Filter by country (uses venue-to-country mapping)}
+\item{country}{Character. Filter by country (uses venue-to-country mapping).
+Not available for remote source.}
 
-\item{event}{Character. Filter by event name (partial match, e.g., "Premier League")}
+\item{event}{Character. Filter by event name (partial match, e.g., "Premier League").
+Not available for remote source.}
 
 \item{date_range}{Date vector of length 2. c(start_date, end_date)}
 
@@ -51,7 +55,10 @@ query_deliveries(
 
 \item{limit}{Integer. Limit number of results}
 
-\item{db_path}{Character. Database path}
+\item{source}{Character. "local" (default) uses local DuckDB.
+"remote" queries GitHub releases via fast download.}
+
+\item{db_path}{Character. Database path (only used when source = "local").}
 }
 \value{
 Data frame with delivery data
@@ -75,6 +82,14 @@ matchup <- query_deliveries(
   batter_id = "V Kohli",
   bowler_id = "J Bumrah",
   event = "Indian Premier League"
+)
+
+# Query from remote (requires match_type)
+t20_balls <- query_deliveries(
+  match_type = "T20",
+  batter_id = "ba607b88",
+  source = "remote",
+  limit = 1000
 )
 }
 }

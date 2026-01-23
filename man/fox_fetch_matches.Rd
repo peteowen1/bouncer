@@ -8,7 +8,11 @@ fox_fetch_matches(
   browser,
   match_ids,
   userkey,
+  format = "TEST",
   output_dir = "../bouncerdata/fox_cricket",
+  use_parquet = TRUE,
+  include_players = TRUE,
+  include_details = TRUE,
   skip_existing = TRUE,
   refresh_key_every = 10,
   delay_between = 8,
@@ -22,7 +26,15 @@ fox_fetch_matches(
 
 \item{userkey}{Valid userkey}
 
-\item{output_dir}{Directory to save individual match files (default: bouncerdata/fox_cricket)}
+\item{format}{Cricket format code (default "TEST"). See fox_list_formats().}
+
+\item{output_dir}{Base directory to save match files (default: bouncerdata/fox_cricket)}
+
+\item{use_parquet}{Save as parquet instead of RDS (default TRUE). Requires arrow package.}
+
+\item{include_players}{Also fetch and save player squad data (default TRUE)}
+
+\item{include_details}{Also fetch and save match details/metadata (default TRUE)}
 
 \item{skip_existing}{Skip matches that already have files}
 
@@ -33,7 +45,7 @@ fox_fetch_matches(
 \item{max_consecutive_failures}{Stop and reconnect after this many failures in a row}
 }
 \value{
-Combined data.frame of all matches, or NULL
+Combined data.frame of all ball-by-ball data, or NULL
 }
 \description{
 Includes automatic recovery if browser connection fails.

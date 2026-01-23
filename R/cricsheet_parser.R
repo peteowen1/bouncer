@@ -11,13 +11,17 @@
 #' Parses a Cricsheet JSON file with optimized vectorized operations.
 #' Uses pre-allocation and single-pass parsing for high performance.
 #'
+#' For faster parsing, install the optional RcppSimdJson package:
+#' `install.packages("RcppSimdJson")` (5-15x faster than jsonlite).
+#'
 #' @param file_path Character string path to JSON file
 #'
 #' @return A list with parsed data:
 #'   - match_info: data frame with match metadata
-#'   - innings: data frame with innings summaries
-#'   - deliveries: data frame with ball-by-ball data
+#'   - innings: data frame with innings summaries (includes target, super_over, absent_hurt)
+#'   - deliveries: data frame with ball-by-ball data (includes DRS reviews, substitute fielders, replacements)
 #'   - players: data frame with player information
+#'   - powerplays: data frame with powerplay periods per innings
 #' @export
 #'
 #' @examples
@@ -37,9 +41,9 @@ parse_cricsheet_json <- function(file_path) {
   # Extract match_id from filename
   match_id <- tools::file_path_sans_ext(basename(file_path))
 
-  # Read JSON
+  # Read JSON - use RcppSimdJson if available (5-15x faster)
   tryCatch({
-    json_data <- jsonlite::fromJSON(file_path, simplifyVector = FALSE)
+    json_data <- read_json_fast(file_path)
   }, error = function(e) {
     cli::cli_abort("Failed to parse JSON file {.file {file_path}}: {e$message}")
   })
@@ -54,7 +58,8 @@ parse_cricsheet_json <- function(file_path) {
     match_info = match_info,
     innings = parsed$innings,
     deliveries = parsed$deliveries,
-    players = parsed$players
+    players = parsed$players,
+    powerplays = parsed$powerplays
   )
 }
 
@@ -124,6 +129,8 @@ parse_match_info <- function(json_data, match_id) {
   tv_umpire <- NA_character_
   referee <- NA_character_
 
+  reserve_umpire <- NA_character_
+
   if (!is.null(info$officials) && is.list(info$officials)) {
     umpires <- info$officials$umpires
     if (length(umpires) >= 1) umpire1 <- umpires[[1]]
@@ -132,6 +139,8 @@ parse_match_info <- function(json_data, match_id) {
     if (length(tv_umpires) >= 1) tv_umpire <- tv_umpires[[1]]
     refs <- info$officials$match_referees %||% info$officials$referee
     if (length(refs) >= 1) referee <- refs[[1]]
+    reserve_umpires <- info$officials$reserve_umpires
+    if (length(reserve_umpires) >= 1) reserve_umpire <- reserve_umpires[[1]]
   }
 
   # Extract player of match
@@ -153,6 +162,13 @@ parse_match_info <- function(json_data, match_id) {
   data_version <- meta$data_version %||% NA_character_
   data_created <- tryCatch(as.Date(meta$created %||% NA), error = function(e) NA)
   data_revision <- as.integer(meta$revision %||% NA)
+
+  # Extract missing data indicator (JSON array as string)
+  missing_data <- if (!is.null(info$missing) && length(info$missing) > 0) {
+    jsonlite::toJSON(info$missing, auto_unbox = FALSE)
+  } else {
+    NA_character_
+  }
 
   # Create data frame
   data.frame(
@@ -180,7 +196,9 @@ parse_match_info <- function(json_data, match_id) {
     umpire2 = umpire2,
     tv_umpire = tv_umpire,
     referee = referee,
+    reserve_umpire = reserve_umpire,
     player_of_match_id = player_of_match_id,
+    missing_data = as.character(missing_data),
     event_name = event_name,
     event_match_number = event_match_number,
     event_group = event_group,
@@ -205,11 +223,24 @@ parse_match_info <- function(json_data, match_id) {
 parse_all_data <- function(json_data, match_info) {
   innings_data <- json_data$innings
 
+  # Get the people registry for player ID lookups
+  # This maps player names to unique IDs (e.g., "JB Lintott" -> "abc123")
+  people_registry <- json_data$info$registry$people
+
+  # Helper to look up player ID from registry
+  get_player_id <- function(player_name) {
+    if (is.null(player_name) || is.na(player_name)) return(NA_character_)
+    if (!is.null(people_registry) && player_name %in% names(people_registry)) {
+      return(people_registry[[player_name]])
+    }
+    return(player_name)  # Fallback to name if no registry entry
+  }
+
   if (is.null(innings_data) || length(innings_data) == 0) {
     return(list(
       innings = data.frame(),
       deliveries = data.frame(),
-      players = extract_players(json_data$info$players)
+      players = extract_players(json_data$info$players, json_data$info$registry)
     ))
   }
 
@@ -220,7 +251,7 @@ parse_all_data <- function(json_data, match_info) {
     return(list(
       innings = data.frame(),
       deliveries = data.frame(),
-      players = extract_players(json_data$info$players)
+      players = extract_players(json_data$info$players, json_data$info$registry)
     ))
   }
 
@@ -258,8 +289,24 @@ parse_all_data <- function(json_data, match_info) {
   del_player_out_id <- character(total_deliveries)
   del_fielder1_id <- character(total_deliveries)
   del_fielder2_id <- character(total_deliveries)
+  del_fielder1_is_sub <- logical(total_deliveries)
+  del_fielder2_is_sub <- logical(total_deliveries)
   del_total_runs <- integer(total_deliveries)
   del_wickets_fallen <- integer(total_deliveries)
+
+  # Pre-allocate DRS review fields
+  del_has_review <- logical(total_deliveries)
+  del_review_by <- character(total_deliveries)
+  del_review_umpire <- character(total_deliveries)
+  del_review_batter <- character(total_deliveries)
+  del_review_decision <- character(total_deliveries)
+
+  # Pre-allocate player replacement fields
+  del_has_replacement <- logical(total_deliveries)
+  del_replacement_in <- character(total_deliveries)
+  del_replacement_out <- character(total_deliveries)
+  del_replacement_reason <- character(total_deliveries)
+  del_replacement_role <- character(total_deliveries)
 
   # Pre-allocate innings vectors (max 4 for Test)
   n_innings <- length(innings_data)
@@ -272,6 +319,13 @@ parse_all_data <- function(json_data, match_info) {
   inn_total_overs <- numeric(n_innings)
   inn_declared <- logical(n_innings)
   inn_forfeited <- logical(n_innings)
+  inn_target_runs <- integer(n_innings)
+  inn_target_overs <- integer(n_innings)
+  inn_is_super_over <- logical(n_innings)
+  inn_absent_hurt <- character(n_innings)
+
+  # List to collect powerplays across all innings
+  powerplays_list <- list()
 
   # Process all data in single pass
   delivery_idx <- 0
@@ -284,6 +338,22 @@ parse_all_data <- function(json_data, match_info) {
       match_info$team2
     } else {
       match_info$team1
+    }
+
+    # Extract powerplays for this innings
+    if (!is.null(inning$powerplays) && length(inning$powerplays) > 0) {
+      for (pp_idx in seq_along(inning$powerplays)) {
+        pp <- inning$powerplays[[pp_idx]]
+        powerplays_list[[length(powerplays_list) + 1]] <- data.frame(
+          powerplay_id = sprintf("%s_%d_%d", match_info$match_id, innings_num, pp_idx),
+          match_id = match_info$match_id,
+          innings = innings_num,
+          from_over = as.numeric(pp$from %||% NA_real_),
+          to_over = as.numeric(pp$to %||% NA_real_),
+          powerplay_type = pp$type %||% NA_character_,
+          stringsAsFactors = FALSE
+        )
+      }
     }
 
     innings_runs <- 0L
@@ -325,18 +395,55 @@ parse_all_data <- function(json_data, match_info) {
             fielder1_id <- NA_character_
             fielder2_id <- NA_character_
 
+            # Fielder substitute flags
+            fielder1_is_sub <- FALSE
+            fielder2_is_sub <- FALSE
+
             if (is_wicket) {
               innings_wickets <- innings_wickets + 1L
               w <- wickets[[1]]
               wicket_kind <- w$kind %||% NA_character_
-              player_out_id <- w$player_out %||% NA_character_
+              player_out_id <- get_player_id(w$player_out)
               fielders <- w$fielders
               if (!is.null(fielders) && length(fielders) > 0) {
-                fielder1_id <- fielders[[1]]$name %||% NA_character_
+                fielder1_id <- get_player_id(fielders[[1]]$name)
+                fielder1_is_sub <- isTRUE(fielders[[1]]$substitute)
                 if (length(fielders) >= 2) {
-                  fielder2_id <- fielders[[2]]$name %||% NA_character_
+                  fielder2_id <- get_player_id(fielders[[2]]$name)
+                  fielder2_is_sub <- isTRUE(fielders[[2]]$substitute)
                 }
               }
+            }
+
+            # Extract DRS review
+            review <- delivery$review
+            has_review <- !is.null(review)
+            review_by <- NA_character_
+            review_umpire <- NA_character_
+            review_batter <- NA_character_
+            review_decision <- NA_character_
+
+            if (has_review) {
+              review_by <- review$by %||% NA_character_
+              review_umpire <- review$umpire %||% NA_character_
+              review_batter <- get_player_id(review$batter)
+              review_decision <- review$decision %||% NA_character_
+            }
+
+            # Extract player replacement (concussion sub, impact player)
+            replacements <- delivery$replacements
+            has_replacement <- !is.null(replacements) && !is.null(replacements$role) && length(replacements$role) > 0
+            replacement_in <- NA_character_
+            replacement_out <- NA_character_
+            replacement_reason <- NA_character_
+            replacement_role <- NA_character_
+
+            if (has_replacement) {
+              repl <- replacements$role[[1]]
+              replacement_in <- get_player_id(repl$`in`)
+              replacement_out <- get_player_id(repl$out)
+              replacement_reason <- repl$reason %||% NA_character_
+              replacement_role <- repl$role %||% NA_character_
             }
 
             # Fill pre-allocated vectors (FAST!)
@@ -361,9 +468,9 @@ parse_all_data <- function(json_data, match_info) {
             del_over[delivery_idx] <- over_num
             del_ball[delivery_idx] <- ball_num
             del_over_ball[delivery_idx] <- over_num + ball_num / 10
-            del_batter_id[delivery_idx] <- delivery$batter %||% NA_character_
-            del_bowler_id[delivery_idx] <- delivery$bowler %||% NA_character_
-            del_non_striker_id[delivery_idx] <- delivery$non_striker %||% NA_character_
+            del_batter_id[delivery_idx] <- get_player_id(delivery$batter)
+            del_bowler_id[delivery_idx] <- get_player_id(delivery$bowler)
+            del_non_striker_id[delivery_idx] <- get_player_id(delivery$non_striker)
             del_runs_batter[delivery_idx] <- runs_batter
             del_runs_extras[delivery_idx] <- runs_extras
             del_runs_total[delivery_idx] <- runs_total
@@ -380,8 +487,24 @@ parse_all_data <- function(json_data, match_info) {
             del_player_out_id[delivery_idx] <- player_out_id
             del_fielder1_id[delivery_idx] <- fielder1_id
             del_fielder2_id[delivery_idx] <- fielder2_id
+            del_fielder1_is_sub[delivery_idx] <- fielder1_is_sub
+            del_fielder2_is_sub[delivery_idx] <- fielder2_is_sub
             del_total_runs[delivery_idx] <- innings_runs
             del_wickets_fallen[delivery_idx] <- innings_wickets
+
+            # DRS review fields
+            del_has_review[delivery_idx] <- has_review
+            del_review_by[delivery_idx] <- review_by
+            del_review_umpire[delivery_idx] <- review_umpire
+            del_review_batter[delivery_idx] <- review_batter
+            del_review_decision[delivery_idx] <- review_decision
+
+            # Player replacement fields
+            del_has_replacement[delivery_idx] <- has_replacement
+            del_replacement_in[delivery_idx] <- replacement_in
+            del_replacement_out[delivery_idx] <- replacement_out
+            del_replacement_reason[delivery_idx] <- replacement_reason
+            del_replacement_role[delivery_idx] <- replacement_role
           }
         }
       }
@@ -397,6 +520,22 @@ parse_all_data <- function(json_data, match_info) {
     inn_total_overs[innings_num] <- floor(innings_balls / 6) + (innings_balls %% 6) / 10
     inn_declared[innings_num] <- isTRUE(inning$declared)
     inn_forfeited[innings_num] <- isTRUE(inning$forfeited)
+
+    # Extract target (2nd innings only in limited overs)
+    target <- inning$target
+    inn_target_runs[innings_num] <- as.integer(target$runs %||% NA)
+    inn_target_overs[innings_num] <- as.integer(target$overs %||% NA)
+
+    # Super over flag
+    inn_is_super_over[innings_num] <- isTRUE(inning$super_over)
+
+    # Absent hurt players (as JSON string)
+    absent_hurt <- inning$absent_hurt
+    inn_absent_hurt[innings_num] <- if (!is.null(absent_hurt) && length(absent_hurt) > 0) {
+      as.character(jsonlite::toJSON(absent_hurt, auto_unbox = FALSE))
+    } else {
+      NA_character_
+    }
   }
 
   # Create data frames in SINGLE call (no rbind!)
@@ -434,6 +573,18 @@ parse_all_data <- function(json_data, match_info) {
     player_out_id = del_player_out_id,
     fielder1_id = del_fielder1_id,
     fielder2_id = del_fielder2_id,
+    fielder1_is_sub = del_fielder1_is_sub,
+    fielder2_is_sub = del_fielder2_is_sub,
+    has_review = del_has_review,
+    review_by = del_review_by,
+    review_umpire = del_review_umpire,
+    review_batter = del_review_batter,
+    review_decision = del_review_decision,
+    has_replacement = del_has_replacement,
+    replacement_in = del_replacement_in,
+    replacement_out = del_replacement_out,
+    replacement_reason = del_replacement_reason,
+    replacement_role = del_replacement_role,
     total_runs = del_total_runs,
     wickets_fallen = del_wickets_fallen,
     stringsAsFactors = FALSE
@@ -449,13 +600,33 @@ parse_all_data <- function(json_data, match_info) {
     total_overs = inn_total_overs,
     declared = inn_declared,
     forfeited = inn_forfeited,
+    target_runs = inn_target_runs,
+    target_overs = inn_target_overs,
+    is_super_over = inn_is_super_over,
+    absent_hurt = inn_absent_hurt,
     stringsAsFactors = FALSE
   )
+
+  # Combine powerplays from all innings
+  powerplays_df <- if (length(powerplays_list) > 0) {
+    do.call(rbind, powerplays_list)
+  } else {
+    data.frame(
+      powerplay_id = character(),
+      match_id = character(),
+      innings = integer(),
+      from_over = numeric(),
+      to_over = numeric(),
+      powerplay_type = character(),
+      stringsAsFactors = FALSE
+    )
+  }
 
   list(
     innings = innings_df,
     deliveries = deliveries_df,
-    players = extract_players(json_data$info$players)
+    players = extract_players(json_data$info$players, json_data$info$registry),
+    powerplays = powerplays_df
   )
 }
 
@@ -487,12 +658,14 @@ count_deliveries <- function(innings_data) {
 #' Extract Players
 #'
 #' Extracts player information from JSON with deduplication.
+#' Uses the registry to get unique player IDs when available.
 #'
 #' @param players_data Players section from JSON info
+#' @param registry Registry section from JSON info (contains unique player IDs)
 #'
 #' @return Data frame with player information
 #' @keywords internal
-extract_players <- function(players_data) {
+extract_players <- function(players_data, registry = NULL) {
   if (is.null(players_data)) {
     return(data.frame(
       player_id = character(),
@@ -504,6 +677,9 @@ extract_players <- function(players_data) {
       stringsAsFactors = FALSE
     ))
   }
+
+  # Get the people registry for unique IDs
+  people_registry <- registry$people
 
   # Pre-count for allocation
   n_players <- sum(vapply(players_data, length, integer(1)))
@@ -529,7 +705,12 @@ extract_players <- function(players_data) {
     team_players <- players_data[[team_name]]
     for (p in team_players) {
       idx <- idx + 1
-      player_id[idx] <- p
+      # Use registry ID if available, otherwise use name as fallback
+      if (!is.null(people_registry) && p %in% names(people_registry)) {
+        player_id[idx] <- people_registry[[p]]
+      } else {
+        player_id[idx] <- p  # Fallback to name if no registry
+      }
       player_name[idx] <- p
       country[idx] <- team_name
     }
@@ -547,6 +728,37 @@ extract_players <- function(players_data) {
 
   # Remove duplicates
   df[!duplicated(df$player_id), ]
+}
+
+
+# ============================================================================
+# JSON READING HELPERS
+# ============================================================================
+
+#' Check for RcppSimdJson Support
+#'
+#' Checks if the RcppSimdJson package is available for fast JSON parsing.
+#'
+#' @return Logical. TRUE if RcppSimdJson is available.
+#' @keywords internal
+has_simd_json <- function() {
+ requireNamespace("RcppSimdJson", quietly = TRUE)
+}
+
+#' Read JSON File with Best Available Parser
+#'
+#' Uses RcppSimdJson if available (5-15x faster), otherwise falls back to jsonlite.
+#'
+#' @param file_path Path to JSON file
+#'
+#' @return Parsed JSON as nested list
+#' @keywords internal
+read_json_fast <- function(file_path) {
+ if (has_simd_json()) {
+   RcppSimdJson::fload(file_path)
+ } else {
+   jsonlite::fromJSON(file_path, simplifyVector = FALSE)
+ }
 }
 
 

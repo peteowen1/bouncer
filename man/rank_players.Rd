@@ -2,7 +2,7 @@
 % Please edit documentation in R/player_metrics.R
 \name{rank_players}
 \alias{rank_players}
-\title{Rank Players by ELO}
+\title{Rank Players by ELO Rating}
 \usage{
 rank_players(
   rating_type = "batting",
@@ -14,16 +14,25 @@ rank_players(
 \arguments{
 \item{rating_type}{Character. "batting" or "bowling"}
 
-\item{match_type}{Character. Match type filter}
+\item{match_type}{Character. "all" for overall, or specific format: "t20", "odi", "test"}
 
-\item{top_n}{Integer. Number of players to return}
+\item{top_n}{Integer. Number of players to return (default 10)}
 
-\item{db_path}{Character. Database path}
+\item{db_path}{Character. Database path. If NULL, uses default.}
 }
 \value{
-Data frame with player rankings
+Data frame with columns: rank, player_id, elo_rating, last_match_date
 }
 \description{
-Returns top players ranked by ELO rating.
+Returns top players ranked by their most recent ELO rating.
+Requires local database with player_elo_history table.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+# Top 10 batters overall
+top_batters <- rank_players("batting", top_n = 10)
+
+# Top 20 T20 bowlers
+top_t20_bowlers <- rank_players("bowling", match_type = "t20", top_n = 20)
+}
+}

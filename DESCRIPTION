@@ -2,7 +2,7 @@ Package: bouncer
 Type: Package
 Title: Cricket Analytics with Player ELO Rating System
 Version: 0.1.0
-Authors@R: person("Your", "Name", email = "your.email@example.com",
+Authors@R: person("Pete", "Owen", email = "peteowen1@gmail.com",
                   role = c("aut", "cre"))
 Description: Advanced cricket analytics featuring a novel player ELO rating system.
     Calculates batting and bowling ELO ratings at the ball-by-ball level, with
@@ -12,13 +12,13 @@ Description: Advanced cricket analytics featuring a novel player ELO rating syst
     data management functions to download and parse cricket data from Cricsheet,
     storing it in a DuckDB database for efficient querying.
 License: MIT + file LICENSE
+Depends:
+    R (>= 4.1.0)
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:
-    DBI,
-    duckdb (>= 0.9.0),
     dplyr,
     rlang,
     cli,
@@ -28,14 +28,20 @@ Imports:
     tools,
     utils,
     stats,
-    slider
+    slider,
+    DBI
 Suggests:
+    duckdb (>= 0.9.0),
     arrow,
     chromote,
     curl,
     data.table,
+    furrr (>= 0.3.0),
+    future (>= 1.30.0),
     ggplot2,
     mgcv (>= 1.8-0),
+    progressr (>= 0.13.0),
+    RcppSimdJson,
     scales,
     tidyr,
     xgboost (>= 1.7.0),

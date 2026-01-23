@@ -2,14 +2,15 @@
 % Please edit documentation in R/fox_scraper.R
 \name{fox_discover_matches}
 \alias{fox_discover_matches}
-\title{Discover valid Test match IDs by enumeration}
+\title{Discover valid match IDs by enumeration}
 \usage{
 fox_discover_matches(
   browser,
   userkey,
+  format = "TEST",
   years = 2024:2025,
-  max_series = 15,
-  max_matches = 7,
+  max_series = NULL,
+  max_matches = NULL,
   output_dir = "../bouncerdata/fox_cricket",
   cache_file = NULL,
   verbose = TRUE
@@ -20,15 +21,17 @@ fox_discover_matches(
 
 \item{userkey}{Valid userkey}
 
+\item{format}{Cricket format code (default "TEST"). See fox_list_formats().}
+
 \item{years}{Vector of years to scan (default 2024:2025)}
 
-\item{max_series}{Maximum series number to check per year}
+\item{max_series}{Maximum series number to check per year (default: from format config)}
 
-\item{max_matches}{Maximum matches per series}
+\item{max_matches}{Maximum matches per series (default: from format config)}
 
-\item{output_dir}{Directory to check for existing .rds files (default: bouncerdata/fox_cricket)}
+\item{output_dir}{Base directory for match files (default: bouncerdata/fox_cricket)}
 
-\item{cache_file}{File to cache discovered match IDs (default: output_dir/discovered_matches.rds)}
+\item{cache_file}{File to cache discovered match IDs (default: format-specific)}
 
 \item{verbose}{Print progress messages}
 }
@@ -38,15 +41,15 @@ Character vector of valid match IDs
 \description{
 Tries both Fox Sports URL patterns:
 \itemize{
-\item Pattern A: TEST2025-260604 (hyphen + season suffix)
-\item Pattern B: TEST20250501 (no hyphen)
+\item Pattern A: \{PREFIX\}2025-260604 (hyphen + season suffix)
+\item Pattern B: \{PREFIX\}20250501 (no hyphen)
 }
 }
 \details{
 Caches discovered matches to avoid re-checking. Skips API calls for:
 \itemize{
 \item Matches already in cache file
-\item Matches with downloaded .rds files
+\item Matches with downloaded .rds or .parquet files
 }
 }
 \keyword{internal}

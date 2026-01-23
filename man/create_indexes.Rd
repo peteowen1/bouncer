@@ -4,10 +4,15 @@
 \alias{create_indexes}
 \title{Create Database Indexes}
 \usage{
-create_indexes(conn)
+create_indexes(conn, core_only = FALSE, verbose = TRUE)
 }
 \arguments{
 \item{conn}{A DuckDB connection object}
+
+\item{core_only}{Logical. If TRUE, only creates indexes on core tables
+(matches, deliveries, players). Default FALSE creates all indexes.}
+
+\item{verbose}{Logical. If TRUE, shows progress for each index group. Default TRUE.}
 }
 \value{
 Invisibly returns TRUE on success

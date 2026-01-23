@@ -187,6 +187,15 @@ utils::globalVariables(c(
   "bowler_balls_bowled"
 ))
 
+# Player metrics variables (from player_metrics.R)
+utils::globalVariables(c(
+  "player_out_id",
+  "balls_faced",
+  "runs_scored",
+  "wickets",
+  "balls_bowled"
+))
+
 # Venue skill index variables (from venue_skill_index.R)
 utils::globalVariables(c(
   "venue_run_rate",
@@ -200,6 +209,37 @@ utils::globalVariables(c(
   "is_boundary",
   "is_dot",
   "alias"
+))
+
+# JSON parser enhanced fields (from cricsheet_parser.R)
+utils::globalVariables(c(
+  # Match-level
+  "reserve_umpire",
+  "missing_data",
+  # Innings-level
+  "target_runs",
+  "target_overs",
+  "absent_hurt",
+  # Delivery-level: DRS review
+  "has_review",
+  "review_by",
+  "review_umpire",
+  "review_batter",
+  "review_decision",
+  # Delivery-level: substitute fielder flags
+  "fielder1_is_sub",
+  "fielder2_is_sub",
+  # Delivery-level: player replacement
+  "has_replacement",
+  "replacement_in",
+  "replacement_out",
+  "replacement_reason",
+  "replacement_role",
+  # Powerplays table
+  "powerplay_id",
+  "from_over",
+  "to_over",
+  "powerplay_type"
 ))
 
 # Pre-match features variables (from pre_match_features.R)
@@ -248,11 +288,23 @@ utils::globalVariables(c(
 
 # Pipeline state variables (from pipeline_state.R)
 utils::globalVariables(c(
+
   "step_name",
   "last_run_at",
   "last_match_count",
   "last_delivery_count"
 ))
+
+#' Check for Parallel Support
+#'
+#' Checks if the required packages for parallel file parsing are available.
+#'
+#' @return Logical. TRUE if future and furrr are available.
+#' @keywords internal
+has_parallel_support <- function() {
+  requireNamespace("future", quietly = TRUE) &&
+    requireNamespace("furrr", quietly = TRUE)
+}
 
 # Team skill variables (from team_skill_index.R and agnostic_model.R)
 utils::globalVariables(c(
