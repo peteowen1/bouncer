@@ -62,6 +62,7 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
   temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = TRUE)
 
   # Run SQL query with DuckDB
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
@@ -151,8 +152,8 @@ create_remote_connection <- function() {
                       release$tag_name)
 
   # Create DuckDB connection
-
-conn <- DBI::dbConnect(duckdb::duckdb())
+  check_duckdb_available()
+  conn <- DBI::dbConnect(duckdb::duckdb())
 
   # Install and load httpfs extension
   DBI::dbExecute(conn, "INSTALL httpfs")

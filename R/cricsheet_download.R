@@ -306,6 +306,8 @@ compare_zip_to_local <- function(zip_file, local_dir) {
 #'
 #' @param output_path Directory to extract files. If NULL, uses bouncerdata directory.
 #' @param keep_zip Logical. Keep the ZIP file after extraction. Default FALSE (saves ~93MB).
+#' @param fresh Logical. If TRUE, extracts all files (ignores existing). If FALSE (default),
+#'   only extracts new or changed files based on size comparison.
 #'
 #' @return List with:
 #'   - all_files: Character vector of all JSON file paths
