@@ -755,7 +755,9 @@ has_simd_json <- function() {
 #' @keywords internal
 read_json_fast <- function(file_path) {
  if (has_simd_json()) {
-   RcppSimdJson::fload(file_path)
+   # simplify_to=0 prevents array-to-vector simplification, keeping structure
+   # consistent with jsonlite's simplifyVector=FALSE behavior
+   RcppSimdJson::fload(file_path, simplify_to = 0)
  } else {
    jsonlite::fromJSON(file_path, simplifyVector = FALSE)
  }
