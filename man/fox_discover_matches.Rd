@@ -13,7 +13,8 @@ fox_discover_matches(
   max_matches = NULL,
   output_dir = "../bouncerdata/fox_cricket",
   cache_file = NULL,
-  verbose = TRUE
+  verbose = TRUE,
+  scan_for_new = TRUE
 )
 }
 \arguments{
@@ -34,6 +35,10 @@ fox_discover_matches(
 \item{cache_file}{File to cache discovered match IDs (default: format-specific)}
 
 \item{verbose}{Print progress messages}
+
+\item{scan_for_new}{If FALSE and cached matches exist, return them immediately without
+re-enumerating (fast path for already-scraped formats). If TRUE, scan all years for
+new matches. Default TRUE.}
 }
 \value{
 Character vector of valid match IDs
