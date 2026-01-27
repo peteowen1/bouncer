@@ -14,6 +14,6 @@ Character. Canonical format: "t20", "odi", or "test"
 }
 \description{
 Normalizes various format names to canonical form (t20, odi, test).
-Handles case insensitivity and common aliases.
+Handles case insensitivity, whitespace, and common aliases.
 }
 \keyword{internal}

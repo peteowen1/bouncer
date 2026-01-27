@@ -14,5 +14,6 @@ Character. Normalized match type ("test", "odi", or "t20")
 }
 \description{
 Normalizes match type strings to standard format.
+This is an alias for \code{normalize_format()} for backward compatibility.
 }
 \keyword{internal}

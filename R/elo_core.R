@@ -12,6 +12,12 @@
 #' @return Numeric value between 0 and 1 representing expected outcome
 #' @keywords internal
 calculate_expected_outcome <- function(player_elo, opponent_elo, divisor = ELO_DIVISOR) {
+  # Input validation - return 0.5 (neutral) for invalid inputs
+  if (is.na(player_elo) || is.na(opponent_elo) || is.na(divisor) ||
+      is.nan(player_elo) || is.nan(opponent_elo) || is.nan(divisor) ||
+      is.infinite(player_elo) || is.infinite(opponent_elo) || divisor == 0) {
+    return(0.5)
+  }
   1 / (1 + 10^((opponent_elo - player_elo) / divisor))
 }
 
@@ -27,6 +33,14 @@ calculate_expected_outcome <- function(player_elo, opponent_elo, divisor = ELO_D
 #' @return Numeric K-factor value
 #' @keywords internal
 calculate_k_factor <- function(match_type, player_matches = 0) {
+  # Input validation
+  if (is.null(match_type) || is.na(match_type) || !is.character(match_type)) {
+    match_type <- "t20"  # Default to T20
+  }
+  if (is.na(player_matches) || is.nan(player_matches) || is.infinite(player_matches) || player_matches < 0) {
+    player_matches <- 0
+  }
+
   # Base K-factor by match type
   match_type <- tolower(match_type)
 
@@ -64,6 +78,12 @@ calculate_k_factor <- function(match_type, player_matches = 0) {
 #' @return Numeric. New ELO rating
 #' @keywords internal
 calculate_elo_update <- function(current_elo, expected, actual, k_factor) {
+  # Input validation - return current ELO unchanged for invalid inputs
+  if (is.na(current_elo) || is.na(expected) || is.na(actual) || is.na(k_factor) ||
+      is.nan(current_elo) || is.nan(expected) || is.nan(actual) || is.nan(k_factor) ||
+      is.infinite(current_elo) || is.infinite(expected) || is.infinite(actual) || is.infinite(k_factor)) {
+    return(current_elo %||% ELO_START_RATING)
+  }
   current_elo + k_factor * (actual - expected)
 }
 
@@ -124,24 +144,15 @@ calculate_delivery_outcome_score <- function(runs_batter, is_wicket, is_boundary
 #' Normalize Match Type
 #'
 #' Normalizes match type strings to standard format.
+#' This is an alias for \code{normalize_format()} for backward compatibility.
 #'
 #' @param match_type Character. Raw match type string
 #'
 #' @return Character. Normalized match type ("test", "odi", or "t20")
 #' @keywords internal
 normalize_match_type <- function(match_type) {
-  match_type <- tolower(trimws(match_type))
-
-  if (match_type %in% c("test", "tests")) {
-    return("test")
-  } else if (match_type %in% c("odi", "odis", "mdm")) {
-    return("odi")
-  } else if (match_type %in% c("t20", "t20i", "it20", "t20s", "twenty20")) {
-    return("t20")
-  } else {
-    # Default to T20 for domestic leagues
-    return("t20")
-  }
+  # Delegate to normalize_format() for consistency
+  normalize_format(match_type)
 }
 
 

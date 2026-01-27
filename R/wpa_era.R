@@ -296,7 +296,7 @@ prepare_stage1_features <- function(data, feature_cols) {
 
   # Handle NA and Inf
   features[is.na(features)] <- 0
-  features[is.infinite(features)] <- 999
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
 
   return(features)
 }
@@ -335,7 +335,7 @@ prepare_stage2_features <- function(data, feature_cols) {
 
   # Handle NA and Inf
   features[is.na(features)] <- 0
-  features[is.infinite(features)] <- 999
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
 
   return(features)
 }

@@ -6,24 +6,32 @@
 #' Normalize Cricket Format Name
 #'
 #' Normalizes various format names to canonical form (t20, odi, test).
-#' Handles case insensitivity and common aliases.
+#' Handles case insensitivity, whitespace, and common aliases.
 #'
 #' @param format Character. Format name to normalize
 #'
 #' @return Character. Canonical format: "t20", "odi", or "test"
 #' @keywords internal
 normalize_format <- function(format) {
-  format_lower <- tolower(format)
+  format_lower <- tolower(trimws(format))
 
-  switch(format_lower,
-    "t20"  = "t20",
-    "it20" = "t20",
-    "odi"  = "odi",
-    "odm"  = "odi",
-    "test" = "test",
-    "mdm"  = "test",
-    "t20"  # default
-  )
+  # T20 variants
+  if (format_lower %in% c("t20", "t20i", "it20", "t20s", "twenty20")) {
+    return("t20")
+  }
+
+  # ODI variants
+  if (format_lower %in% c("odi", "odis", "odm")) {
+    return("odi")
+  }
+
+  # Test variants
+  if (format_lower %in% c("test", "tests", "mdm")) {
+    return("test")
+  }
+
+  # Default to T20 for domestic leagues and unknown formats
+  "t20"
 }
 
 

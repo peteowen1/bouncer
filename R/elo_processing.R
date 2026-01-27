@@ -144,6 +144,12 @@ load_deliveries_to_process <- function(conn, fresh, match_limit) {
   # Build query to get matches needing processing
   query <- build_delivery_query(conn, matches_with_elo, match_limit)
 
+  # Handle case where no matches need processing (query is NULL)
+  if (is.null(query)) {
+    cli::cli_alert_success("All matches already processed!")
+    return(NULL)
+  }
+
   deliveries <- DBI::dbGetQuery(conn, query)
 
   if (nrow(deliveries) == 0) {
@@ -493,29 +499,24 @@ show_elo_summary <- function(conn, player_state) {
   cli::cli_alert_info("Unique players: {length(player_state$player_batting_elos)}")
 
   # Show top 10 batters by batting ELO
-  top_batters <- head(
-    player_state$player_batting_elos[order(unlist(player_state$player_batting_elos), decreasing = TRUE)],
-    10
-  )
+  # Use data.frame for efficient sorting (avoids repeated unlist/order operations)
+  batting_elos <- unlist(player_state$player_batting_elos)
+  top_batter_idx <- order(batting_elos, decreasing = TRUE)[1:min(10, length(batting_elos))]
 
   cli::cli_h3("Top 10 Batters by Batting ELO")
-  for (i in seq_along(top_batters)) {
-    player_id <- names(top_batters)[i]
-    elo <- top_batters[[i]]
-    cli::cli_alert_info("{i}. {player_id}: {round(elo, 0)}")
+  for (i in seq_along(top_batter_idx)) {
+    idx <- top_batter_idx[i]
+    cli::cli_alert_info("{i}. {names(batting_elos)[idx]}: {round(batting_elos[idx], 0)}")
   }
 
   # Show top 10 bowlers by bowling ELO
-  top_bowlers <- head(
-    player_state$player_bowling_elos[order(unlist(player_state$player_bowling_elos), decreasing = TRUE)],
-    10
-  )
+  bowling_elos <- unlist(player_state$player_bowling_elos)
+  top_bowler_idx <- order(bowling_elos, decreasing = TRUE)[1:min(10, length(bowling_elos))]
 
   cli::cli_h3("Top 10 Bowlers by Bowling ELO")
-  for (i in seq_along(top_bowlers)) {
-    player_id <- names(top_bowlers)[i]
-    elo <- top_bowlers[[i]]
-    cli::cli_alert_info("{i}. {player_id}: {round(elo, 0)}")
+  for (i in seq_along(top_bowler_idx)) {
+    idx <- top_bowler_idx[i]
+    cli::cli_alert_info("{i}. {names(bowling_elos)[idx]}: {round(bowling_elos[idx], 0)}")
   }
 
   # Verify we can query ELOs

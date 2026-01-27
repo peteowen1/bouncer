@@ -368,4 +368,20 @@ PROJ_MAX_SCORE_ODI <- 450      # Maximum reasonable ODI projection
 PROJ_MIN_SCORE_TEST <- 80      # Minimum reasonable Test innings projection
 PROJ_MAX_SCORE_TEST <- 700     # Maximum reasonable Test innings projection
 
+# ============================================================================
+# PREDICTION CALCULATION CONSTANTS
+# ============================================================================
+
+# Maximum possible required run rate (6 runs per ball)
+MAX_REQUIRED_RUN_RATE <- 36
+
+# Placeholder for "effectively infinite" values in features
+# Used when calculations would produce Inf (e.g., runs_needed = 0)
+INF_FEATURE_PLACEHOLDER <- 999
+
+# Probability bounds for win probability calculations
+# Prevents extreme probabilities that cause numerical issues
+MIN_WIN_PROBABILITY <- 0.01
+MAX_WIN_PROBABILITY <- 0.99
+
 NULL

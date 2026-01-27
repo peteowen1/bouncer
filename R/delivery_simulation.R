@@ -395,7 +395,7 @@ create_default_batters <- function(n = 11, format = "t20") {
     skill_adj <- if (i <= 3) 0.1 else if (i <= 6) 0 else -0.1
 
     list(
-      batter_scoring_index = start_vals$runs_per_ball + skill_adj,
+      batter_scoring_index = start_vals$scoring_index + skill_adj,
       batter_survival_rate = start_vals$survival_rate + skill_adj * 0.01,
       batter_balls_faced = 0
     )
@@ -420,8 +420,8 @@ create_default_bowlers <- function(n = 6, format = "t20") {
     skill_adj <- if (i <= 3) -0.05 else 0.05
 
     list(
-      bowler_economy_index = start_vals$runs_per_ball + skill_adj,
-      bowler_strike_rate = (1 - start_vals$survival_rate) - skill_adj * 0.005,
+      bowler_economy_index = start_vals$economy_index + skill_adj,
+      bowler_strike_rate = start_vals$strike_rate - skill_adj * 0.005,
       bowler_balls_bowled = 0
     )
   })

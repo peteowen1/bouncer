@@ -25,7 +25,7 @@ calculate_expected_runs <- function(probs) {
   probs <- as.matrix(probs)
 
   if (ncol(probs) != 7) {
-    stop("probs must have 7 columns: (wicket, 0, 1, 2, 3, 4, 6)")
+    cli::cli_abort("probs must have 7 columns: (wicket, 0, 1, 2, 3, 4, 6)")
   }
 
   as.vector(probs %*% runs_values)
@@ -46,7 +46,7 @@ calculate_expected_wicket_prob <- function(probs) {
   probs <- as.matrix(probs)
 
   if (ncol(probs) < 1) {
-    stop("probs must have at least 1 column")
+    cli::cli_abort("probs must have at least 1 column")
   }
 
   probs[, 1]
@@ -95,12 +95,12 @@ predict_delivery_outcomes <- function(model,
   # Generate predictions based on model type
   if (model_type == "bam") {
     if (!requireNamespace("mgcv", quietly = TRUE)) {
-      stop("Package 'mgcv' is required for BAM models")
+      cli::cli_abort("Package {.pkg mgcv} is required for BAM models")
     }
     probs <- predict(model, newdata = pred_data, type = "response")
   } else {
     if (!requireNamespace("xgboost", quietly = TRUE)) {
-      stop("Package 'xgboost' is required for XGBoost models")
+      cli::cli_abort("Package {.pkg xgboost} is required for XGBoost models")
     }
 
     # Prepare feature matrix for XGBoost
@@ -463,15 +463,19 @@ load_outcome_model <- function(format = c("shortform", "longform"),
   if (model_type == "xgb") {
     model_file <- file.path(model_dir, sprintf("model_xgb_outcome_%s.json", format))
     if (!file.exists(model_file)) {
-      stop(sprintf("XGBoost model not found at: %s\nRun model_xgb_outcome_%s.R to train the model.",
-                   model_file, format))
+      cli::cli_abort(c(
+        "XGBoost model not found at: {.file {model_file}}",
+        "i" = "Run model_xgb_outcome_{format}.R to train the model."
+      ))
     }
     model <- xgboost::xgb.load(model_file)
   } else {
     model_file <- file.path(model_dir, sprintf("model_bam_outcome_%s.rds", format))
     if (!file.exists(model_file)) {
-      stop(sprintf("BAM model not found at: %s\nRun model_bam_outcome_%s.R to train the model.",
-                   model_file, format))
+      cli::cli_abort(c(
+        "BAM model not found at: {.file {model_file}}",
+        "i" = "Run model_bam_outcome_{format}.R to train the model."
+      ))
     }
     model <- readRDS(model_file)
   }

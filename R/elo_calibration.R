@@ -287,8 +287,7 @@ calculate_run_outcome_score <- function(runs, is_wicket, is_boundary = FALSE) {
 
   if (is_wicket) {
     return(RUN_SCORE_WICKET)  # 0.0
-
-}
+  }
 
   score <- switch(as.character(runs),
     "0" = RUN_SCORE_DOT,      # 0.15

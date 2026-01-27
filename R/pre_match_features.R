@@ -408,13 +408,13 @@ prepare_prediction_features <- function(df) {
       elo_diff_roster = team1_elo_roster - team2_elo_roster,
 
       # Raw ELO values (scaled to be centered around 0)
-      team1_elo_scaled = (team1_elo_result - 1500) / 100,
-      team2_elo_scaled = (team2_elo_result - 1500) / 100,
-      team1_roster_scaled = (team1_elo_roster - 1500) / 100,
-      team2_roster_scaled = (team2_elo_roster - 1500) / 100,
+      team1_elo_scaled = (team1_elo_result - ELO_START_RATING) / 100,
+      team2_elo_scaled = (team2_elo_result - ELO_START_RATING) / 100,
+      team1_roster_scaled = (team1_elo_roster - ELO_START_RATING) / 100,
+      team2_roster_scaled = (team2_elo_roster - ELO_START_RATING) / 100,
 
       # Average match quality (higher = stronger teams)
-      match_quality = (team1_elo_result + team2_elo_result) / 2 - 1500,
+      match_quality = (team1_elo_result + team2_elo_result) / 2 - ELO_START_RATING,
 
       # Form features
       form_diff = dplyr::coalesce(team1_form_last5, 0.5) - dplyr::coalesce(team2_form_last5, 0.5),
@@ -652,13 +652,13 @@ get_prediction_feature_cols_full <- function(include_margin = TRUE) {
 get_team_elo_fast <- function(team, as_of_date, team_elo_dt) {
   idx <- which(team_elo_dt$team_id == team & team_elo_dt$match_date < as_of_date)
   if (length(idx) == 0) {
-    return(list(elo_result = 1500, elo_roster = 1500))
+    return(list(elo_result = ELO_START_RATING, elo_roster = ELO_START_RATING))
   }
   subset_dt <- team_elo_dt[idx, , drop = FALSE]
   best_idx <- which.max(subset_dt$match_date)
   list(
     elo_result = subset_dt$elo_result[best_idx],
-    elo_roster = subset_dt$elo_roster_combined[best_idx] %||% 1500
+    elo_roster = subset_dt$elo_roster_combined[best_idx] %||% ELO_START_RATING
   )
 }
 

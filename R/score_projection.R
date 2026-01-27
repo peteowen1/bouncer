@@ -1391,27 +1391,15 @@ calculate_all_delivery_projections <- function(conn, format,
     }
 
     # Calculate projection changes (requires ordering within innings)
-    batch_data <- batch_data[order(batch_data$match_id, batch_data$innings, batch_data$delivery_id), ]
-
-    batch_data$projection_change_agnostic <- NA_real_
-    batch_data$projection_change_full <- NA_real_
-
-    # Group by match_id + innings and calculate deltas
-    for (mid in unique(batch_data$match_id)) {
-      for (inn in unique(batch_data$innings[batch_data$match_id == mid])) {
-        mask <- batch_data$match_id == mid & batch_data$innings == inn
-
-        if (sum(mask) > 1) {
-          projs <- batch_data$projected_agnostic[mask]
-          changes <- c(NA, diff(projs))
-          batch_data$projection_change_agnostic[mask] <- changes
-
-          projs_full <- batch_data$projected_full[mask]
-          changes_full <- c(NA, diff(projs_full))
-          batch_data$projection_change_full[mask] <- changes_full
-        }
-      }
-    }
+    # Use vectorized dplyr operations instead of nested loops (O(n) vs O(n²))
+    batch_data <- batch_data %>%
+      dplyr::arrange(match_id, innings, delivery_id) %>%
+      dplyr::group_by(match_id, innings) %>%
+      dplyr::mutate(
+        projection_change_agnostic = c(NA_real_, diff(projected_agnostic)),
+        projection_change_full = c(NA_real_, diff(projected_full))
+      ) %>%
+      dplyr::ungroup()
 
     # Prepare for insertion
     insert_data <- data.frame(

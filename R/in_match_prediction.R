@@ -224,14 +224,20 @@ predict_win_probability <- function(current_score,
     feature_data$required_run_rate <- if (overs_remaining > 0) {
       feature_data$runs_needed / overs_remaining
     } else {
-      if (feature_data$runs_needed <= 0) 0 else Inf
+      if (feature_data$runs_needed <= 0) 0 else MAX_REQUIRED_RUN_RATE
     }
+    # Clamp required_run_rate to reasonable maximum
+    feature_data$required_run_rate <- min(feature_data$required_run_rate, MAX_REQUIRED_RUN_RATE)
+
     feature_data$rr_differential <- feature_data$required_run_rate - feature_data$current_run_rate
     feature_data$balls_per_run_needed <- if (feature_data$runs_needed > 0) {
       balls_remaining / feature_data$runs_needed
     } else {
-      Inf
+      INF_FEATURE_PLACEHOLDER  # Effectively infinite (already won)
     }
+    # Clamp balls_per_run_needed to reasonable maximum
+    feature_data$balls_per_run_needed <- min(feature_data$balls_per_run_needed, INF_FEATURE_PLACEHOLDER)
+
     feature_data$balls_per_wicket_available <- if (feature_data$wickets_in_hand > 0) {
       balls_remaining / feature_data$wickets_in_hand
     } else {
@@ -392,7 +398,7 @@ calculate_projected_score_from_model <- function(data, model, feature_cols, form
 
   # Handle NA/Inf
   features[is.na(features)] <- 0
-  features[is.infinite(features)] <- 999
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
 
   # Predict
   if (requireNamespace("xgboost", quietly = TRUE)) {
@@ -437,7 +443,7 @@ calculate_chase_win_prob <- function(data, model, feature_cols) {
 
   # Handle NA/Inf
   features[is.na(features)] <- 0
-  features[is.infinite(features)] <- 999
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
 
   # Predict
   if (requireNamespace("xgboost", quietly = TRUE)) {

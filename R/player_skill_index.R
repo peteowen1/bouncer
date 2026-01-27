@@ -548,6 +548,9 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
     return(NULL)
   }
 
+  # Escape player_id to prevent SQL injection
+  player_id_escaped <- escape_sql_strings(player_id)
+
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -560,7 +563,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
       WHERE batter_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, player_id))
+    ", table_name, player_id_escaped))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -573,7 +576,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
       WHERE bowler_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, player_id))
+    ", table_name, player_id_escaped))
   }
 
   if (nrow(result) == 0) {
@@ -603,6 +606,9 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
     return(NULL)
   }
 
+  # Escape player_ids to prevent SQL injection
+  player_ids_escaped <- escape_sql_strings(player_ids)
+
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
       WITH ranked AS (
@@ -619,7 +625,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
       SELECT player_id, scoring_index, survival_rate, balls, match_date
       FROM ranked
       WHERE rn = 1
-    ", table_name, paste(player_ids, collapse = "','")))
+    ", table_name, paste(player_ids_escaped, collapse = "','")))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       WITH ranked AS (
@@ -636,7 +642,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
       SELECT player_id, economy_index, strike_rate, balls, match_date
       FROM ranked
       WHERE rn = 1
-    ", table_name, paste(player_ids, collapse = "','")))
+    ", table_name, paste(player_ids_escaped, collapse = "','")))
   }
 
   result
@@ -670,10 +676,10 @@ add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing
 
     result <- result %>%
       dplyr::mutate(
-        batter_scoring_index = dplyr::coalesce(batter_scoring_index, start_vals$runs),
-        batter_survival_rate = dplyr::coalesce(batter_survival_rate, start_vals$survival),
-        bowler_economy_index = dplyr::coalesce(bowler_economy_index, start_vals$runs),
-        bowler_strike_rate = dplyr::coalesce(bowler_strike_rate, 1 - start_vals$survival),
+        batter_scoring_index = dplyr::coalesce(batter_scoring_index, start_vals$scoring_index),
+        batter_survival_rate = dplyr::coalesce(batter_survival_rate, start_vals$survival_rate),
+        bowler_economy_index = dplyr::coalesce(bowler_economy_index, start_vals$economy_index),
+        bowler_strike_rate = dplyr::coalesce(bowler_strike_rate, start_vals$strike_rate),
         batter_balls_faced = dplyr::coalesce(batter_balls_faced, 0L),
         bowler_balls_bowled = dplyr::coalesce(bowler_balls_bowled, 0L)
       )

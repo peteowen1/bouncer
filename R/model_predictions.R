@@ -45,13 +45,13 @@ add_predictions_to_deliveries <- function(model_path,
   cli::cli_h2("Loading model")
   if (model_type == "bam") {
     if (!requireNamespace("mgcv", quietly = TRUE)) {
-      stop("Package 'mgcv' is required for BAM models. Please install it.")
+      cli::cli_abort("Package {.pkg mgcv} is required for BAM models. Please install it.")
     }
     model <- readRDS(model_path)
     cli::cli_alert_success("Loaded BAM model from {.file {model_path}}")
   } else {
     if (!requireNamespace("xgboost", quietly = TRUE)) {
-      stop("Package 'xgboost' is required for XGBoost models. Please install it.")
+      cli::cli_abort("Package {.pkg xgboost} is required for XGBoost models. Please install it.")
     }
     model <- xgboost::xgb.load(model_path)
     cli::cli_alert_success("Loaded XGBoost model from {.file {model_path}}")
@@ -258,23 +258,39 @@ add_predictions_to_deliveries <- function(model_path,
       pred_probs <- predict(model, dmat)
     }
 
-    # Update database with predictions for this batch
-    for (i in 1:nrow(batch_data)) {
-      delivery_id <- batch_data$delivery_id[i]
+    # Bulk update database with predictions for this batch
+    # Build a data frame with predictions to bulk insert via temp table
+    pred_df <- data.frame(
+      delivery_id = batch_data$delivery_id,
+      stringsAsFactors = FALSE
+    )
 
-      # Build UPDATE statement
-      updates <- paste0(
-        column_prefix, "_", outcome_labels, " = ", pred_probs[i, ],
-        collapse = ", "
-      )
-
-      update_sql <- sprintf(
-        "UPDATE deliveries SET %s WHERE delivery_id = '%s'",
-        updates, delivery_id
-      )
-
-      DBI::dbExecute(conn, update_sql)
+    # Add prediction columns
+    for (j in seq_along(outcome_labels)) {
+      col_name <- paste0(column_prefix, "_", outcome_labels[j])
+      pred_df[[col_name]] <- pred_probs[, j]
     }
+
+    # Use temporary table for bulk UPDATE (100-1000x faster than row-by-row)
+    temp_table <- paste0("temp_preds_", batch_num)
+    DBI::dbWriteTable(conn, temp_table, pred_df, temporary = TRUE, overwrite = TRUE)
+
+    # Build UPDATE statement using JOIN with temp table
+    update_cols <- paste0(
+      column_prefix, "_", outcome_labels,
+      " = ", temp_table, ".", column_prefix, "_", outcome_labels,
+      collapse = ", "
+    )
+
+    update_sql <- sprintf(
+      "UPDATE deliveries SET %s FROM %s WHERE deliveries.delivery_id = %s.delivery_id",
+      update_cols, temp_table, temp_table
+    )
+
+    DBI::dbExecute(conn, update_sql)
+
+    # Drop temp table
+    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", temp_table))
 
     cli::cli_progress_update()
   }

@@ -42,14 +42,14 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
   model_file <- file.path(model_dir, sprintf("agnostic_outcome_%s.ubj", format))
 
   if (!file.exists(model_file)) {
-    stop(sprintf(
-      "Agnostic model not found at: %s\nRun data-raw/models/ball-outcome/01_train_agnostic_model.R first.",
-      model_file
+    cli::cli_abort(c(
+      "Agnostic model not found at: {.file {model_file}}",
+      "i" = "Run data-raw/models/ball-outcome/01_train_agnostic_model.R first."
     ))
   }
 
   if (!requireNamespace("xgboost", quietly = TRUE)) {
-    stop("Package 'xgboost' is required. Please install it.")
+    cli::cli_abort("Package {.pkg xgboost} is required. Please install it.")
   }
 
   model <- xgboost::xgb.load(model_file)
@@ -81,7 +81,7 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
   format <- match.arg(format)
 
   if (!requireNamespace("xgboost", quietly = TRUE)) {
-    stop("Package 'xgboost' is required. Please install it.")
+    cli::cli_abort("Package {.pkg xgboost} is required. Please install it.")
   }
 
   # Prepare features for agnostic model
@@ -92,7 +92,10 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
   probs <- predict(model, dmat)
 
   # Ensure probabilities sum to 1 (numerical precision fix)
-  probs <- probs / rowSums(probs)
+  # Guard against division by zero (can happen with degenerate inputs)
+  row_sums <- rowSums(probs)
+  row_sums[row_sums == 0] <- 1  # Prevent division by zero; these rows will have uniform probs
+  probs <- probs / row_sums
 
   return(probs)
 }
@@ -163,11 +166,11 @@ calculate_agnostic_residuals <- function(model, delivery_data, format = c("t20",
   } else if ("runs_total" %in% names(delivery_data)) {
     delivery_data$runs_total
   } else {
-    stop("delivery_data must have 'runs_batter' or 'runs_total' column")
+    cli::cli_abort("delivery_data must have {.field runs_batter} or {.field runs_total} column")
   }
 
   if (!"is_wicket" %in% names(delivery_data)) {
-    stop("delivery_data must have 'is_wicket' column")
+    cli::cli_abort("delivery_data must have {.field is_wicket} column")
   }
   actual_wicket <- as.integer(delivery_data$is_wicket)
 
@@ -222,14 +225,14 @@ load_full_model <- function(format = c("t20", "odi", "test"),
   model_file <- file.path(model_dir, sprintf("full_outcome_%s.ubj", format))
 
   if (!file.exists(model_file)) {
-    stop(sprintf(
-      "Full model not found at: %s\nRun data-raw/models/ball-outcome/02_train_full_model.R first.",
-      model_file
+    cli::cli_abort(c(
+      "Full model not found at: {.file {model_file}}",
+      "i" = "Run data-raw/models/ball-outcome/02_train_full_model.R first."
     ))
   }
 
   if (!requireNamespace("xgboost", quietly = TRUE)) {
-    stop("Package 'xgboost' is required. Please install it.")
+    cli::cli_abort("Package {.pkg xgboost} is required. Please install it.")
   }
 
   model <- xgboost::xgb.load(model_file)
@@ -260,7 +263,7 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
   format <- match.arg(format)
 
   if (!requireNamespace("xgboost", quietly = TRUE)) {
-    stop("Package 'xgboost' is required. Please install it.")
+    cli::cli_abort("Package {.pkg xgboost} is required. Please install it.")
   }
 
   # Prepare features for full model
@@ -271,7 +274,10 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
   probs <- predict(model, dmat)
 
   # Ensure probabilities sum to 1 (numerical precision fix)
-  probs <- probs / rowSums(probs)
+  # Guard against division by zero (can happen with degenerate inputs)
+  row_sums <- rowSums(probs)
+  row_sums[row_sums == 0] <- 1  # Prevent division by zero; these rows will have uniform probs
+  probs <- probs / row_sums
 
   return(probs)
 }
@@ -328,12 +334,13 @@ prepare_full_features <- function(df, format) {
     df$over_ball <- df$over + df$ball / 6
   }
 
-  # Fill missing skill indices with neutral values
+  # Fill missing skill indices with neutral values from constants
   # Player skills - use starting values if missing
-  df$batter_scoring_index <- dplyr::coalesce(df$batter_scoring_index, 1.25)
-  df$batter_survival_rate <- dplyr::coalesce(df$batter_survival_rate, 0.975)
-  df$bowler_economy_index <- dplyr::coalesce(df$bowler_economy_index, 1.25)
-  df$bowler_strike_rate <- dplyr::coalesce(df$bowler_strike_rate, 0.025)
+  player_start_vals <- get_skill_start_values(format)
+  df$batter_scoring_index <- dplyr::coalesce(df$batter_scoring_index, player_start_vals$scoring_index)
+  df$batter_survival_rate <- dplyr::coalesce(df$batter_survival_rate, player_start_vals$survival_rate)
+  df$bowler_economy_index <- dplyr::coalesce(df$bowler_economy_index, player_start_vals$economy_index)
+  df$bowler_strike_rate <- dplyr::coalesce(df$bowler_strike_rate, player_start_vals$strike_rate)
   df$batter_balls_faced <- dplyr::coalesce(df$batter_balls_faced, 0)
   df$bowler_balls_bowled <- dplyr::coalesce(df$bowler_balls_bowled, 0)
 

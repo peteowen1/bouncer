@@ -74,6 +74,17 @@ validate_format <- function(format, allow_null = TRUE) {
 get_player <- function(name_or_id, format = NULL,
                        source = c("local", "remote"), db_path = NULL) {
 
+  # Validate inputs early
+  if (missing(name_or_id) || is.null(name_or_id)) {
+    cli::cli_abort("name_or_id is required")
+  }
+  if (!is.character(name_or_id) || length(name_or_id) != 1) {
+    cli::cli_abort("name_or_id must be a single character string")
+  }
+  if (nchar(trimws(name_or_id)) == 0) {
+    cli::cli_abort("name_or_id cannot be empty")
+  }
+
   source <- match.arg(source)
 
   # Validate format if provided
@@ -141,10 +152,14 @@ get_player_remote <- function(name_or_id, format = NULL) {
 
   cli::cli_alert_info("Looking up player from remote...")
 
+  # Helper to escape single quotes (SQL injection prevention)
+  escape_sql <- function(x) gsub("'", "''", x)
+  name_escaped <- escape_sql(name_or_id)
+
   # Query players table
   sql_exact <- sprintf(
     "SELECT * FROM {table} WHERE player_id = '%s' OR LOWER(player_name) = LOWER('%s') LIMIT 1",
-    name_or_id, name_or_id
+    name_escaped, name_escaped
   )
 
   player <- tryCatch({
@@ -157,7 +172,7 @@ get_player_remote <- function(name_or_id, format = NULL) {
   if (nrow(player) == 0) {
     sql_fuzzy <- sprintf(
       "SELECT * FROM {table} WHERE LOWER(player_name) LIKE LOWER('%%%s%%') ORDER BY player_name LIMIT 1",
-      name_or_id
+      name_escaped
     )
     player <- tryCatch({
       query_remote_parquet("players", sql_fuzzy)
@@ -181,13 +196,14 @@ get_player_remote <- function(name_or_id, format = NULL) {
     }, error = function(e) character(0))
 
     if (skill_table %in% available) {
+      player_id_escaped <- escape_sql(player$player_id)
       skill_sql <- sprintf(
         "SELECT batter_scoring_index, batter_survival_rate, bowler_economy_index, bowler_strike_rate, delivery_id
          FROM {table}
          WHERE batter_id = '%s' OR bowler_id = '%s'
          ORDER BY delivery_id DESC
          LIMIT 1",
-        player$player_id, player$player_id
+        player_id_escaped, player_id_escaped
       )
       skills <- tryCatch({
         query_remote_parquet(skill_table, skill_sql)
@@ -220,6 +236,12 @@ build_player_result <- function(player, skills, format) {
 }
 
 
+#' Print Method for bouncer_player Objects
+#'
+#' @param x A bouncer_player object from \code{get_player()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_player <- function(x, ...) {
   cli::cli_h2("{x$player_name}")
@@ -298,6 +320,12 @@ analyze_player <- function(name_or_id, format = NULL, db_path = NULL) {
 }
 
 
+#' Print Method for bouncer_player_analysis Objects
+#'
+#' @param x A bouncer_player_analysis object from \code{analyze_player()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_player_analysis <- function(x, ...) {
   format_label <- if (is.null(x$format)) "All Formats" else toupper(x$format)
@@ -376,6 +404,12 @@ compare_players <- function(player1, player2, format = "t20", db_path = NULL) {
 }
 
 
+#' Print Method for bouncer_player_comparison Objects
+#'
+#' @param x A bouncer_player_comparison object from \code{compare_players()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_player_comparison <- function(x, ...) {
   cli::cli_h1("Player Comparison ({toupper(x$format)})")
@@ -436,6 +470,22 @@ print.bouncer_player_comparison <- function(x, ...) {
 #' print(india)
 #' }
 get_team <- function(name, format = NULL, db_path = NULL) {
+
+ # Validate inputs
+  if (missing(name) || is.null(name)) {
+    cli::cli_abort("name is required")
+  }
+  if (!is.character(name) || length(name) != 1) {
+    cli::cli_abort("name must be a single character string")
+  }
+  if (nchar(trimws(name)) == 0) {
+    cli::cli_abort("name cannot be empty")
+  }
+
+  # Validate format if provided
+  if (!is.null(format)) {
+    format <- validate_format(format, allow_null = TRUE)
+  }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
@@ -511,6 +561,12 @@ get_team <- function(name, format = NULL, db_path = NULL) {
 }
 
 
+#' Print Method for bouncer_team Objects
+#'
+#' @param x A bouncer_team object from \code{get_team()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_team <- function(x, ...) {
   format_label <- if (is.null(x$format)) "Latest" else toupper(x$format)
@@ -548,6 +604,23 @@ print.bouncer_team <- function(x, ...) {
 #' }
 compare_teams <- function(team1, team2, format = "t20", neutral_venue = TRUE, db_path = NULL) {
 
+  # Validate inputs
+  if (missing(team1) || is.null(team1)) {
+    cli::cli_abort("team1 is required")
+  }
+  if (missing(team2) || is.null(team2)) {
+    cli::cli_abort("team2 is required")
+  }
+  if (!is.character(team1) || length(team1) != 1 || nchar(trimws(team1)) == 0) {
+    cli::cli_abort("team1 must be a non-empty character string")
+  }
+  if (!is.character(team2) || length(team2) != 1 || nchar(trimws(team2)) == 0) {
+    cli::cli_abort("team2 must be a non-empty character string")
+  }
+
+  # Validate format
+  format <- validate_format(format, allow_null = FALSE)
+
   t1 <- get_team(team1, format = format, db_path = db_path)
   t2 <- get_team(team2, format = format, db_path = db_path)
 
@@ -575,6 +648,12 @@ compare_teams <- function(team1, team2, format = "t20", neutral_venue = TRUE, db
 }
 
 
+#' Print Method for bouncer_team_comparison Objects
+#'
+#' @param x A bouncer_team_comparison object from \code{compare_teams()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_team_comparison <- function(x, ...) {
   cli::cli_h1("Team Matchup ({toupper(x$format)})")
@@ -614,6 +693,17 @@ print.bouncer_team_comparison <- function(x, ...) {
 #' print(match)
 #' }
 analyze_match <- function(match_id, db_path = NULL) {
+
+  # Validate inputs
+  if (missing(match_id) || is.null(match_id)) {
+    cli::cli_abort("match_id is required")
+  }
+  if (!is.character(match_id) || length(match_id) != 1) {
+    cli::cli_abort("match_id must be a single character string")
+  }
+  if (nchar(trimws(match_id)) == 0) {
+    cli::cli_abort("match_id cannot be empty")
+  }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
@@ -677,6 +767,12 @@ analyze_match <- function(match_id, db_path = NULL) {
 }
 
 
+#' Print Method for bouncer_match Objects
+#'
+#' @param x A bouncer_match object from \code{analyze_match()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_match <- function(x, ...) {
   m <- x$match_info
@@ -753,6 +849,23 @@ print.bouncer_match <- function(x, ...) {
 #' }
 predict_match <- function(team1, team2, format = "t20", venue = NULL, db_path = NULL) {
 
+  # Validate inputs
+  if (missing(team1) || is.null(team1)) {
+    cli::cli_abort("team1 is required")
+  }
+  if (missing(team2) || is.null(team2)) {
+    cli::cli_abort("team2 is required")
+  }
+  if (!is.character(team1) || length(team1) != 1 || nchar(trimws(team1)) == 0) {
+    cli::cli_abort("team1 must be a non-empty character string")
+  }
+  if (!is.character(team2) || length(team2) != 1 || nchar(trimws(team2)) == 0) {
+    cli::cli_abort("team2 must be a non-empty character string")
+  }
+
+  # Validate format
+  format <- validate_format(format, allow_null = FALSE)
+
   # Get team ELOs
   t1 <- get_team(team1, format = format, db_path = db_path)
   t2 <- get_team(team2, format = format, db_path = db_path)
@@ -788,6 +901,12 @@ predict_match <- function(team1, team2, format = "t20", venue = NULL, db_path = 
 }
 
 
+#' Print Method for bouncer_prediction Objects
+#'
+#' @param x A bouncer_prediction object from \code{predict_match()}
+#' @param ... Additional arguments (ignored)
+#'
+#' @return Invisibly returns the input object
 #' @export
 print.bouncer_prediction <- function(x, ...) {
   cli::cli_h1("Match Prediction")
@@ -843,6 +962,17 @@ print.bouncer_prediction <- function(x, ...) {
 #' search_players("Smith")
 #' }
 search_players <- function(pattern, limit = 10, db_path = NULL) {
+
+  # Validate inputs early
+  if (missing(pattern) || is.null(pattern)) {
+    cli::cli_abort("pattern is required")
+  }
+  if (!is.character(pattern) || length(pattern) != 1) {
+    cli::cli_abort("pattern must be a single character string")
+  }
+  if (!is.numeric(limit) || limit < 1) {
+    cli::cli_abort("limit must be a positive number")
+  }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))

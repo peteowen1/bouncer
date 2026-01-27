@@ -212,13 +212,19 @@ install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
     cli::cli_alert_info("Downloading {zip_name} ({round(size_mb, 1)} MB)...")
 
     temp_zip <- tempfile(fileext = ".zip")
-    download_release_asset(asset$browser_download_url, temp_zip)
 
-    # Extract to json_dir
-    folder_path <- file.path(json_dir, folder)
-    dir.create(folder_path, showWarnings = FALSE, recursive = TRUE)
-    zip::unzip(temp_zip, exdir = folder_path)
-    file.remove(temp_zip)
+    # Use tryCatch to ensure temp file cleanup on error
+    tryCatch({
+      download_release_asset(asset$browser_download_url, temp_zip)
+
+      # Extract to json_dir
+      folder_path <- file.path(json_dir, folder)
+      dir.create(folder_path, showWarnings = FALSE, recursive = TRUE)
+      zip::unzip(temp_zip, exdir = folder_path)
+    }, finally = {
+      # Always clean up temp file
+      if (file.exists(temp_zip)) unlink(temp_zip)
+    })
 
     n_files <- length(list.files(folder_path, pattern = "\\.json$"))
     cli::cli_alert_success("{folder}: {n_files} matches")
@@ -310,8 +316,10 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
   release <- get_latest_release(repo, type = "cricsheet")
   cli::cli_alert_success("Found release: {release$tag_name}")
 
-  # Download each table
-  downloaded <- character()
+  # Download each table (use list to avoid O(n²) vector growth)
+  downloaded_list <- vector("list", length(tables))
+  download_idx <- 0L
+
   for (table in tables) {
     parquet_name <- paste0(table, ".parquet")
 
@@ -336,8 +344,12 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
     download_release_asset(asset$browser_download_url, dest_path)
 
     cli::cli_alert_success("Downloaded: {parquet_name}")
-    downloaded <- c(downloaded, dest_path)
+    download_idx <- download_idx + 1L
+    downloaded_list[[download_idx]] <- dest_path
   }
+
+  # Convert list to vector (efficient: single allocation)
+  downloaded <- unlist(downloaded_list[seq_len(download_idx)])
 
   cli::cli_alert_success("Downloaded {length(downloaded)} parquet files to {data_dir}")
 
