@@ -30,6 +30,10 @@ articles:
     - predictions
     - simulation
 
+  - title: Reference
+    contents:
+    - database-schema
+
 reference:
   - title: Data Installation
     desc: Install and update cricket data
