@@ -185,6 +185,7 @@ reference:
     - get_remote_tables
     - clear_remote_cache
     - clear_manifest_cache
+    - fox_list_formats
 
   - title: Utilities
     desc: Additional helper functions
@@ -193,3 +194,14 @@ reference:
     - get_all_data_folders
     - add_prediction_tables
     - list_available_formats
+
+  - title: S3 Methods
+    desc: Print methods for bouncer objects
+    contents:
+    - print.bouncer_match
+    - print.bouncer_player
+    - print.bouncer_player_analysis
+    - print.bouncer_player_comparison
+    - print.bouncer_prediction
+    - print.bouncer_team
+    - print.bouncer_team_comparison
