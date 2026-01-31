@@ -992,6 +992,248 @@ create_schema <- function(conn, verbose = TRUE) {
     )
   ")
 
+  # ============================================================================
+  # 3-WAY ELO TABLES (Batter + Bowler + Venue)
+  # ============================================================================
+
+  # Create T20 3-way ELO table
+  log_table("t20_3way_elo")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS t20_3way_elo (
+      delivery_id VARCHAR PRIMARY KEY,
+      match_id VARCHAR,
+      match_date DATE,
+      batter_id VARCHAR,
+      bowler_id VARCHAR,
+      venue VARCHAR,
+
+      -- Player Run ELOs (before/after)
+      batter_run_elo_before DOUBLE,
+      batter_run_elo_after DOUBLE,
+      bowler_run_elo_before DOUBLE,
+      bowler_run_elo_after DOUBLE,
+
+      -- Player Wicket ELOs (before/after)
+      batter_wicket_elo_before DOUBLE,
+      batter_wicket_elo_after DOUBLE,
+      bowler_wicket_elo_before DOUBLE,
+      bowler_wicket_elo_after DOUBLE,
+
+      -- Venue PERMANENT ELOs (slow-changing ground characteristics)
+      venue_perm_run_elo_before DOUBLE,
+      venue_perm_run_elo_after DOUBLE,
+      venue_perm_wicket_elo_before DOUBLE,
+      venue_perm_wicket_elo_after DOUBLE,
+
+      -- Venue SESSION ELOs (day-specific conditions, resets each match)
+      venue_session_run_elo_before DOUBLE,
+      venue_session_run_elo_after DOUBLE,
+      venue_session_wicket_elo_before DOUBLE,
+      venue_session_wicket_elo_after DOUBLE,
+
+      -- K-factors used (for analysis/debugging)
+      k_batter_run DOUBLE,
+      k_bowler_run DOUBLE,
+      k_venue_perm_run DOUBLE,
+      k_venue_session_run DOUBLE,
+      k_batter_wicket DOUBLE,
+      k_bowler_wicket DOUBLE,
+      k_venue_perm_wicket DOUBLE,
+      k_venue_session_wicket DOUBLE,
+
+      -- Predictions vs actuals
+      exp_runs DOUBLE,
+      exp_wicket DOUBLE,
+      actual_runs INTEGER,
+      is_wicket BOOLEAN,
+
+      -- Ball counts & context
+      batter_balls INTEGER,
+      bowler_balls INTEGER,
+      venue_balls INTEGER,
+      balls_in_match INTEGER,
+      days_inactive_batter INTEGER,
+      days_inactive_bowler INTEGER,
+
+      -- Situational flags (for analysis)
+      is_knockout BOOLEAN,
+      event_tier INTEGER,
+      phase VARCHAR
+    )
+  ")
+
+  # Create ODI 3-way ELO table
+  log_table("odi_3way_elo")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS odi_3way_elo (
+      delivery_id VARCHAR PRIMARY KEY,
+      match_id VARCHAR,
+      match_date DATE,
+      batter_id VARCHAR,
+      bowler_id VARCHAR,
+      venue VARCHAR,
+
+      batter_run_elo_before DOUBLE,
+      batter_run_elo_after DOUBLE,
+      bowler_run_elo_before DOUBLE,
+      bowler_run_elo_after DOUBLE,
+
+      batter_wicket_elo_before DOUBLE,
+      batter_wicket_elo_after DOUBLE,
+      bowler_wicket_elo_before DOUBLE,
+      bowler_wicket_elo_after DOUBLE,
+
+      venue_perm_run_elo_before DOUBLE,
+      venue_perm_run_elo_after DOUBLE,
+      venue_perm_wicket_elo_before DOUBLE,
+      venue_perm_wicket_elo_after DOUBLE,
+
+      venue_session_run_elo_before DOUBLE,
+      venue_session_run_elo_after DOUBLE,
+      venue_session_wicket_elo_before DOUBLE,
+      venue_session_wicket_elo_after DOUBLE,
+
+      k_batter_run DOUBLE,
+      k_bowler_run DOUBLE,
+      k_venue_perm_run DOUBLE,
+      k_venue_session_run DOUBLE,
+      k_batter_wicket DOUBLE,
+      k_bowler_wicket DOUBLE,
+      k_venue_perm_wicket DOUBLE,
+      k_venue_session_wicket DOUBLE,
+
+      exp_runs DOUBLE,
+      exp_wicket DOUBLE,
+      actual_runs INTEGER,
+      is_wicket BOOLEAN,
+
+      batter_balls INTEGER,
+      bowler_balls INTEGER,
+      venue_balls INTEGER,
+      balls_in_match INTEGER,
+      days_inactive_batter INTEGER,
+      days_inactive_bowler INTEGER,
+
+      is_knockout BOOLEAN,
+      event_tier INTEGER,
+      phase VARCHAR
+    )
+  ")
+
+  # Create Test 3-way ELO table
+  log_table("test_3way_elo")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS test_3way_elo (
+      delivery_id VARCHAR PRIMARY KEY,
+      match_id VARCHAR,
+      match_date DATE,
+      batter_id VARCHAR,
+      bowler_id VARCHAR,
+      venue VARCHAR,
+
+      batter_run_elo_before DOUBLE,
+      batter_run_elo_after DOUBLE,
+      bowler_run_elo_before DOUBLE,
+      bowler_run_elo_after DOUBLE,
+
+      batter_wicket_elo_before DOUBLE,
+      batter_wicket_elo_after DOUBLE,
+      bowler_wicket_elo_before DOUBLE,
+      bowler_wicket_elo_after DOUBLE,
+
+      venue_perm_run_elo_before DOUBLE,
+      venue_perm_run_elo_after DOUBLE,
+      venue_perm_wicket_elo_before DOUBLE,
+      venue_perm_wicket_elo_after DOUBLE,
+
+      venue_session_run_elo_before DOUBLE,
+      venue_session_run_elo_after DOUBLE,
+      venue_session_wicket_elo_before DOUBLE,
+      venue_session_wicket_elo_after DOUBLE,
+
+      k_batter_run DOUBLE,
+      k_bowler_run DOUBLE,
+      k_venue_perm_run DOUBLE,
+      k_venue_session_run DOUBLE,
+      k_batter_wicket DOUBLE,
+      k_bowler_wicket DOUBLE,
+      k_venue_perm_wicket DOUBLE,
+      k_venue_session_wicket DOUBLE,
+
+      exp_runs DOUBLE,
+      exp_wicket DOUBLE,
+      actual_runs INTEGER,
+      is_wicket BOOLEAN,
+
+      batter_balls INTEGER,
+      bowler_balls INTEGER,
+      venue_balls INTEGER,
+      balls_in_match INTEGER,
+      days_inactive_batter INTEGER,
+      days_inactive_bowler INTEGER,
+
+      is_knockout BOOLEAN,
+      event_tier INTEGER,
+      phase VARCHAR
+    )
+  ")
+
+  # Create 3-way ELO params table (for storing optimized parameters)
+  log_table("three_way_elo_params")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS three_way_elo_params (
+      format VARCHAR PRIMARY KEY,
+
+      -- Player K-factor parameters
+      k_run_max DOUBLE,
+      k_run_min DOUBLE,
+      k_run_halflife DOUBLE,
+      k_wicket_max DOUBLE,
+      k_wicket_min DOUBLE,
+      k_wicket_halflife DOUBLE,
+
+      -- Venue K-factor parameters
+      k_venue_perm_max DOUBLE,
+      k_venue_perm_min DOUBLE,
+      k_venue_perm_halflife DOUBLE,
+      k_venue_session_base DOUBLE,
+      k_venue_session_min DOUBLE,
+      k_venue_session_halflife DOUBLE,
+
+      -- Attribution weights
+      w_batter DOUBLE,
+      w_bowler DOUBLE,
+      w_venue DOUBLE,
+      venue_w_permanent DOUBLE,
+      venue_w_session DOUBLE,
+
+      -- Other parameters
+      runs_per_100_elo DOUBLE,
+      inactivity_halflife DOUBLE,
+      replacement_level DOUBLE,
+
+      -- Tracking
+      last_delivery_id VARCHAR,
+      last_match_date DATE,
+      total_deliveries INTEGER,
+      calculated_at TIMESTAMP
+    )
+  ")
+
+  # Create 3-way ELO drift metrics table (for monitoring)
+  log_table("three_way_elo_drift_metrics")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS three_way_elo_drift_metrics (
+      metric_date DATE,
+      format VARCHAR,
+      dimension VARCHAR,
+      entity_type VARCHAR,
+      mean_elo DOUBLE,
+      std_elo DOUBLE,
+      PRIMARY KEY (metric_date, format, dimension, entity_type)
+    )
+  ")
+
   n_tables <- length(DBI::dbListTables(conn))
   cli::cli_alert_success("Schema created successfully ({n_tables} tables)")
   invisible(TRUE)
@@ -1195,6 +1437,30 @@ create_indexes <- function(conn, core_only = FALSE, verbose = TRUE) {
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_proj_date ON test_score_projection(match_date)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_proj_team ON test_score_projection(batting_team_id)")
 
+  # T20 3-way ELO indexes
+  log_index("t20_3way_elo")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_3way_match ON t20_3way_elo(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_3way_batter ON t20_3way_elo(batter_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_3way_bowler ON t20_3way_elo(bowler_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_3way_venue ON t20_3way_elo(venue)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_t20_3way_date ON t20_3way_elo(match_date)")
+
+  # ODI 3-way ELO indexes
+  log_index("odi_3way_elo")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_3way_match ON odi_3way_elo(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_3way_batter ON odi_3way_elo(batter_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_3way_bowler ON odi_3way_elo(bowler_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_3way_venue ON odi_3way_elo(venue)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_odi_3way_date ON odi_3way_elo(match_date)")
+
+  # Test 3-way ELO indexes
+  log_index("test_3way_elo")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_3way_match ON test_3way_elo(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_3way_batter ON test_3way_elo(batter_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_3way_bowler ON test_3way_elo(bowler_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_3way_venue ON test_3way_elo(venue)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_test_3way_date ON test_3way_elo(match_date)")
+
   cli::cli_alert_success("Indexes created successfully")
   invisible(TRUE)
 }
@@ -1247,7 +1513,9 @@ verify_database <- function(path = NULL, detailed = FALSE) {
                        "venue_skill_calculation_params", "t20_team_skill", "odi_team_skill",
                        "test_team_skill", "team_skill_calculation_params",
                        "projection_params", "t20_score_projection", "odi_score_projection",
-                       "test_score_projection")
+                       "test_score_projection",
+                       "t20_3way_elo", "odi_3way_elo", "test_3way_elo",
+                       "three_way_elo_params", "three_way_elo_drift_metrics")
 
   cli::cli_h2("Tables")
   for (tbl in expected_tables) {
@@ -1587,4 +1855,514 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
   }
 
   invisible(n_matches)
+}
+
+
+# ============================================================================
+# 3-WAY ELO TABLE FUNCTIONS
+# ============================================================================
+
+#' Create 3-Way ELO Table for Format
+#'
+#' Creates or recreates the format-specific 3-way ELO table.
+#'
+#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
+#' @param conn A DuckDB connection object.
+#' @param overwrite Logical. If TRUE, drops and recreates the table.
+#'
+#' @return Invisibly returns TRUE on success.
+#' @keywords internal
+create_3way_elo_table <- function(format, conn, overwrite = FALSE) {
+  # Normalize format to base format for table name
+  base_format <- sub("^(mens|womens)_", "", tolower(format))
+  table_name <- paste0(base_format, "_3way_elo")
+
+  if (overwrite) {
+    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", table_name))
+    cli::cli_alert_info("Dropped existing table: {table_name}")
+  }
+
+  # Check if table exists
+  if (table_name %in% DBI::dbListTables(conn)) {
+    cli::cli_alert_info("Table {table_name} already exists")
+    return(invisible(TRUE))
+  }
+
+  # Create the table
+  DBI::dbExecute(conn, sprintf("
+    CREATE TABLE IF NOT EXISTS %s (
+      delivery_id VARCHAR PRIMARY KEY,
+      match_id VARCHAR,
+      match_date DATE,
+      batter_id VARCHAR,
+      bowler_id VARCHAR,
+      venue VARCHAR,
+
+      batter_run_elo_before DOUBLE,
+      batter_run_elo_after DOUBLE,
+      bowler_run_elo_before DOUBLE,
+      bowler_run_elo_after DOUBLE,
+
+      batter_wicket_elo_before DOUBLE,
+      batter_wicket_elo_after DOUBLE,
+      bowler_wicket_elo_before DOUBLE,
+      bowler_wicket_elo_after DOUBLE,
+
+      venue_perm_run_elo_before DOUBLE,
+      venue_perm_run_elo_after DOUBLE,
+      venue_perm_wicket_elo_before DOUBLE,
+      venue_perm_wicket_elo_after DOUBLE,
+
+      venue_session_run_elo_before DOUBLE,
+      venue_session_run_elo_after DOUBLE,
+      venue_session_wicket_elo_before DOUBLE,
+      venue_session_wicket_elo_after DOUBLE,
+
+      k_batter_run DOUBLE,
+      k_bowler_run DOUBLE,
+      k_venue_perm_run DOUBLE,
+      k_venue_session_run DOUBLE,
+      k_batter_wicket DOUBLE,
+      k_bowler_wicket DOUBLE,
+      k_venue_perm_wicket DOUBLE,
+      k_venue_session_wicket DOUBLE,
+
+      exp_runs DOUBLE,
+      exp_wicket DOUBLE,
+      actual_runs INTEGER,
+      is_wicket BOOLEAN,
+
+      batter_balls INTEGER,
+      bowler_balls INTEGER,
+      venue_balls INTEGER,
+      balls_in_match INTEGER,
+      days_inactive_batter INTEGER,
+      days_inactive_bowler INTEGER,
+
+      is_knockout BOOLEAN,
+      event_tier INTEGER,
+      phase VARCHAR
+    )
+  ", table_name))
+
+  # Create indexes
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_match ON %s(match_id)",
+                               gsub("_3way_elo", "_3way", table_name), table_name))
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_batter ON %s(batter_id)",
+                               gsub("_3way_elo", "_3way", table_name), table_name))
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_bowler ON %s(bowler_id)",
+                               gsub("_3way_elo", "_3way", table_name), table_name))
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_venue ON %s(venue)",
+                               gsub("_3way_elo", "_3way", table_name), table_name))
+  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_date ON %s(match_date)",
+                               gsub("_3way_elo", "_3way", table_name), table_name))
+
+  cli::cli_alert_success("Created table: {table_name}")
+  invisible(TRUE)
+}
+
+
+#' Insert 3-Way ELO Data
+#'
+#' Inserts 3-way ELO data into the format-specific table.
+#'
+#' @param df data.frame/data.table with 3-way ELO columns.
+#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
+#' @param conn A DuckDB connection object.
+#'
+#' @return Invisibly returns TRUE on success.
+#' @keywords internal
+insert_3way_elos <- function(df, format, conn) {
+  # Normalize format to base format for table name
+  base_format <- sub("^(mens|womens)_", "", tolower(format))
+  table_name <- paste0(base_format, "_3way_elo")
+
+  # Check table exists
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    cli::cli_alert_danger("Table {table_name} does not exist")
+    return(invisible(FALSE))
+  }
+
+  # Use DBI::dbWriteTable with append mode
+  DBI::dbWriteTable(conn, table_name, df, append = TRUE, row.names = FALSE)
+
+  invisible(TRUE)
+}
+
+
+#' Get 3-Way ELO Statistics
+#'
+#' Returns summary statistics for the 3-way ELO table.
+#'
+#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
+#' @param conn A DuckDB connection object.
+#'
+#' @return List with statistics or NULL if table doesn't exist.
+#' @keywords internal
+get_3way_elo_stats <- function(format, conn) {
+  # Normalize format to base format for table name
+  base_format <- sub("^(mens|womens)_", "", tolower(format))
+  table_name <- paste0(base_format, "_3way_elo")
+
+  # Check table exists
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    return(NULL)
+  }
+
+  stats <- DBI::dbGetQuery(conn, sprintf("
+    SELECT
+      COUNT(*) as total_records,
+      COUNT(DISTINCT batter_id) as unique_batters,
+      COUNT(DISTINCT bowler_id) as unique_bowlers,
+      COUNT(DISTINCT venue) as unique_venues,
+      MIN(match_date) as first_date,
+      MAX(match_date) as last_date,
+      AVG(batter_run_elo_after) as mean_batter_run_elo,
+      AVG(bowler_run_elo_after) as mean_bowler_run_elo,
+      AVG(batter_wicket_elo_after) as mean_batter_wicket_elo,
+      AVG(bowler_wicket_elo_after) as mean_bowler_wicket_elo,
+      AVG(venue_perm_run_elo_after) as mean_venue_perm_run_elo,
+      AVG(venue_session_run_elo_after) as mean_venue_session_run_elo
+    FROM %s
+  ", table_name))
+
+  as.list(stats)
+}
+
+
+# Database Migration Functions =============================================
+#
+# Functions to add new tables to existing databases without losing data.
+
+
+#' Add Prediction Tables to Database
+#'
+#' Adds the new prediction and simulation tables to an existing database.
+#' This is a non-destructive migration that preserves all existing data.
+#'
+#' @param path Character. Database file path. If NULL, uses default.
+#'
+#' @return Invisibly returns TRUE on success
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' # Add new tables to existing database
+#' add_prediction_tables()
+#' }
+add_prediction_tables <- function(path = NULL) {
+  if (is.null(path)) {
+    path <- get_default_db_path()
+  }
+
+  if (!file.exists(path)) {
+    cli::cli_alert_danger("Database not found at {.file {path}}")
+    return(invisible(FALSE))
+  }
+
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  existing_tables <- DBI::dbListTables(conn)
+
+  cli::cli_h2("Adding prediction tables to database")
+
+  # Add team_elo table
+  if (!"team_elo" %in% existing_tables) {
+    cli::cli_alert_info("Creating team_elo table...")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS team_elo (
+        team_id VARCHAR,
+        match_id VARCHAR,
+        match_date DATE,
+        match_type VARCHAR,
+        event_name VARCHAR,
+        elo_result DOUBLE,
+        elo_roster_batting DOUBLE,
+        elo_roster_bowling DOUBLE,
+        elo_roster_combined DOUBLE,
+        matches_played INTEGER,
+        PRIMARY KEY (team_id, match_id)
+      )
+    ")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_date ON team_elo(team_id, match_date)")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_event ON team_elo(event_name)")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_team_elo_type ON team_elo(match_type)")
+    cli::cli_alert_success("Created team_elo table")
+  } else {
+    cli::cli_alert_info("team_elo table already exists")
+  }
+
+  # Add pre_match_features table
+  if (!"pre_match_features" %in% existing_tables) {
+    cli::cli_alert_info("Creating pre_match_features table...")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS pre_match_features (
+        match_id VARCHAR PRIMARY KEY,
+        match_date DATE,
+        match_type VARCHAR,
+        event_name VARCHAR,
+        team1 VARCHAR,
+        team2 VARCHAR,
+        team1_elo_result DOUBLE,
+        team1_elo_roster DOUBLE,
+        team1_form_last5 DOUBLE,
+        team1_h2h_wins INTEGER,
+        team1_h2h_total INTEGER,
+        team2_elo_result DOUBLE,
+        team2_elo_roster DOUBLE,
+        team2_form_last5 DOUBLE,
+        team2_h2h_wins INTEGER,
+        team2_h2h_total INTEGER,
+        venue VARCHAR,
+        venue_avg_score DOUBLE,
+        venue_chase_success_rate DOUBLE,
+        venue_matches INTEGER,
+        is_knockout BOOLEAN,
+        is_neutral_venue BOOLEAN,
+        created_at TIMESTAMP
+      )
+    ")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_prematch_date ON pre_match_features(match_date)")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_prematch_event ON pre_match_features(event_name)")
+    cli::cli_alert_success("Created pre_match_features table")
+  } else {
+    cli::cli_alert_info("pre_match_features table already exists")
+  }
+
+  # Add pre_match_predictions table
+  if (!"pre_match_predictions" %in% existing_tables) {
+    cli::cli_alert_info("Creating pre_match_predictions table...")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS pre_match_predictions (
+        prediction_id VARCHAR PRIMARY KEY,
+        match_id VARCHAR,
+        model_version VARCHAR,
+        model_type VARCHAR,
+        prediction_date TIMESTAMP,
+        team1_win_prob DOUBLE,
+        team2_win_prob DOUBLE,
+        predicted_winner VARCHAR,
+        confidence DOUBLE,
+        actual_winner VARCHAR,
+        prediction_correct BOOLEAN
+      )
+    ")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_predictions_match ON pre_match_predictions(match_id)")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_predictions_date ON pre_match_predictions(prediction_date)")
+    cli::cli_alert_success("Created pre_match_predictions table")
+  } else {
+    cli::cli_alert_info("pre_match_predictions table already exists")
+  }
+
+  # Add simulation_results table
+  if (!"simulation_results" %in% existing_tables) {
+    cli::cli_alert_info("Creating simulation_results table...")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS simulation_results (
+        simulation_id VARCHAR PRIMARY KEY,
+        simulation_type VARCHAR,
+        event_name VARCHAR,
+        season VARCHAR,
+        simulation_date TIMESTAMP,
+        n_simulations INTEGER,
+        parameters VARCHAR,
+        team_results VARCHAR,
+        match_results VARCHAR,
+        created_at TIMESTAMP
+      )
+    ")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_simulation_type ON simulation_results(simulation_type)")
+    DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_simulation_event ON simulation_results(event_name)")
+    cli::cli_alert_success("Created simulation_results table")
+  } else {
+    cli::cli_alert_info("simulation_results table already exists")
+  }
+
+  cli::cli_alert_success("Migration complete!")
+
+  # Verify
+  new_tables <- DBI::dbListTables(conn)
+  cli::cli_h3("Database tables")
+  for (tbl in new_tables) {
+    cli::cli_alert_success("{tbl}")
+  }
+
+  invisible(TRUE)
+}
+
+
+#' Add Skill Index Columns to Pre-Match Features
+#'
+#' Adds the new skill index columns to an existing pre_match_features table.
+#' This is a non-destructive migration that preserves all existing data.
+#'
+#' @param conn DBI connection. Optional existing database connection.
+#'   If NULL, opens a new connection using path.
+#' @param path Character. Database file path. If NULL, uses default.
+#'   Ignored if conn is provided.
+#'
+#' @return Invisibly returns TRUE on success
+#' @keywords internal
+add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
+  # Handle connection - use provided or create new
+
+  own_connection <- FALSE
+  if (is.null(conn)) {
+    if (is.null(path)) {
+      path <- get_default_db_path()
+    }
+
+    if (!file.exists(path)) {
+      cli::cli_alert_danger("Database not found at {.file {path}}")
+      return(invisible(FALSE))
+    }
+
+    conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+    own_connection <- TRUE
+  }
+
+  # Only disconnect if we created the connection
+
+  if (own_connection) {
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  }
+
+  existing_tables <- DBI::dbListTables(conn)
+
+  if (!"pre_match_features" %in% existing_tables) {
+    cli::cli_alert_danger("pre_match_features table does not exist")
+    cli::cli_alert_info("Run add_prediction_tables() first")
+    return(invisible(FALSE))
+  }
+
+  cli::cli_h2("Adding skill index columns to pre_match_features")
+
+  # Get existing columns
+  existing_cols <- DBI::dbGetQuery(conn, "
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_name = 'pre_match_features'
+  ")$column_name
+
+  # Define new skill columns
+  skill_columns <- c(
+    "team1_bat_scoring_avg DOUBLE",
+    "team1_bat_scoring_top5 DOUBLE",
+    "team1_bat_survival_avg DOUBLE",
+    "team1_bowl_economy_avg DOUBLE",
+    "team1_bowl_economy_top5 DOUBLE",
+    "team1_bowl_strike_avg DOUBLE",
+    "team2_bat_scoring_avg DOUBLE",
+    "team2_bat_scoring_top5 DOUBLE",
+    "team2_bat_survival_avg DOUBLE",
+    "team2_bowl_economy_avg DOUBLE",
+    "team2_bowl_economy_top5 DOUBLE",
+    "team2_bowl_strike_avg DOUBLE"
+  )
+
+  columns_added <- 0
+
+  for (col_def in skill_columns) {
+    col_name <- strsplit(col_def, " ")[[1]][1]
+
+    if (!col_name %in% existing_cols) {
+      tryCatch({
+        DBI::dbExecute(conn, sprintf(
+          "ALTER TABLE pre_match_features ADD COLUMN %s", col_def
+        ))
+        cli::cli_alert_success("Added column: {col_name}")
+        columns_added <- columns_added + 1
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to add {col_name}: {e$message}")
+      })
+    } else {
+      cli::cli_alert_info("Column {col_name} already exists")
+    }
+  }
+
+  if (columns_added > 0) {
+    cli::cli_alert_success("Added {columns_added} new skill columns")
+  } else {
+    cli::cli_alert_info("All skill columns already exist")
+  }
+
+  # Also add toss columns if missing
+  toss_columns <- c(
+    "team1_won_toss INTEGER",
+    "toss_elect_bat INTEGER"
+  )
+
+  for (col_def in toss_columns) {
+    col_name <- strsplit(col_def, " ")[[1]][1]
+
+    if (!col_name %in% existing_cols) {
+      tryCatch({
+        DBI::dbExecute(conn, sprintf(
+          "ALTER TABLE pre_match_features ADD COLUMN %s", col_def
+        ))
+        cli::cli_alert_success("Added column: {col_name}")
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to add {col_name}: {e$message}")
+      })
+    }
+  }
+
+  # Add team skill columns (per-delivery residual-based team skills)
+  cli::cli_h2("Adding team skill columns to pre_match_features")
+
+  team_skill_columns <- c(
+    "team1_team_runs_skill DOUBLE",
+    "team1_team_wicket_skill DOUBLE",
+    "team2_team_runs_skill DOUBLE",
+    "team2_team_wicket_skill DOUBLE"
+  )
+
+  for (col_def in team_skill_columns) {
+    col_name <- strsplit(col_def, " ")[[1]][1]
+
+    if (!col_name %in% existing_cols) {
+      tryCatch({
+        DBI::dbExecute(conn, sprintf(
+          "ALTER TABLE pre_match_features ADD COLUMN %s", col_def
+        ))
+        cli::cli_alert_success("Added column: {col_name}")
+        columns_added <- columns_added + 1
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to add {col_name}: {e$message}")
+      })
+    } else {
+      cli::cli_alert_info("Column {col_name} already exists")
+    }
+  }
+
+  # Add venue skill columns (residual-based venue skills)
+  cli::cli_h2("Adding venue skill columns to pre_match_features")
+
+  venue_skill_columns <- c(
+    "venue_run_rate_skill DOUBLE",
+    "venue_wicket_rate_skill DOUBLE",
+    "venue_boundary_rate DOUBLE",
+    "venue_dot_rate DOUBLE"
+  )
+
+  for (col_def in venue_skill_columns) {
+    col_name <- strsplit(col_def, " ")[[1]][1]
+
+    if (!col_name %in% existing_cols) {
+      tryCatch({
+        DBI::dbExecute(conn, sprintf(
+          "ALTER TABLE pre_match_features ADD COLUMN %s", col_def
+        ))
+        cli::cli_alert_success("Added column: {col_name}")
+        columns_added <- columns_added + 1
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to add {col_name}: {e$message}")
+      })
+    } else {
+      cli::cli_alert_info("Column {col_name} already exists")
+    }
+  }
+
+  invisible(TRUE)
 }

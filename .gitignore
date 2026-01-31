@@ -22,3 +22,6 @@ ssh-key*
 *.github_pat
 .env
 .secrets
+
+# Archived files (obsolete VM scripts, etc.)
+archive/

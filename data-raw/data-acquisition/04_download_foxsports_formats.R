@@ -1,9 +1,7 @@
-# =============================================================================
-# FOX SPORTS CRICKET SCRAPER - MULTI-FORMAT DOWNLOAD
-# Downloads ball-by-ball data for multiple cricket formats from Fox Sports
+# Fox Sports Multi-Format Download ----
 #
-# This script extends 03_download_foxsports_bulk.R to support all formats:
-# TEST, T20I, WT20I, ODI, WODI, BBL, WBBL, WNCL, WPL
+# Downloads ball-by-ball data for multiple cricket formats from Fox Sports
+# Supports: TEST, T20I, WT20I, ODI, WODI, BBL, WBBL, WNCL, WPL
 #
 # Outputs parquet files organized by format:
 #   bouncerdata/fox_cricket/test/TEST2025-260604.parquet
@@ -14,20 +12,25 @@
 #   source("data-raw/data-acquisition/04_download_foxsports_formats.R")
 #
 # Or download specific formats by modifying FORMATS_TO_DOWNLOAD below.
-# =============================================================================
 
 library(chromote)
 library(tidyverse)
 devtools::load_all()  # Load bouncer package functions
 
-# --- CONFIGURATION ---
+# Configuration ----
+
 OUTPUT_DIR <- "../bouncerdata/fox_cricket"
 YEARS_TO_SCAN <- 2010:2025  # Adjust as needed
 
 # Rescrape options:
 # - FALSE: Skip matches that already have all requested data (default, fastest)
 # - TRUE: Re-download everything, overwriting existing files
-FORCE_RESCRAPE <- TRUE
+FORCE_RESCRAPE <- FALSE # TRUE
+
+# Discovery options:
+# - FALSE: Use cached match list (instant for already-scraped formats)
+# - TRUE: Re-scan all years for new matches (slower, needed for recent matches)
+SCAN_FOR_NEW <- FALSE
 
 # What data to fetch for each match
 INCLUDE_PLAYERS <- TRUE   # Squad data (batting/bowling arms, positions, countries)
@@ -50,9 +53,7 @@ FORMATS_TO_DOWNLOAD <- c(
 # Create output directory
 if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 
-# =============================================================================
-# STEP 1: Launch browser and get userkey
-# =============================================================================
+# Launch Browser ----
 
 cli::cli_h1("Fox Sports Multi-Format Download")
 cli::cli_alert_info("Formats to download: {paste(FORMATS_TO_DOWNLOAD, collapse = ', ')}")
@@ -62,18 +63,29 @@ if (FORCE_RESCRAPE) {
 } else {
   cli::cli_alert_info("Incremental mode - existing matches will be skipped/updated")
 }
+if (SCAN_FOR_NEW) {
+  cli::cli_alert_info("Discovery mode: Scanning all years for new matches")
+} else {
+  cli::cli_alert_success("Discovery mode: Fast path - using cached match lists only")
+}
 
 cli::cli_alert_info("Step 1: Launching browser...")
 browser <- chromote::ChromoteSession$new()
 browser$Network$enable()
 
-# Use a known T20I match to get userkey (these are more common/recent)
-cli::cli_alert_info("Step 2: Getting userkey from a known match...")
-userkey <- fox_get_userkey(browser, "T20I2025-262001")
+# Warm up browser by navigating to Fox Sports first (avoids timeout on fresh sessions)
+cli::cli_alert_info("Step 2: Warming up browser connection...")
+browser$Page$navigate("https://www.foxsports.com.au/cricket")
+Sys.sleep(5)  # Give it time to establish connection
 
-# Fallback to Test match if T20I fails
+# Get Userkey ----
+
+cli::cli_alert_info("Step 3: Getting userkey from a known match...")
+userkey <- fox_get_userkey(browser, "TEST2025-260703")
+
+# Fallback to different Test match if first fails
 if (is.null(userkey)) {
-  cli::cli_alert_warning("T20I userkey failed, trying Test match...")
+  cli::cli_alert_warning("First attempt failed, trying alternate match...")
   userkey <- fox_get_userkey(browser, "TEST2025-260604")
 }
 
@@ -85,23 +97,22 @@ if (is.null(userkey)) {
 
 cli::cli_alert_success("Got userkey: {userkey}")
 
-# =============================================================================
-# STEP 2: Process each format
-# =============================================================================
+# Process Each Format ----
 
 all_results <- list()
 
 for (fmt in FORMATS_TO_DOWNLOAD) {
   cli::cli_h2("Processing format: {fmt}")
 
-  # --- Discovery ---
+  ## Discovery ----
   cli::cli_alert_info("Discovering {fmt} matches...")
   valid_matches <- fox_discover_matches(
     browser = browser,
     userkey = userkey,
     format = fmt,
     years = YEARS_TO_SCAN,
-    output_dir = OUTPUT_DIR
+    output_dir = OUTPUT_DIR,
+    scan_for_new = SCAN_FOR_NEW
   )
 
   if (length(valid_matches) == 0) {
@@ -111,7 +122,7 @@ for (fmt in FORMATS_TO_DOWNLOAD) {
 
   cli::cli_alert_success("Found {length(valid_matches)} {fmt} matches")
 
-  # --- Download ---
+  ## Download ----
   cli::cli_alert_info("Downloading {fmt} match data...")
   format_data <- fox_fetch_matches(
     browser = browser,
@@ -127,7 +138,7 @@ for (fmt in FORMATS_TO_DOWNLOAD) {
     delay_between = 8                # 8+ seconds between matches
   )
 
-  # --- Combine ---
+  ## Combine ----
   if (!is.null(format_data)) {
     cli::cli_alert_info("Combining {fmt} match files...")
     combined_data <- fox_combine_matches(
@@ -147,9 +158,7 @@ for (fmt in FORMATS_TO_DOWNLOAD) {
   }
 }
 
-# =============================================================================
-# STEP 3: Summary
-# =============================================================================
+# Summary ----
 
 cli::cli_h2("Download Summary")
 
@@ -162,18 +171,14 @@ for (fmt in names(all_results)) {
   }
 }
 
-# =============================================================================
-# CLEANUP
-# =============================================================================
+# Cleanup ----
 
 cli::cli_alert_info("Closing browser...")
 browser$close()
 
 cli::cli_alert_success("Done! Data saved to: {OUTPUT_DIR}")
 
-# =============================================================================
-# NEXT STEPS
-# =============================================================================
+# Next Steps ----
 
 cli::cli_h3("Next Steps")
 cli::cli_bullets(c(
@@ -181,8 +186,8 @@ cli::cli_bullets(c(
   "i" = "To scan more years: Change YEARS_TO_SCAN and re-run",
   "i" = "To force re-download all: Set FORCE_RESCRAPE <- TRUE",
   "i" = "To backfill players/details for existing matches: Just re-run (smart caching)",
-  "i" = "Data location: {OUTPUT_DIR}/{format}/",
-  "i" = "Combined files: all_{format}_matches.parquet, all_{format}_players.parquet, all_{format}_details.parquet"
+  "i" = "Data location: {OUTPUT_DIR}/{{format}}/",
+  "i" = "Combined files: all_{{format}}_matches.parquet, all_{{format}}_players.parquet, all_{{format}}_details.parquet"
 ))
 
 # Show directory structure

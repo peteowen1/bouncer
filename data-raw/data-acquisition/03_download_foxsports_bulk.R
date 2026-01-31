@@ -1,5 +1,5 @@
-# =============================================================================
-# FOX SPORTS CRICKET SCRAPER - BULK DOWNLOAD
+# Fox Sports Bulk Download (TEST only) ----
+#
 # Downloads ball-by-ball data for Test matches from Fox Sports
 #
 # This script:
@@ -7,24 +7,24 @@
 # 2. Downloads each match with rate limiting to avoid blocks
 # 3. Saves individual .rds files and a combined dataset
 #
+# NOTE: For multi-format downloads, use 04_download_foxsports_formats.R instead
+#
 # Usage:
-#   source("data-raw/download-data/03_download_foxsports_bulk.R")
-# =============================================================================
+#   source("data-raw/data-acquisition/03_download_foxsports_bulk.R")
 
 library(chromote)
 library(tidyverse)
 devtools::load_all()  # Load bouncer package functions
 
-# --- CONFIGURATION ---
+# Configuration ----
+
 OUTPUT_DIR <- "../bouncerdata/fox_cricket"
-YEARS_TO_SCAN <- 2010:2025  # Start with recent years, expand later (e.g., 2015:2025)
+YEARS_TO_SCAN <- 2010:2025  # Start with recent years, expand later
 
 # Create output directory
 if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 
-# =============================================================================
-# STEP 1: Launch browser and get userkey
-# =============================================================================
+# Launch Browser ----
 
 cli::cli_h1("Fox Sports Bulk Download")
 
@@ -43,9 +43,7 @@ if (is.null(userkey)) {
 
 cli::cli_alert_success("Got userkey: {userkey}")
 
-# =============================================================================
-# STEP 2: Discover valid match IDs
-# =============================================================================
+# Discover Matches ----
 
 cli::cli_h2("Step 3: Discovering valid Test match IDs")
 cli::cli_alert_info("Scanning years: {paste(YEARS_TO_SCAN, collapse = ', ')}")
@@ -54,9 +52,7 @@ valid_matches <- fox_discover_matches(browser, userkey, years = YEARS_TO_SCAN, o
 
 cli::cli_alert_success("Found {length(valid_matches)} matches to download")
 
-# =============================================================================
-# STEP 3: Fetch all matches
-# =============================================================================
+# Download Matches ----
 
 if (length(valid_matches) > 0) {
   cli::cli_h2("Step 4: Downloading match data")
@@ -71,12 +67,12 @@ if (length(valid_matches) > 0) {
     delay_between = 8           # 8+ seconds between matches
   )
 
-  # =============================================================================
-  # STEP 4: Combine all downloaded data
-  # =============================================================================
+  # Combine Data ----
 
   cli::cli_h2("Step 5: Combining all downloaded matches")
   combined_data <- fox_combine_matches(OUTPUT_DIR)
+
+  # Summary ----
 
   cli::cli_h2("Summary")
   if (!is.null(combined_data)) {
@@ -95,22 +91,17 @@ if (length(valid_matches) > 0) {
   cli::cli_alert_warning("No matches found to download.")
 }
 
-# =============================================================================
-# CLEANUP
-# =============================================================================
+# Cleanup ----
 
 cli::cli_alert_info("Closing browser...")
 browser$close()
 
 cli::cli_alert_success("Done! Data saved to: {OUTPUT_DIR}")
 
-# =============================================================================
-# NEXT STEPS
-# =============================================================================
+# Next Steps ----
 
 cli::cli_h3("Next Steps")
 cli::cli_bullets(c(
-
   "i" = "To scan more years: Change YEARS_TO_SCAN and re-run (existing matches are skipped)",
   "i" = "Data location: {OUTPUT_DIR}",
   "i" = "Combined file: {file.path(OUTPUT_DIR, 'all_test_matches.rds')}"

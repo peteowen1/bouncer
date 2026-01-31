@@ -1,25 +1,23 @@
-# =============================================================================
-# FOX SPORTS CRICKET SCRAPER - SINGLE MATCH
+# Fox Sports Single Match Download ----
+#
 # Downloads ball-by-ball data for a single Test match from Fox Sports
 #
 # Usage:
-#   source("data-raw/download-data/02_download_foxsports_single.R")
-# =============================================================================
+#   source("data-raw/data-acquisition/02_download_foxsports_single.R")
 
 library(chromote)
 library(tidyverse)
 devtools::load_all()  # Load bouncer package functions
 
-# --- CONFIGURATION ---
+# Configuration ----
+
 MATCH_ID <- "TEST2025-260604"  # Boxing Day Test
 OUTPUT_DIR <- "../bouncerdata/fox_cricket"
 
 # Create output directory
 if (!dir.exists(OUTPUT_DIR)) dir.create(OUTPUT_DIR, recursive = TRUE)
 
-# =============================================================================
-# STEP 1: Launch browser and get userkey
-# =============================================================================
+# Launch Browser ----
 
 cli::cli_h1("Fox Sports Single Match Download")
 
@@ -38,16 +36,12 @@ if (is.null(userkey)) {
 
 cli::cli_alert_success("Got userkey: {userkey}")
 
-# =============================================================================
-# STEP 2: Fetch match data
-# =============================================================================
+# Fetch Match Data ----
 
 cli::cli_alert_info("Fetching ball-by-ball data for {MATCH_ID}...")
 match_data <- fox_fetch_match(browser, MATCH_ID, userkey)
 
-# =============================================================================
-# STEP 3: Display results and save
-# =============================================================================
+# Display Results ----
 
 if (!is.null(match_data)) {
   cli::cli_alert_success("Captured {nrow(match_data)} balls")
@@ -70,9 +64,7 @@ if (!is.null(match_data)) {
   cli::cli_alert_warning("No data found for this match.")
 }
 
-# =============================================================================
-# CLEANUP
-# =============================================================================
+# Cleanup ----
 
 cli::cli_alert_info("Closing browser...")
 browser$close()

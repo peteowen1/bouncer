@@ -11,23 +11,26 @@ Run scripts in order. Each script has a `FORMAT` configuration variable that can
 ```r
 devtools::load_all()
 
-# 1. Calculate team ELOs for all formats
-source("data-raw/predictive-modelling/01_calculate_team_elos.R")
+# 1. Calculate team ELOs (run via full pipeline or separately)
+source("data-raw/ratings/team/01_calculate_team_elos.R")
 
-# 2. Generate pre-match features for all matches (all formats)
-source("data-raw/predictive-modelling/02_calculate_pre_match_features.R")
+# 2. Generate pre-match features for all matches
+source("data-raw/models/pre-match/02_calculate_pre_match_features.R")
 
-# 3. Train the prediction model (set FORMAT in script)
-source("data-raw/predictive-modelling/03_train_prediction_model.R")
+# 3. Train the prediction model
+source("data-raw/models/pre-match/03_train_prediction_model.R")
 
-# 4. Evaluate model performance (set FORMAT in script)
-source("data-raw/predictive-modelling/04_evaluate_model.R")
+# 4. Evaluate model performance
+source("data-raw/models/pre-match/04_evaluate_model.R")
 
-# 5. Generate predictions (set FORMAT in script)
-source("data-raw/predictive-modelling/05_generate_predictions.R")
+# 5. Generate predictions
+source("data-raw/models/pre-match/05_generate_predictions.R")
 
-# 6. Visualize predictions (set FORMAT in script)
-source("data-raw/predictive-modelling/06_visualize_predictions.R")
+# 6. Visualize predictions
+source("data-raw/models/pre-match/06_visualize_predictions.R")
+
+# Or run the entire pipeline at once:
+source("data-raw/models/pre-match/run_pre_match_pipeline.R")
 ```
 
 ## Features (31 total)
@@ -97,7 +100,7 @@ Models and data saved to `bouncerdata/models/`:
 
 ## Dependencies
 
-- Requires: Team ELOs from `01_calculate_team_elos.R`
-- Requires: Player skill indices from `data-raw/player-modelling/` scripts
+- Requires: Team ELOs from `data-raw/ratings/team/01_calculate_team_elos.R`
+- Requires: Player skill indices from `data-raw/ratings/player/03_calculate_skill_indices.R`
 - Requires: bouncer package functions via `devtools::load_all()`
 - Required package: xgboost

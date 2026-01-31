@@ -235,7 +235,9 @@ force_close_duckdb <- function() {
     drv <- duckdb::duckdb()
     DBI::dbDisconnect(drv, shutdown = TRUE)
   }, error = function(e) {
-    # Ignore errors - driver may not exist or already be shutdown
+    # Log error for debugging but don't fail
+    # Driver may not exist or already be shutdown
+    cli::cli_alert_info("DuckDB driver shutdown note: {e$message}")
   })
 
   # Small delay to let OS release file handles

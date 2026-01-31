@@ -43,29 +43,34 @@ query_matches <- function(match_type = NULL,
 
   source <- match.arg(source)
 
-  # Build WHERE clause (used by both local and remote)
+  # Build WHERE clause with parameterized queries (prevents SQL injection)
   where_clauses <- character()
+  params <- list()
 
   if (!is.null(match_type)) {
     mt <- normalize_match_type(match_type)
-    where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", mt))
+    where_clauses <- c(where_clauses, "LOWER(match_type) = ?")
+    params <- c(params, list(mt))
   }
 
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", as.character(season)))
+    where_clauses <- c(where_clauses, "season = ?")
+    params <- c(params, list(as.character(season)))
   }
 
   if (!is.null(team)) {
-    where_clauses <- c(where_clauses, sprintf("(team1 = '%s' OR team2 = '%s')", team, team))
+    where_clauses <- c(where_clauses, "(team1 = ? OR team2 = ?)")
+    params <- c(params, list(team, team))
   }
 
   if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", venue))
+    where_clauses <- c(where_clauses, "LOWER(venue) LIKE LOWER(?)")
+    params <- c(params, list(paste0("%", venue, "%")))
   }
 
   if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
-                                               date_range[1], date_range[2]))
+    where_clauses <- c(where_clauses, "match_date BETWEEN ? AND ?")
+    params <- c(params, list(date_range[1], date_range[2]))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -75,21 +80,26 @@ query_matches <- function(match_type = NULL,
   }
 
   if (source == "remote") {
-    # Fast remote: download + local query
+    # Remote queries: build safe SQL for parquet (no user-controlled data in SQL)
+    # Remote parquet queries don't support parameterized queries, so we escape values
     cli::cli_alert_info("Querying matches from remote...")
-    sql_template <- sprintf("SELECT * FROM {table} %s ORDER BY match_date DESC", where_sql)
+    remote_where <- build_remote_where_clause(
+      match_type = match_type, season = season, team = team,
+      venue = venue, date_range = date_range
+    )
+    sql_template <- sprintf("SELECT * FROM {table} %s ORDER BY match_date DESC", remote_where)
     result <- tryCatch({
       query_remote_parquet("matches", sql_template)
     }, error = function(e) {
       cli::cli_abort("Remote query failed: {e$message}")
     })
   } else {
-    # Local DuckDB
+    # Local DuckDB: use parameterized queries (safe)
     conn <- get_db_connection(path = db_path, read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
     query <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
-    result <- DBI::dbGetQuery(conn, query)
+    result <- DBI::dbGetQuery(conn, query, params = params)
   }
 
   if (nrow(result) > 0) {
@@ -97,6 +107,95 @@ query_matches <- function(match_type = NULL,
   }
 
   return(result)
+}
+
+
+#' Build Remote WHERE Clause (Internal)
+#'
+#' Builds a WHERE clause for remote parquet queries with proper escaping.
+#' Remote queries don't support parameterized queries, so we escape values.
+#'
+#' @param match_type Character. Match type filter
+#' @param season Character. Season filter
+#' @param team Character. Team filter
+#' @param venue Character. Venue filter
+#' @param date_range Date vector. Date range filter
+#' @param player_id Character. Player ID filter
+#' @param batter_id Character. Batter ID filter
+#' @param bowler_id Character. Bowler ID filter
+#' @param batting_team Character. Batting team filter
+#' @param bowling_team Character. Bowling team filter
+#' @param match_id Character. Match ID filter
+#' @param city Character. City filter
+#'
+#' @return Character string with WHERE clause (or empty string)
+#' @keywords internal
+build_remote_where_clause <- function(match_type = NULL, season = NULL, team = NULL,
+                                       venue = NULL, date_range = NULL, player_id = NULL,
+                                       batter_id = NULL, bowler_id = NULL, batting_team = NULL,
+                                       bowling_team = NULL, match_id = NULL, city = NULL) {
+  where_clauses <- character()
+
+  # Helper to escape single quotes in strings (SQL injection prevention)
+  escape_sql <- function(x) gsub("'", "''", x)
+
+  if (!is.null(match_type)) {
+    mt <- normalize_match_type(match_type)
+    where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", escape_sql(mt)))
+  }
+
+  if (!is.null(season)) {
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql(as.character(season))))
+  }
+
+  if (!is.null(team)) {
+    where_clauses <- c(where_clauses, sprintf("(team1 = '%s' OR team2 = '%s')",
+                                               escape_sql(team), escape_sql(team)))
+  }
+
+  if (!is.null(venue)) {
+    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", escape_sql(venue)))
+  }
+
+  if (!is.null(date_range) && length(date_range) == 2) {
+    where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
+                                               date_range[1], date_range[2]))
+  }
+
+  if (!is.null(match_id)) {
+    where_clauses <- c(where_clauses, sprintf("match_id = '%s'", escape_sql(match_id)))
+  }
+
+  if (!is.null(player_id)) {
+    where_clauses <- c(where_clauses, sprintf("(batter_id = '%s' OR bowler_id = '%s')",
+                                               escape_sql(player_id), escape_sql(player_id)))
+  }
+
+  if (!is.null(batter_id)) {
+    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", escape_sql(batter_id)))
+  }
+
+  if (!is.null(bowler_id)) {
+    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", escape_sql(bowler_id)))
+  }
+
+  if (!is.null(batting_team)) {
+    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", escape_sql(batting_team)))
+  }
+
+  if (!is.null(bowling_team)) {
+    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", escape_sql(bowling_team)))
+  }
+
+  if (!is.null(city)) {
+    where_clauses <- c(where_clauses, sprintf("LOWER(city) LIKE LOWER('%%%s%%')", escape_sql(city)))
+  }
+
+  if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
+  } else {
+    ""
+  }
 }
 
 
@@ -304,7 +403,6 @@ query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
   }
 
   # Warn about unsupported filters
-
   if (!is.null(country)) {
     cli::cli_warn("country filter not available for remote queries (ignoring)")
   }
@@ -316,57 +414,21 @@ query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
   table_name <- sprintf("deliveries_%s_male", match_type)
   cli::cli_alert_info("Querying {table_name} from remote...")
 
-  # Build WHERE clause
-  where_clauses <- character()
+  # Build WHERE clause using safe helper (escapes single quotes)
+  where_sql <- build_remote_where_clause(
+    match_id = match_id,
+    season = season,
+    venue = venue,
+    city = city,
+    date_range = date_range,
+    player_id = player_id,
+    batter_id = batter_id,
+    bowler_id = bowler_id,
+    batting_team = batting_team,
+    bowling_team = bowling_team
+  )
 
-  if (!is.null(match_id)) {
-    where_clauses <- c(where_clauses, sprintf("match_id = '%s'", match_id))
-  }
-
-  if (!is.null(player_id)) {
-    where_clauses <- c(where_clauses, sprintf("(batter_id = '%s' OR bowler_id = '%s')", player_id, player_id))
-  }
-
-  if (!is.null(batter_id)) {
-    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", batter_id))
-  }
-
-  if (!is.null(bowler_id)) {
-    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", bowler_id))
-  }
-
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", as.character(season)))
-  }
-
-  if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", venue))
-  }
-
-  if (!is.null(city)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(city) LIKE LOWER('%%%s%%')", city))
-  }
-
-  if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
-                                               date_range[1], date_range[2]))
-  }
-
-  if (!is.null(batting_team)) {
-    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", batting_team))
-  }
-
-  if (!is.null(bowling_team)) {
-    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", bowling_team))
-  }
-
-  where_sql <- if (length(where_clauses) > 0) {
-    paste("WHERE", paste(where_clauses, collapse = " AND "))
-  } else {
-    ""
-  }
-
-  limit_sql <- if (!is.null(limit)) sprintf("LIMIT %d", limit) else ""
+  limit_sql <- if (!is.null(limit)) sprintf("LIMIT %d", as.integer(limit)) else ""
 
   sql_template <- sprintf(
     "SELECT * FROM {table} %s ORDER BY match_date DESC, delivery_id ASC %s",
