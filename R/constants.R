@@ -275,6 +275,35 @@ PLAYER_CORR_THRESHOLD <- 0.1    # Min correlation to propagate (skip weak links)
 PLAYER_PROPAGATION_FACTOR <- 0.25  # How much ELO change propagates (was 0.15, increased for visibility)
 
 # ============================================================================
+# PAGERANK PLAYER QUALITY CONSTANTS
+# ============================================================================
+# PageRank-style algorithm for global player quality assessment.
+# Addresses isolated cluster inflation by propagating "authority" through
+# the batter↔bowler matchup network.
+#
+# Core concept:
+#   - A batter is good if they score well against good bowlers
+#   - A bowler is good if they restrict good batters
+#   - Quality flows through the bipartite matchup graph
+
+PAGERANK_DAMPING <- 0.85           # Standard damping factor (probability of following links)
+PAGERANK_MAX_ITER <- 100           # Maximum iterations for convergence
+PAGERANK_TOLERANCE <- 1e-6         # Convergence threshold (max change in scores)
+PAGERANK_MIN_DELIVERIES <- 100     # Minimum deliveries to include player in graph
+PAGERANK_PERFORMANCE_SCALE <- 6.0  # Max runs/ball for normalization (typical T20 max)
+
+# Performance weights: how runs/ball translates to batter "win"
+# 0.0 = neutral (avg performance), 1.0 = maximum batter dominance
+# Uses logistic scaling centered on format average
+PAGERANK_PERFORMANCE_CENTER_T20 <- 1.2   # Runs/ball considered neutral in T20
+PAGERANK_PERFORMANCE_CENTER_ODI <- 0.8   # Runs/ball considered neutral in ODI
+PAGERANK_PERFORMANCE_CENTER_TEST <- 0.5  # Runs/ball considered neutral in Test
+
+# Wicket impact: how much a wicket shifts the performance score
+# Higher = wickets matter more for quality propagation
+PAGERANK_WICKET_WEIGHT <- 0.3  # Wicket contribution to bowler quality
+
+# ============================================================================
 # MARGIN OF VICTORY CONSTANTS
 # ============================================================================
 # For converting wickets-wins to runs-equivalent margin and for
@@ -372,8 +401,285 @@ PROJ_MAX_SCORE_TEST <- 700     # Maximum reasonable Test innings projection
 # PREDICTION CALCULATION CONSTANTS
 # ============================================================================
 
+# ============================================================================
+# 3-WAY ELO SYSTEM CONSTANTS (Batter + Bowler + Venue)
+# ============================================================================
+# A unified ELO system where Batter, Bowler, and Venue all participate in
+# rating updates based on delivery outcomes.
+#
+# Two dimensions:
+#   - Run ELO: Expected runs vs actual runs (continuous scale 0-1)
+#   - Wicket ELO: Expected wicket probability vs actual wicket (binary 0/1)
+#
+# Expected values use agnostic model baseline + ELO-based adjustments.
+
+# Starting/Target ELO (optimized via IPL Poisson grid search, Jan 2026)
+THREE_WAY_ELO_START <- 1400
+THREE_WAY_ELO_TARGET_MEAN <- 1500
+THREE_WAY_ELO_DIVISOR <- 400
+THREE_WAY_REPLACEMENT_LEVEL <- 1500  # Players/venues decay towards this when inactive
+
+# How much each ELO point affects runs prediction
+# 100 ELO diff ≈ RUNS_PER_100_ELO_POINTS runs/ball difference
+# Optimized via IPL Poisson grid search (Jan 2026): 0.12 with linear scores
+THREE_WAY_RUNS_PER_100_ELO_POINTS_T20 <- 0.12
+
+# Update rule: "standard" = k*delta, "sqrt" = k*sign(delta)*sqrt(|delta|)
+# Poisson optimization (Jan 2026) found linear (power=1.0) optimal for all formats
+THREE_WAY_UPDATE_RULE <- "linear"
+
+# ODI/Test runs_per_100 (Poisson-optimized Jan 2026)
+# See data-raw/debug/debug_poisson_fast_optimization.R
+THREE_WAY_RUNS_PER_100_ELO_POINTS_ODI <- 0.12   # 1.13% improvement
+THREE_WAY_RUNS_PER_100_ELO_POINTS_TEST <- 0.10  # 1.51% improvement
+
+# Attribution weights (how much each entity contributes to expected value)
+# Optimized via IPL Poisson grid search (Jan 2026)
+# See data-raw/debug/debug_elo_4way_venue_decay.R for methodology
+# Player weight: 74% (batter 52%, bowler 22%), Venue weight: 26% (split 80/20)
+# Must sum to 1.0
+THREE_WAY_W_BATTER <- 0.52
+THREE_WAY_W_BOWLER <- 0.22
+THREE_WAY_W_VENUE_SESSION <- 0.208  # Short-term venue conditions (80% of venue)
+THREE_WAY_W_VENUE_PERM <- 0.052     # Permanent venue characteristics (20% of venue)
+
+# ============================================================================
+# 3-WAY ELO DYNAMIC K-FACTORS
+# ============================================================================
+# K = K_MIN + (K_MAX - K_MIN) * exp(-deliveries / K_HALFLIFE)
+
+# Player Run K-factors (optimized via IPL Poisson grid search, Jan 2026)
+# See data-raw/debug/debug_elo_4way_venue_decay.R for methodology
+# Poisson improvement: 1.63% over constant-mean baseline with 4-way system
+THREE_WAY_K_RUN_MAX_T20 <- 22
+THREE_WAY_K_RUN_MIN_T20 <- 7
+THREE_WAY_K_RUN_HALFLIFE_T20 <- 150  # ~2.5 T20 innings to half-decay
+
+# ODI K-factors (Poisson-optimized via international ODI data, Jan 2026)
+# See data-raw/debug/debug_poisson_fast_optimization.R
+# Poisson improvement: 1.13% over constant-mean baseline
+THREE_WAY_K_RUN_MAX_ODI <- 16
+THREE_WAY_K_RUN_MIN_ODI <- 2
+THREE_WAY_K_RUN_HALFLIFE_ODI <- 400  # ~6-7 ODI innings to half-decay
+
+# Test K-factors (Poisson-optimized via international Test data, Jan 2026)
+# Poisson improvement: 1.51% over constant-mean baseline (best of all formats)
+THREE_WAY_K_RUN_MAX_TEST <- 16
+THREE_WAY_K_RUN_MIN_TEST <- 2
+THREE_WAY_K_RUN_HALFLIFE_TEST <- 800  # ~8 Test innings to half-decay
+
+# Player Wicket K-factors
+# Using same halflives as Run ELO (Poisson-optimized), lower K values for rarer events
+THREE_WAY_K_WICKET_MAX_T20 <- 6
+THREE_WAY_K_WICKET_MIN_T20 <- 1
+THREE_WAY_K_WICKET_HALFLIFE_T20 <- 150   # Match Run ELO halflife
+
+THREE_WAY_K_WICKET_MAX_ODI <- 8
+THREE_WAY_K_WICKET_MIN_ODI <- 1
+THREE_WAY_K_WICKET_HALFLIFE_ODI <- 400   # Match Run ELO halflife
+
+THREE_WAY_K_WICKET_MAX_TEST <- 8
+THREE_WAY_K_WICKET_MIN_TEST <- 1
+THREE_WAY_K_WICKET_HALFLIFE_TEST <- 800  # Match Run ELO halflife
+
+# ============================================================================
+# VENUE DECAY HALFLIVES (Time-based decay toward replacement)
+# ============================================================================
+# Optimized via IPL Poisson grid search (Jan 2026)
+# See data-raw/debug/debug_elo_venue_weight_split.R for methodology
+#
+# Session (short-term): Captures recent pitch prep, dew, weather conditions
+# Permanent (long-term): Captures inherent ground characteristics (size, typical pitch)
+
+THREE_WAY_VENUE_SESSION_DECAY_HALFLIFE <- 3     # 3 days - very short-term
+THREE_WAY_VENUE_PERM_DECAY_HALFLIFE <- 1095     # 3 years - long-term characteristics
+
+# ============================================================================
+# VENUE K-FACTORS (Dual Component System - Format-Specific)
+# ============================================================================
+# Optimized via Poisson grid search across T20/ODI/Test (Jan 2026)
+# See data-raw/debug/debug_venue_dual_*.R for methodology
+#
+# Two components:
+#   - PERMANENT: Slow-learning venue characteristics (pitch type, boundaries, altitude)
+#   - SESSION: Fast-learning current conditions (resets each match)
+#
+# K = K_MIN + (K_MAX - K_MIN) * exp(-balls / K_HALFLIFE)
+
+# T20 Venue K-factors (optimized from IPL data)
+# Improvement: 1.67% vs baseline with dual venue
+THREE_WAY_K_VENUE_PERM_MAX_T20 <- 8
+THREE_WAY_K_VENUE_PERM_MIN_T20 <- 1
+THREE_WAY_K_VENUE_PERM_HALFLIFE_T20 <- 4000   # ~30+ T20 matches
+
+THREE_WAY_K_VENUE_SESSION_MAX_T20 <- 20
+THREE_WAY_K_VENUE_SESSION_MIN_T20 <- 2
+THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20 <- 150  # ~1 T20 innings
+
+# ODI Venue K-factors (optimized from international ODI data)
+# Improvement: 1.43% vs baseline with dual venue
+THREE_WAY_K_VENUE_PERM_MAX_ODI <- 8
+THREE_WAY_K_VENUE_PERM_MIN_ODI <- 1
+THREE_WAY_K_VENUE_PERM_HALFLIFE_ODI <- 8000   # ~25+ ODI matches
+
+THREE_WAY_K_VENUE_SESSION_MAX_ODI <- 20
+THREE_WAY_K_VENUE_SESSION_MIN_ODI <- 2
+THREE_WAY_K_VENUE_SESSION_HALFLIFE_ODI <- 300  # ~1 ODI innings
+
+# Test Venue K-factors (optimized from international Test data)
+# Improvement: 1.56% vs baseline with dual venue
+THREE_WAY_K_VENUE_PERM_MAX_TEST <- 4
+THREE_WAY_K_VENUE_PERM_MIN_TEST <- 1
+THREE_WAY_K_VENUE_PERM_HALFLIFE_TEST <- 15000  # ~10+ Test matches (very stable)
+
+THREE_WAY_K_VENUE_SESSION_MAX_TEST <- 12
+THREE_WAY_K_VENUE_SESSION_MIN_TEST <- 2
+THREE_WAY_K_VENUE_SESSION_HALFLIFE_TEST <- 600  # ~1 Test session
+
+# ============================================================================
+# PLAYER INACTIVITY DECAY
+# ============================================================================
+# Players who haven't played recently decay towards replacement level
+# Optimized via IPL Poisson grid search (Jan 2026)
+
+THREE_WAY_INACTIVITY_THRESHOLD_DAYS <- 90   # Start decay after this many days
+THREE_WAY_INACTIVITY_HALFLIFE <- 500        # ~16 months half-life (slow decay)
+THREE_WAY_INACTIVITY_K_BOOST_FACTOR <- 0.00 # No K boost when returning (didn't help)
+
+# ============================================================================
+# SITUATIONAL K-FACTOR MODIFIERS
+# ============================================================================
+
+# High chase (innings 2, required run rate > 10)
+# Wickets less informative (risk-taking), runs more informative (intent)
+THREE_WAY_HIGH_CHASE_WICKET_MULT <- 0.6
+THREE_WAY_HIGH_CHASE_RUN_MULT <- 1.3
+
+# Phase multipliers (restrictions/pressure make outcomes more informative)
+THREE_WAY_PHASE_POWERPLAY_MULT <- 1.1
+THREE_WAY_PHASE_MIDDLE_MULT <- 1.0
+THREE_WAY_PHASE_DEATH_MULT <- 1.2
+
+# Knockout/pressure K modifier (high-stakes = more informative)
+THREE_WAY_KNOCKOUT_MULT <- 1.25
+
+# Event tier K multipliers (higher tier = stronger opponents = more informative)
+# Uses existing tier detection from get_event_tier()
+THREE_WAY_TIER_1_MULT <- 1.2   # IPL, BBL, ICC events, Tests, ODI/T20I
+THREE_WAY_TIER_2_MULT <- 1.0   # Strong domestic leagues
+THREE_WAY_TIER_3_MULT <- 0.85  # Regional/qualifier events
+THREE_WAY_TIER_4_MULT <- 0.7   # Development/associate events
+
+# ============================================================================
+# NORMALIZATION PARAMETERS
+# ============================================================================
+
+# Apply normalization after every match (user preference)
+THREE_WAY_NORMALIZE_AFTER_MATCH <- TRUE
+THREE_WAY_NORMALIZATION_CORRECTION_RATE <- 0.5  # Correct 50% of drift per match
+THREE_WAY_NORMALIZATION_MIN_DRIFT <- 0.1        # Only if drift > this
+
+# Drift alert threshold
+THREE_WAY_DRIFT_ALERT_THRESHOLD <- 10  # Alert if mean drifts > 10 points
+
+# ============================================================================
+# SAMPLE-SIZE BAYESIAN BLENDING
+# ============================================================================
+# Blend raw ELO toward replacement level based on sample size.
+# Formula: effective_elo = raw_elo * reliability + REPLACEMENT_LEVEL * (1 - reliability)
+#          reliability = balls / (balls + RELIABILITY_HALFLIFE)
+# At RELIABILITY_HALFLIFE balls, player has 50% weight on raw ELO.
+
+THREE_WAY_RELIABILITY_HALFLIFE <- 500  # Balls until 50% weight on raw ELO
+
+# ============================================================================
+# ANCHOR-BASED CALIBRATION
+# ============================================================================
+# Scale K-factors by player calibration score to propagate anchor ratings.
+# Low calibration = higher K (learns faster from calibrated opponents).
+# High calibration = normal K (trusts existing rating).
+#
+# Formula (in get_3way_player_k):
+#   calibration_mult = 1 + (1 - calibration_score / 100) * CALIBRATION_K_BOOST
+#   effective_k = base_k * calibration_mult
+
+THREE_WAY_CALIBRATION_K_BOOST <- 0.5   # Max K boost for uncalibrated players
+THREE_WAY_ANCHOR_THRESHOLD <- 50       # Calibration score for full trust
+
+# Anchor leagues for calibration scoring (Tier 1 events)
+# These are the premier franchise leagues + main ICC events
+THREE_WAY_ANCHOR_EVENTS <- c(
+  "Indian Premier League",
+  "Big Bash League",
+  "Pakistan Super League",
+  "Caribbean Premier League",
+  "SA20",
+  "The Hundred Men's Competition",
+  "The Hundred Women's Competition",
+  "Major League Cricket"
+)
+
+# Event-tier K multipliers (player-level, for isolated ecosystem calibration)
+# Lower K in weak leagues = ratings change slowly = less inflation
+THREE_WAY_PLAYER_TIER_K_MULT_1 <- 1.0  # IPL, BBL, etc. (baseline)
+THREE_WAY_PLAYER_TIER_K_MULT_2 <- 0.8  # Vitality Blast, etc.
+THREE_WAY_PLAYER_TIER_K_MULT_3 <- 0.6  # Qualifiers
+THREE_WAY_PLAYER_TIER_K_MULT_4 <- 0.4  # Development
+
 # Maximum possible required run rate (6 runs per ball)
 MAX_REQUIRED_RUN_RATE <- 36
+
+# ============================================================================
+# 3-WAY GLICKO SYSTEM CONSTANTS (Poisson-Glicko Rating with Explicit RD)
+# ============================================================================
+# A Glicko-style extension of 3-Way ELO that adds:
+#   - Rating Deviation (RD): Explicit uncertainty tracking
+#   - g-function weighting: Updates weighted by opponent uncertainty
+#   - Composite RD: Combining uncertainties from batter, bowler, venue
+#   - Poisson loss function: Variance scales with expected runs
+#
+# Key mathematical difference from standard ELO:
+#   - ELO: K-factor = K_MIN + (K_MAX - K_MIN) * exp(-balls/halflife)
+#   - Glicko: Effective K derived from 1/RD², automatically adapts
+#
+# Glicko constant Q = ln(10)/400 ≈ 0.00576
+GLICKO_Q <- log(10) / 400
+
+# Starting ratings and RDs
+GLICKO_R_START <- 1500            # Initial rating (same as ELO)
+GLICKO_RD_START <- 350            # Initial RD (standard Glicko)
+GLICKO_RD_MIN <- 30               # RD floor (very confident)
+GLICKO_RD_MAX <- 500              # RD cap for inactive players
+
+# Venue-specific RD parameters (venues more stable than players)
+GLICKO_VENUE_RD_START <- 200      # Venues start with less uncertainty
+GLICKO_VENUE_RD_MIN <- 50         # Venues can be very well-characterized
+GLICKO_VENUE_RD_MAX <- 400        # Max venue uncertainty
+
+# Poisson dispersion parameter (φ)
+# φ > 1 indicates overdispersion (variance > mean), typical for cricket
+# Cricket run distributions are typically overdispersed due to boundaries
+# Optimized via IPL Poisson grid search (Jan 2026): φ=2.5 gave best results
+GLICKO_PHI_T20 <- 2.5             # T20: high variance (boundaries, optimized)
+GLICKO_PHI_ODI <- 2.0             # ODI: moderate variance
+GLICKO_PHI_TEST <- 1.5            # Test: lower variance (defensive play)
+
+# RD decay when inactive (uncertainty grows over time)
+# Formula: new_RD = sqrt(old_RD² + decay² * days)
+GLICKO_RD_DECAY_PER_DAY <- 5      # Player RD grows by ~5 per day inactive
+GLICKO_VENUE_RD_DECAY_PER_DAY <- 1  # Venues decay slower
+
+# Base expected runs (format-specific, used in exponential link)
+# These are the intercepts before ELO adjustments
+GLICKO_BASE_RUNS_T20 <- 1.28      # IPL T20 average runs per ball
+GLICKO_BASE_RUNS_ODI <- 0.82      # ODI average runs per ball
+GLICKO_BASE_RUNS_TEST <- 0.52     # Test average runs per ball
+
+# Attribution weights for combining ratings
+# (batter + venue) - bowler in the combined rating
+GLICKO_W_BATTER <- 0.40           # Batter contribution
+GLICKO_W_BOWLER <- 0.40           # Bowler contribution
+GLICKO_W_VENUE <- 0.20            # Venue contribution
 
 # Placeholder for "effectively infinite" values in features
 # Used when calculations would produce Inf (e.g., runs_needed = 0)
@@ -385,3 +691,544 @@ MIN_WIN_PROBABILITY <- 0.01
 MAX_WIN_PROBABILITY <- 0.99
 
 NULL
+
+
+# ============================================================================
+# GLOBAL VARIABLE DECLARATIONS
+# ============================================================================
+# R CMD check requires declaring global variables used in dplyr pipelines,
+# data.table operations, etc. to avoid "no visible binding" NOTEs.
+
+
+# ELO System Variables -------------------------------------------------------
+
+utils::globalVariables(c(
+  # Basic ELO ratings by format
+  "elo_batting",
+  "elo_bowling",
+  "elo_batting_test",
+  "elo_batting_odi",
+  "elo_batting_t20",
+  "elo_bowling_test",
+  "elo_bowling_odi",
+  "elo_bowling_t20",
+  # Dual ELO system (scoring vs survival)
+  "batter_survival_elo",
+  "batter_scoring_elo",
+  "bowler_strike_elo",
+  "bowler_economy_elo",
+  "exp_survival",
+  "exp_scoring",
+  # Dual ELO constant
+  "DUAL_ELO_START",
+  # Team ELO
+  "elo_result"
+))
+
+
+# Event Tier Variables -------------------------------------------------------
+
+utils::globalVariables(c(
+  "TIER_1_STARTING_ELO",
+  "TIER_2_STARTING_ELO",
+  "TIER_3_STARTING_ELO",
+  "TIER_4_STARTING_ELO",
+  "CROSS_TIER_K_BOOST",
+  "CROSS_TIER_K_MAX_MULTIPLIER",
+  "TEAM_TIER_EMA_ALPHA",
+  "TIER_1_EVENTS",
+  "TIER_2_EVENTS",
+  "TIER_3_PATTERNS",
+  "TIER_4_EVENTS",
+  "event_tier",
+  "team_tier"
+))
+
+
+# Team Correlation Variables -------------------------------------------------
+
+utils::globalVariables(c(
+  "CORRELATION_W_OPPONENTS",
+  "CORRELATION_W_EVENTS",
+  "CORRELATION_W_DIRECT",
+  "CORRELATION_THRESHOLD",
+  "PROPAGATION_FACTOR",
+  "team_opponents",
+  "team_events",
+  "team_matchups"
+))
+
+
+# Player Skill Index Variables -----------------------------------------------
+
+utils::globalVariables(c(
+  # Batter skills
+  "batter_scoring_index",
+  "batter_survival_rate",
+  "batter_balls_faced",
+  "batter_experience",
+  # Bowler skills
+  "bowler_economy_index",
+  "bowler_strike_rate",
+  "bowler_balls_bowled",
+  "bowler_experience"
+))
+
+
+# Team Skill Index Variables -------------------------------------------------
+
+utils::globalVariables(c(
+  "batting_team_runs_skill",
+  "batting_team_wicket_skill",
+  "bowling_team_runs_skill",
+  "bowling_team_wicket_skill",
+  "batting_team_balls",
+  "bowling_team_balls",
+  "team1_team_runs_skill",
+  "team2_team_runs_skill",
+  "team1_team_wicket_skill",
+  "team2_team_wicket_skill"
+))
+
+
+# Venue Skill Index Variables ------------------------------------------------
+
+utils::globalVariables(c(
+  "venue_run_rate",
+  "venue_wicket_rate",
+  "venue_boundary_rate",
+  "venue_dot_rate",
+  "venue_balls",
+  "venue_canonical",
+  "venue_reliable",
+  "canonical_venue",
+  "is_boundary",
+  "is_dot",
+  "alias",
+  "venue_run_rate_skill",
+  "venue_wicket_rate_skill"
+))
+
+
+# Player Metrics Variables ---------------------------------------------------
+
+utils::globalVariables(c(
+  "player_out_id",
+  "balls_faced",
+  "runs_scored",
+  "wickets",
+  "balls_bowled"
+))
+
+
+# 3-Way ELO Variables --------------------------------------------------------
+
+utils::globalVariables(c(
+  # 3-Way ELO Constants
+  "THREE_WAY_ELO_START",
+  "THREE_WAY_ELO_TARGET_MEAN",
+  "THREE_WAY_ELO_DIVISOR",
+  "THREE_WAY_REPLACEMENT_LEVEL",
+  "THREE_WAY_UPDATE_RULE",
+  # Sample-size blending
+  "THREE_WAY_RELIABILITY_HALFLIFE",
+  # Anchor calibration
+  "THREE_WAY_CALIBRATION_K_BOOST",
+  "THREE_WAY_ANCHOR_THRESHOLD",
+  "THREE_WAY_ANCHOR_EVENTS",
+  "THREE_WAY_PLAYER_TIER_K_MULT_1",
+  "THREE_WAY_PLAYER_TIER_K_MULT_2",
+  "THREE_WAY_PLAYER_TIER_K_MULT_3",
+  "THREE_WAY_PLAYER_TIER_K_MULT_4",
+  # Player Run ELOs
+  "batter_run_elo_before",
+  "batter_run_elo_after",
+  "bowler_run_elo_before",
+  "bowler_run_elo_after",
+  # Player Wicket ELOs
+  "batter_wicket_elo_before",
+  "batter_wicket_elo_after",
+  "bowler_wicket_elo_before",
+  "bowler_wicket_elo_after",
+  # Venue Permanent ELOs
+  "venue_perm_run_elo_before",
+  "venue_perm_run_elo_after",
+  "venue_perm_wicket_elo_before",
+  "venue_perm_wicket_elo_after",
+  # Venue Session ELOs
+  "venue_session_run_elo_before",
+  "venue_session_run_elo_after",
+  "venue_session_wicket_elo_before",
+  "venue_session_wicket_elo_after",
+  # Venue Weights
+  "THREE_WAY_W_VENUE_PERM",
+  "THREE_WAY_W_VENUE_SESSION",
+  # Venue Decay Halflives
+  "THREE_WAY_VENUE_SESSION_DECAY_HALFLIFE",
+  "THREE_WAY_VENUE_PERM_DECAY_HALFLIFE",
+  # Venue K-factors by format
+  "THREE_WAY_K_VENUE_PERM_MAX_T20",
+  "THREE_WAY_K_VENUE_PERM_MIN_T20",
+  "THREE_WAY_K_VENUE_PERM_HALFLIFE_T20",
+  "THREE_WAY_K_VENUE_SESSION_MAX_T20",
+  "THREE_WAY_K_VENUE_SESSION_MIN_T20",
+  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20",
+  "THREE_WAY_K_VENUE_PERM_MAX_ODI",
+  "THREE_WAY_K_VENUE_PERM_MIN_ODI",
+  "THREE_WAY_K_VENUE_PERM_HALFLIFE_ODI",
+  "THREE_WAY_K_VENUE_SESSION_MAX_ODI",
+  "THREE_WAY_K_VENUE_SESSION_MIN_ODI",
+  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_ODI",
+  "THREE_WAY_K_VENUE_PERM_MAX_TEST",
+  "THREE_WAY_K_VENUE_PERM_MIN_TEST",
+  "THREE_WAY_K_VENUE_PERM_HALFLIFE_TEST",
+  "THREE_WAY_K_VENUE_SESSION_MAX_TEST",
+  "THREE_WAY_K_VENUE_SESSION_MIN_TEST",
+  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_TEST",
+  # K-Factors
+  "k_batter_run",
+  "k_bowler_run",
+  "k_venue_perm_run",
+  "k_venue_session_run",
+  "k_batter_wicket",
+  "k_bowler_wicket",
+  "k_venue_perm_wicket",
+  "k_venue_session_wicket",
+  # Context variables
+  "batter_balls",
+  "bowler_balls",
+  "venue_balls",
+  "balls_in_match",
+  "days_inactive_batter",
+  "days_inactive_bowler",
+  "is_knockout",
+  "phase",
+  # Expected values
+  "exp_runs",
+  "exp_wicket",
+  "actual_runs",
+  "agnostic_runs",
+  "agnostic_wicket"
+))
+
+
+# WPA/ERA Attribution Variables ----------------------------------------------
+
+utils::globalVariables(c(
+  "predicted_before",
+  "predicted_after",
+  "wpa",
+  "batter_wpa",
+  "bowler_wpa",
+  "expected_runs",
+  "era",
+  "batter_era",
+  "bowler_era",
+  "total_wpa",
+  "total_era",
+  "wpa_per_delivery",
+  "era_per_delivery",
+  "key_moment_wpa",
+  "clutch_moments",
+  "positive_wpa_pct",
+  "role"
+))
+
+
+# Feature Engineering Variables ----------------------------------------------
+
+utils::globalVariables(c(
+  # Phase of play
+  "phase_powerplay",
+  "phase_middle",
+  "phase_death",
+  "phase_new_ball",
+  "phase_old_ball",
+  # Match context
+  "gender",
+  "gender_male",
+  "format_t20",
+  "format_odi",
+  "match_type_t20",
+  "match_type_odi",
+  "innings_num",
+  # Game state
+  "runs_difference",
+  "overs_left",
+  # Ball outcomes
+  "is_four",
+  "is_six",
+  "over_runs",
+  "over_wickets"
+))
+
+
+# Outcome Classification Variables -------------------------------------------
+
+utils::globalVariables(c(
+  "event_match_number",
+  "event_group",
+  "outcome_method_lower",
+  "outcome_type_lower",
+  "is_super_over",
+  "event_match_number_lower",
+  "event_group_lower",
+  "is_pure_tie",
+  "is_no_result",
+  "is_dls_match",
+  "normal_results",
+  "dls_matches",
+  "super_over_matches",
+  "pure_ties",
+  "no_results"
+))
+
+
+# Chase Calibration Variables ------------------------------------------------
+
+utils::globalVariables(c(
+  "chase_completed",
+  "chase_impossible",
+  "runs_per_ball_needed",
+  "balls_per_run_available",
+  "resources_per_run",
+  "chase_buffer",
+  "chase_buffer_ratio",
+  "is_easy_chase",
+  "is_difficult_chase",
+  "theoretical_min_balls",
+  "balls_surplus"
+))
+
+
+# Pre-Match Prediction Variables ---------------------------------------------
+
+utils::globalVariables(c(
+  # Team 1 features
+  "team1_elo_result",
+  "team1_elo_roster",
+  "team1_form_last5",
+  "team1_h2h_total",
+  "team1_h2h_wins",
+  "team1_bat_scoring_avg",
+  "team1_bat_scoring_top5",
+  "team1_bat_survival_avg",
+  "team1_bowl_economy_avg",
+  "team1_bowl_economy_top5",
+  "team1_bowl_strike_avg",
+  "team1_won_toss",
+  # Team 2 features
+  "team2_elo_result",
+  "team2_elo_roster",
+  "team2_form_last5",
+  "team2_bat_scoring_avg",
+  "team2_bat_scoring_top5",
+  "team2_bat_survival_avg",
+  "team2_bowl_economy_avg",
+  "team2_bowl_economy_top5",
+  "team2_bowl_strike_avg",
+  # Derived features (differences)
+  "elo_diff_result",
+  "form_diff",
+  "bat_scoring_diff",
+  "bat_scoring_top5_diff",
+  "bowl_economy_diff",
+  "bowl_economy_top5_diff",
+  # Match context
+  "toss_elect_bat",
+  "venue_avg_score",
+  "venue_chase_success_rate"
+))
+
+
+# JSON Parser Enhanced Variables ---------------------------------------------
+
+utils::globalVariables(c(
+  # Match-level
+  "reserve_umpire",
+  "missing_data",
+  # Innings-level
+  "target_runs",
+  "target_overs",
+  "absent_hurt",
+  # Delivery-level: DRS review
+  "has_review",
+  "review_by",
+  "review_umpire",
+  "review_batter",
+  "review_decision",
+  # Delivery-level: substitute fielder flags
+  "fielder1_is_sub",
+  "fielder2_is_sub",
+  # Delivery-level: player replacement
+  "has_replacement",
+  "replacement_in",
+  "replacement_out",
+  "replacement_reason",
+  "replacement_role",
+  # Powerplays table
+  "powerplay_id",
+  "from_over",
+  "to_over",
+  "powerplay_type"
+))
+
+
+# Pipeline State Variables ---------------------------------------------------
+
+utils::globalVariables(c(
+  "step_name",
+  "last_run_at",
+  "last_match_count",
+  "last_delivery_count"
+))
+
+
+# Fox Sports Scraper Variables -----------------------------------------------
+
+utils::globalVariables(c(
+  "running_over"
+))
+
+
+# Score Projection Variables -------------------------------------------------
+
+utils::globalVariables(c(
+  # EIS Constants
+  "EIS_T20_MALE_INTL",
+  "EIS_T20_MALE_CLUB",
+  "EIS_T20_FEMALE_INTL",
+  "EIS_T20_FEMALE_CLUB",
+  "EIS_ODI_MALE_INTL",
+  "EIS_ODI_MALE_CLUB",
+  "EIS_ODI_FEMALE_INTL",
+  "EIS_ODI_FEMALE_CLUB",
+  "EIS_TEST_MALE_INTL",
+  "EIS_TEST_MALE_CLUB",
+  "EIS_TEST_FEMALE_INTL",
+  "EIS_TEST_FEMALE_CLUB",
+  # Projection parameters
+  "PROJ_DEFAULT_A",
+  "PROJ_DEFAULT_B",
+  "PROJ_DEFAULT_Z",
+  "PROJ_DEFAULT_Y",
+  "PROJ_MIN_RESOURCE_USED",
+  "PROJ_EARLY_INNINGS_BALLS",
+  # Projection bounds
+  "PROJ_MIN_SCORE_T20",
+  "PROJ_MAX_SCORE_T20",
+  "PROJ_MIN_SCORE_ODI",
+  "PROJ_MAX_SCORE_ODI",
+  "PROJ_MIN_SCORE_TEST",
+  "PROJ_MAX_SCORE_TEST",
+  # Format-specific constants
+  "MAX_BALLS_T20",
+  "MAX_BALLS_ODI",
+  "MAX_BALLS_TEST",
+  "TEST_OVERS_PER_DAY_5DAY",
+  "TEST_OVERS_PER_DAY_4DAY",
+  # Projection table columns
+  "current_score",
+  "balls_remaining",
+  "balls_bowled",
+  "wickets_remaining",
+  "resource_remaining",
+  "resource_used",
+  "eis_agnostic",
+  "eis_full",
+  "projected_agnostic",
+  "projected_full",
+  "final_innings_total",
+  "projection_change_agnostic",
+  "projection_change_full",
+  "avg_score"
+))
+
+
+# Visualization Variables ----------------------------------------------------
+
+utils::globalVariables(c(
+  # plot_player_comparison
+  "Metric",
+  "Value",
+  "NormValue",
+  "Player",
+  # plot_score_progression
+  "ball_number",
+  "cumulative_runs",
+  # plot_skill_progression
+  "value",
+  "match_num",
+  "skill_type",
+  # plot_team_strength
+  "Skill",
+  "Category",
+  # plot_win_probability
+  "match_ball",
+  "win_prob_after"
+))
+
+
+# 3-Way Glicko Variables -----------------------------------------------------
+
+utils::globalVariables(c(
+  # Glicko constants
+  "GLICKO_Q",
+  "GLICKO_R_START",
+  "GLICKO_RD_START",
+  "GLICKO_RD_MIN",
+  "GLICKO_RD_MAX",
+  "GLICKO_VENUE_RD_START",
+  "GLICKO_VENUE_RD_MIN",
+  "GLICKO_VENUE_RD_MAX",
+  "GLICKO_PHI_T20",
+  "GLICKO_PHI_ODI",
+  "GLICKO_PHI_TEST",
+  "GLICKO_RD_DECAY_PER_DAY",
+  "GLICKO_VENUE_RD_DECAY_PER_DAY",
+  "GLICKO_BASE_RUNS_T20",
+  "GLICKO_BASE_RUNS_ODI",
+  "GLICKO_BASE_RUNS_TEST",
+  "GLICKO_W_BATTER",
+  "GLICKO_W_BOWLER",
+  "GLICKO_W_VENUE",
+  # Player Glicko ratings and RDs
+  "batter_glicko_r",
+  "batter_glicko_rd",
+  "bowler_glicko_r",
+  "bowler_glicko_rd",
+  "batter_glicko_r_after",
+  "batter_glicko_rd_after",
+  "bowler_glicko_r_after",
+  "bowler_glicko_rd_after",
+  # Venue Glicko ratings and RDs
+  "venue_glicko_r",
+  "venue_glicko_rd",
+  "venue_glicko_r_after",
+  "venue_glicko_rd_after",
+  # Combined/expected values
+  "glicko_theta",
+  "glicko_expected_runs",
+  "glicko_composite_rd"
+))
+
+
+# PageRank Player Quality Variables ------------------------------------------
+
+utils::globalVariables(c(
+  # PageRank constants
+  "PAGERANK_DAMPING",
+  "PAGERANK_MAX_ITER",
+  "PAGERANK_TOLERANCE",
+  "PAGERANK_MIN_DELIVERIES",
+  "PAGERANK_PERFORMANCE_SCALE",
+  "PAGERANK_PERFORMANCE_CENTER_T20",
+  "PAGERANK_PERFORMANCE_CENTER_ODI",
+  "PAGERANK_PERFORMANCE_CENTER_TEST",
+  "PAGERANK_WICKET_WEIGHT",
+  # PageRank outputs
+  "batter_pagerank",
+  "bowler_pagerank",
+  "pagerank_quality_tier",
+  "pagerank_percentile"
+))

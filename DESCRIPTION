@@ -22,6 +22,7 @@ Imports:
     dplyr,
     rlang,
     cli,
+    glue,
     jsonlite,
     httr2,
     zip,
