@@ -225,12 +225,13 @@ prepare_shortform_features <- function(df) {
   }
 
   if (!"phase" %in% names(df)) {
+    # Use centralized phase boundary constants
     df$phase <- dplyr::case_when(
-      tolower(df$match_type) == "t20" & df$over < 6 ~ "powerplay",
-      tolower(df$match_type) == "t20" & df$over < 16 ~ "middle",
+      tolower(df$match_type) == "t20" & df$over < PHASE_T20_POWERPLAY_END ~ "powerplay",
+      tolower(df$match_type) == "t20" & df$over < PHASE_T20_MIDDLE_END ~ "middle",
       tolower(df$match_type) == "t20" ~ "death",
-      tolower(df$match_type) == "odi" & df$over < 10 ~ "powerplay",
-      tolower(df$match_type) == "odi" & df$over < 40 ~ "middle",
+      tolower(df$match_type) == "odi" & df$over < PHASE_ODI_POWERPLAY_END ~ "powerplay",
+      tolower(df$match_type) == "odi" & df$over < PHASE_ODI_MIDDLE_END ~ "middle",
       tolower(df$match_type) == "odi" ~ "death",
       TRUE ~ "middle"
     )
@@ -253,9 +254,10 @@ prepare_longform_features <- function(df) {
   df <- as.data.frame(df)
 
   if (!"phase" %in% names(df)) {
+    # Use centralized phase boundary constants
     df$phase <- dplyr::case_when(
-      df$over < 20 ~ "new_ball",
-      df$over < 80 ~ "middle",
+      df$over < PHASE_TEST_NEW_BALL_END ~ "new_ball",
+      df$over < PHASE_TEST_MIDDLE_END ~ "middle",
       TRUE ~ "old_ball"
     )
   }
@@ -394,47 +396,47 @@ prepare_xgb_longform_features <- function(df, include_venue = TRUE) {
 }
 
 
-#' Get Models Directory
+#' Get Models Directory Path
 #'
-#' Finds the models directory within the bouncerdata directory.
+#' Returns the path to the models directory in bouncerdata.
+#' Uses find_bouncerdata_dir() for robust path resolution.
 #'
-#' @return Character string with path to models directory
-#' @keywords internal
-get_models_dir <- function() {
-  cwd <- getwd()
+#' @param create Logical. Whether to create directory if not found. Default TRUE.
+#'
+#' @return Character string with models directory path.
+#'
+#' @examples
+#' \dontrun{
+#' models_dir <- get_models_dir()
+#' # Returns: "/path/to/bouncerverse/bouncerdata/models"
+#'
+#' model_path <- file.path(get_models_dir(), "agnostic_model.ubj")
+#' }
+#'
+#' @export
+get_models_dir <- function(create = TRUE) {
+  data_dir <- find_bouncerdata_dir(create = FALSE)
 
-  potential_paths <- c(
-    file.path(dirname(cwd), "bouncerdata", "models"),
-    file.path(cwd, "bouncerdata", "models"),
-    file.path(cwd, "..", "bouncerdata", "models")
-  )
-
-  for (path in potential_paths) {
-    if (dir.exists(path)) {
-      return(normalizePath(path))
+  if (is.null(data_dir)) {
+    if (create) {
+      data_dir <- find_bouncerdata_dir(create = TRUE)
+    } else {
+      return(NULL)
     }
   }
 
-  # Create if not found
-
-  models_dir <- file.path(dirname(cwd), "bouncerdata", "models")
-  if (!dir.exists(models_dir)) {
-    tryCatch({
-      dir.create(models_dir, recursive = TRUE)
-      cli::cli_alert_info("Created models directory: {.file {models_dir}}")
-      return(normalizePath(models_dir))
-    }, error = function(e) {
-      # Fall through
-    })
-  }
-
-  # Fallback
-  data_dir <- tools::R_user_dir("bouncerdata", which = "data")
   models_dir <- file.path(data_dir, "models")
-  if (!dir.exists(models_dir)) {
+
+  if (create && !dir.exists(models_dir)) {
     dir.create(models_dir, recursive = TRUE)
+    cli::cli_alert_info("Created models directory: {.file {models_dir}}")
   }
-  return(normalizePath(models_dir))
+
+  if (dir.exists(models_dir)) {
+    return(normalizePath(models_dir, winslash = "/"))
+  } else {
+    return(models_dir)  # Return path even if doesn't exist (create = FALSE)
+  }
 }
 
 

@@ -11,7 +11,14 @@ Character string with database path
 }
 \description{
 Returns the default path for the Bouncer DuckDB database.
-Prefers project-local directory (bouncerverse/bouncerdata) if it exists,
-otherwise falls back to system data directory.
+This is a convenience wrapper around \code{\link{get_db_path}()} for
+backward compatibility.
+}
+\details{
+For new code, prefer using \code{get_db_path()} directly as it also
+accepts custom path parameters.
+}
+\seealso{
+\code{\link{get_db_path}} for the primary path resolution function
 }
 \keyword{internal}

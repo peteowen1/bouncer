@@ -14,7 +14,9 @@ get_3way_player_k(
   event_tier = 2,
   is_high_chase = FALSE,
   calibration_score = NULL,
-  use_player_tier_k = FALSE
+  use_player_tier_k = FALSE,
+  opponent_centrality_percentile = NULL,
+  gender = "male"
 )
 }
 \arguments{
@@ -39,6 +41,17 @@ NULL uses no calibration adjustment (backward compatible).}
 
 \item{use_player_tier_k}{Logical. Use player-level tier K multipliers
 (more aggressive) instead of standard tier multipliers.}
+
+\item{opponent_centrality_percentile}{Numeric. Opponent's centrality percentile (0-100).
+If provided, applies sigmoid-based K-factor modulation where:
+\itemize{
+\item 99th percentile → K × 1.5 (learn a lot from elite)
+\item 50th percentile → K × 1.0 (neutral)
+\item 10th percentile → K × 0.5 (learn little from weak)
+NULL or NA uses no centrality adjustment (backward compatible).
+}}
+
+\item{gender}{Character. Gender: "male" or "female". Default "male".}
 }
 \value{
 Numeric. The final adjusted K-factor.
@@ -47,5 +60,12 @@ Numeric. The final adjusted K-factor.
 Calculates dynamic K-factor for a player based on experience and context.
 Includes calibration-based scaling where uncalibrated players (low anchor
 exposure) get higher K to learn faster from calibrated opponents.
+}
+\details{
+Now also supports centrality-based K-factor modulation (Option A):
+\itemize{
+\item High centrality opponents → higher K (learn more from elite players)
+\item Low centrality opponents → lower K (learn less from weak players)
+}
 }
 \keyword{internal}

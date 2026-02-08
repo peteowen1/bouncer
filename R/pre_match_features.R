@@ -567,7 +567,7 @@ load_margin_model <- function(format, model_dir = NULL) {
     model_dir <- get_default_models_path()
   }
 
-  model_path <- file.path(model_dir, paste0(format, "_margin_model.ubj"))
+  model_path <- file.path(model_dir, get_model_filename("margin", format))
 
   if (!file.exists(model_path)) {
     cli::cli_alert_warning("Margin model not found at {model_path}")

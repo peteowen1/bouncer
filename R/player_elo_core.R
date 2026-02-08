@@ -66,26 +66,9 @@ calculate_k_factor <- function(match_type, player_matches = 0) {
 }
 
 
-#' Calculate ELO Update
-#'
-#' Calculates the new ELO rating after a performance.
-#'
-#' @param current_elo Numeric. Player's current ELO rating
-#' @param expected Numeric. Expected outcome (from \code{calculate_expected_outcome})
-#' @param actual Numeric. Actual outcome score (0 to 1)
-#' @param k_factor Numeric. K-factor for this update
-#'
-#' @return Numeric. New ELO rating
-#' @keywords internal
-calculate_elo_update <- function(current_elo, expected, actual, k_factor) {
-  # Input validation - return current ELO unchanged for invalid inputs
-  if (is.na(current_elo) || is.na(expected) || is.na(actual) || is.na(k_factor) ||
-      is.nan(current_elo) || is.nan(expected) || is.nan(actual) || is.nan(k_factor) ||
-      is.infinite(current_elo) || is.infinite(expected) || is.infinite(actual) || is.infinite(k_factor)) {
-    return(current_elo %||% ELO_START_RATING)
-  }
-  current_elo + k_factor * (actual - expected)
-}
+# Note: calculate_elo_update() is defined in elo_utils.R (exported)
+# The canonical version uses: calculate_elo_update(current_elo, expected, actual, k)
+# Input validation for NA/NaN/Inf should be done by callers if needed
 
 
 #' Initialize Player ELO

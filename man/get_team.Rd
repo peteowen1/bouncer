@@ -25,3 +25,8 @@ india <- get_team("India")
 print(india)
 }
 }
+\seealso{
+\code{\link{compare_teams}} to compare two teams,
+\code{\link{predict_match}} to predict match outcome,
+\code{\link{search_teams}} to find teams by name
+}

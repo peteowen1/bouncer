@@ -24,3 +24,7 @@ match <- analyze_match("1234567")
 print(match)
 }
 }
+\seealso{
+\code{\link{predict_match}} to predict future match outcomes,
+\code{\link{get_player}} to look up players from the match
+}

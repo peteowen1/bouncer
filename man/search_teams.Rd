@@ -25,3 +25,7 @@ search_teams()  # List all teams
 search_teams("India")
 }
 }
+\seealso{
+\code{\link{get_team}} to get detailed info for a specific team,
+\code{\link{compare_teams}} to compare two teams
+}

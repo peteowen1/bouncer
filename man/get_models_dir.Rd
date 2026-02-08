@@ -2,14 +2,26 @@
 % Please edit documentation in R/expected_outcomes.R
 \name{get_models_dir}
 \alias{get_models_dir}
-\title{Get Models Directory}
+\title{Get Models Directory Path}
 \usage{
-get_models_dir()
+get_models_dir(create = TRUE)
+}
+\arguments{
+\item{create}{Logical. Whether to create directory if not found. Default TRUE.}
 }
 \value{
-Character string with path to models directory
+Character string with models directory path.
 }
 \description{
-Finds the models directory within the bouncerdata directory.
+Returns the path to the models directory in bouncerdata.
+Uses find_bouncerdata_dir() for robust path resolution.
 }
-\keyword{internal}
+\examples{
+\dontrun{
+models_dir <- get_models_dir()
+# Returns: "/path/to/bouncerverse/bouncerdata/models"
+
+model_path <- file.path(get_models_dir(), "agnostic_model.ubj")
+}
+
+}

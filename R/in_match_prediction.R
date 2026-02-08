@@ -44,7 +44,7 @@ load_in_match_models <- function(format = "t20",
   }
 
   # Load Stage 1 results
-  stage1_file <- file.path(models_path, paste0(format, "_stage1_results.rds"))
+  stage1_file <- file.path(models_path, get_model_filename("stage1", format))
   if (!file.exists(stage1_file)) {
     cli::cli_alert_warning("Stage 1 model not found: {stage1_file}")
     cli::cli_alert_info("Run the in-match pipeline first (data-raw/models/in-match/)")
@@ -54,7 +54,7 @@ load_in_match_models <- function(format = "t20",
   stage1_results <- readRDS(stage1_file)
 
   # Load Stage 2 results
-  stage2_file <- file.path(models_path, paste0(format, "_stage2_results.rds"))
+  stage2_file <- file.path(models_path, get_model_filename("stage2", format))
   if (!file.exists(stage2_file)) {
     cli::cli_alert_warning("Stage 2 model not found: {stage2_file}")
     return(NULL)
@@ -146,14 +146,8 @@ predict_win_probability <- function(current_score,
   # Convert overs to balls
   balls_bowled <- overs_to_balls(overs)
 
-  # Get max balls for format
-  max_balls <- switch(format,
-    "t20" = 120,
-    "it20" = 120,
-    "odi" = 300,
-    "odm" = 300,
-    120
-  )
+  # Get max balls for format (using centralized lookup)
+  max_balls <- get_max_balls(format)
 
   balls_remaining <- max_balls - balls_bowled
   overs_remaining <- balls_remaining / 6
@@ -180,17 +174,13 @@ predict_win_probability <- function(current_score,
     stringsAsFactors = FALSE
   )
 
-  # Add phase
-  phase_break <- switch(format,
-    "t20" = list(powerplay = 6, death = 16),
-    "odi" = list(powerplay = 10, death = 40),
-    list(powerplay = 6, death = 16)
-  )
+  # Add phase using central helper
+  phase_bounds <- get_phase_boundaries(format)
 
   current_over <- floor(balls_bowled / 6)
-  feature_data$phase <- if (current_over < phase_break$powerplay) {
+  feature_data$phase <- if (current_over < phase_bounds$powerplay_end) {
     "powerplay"
-  } else if (current_over >= phase_break$death) {
+  } else if (current_over >= phase_bounds$middle_end) {
     "death"
   } else {
     "middle"

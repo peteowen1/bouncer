@@ -4,12 +4,14 @@
 \alias{get_3way_venue_session_k}
 \title{Get 3-Way Venue Session K-Factor}
 \usage{
-get_3way_venue_session_k(balls_in_match, format = "t20")
+get_3way_venue_session_k(balls_in_match, format = "t20", gender = "male")
 }
 \arguments{
 \item{balls_in_match}{Integer. Balls bowled in current match.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
+
+\item{gender}{Character. Gender: "male" or "female". Default "male".}
 }
 \value{
 Numeric. The K-factor for session venue ELO.
@@ -17,6 +19,6 @@ Numeric. The K-factor for session venue ELO.
 \description{
 Calculates K-factor for session venue ELO (fast-learning within match).
 Resets each match to capture current conditions.
-Uses format-specific parameters optimized via Poisson grid search (Jan 2026).
+Uses format-gender-specific parameters optimized via Poisson loss (Feb 2026).
 }
 \keyword{internal}

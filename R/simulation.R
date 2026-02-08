@@ -49,6 +49,11 @@
 #'   - is_wicket: TRUE if wicket fell
 #'   - probs: 7-class probability vector (if categorical mode)
 #'
+#' @seealso
+#' \code{\link{simulate_innings}} to simulate a full innings,
+#' \code{\link{simulate_match_ballbyball}} to simulate a full match,
+#' \code{\link{load_full_model}} to load the prediction model
+#'
 #' @export
 simulate_delivery <- function(model, match_state, player_skills, team_skills,
                                venue_skills, mode = c("categorical", "expected")) {
@@ -152,32 +157,54 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 #'   - ball_by_ball: data frame of each delivery
 #'   - result: "completed", "all_out", or "target_reached"
 #'
+#' @seealso
+#' \code{\link{simulate_delivery}} for single-ball simulation,
+#' \code{\link{simulate_match_ballbyball}} to simulate a full match
+#'
 #' @export
 simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
                               batting_team_skills, bowling_team_skills, venue_skills,
                               batters, bowlers, mode = "categorical",
                               gender = "male", is_knockout = 0, event_tier = 2) {
 
-  # Determine max overs
-  max_overs <- switch(format, "t20" = 20, "odi" = 50, "test" = NULL)
-  max_balls <- if (!is.null(max_overs)) max_overs * 6 else 999999  # Test effectively unlimited
+  # Determine max overs (use centralized lookup)
+  max_overs <- get_max_overs(format)
+  max_balls <- if (!is.null(max_overs)) max_overs * 6 else 999999L  # Test effectively unlimited
+
+  # OPTIMIZED: Pre-allocate vectors for max possible deliveries
+  # This avoids expensive list appending in the while loop
+  max_deliveries <- if (!is.null(max_overs)) as.integer(max_overs * 6) else 1000L
+  result_over <- integer(max_deliveries)
+  result_ball <- integer(max_deliveries)
+  result_runs <- numeric(max_deliveries)
+  result_is_wicket <- logical(max_deliveries)
+  result_total_runs <- integer(max_deliveries)
+  result_wickets <- integer(max_deliveries)
 
   # Initialize state
   runs <- 0L
   wickets <- 0L
   balls <- 0L
-  current_batter_idx <- 1
-  current_bowler_idx <- 1
-  deliveries <- list()
+  delivery_count <- 0L
+  current_batter_idx <- 1L
+  current_bowler_idx <- 1L
 
   # Track batter/bowler balls faced/bowled
   batter_balls <- rep(0L, length(batters))
   bowler_balls <- rep(0L, length(bowlers))
 
+  # Pre-compute team skills (avoid repeated %||% in loop)
+  team_skills <- list(
+    batting_team_runs_skill = batting_team_skills$runs_skill %||% 0,
+    batting_team_wicket_skill = batting_team_skills$wicket_skill %||% 0,
+    bowling_team_runs_skill = bowling_team_skills$runs_skill %||% 0,
+    bowling_team_wicket_skill = bowling_team_skills$wicket_skill %||% 0
+  )
+
   # Main simulation loop
-  while (balls < max_balls && wickets < 10) {
-    over <- balls %/% 6
-    ball <- (balls %% 6) + 1
+  while (balls < max_balls && wickets < 10L) {
+    over <- balls %/% 6L
+    ball <- (balls %% 6L) + 1L
 
     # Get current batter/bowler skills
     current_batter <- batters[[current_batter_idx]]
@@ -200,39 +227,29 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
       event_tier = event_tier
     )
 
-    # Combine team skills
-    team_skills <- list(
-      batting_team_runs_skill = batting_team_skills$runs_skill %||% 0,
-      batting_team_wicket_skill = batting_team_skills$wicket_skill %||% 0,
-      bowling_team_runs_skill = bowling_team_skills$runs_skill %||% 0,
-      bowling_team_wicket_skill = bowling_team_skills$wicket_skill %||% 0
-    )
-
     # Simulate delivery
-    result <- simulate_delivery(model, match_state, current_batter, team_skills,
-                                 venue_skills, mode)
+    sim_result <- simulate_delivery(model, match_state, current_batter, team_skills,
+                                     venue_skills, mode)
 
     # Update state
-    runs <- runs + as.integer(result$runs)
-    balls <- balls + 1
-    batter_balls[current_batter_idx] <- batter_balls[current_batter_idx] + 1
-    bowler_balls[current_bowler_idx] <- bowler_balls[current_bowler_idx] + 1
+    runs <- runs + as.integer(sim_result$runs)
+    balls <- balls + 1L
+    batter_balls[current_batter_idx] <- batter_balls[current_batter_idx] + 1L
+    bowler_balls[current_bowler_idx] <- bowler_balls[current_bowler_idx] + 1L
 
-    if (result$is_wicket) {
-      wickets <- wickets + 1
-      current_batter_idx <- min(current_batter_idx + 1, length(batters))
+    if (sim_result$is_wicket) {
+      wickets <- wickets + 1L
+      current_batter_idx <- min(current_batter_idx + 1L, length(batters))
     }
 
-    # Track delivery
-    deliveries[[length(deliveries) + 1]] <- data.frame(
-      over = over,
-      ball = ball,
-      runs = result$runs,
-      is_wicket = result$is_wicket,
-      total_runs = runs,
-      wickets = wickets,
-      stringsAsFactors = FALSE
-    )
+    # Store result in pre-allocated vectors (no list appending)
+    delivery_count <- delivery_count + 1L
+    result_over[delivery_count] <- over
+    result_ball[delivery_count] <- ball
+    result_runs[delivery_count] <- sim_result$runs
+    result_is_wicket[delivery_count] <- sim_result$is_wicket
+    result_total_runs[delivery_count] <- runs
+    result_wickets[delivery_count] <- wickets
 
     # Check if target reached (innings 2)
     if (!is.null(target) && runs >= target) {
@@ -240,26 +257,36 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     }
 
     # Rotate bowler every over
-    if (ball == 6) {
-      current_bowler_idx <- ((current_bowler_idx) %% length(bowlers)) + 1
+    if (ball == 6L) {
+      current_bowler_idx <- ((current_bowler_idx) %% length(bowlers)) + 1L
     }
   }
 
   # Determine result
   result_type <- if (!is.null(target) && runs >= target) {
     "target_reached"
-  } else if (wickets >= 10) {
+  } else if (wickets >= 10L) {
     "all_out"
   } else {
     "completed"
   }
 
+  # Create single data.table at end (trimmed to actual size)
+  ball_by_ball <- data.table::data.table(
+    over = result_over[seq_len(delivery_count)],
+    ball = result_ball[seq_len(delivery_count)],
+    runs = result_runs[seq_len(delivery_count)],
+    is_wicket = result_is_wicket[seq_len(delivery_count)],
+    total_runs = result_total_runs[seq_len(delivery_count)],
+    wickets = result_wickets[seq_len(delivery_count)]
+  )
+
   list(
     total_runs = runs,
     wickets_lost = wickets,
     balls_faced = balls,
-    overs_faced = balls %/% 6 + (balls %% 6) / 10,
-    ball_by_ball = do.call(rbind, deliveries),
+    overs_faced = balls %/% 6L + (balls %% 6L) / 10,
+    ball_by_ball = ball_by_ball,
     result = result_type
   )
 }
@@ -289,6 +316,10 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
 #'   - winner: "team1", "team2", or "tie"
 #'   - margin: description of margin
 #'   - innings1, innings2: detailed ball-by-ball results
+#'
+#' @seealso
+#' \code{\link{simulate_innings}} for single-innings simulation,
+#' \code{\link{simulate_delivery}} for ball-by-ball control
 #'
 #' @export
 simulate_match_ballbyball <- function(model, format = "t20",

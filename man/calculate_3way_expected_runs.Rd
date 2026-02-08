@@ -10,11 +10,13 @@ calculate_3way_expected_runs(
   bowler_run_elo,
   venue_perm_run_elo,
   venue_session_run_elo,
-  format = "t20"
+  format = "t20",
+  gender = "male"
 )
 }
 \arguments{
-\item{agnostic_runs}{Numeric. Base expected runs from agnostic model.}
+\item{agnostic_runs}{Numeric. Base expected runs from agnostic model.
+Use per-delivery values from agnostic_predictions table for best results.}
 
 \item{batter_run_elo}{Numeric. Batter's run ELO.}
 
@@ -25,6 +27,8 @@ calculate_3way_expected_runs(
 \item{venue_session_run_elo}{Numeric. Venue's session run ELO.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
+
+\item{gender}{Character. Gender: "male" or "female". Default "male".}
 }
 \value{
 Numeric. Adjusted expected runs.
@@ -32,5 +36,16 @@ Numeric. Adjusted expected runs.
 \description{
 Uses agnostic model as baseline with ELO-based adjustments from
 batter, bowler, and venue ratings.
+}
+\details{
+The \code{agnostic_runs} parameter should come from pre-computed per-delivery
+baselines (see \code{get_agnostic_baselines()}) which account for match context
+and league characteristics. This enables league-specific expected values.
+
+Supports two conversion modes (controlled by THREE_WAY_USE_LOGISTIC_CONVERSION):
+\itemize{
+\item Linear (default): expected = baseline + weighted_elo_diff * runs_per_elo
+\item Logistic: expected = baseline * logistic_multiplier(weighted_elo_diff)
+}
 }
 \keyword{internal}

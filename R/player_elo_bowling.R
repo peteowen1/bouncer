@@ -1,4 +1,14 @@
 # Bowling ELO Rating Functions
+#
+# SUPERSEDED: This module implements the original dual-ELO system for bowlers.
+# It has been superseded by the 3-Way ELO system (three_way_elo.R) which provides:
+#   - Unified batter + bowler + venue rating in a single pass
+#   - Session and permanent venue effects
+#   - Better handling of venue conditions
+#
+# Retained for backwards compatibility. New development should use:
+#   - calculate_3way_elo() from three_way_elo.R
+#   - The {format}_3way_player_elo database tables
 
 #' Update Bowling ELO from Delivery
 #'

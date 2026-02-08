@@ -60,3 +60,8 @@ List with outcome details:
 \description{
 Simulates a single delivery outcome using the full prediction model.
 }
+\seealso{
+\code{\link{simulate_innings}} to simulate a full innings,
+\code{\link{simulate_match_ballbyball}} to simulate a full match,
+\code{\link{load_full_model}} to load the prediction model
+}

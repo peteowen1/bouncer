@@ -4,17 +4,26 @@
 \alias{apply_inactivity_decay}
 \title{Apply Inactivity Decay to Player ELO}
 \usage{
-apply_inactivity_decay(current_elo, days_inactive)
+apply_inactivity_decay(
+  current_elo,
+  days_inactive,
+  centrality_percentile = NULL
+)
 }
 \arguments{
 \item{current_elo}{Numeric. Current ELO rating.}
 
 \item{days_inactive}{Integer. Days since last match.}
+
+\item{centrality_percentile}{Numeric (0-100). Player's or league's centrality percentile.
+If NULL, uses global replacement level (1500).}
 }
 \value{
 Numeric. Decayed ELO rating.
 }
 \description{
-Decays player ELO towards replacement level based on days inactive.
+Decays player ELO towards centrality-implied replacement level based on days inactive.
+Players regress toward a replacement level appropriate for their league quality,
+not a fixed global average.
 }
 \keyword{internal}

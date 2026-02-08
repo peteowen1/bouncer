@@ -698,38 +698,9 @@ add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing
 # Skill Index Utility Functions ==============================================
 #
 # Common helper functions used across player, team, and venue skill index modules.
-
-
-#' Normalize Cricket Format Name
-#'
-#' Normalizes various format names to canonical form (t20, odi, test).
-#' Handles case insensitivity, whitespace, and common aliases.
-#'
-#' @param format Character. Format name to normalize
-#'
-#' @return Character. Canonical format: "t20", "odi", or "test"
-#' @keywords internal
-normalize_format <- function(format) {
-  format_lower <- tolower(trimws(format))
-
-  # T20 variants
-  if (format_lower %in% c("t20", "t20i", "it20", "t20s", "twenty20")) {
-    return("t20")
-  }
-
-  # ODI variants
-  if (format_lower %in% c("odi", "odis", "odm")) {
-    return("odi")
-  }
-
-  # Test variants
-  if (format_lower %in% c("test", "tests", "mdm")) {
-    return("test")
-  }
-
-  # Default to T20 for domestic leagues and unknown formats
-  "t20"
-}
+#
+# NOTE: normalize_format() has been moved to format_utils.R and is now exported.
+# Use bouncer::normalize_format() for format normalization.
 
 
 #' Get Format-Specific Skill Table Name

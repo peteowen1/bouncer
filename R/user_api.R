@@ -54,6 +54,11 @@ validate_format <- function(format, allow_null = TRUE) {
 #'     \item bowling_style - Bowling type
 #'     \item skills - Current skill indices (if available)
 #'   }
+#'
+#' @seealso
+#' \code{\link{compare_players}} to compare two players side-by-side,
+#' \code{\link{analyze_player}} for detailed performance analysis
+#'
 #' @export
 #'
 #' @examples
@@ -279,6 +284,12 @@ print.bouncer_player <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_player_analysis` object with stats, skills, and trends.
+#'
+#' @seealso
+#' \code{\link{get_player}} for basic player lookup,
+#' \code{\link{compare_players}} to compare two players,
+#' \code{\link{plot_skill_progression}} to visualize skill changes over time
+#'
 #' @export
 #'
 #' @examples
@@ -377,6 +388,12 @@ print.bouncer_player_analysis <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_player_comparison` object.
+#'
+#' @seealso
+#' \code{\link{get_player}} for basic player lookup,
+#' \code{\link{analyze_player}} for single-player detailed analysis,
+#' \code{\link{plot_player_comparison}} for visual comparison
+#'
 #' @export
 #'
 #' @examples
@@ -462,6 +479,12 @@ print.bouncer_player_comparison <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_team` object.
+#'
+#' @seealso
+#' \code{\link{compare_teams}} to compare two teams,
+#' \code{\link{predict_match}} to predict match outcome,
+#' \code{\link{search_teams}} to find teams by name
+#'
 #' @export
 #'
 #' @examples
@@ -596,6 +619,11 @@ print.bouncer_team <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_team_comparison` object.
+#'
+#' @seealso
+#' \code{\link{get_team}} to look up a single team,
+#' \code{\link{predict_match}} for detailed match prediction
+#'
 #' @export
 #'
 #' @examples
@@ -685,6 +713,11 @@ print.bouncer_team_comparison <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_match` object with match details.
+#'
+#' @seealso
+#' \code{\link{predict_match}} to predict future match outcomes,
+#' \code{\link{get_player}} to look up players from the match
+#'
 #' @export
 #'
 #' @examples
@@ -840,6 +873,12 @@ print.bouncer_match <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return A `bouncer_prediction` object.
+#'
+#' @seealso
+#' \code{\link{compare_teams}} for ELO comparison without full prediction,
+#' \code{\link{get_team}} to look up team ratings,
+#' \code{\link{analyze_match}} to analyze completed matches
+#'
 #' @export
 #'
 #' @examples
@@ -954,6 +993,11 @@ print.bouncer_prediction <- function(x, ...) {
 #' @param db_path Character. Database path.
 #'
 #' @return Data frame of matching players.
+#'
+#' @seealso
+#' \code{\link{get_player}} to get detailed info for a specific player,
+#' \code{\link{compare_players}} to compare two players
+#'
 #' @export
 #'
 #' @examples
@@ -1002,6 +1046,11 @@ search_players <- function(pattern, limit = 10, db_path = NULL) {
 #' @param db_path Character. Database path.
 #'
 #' @return Data frame of matching teams with match counts.
+#'
+#' @seealso
+#' \code{\link{get_team}} to get detailed info for a specific team,
+#' \code{\link{compare_teams}} to compare two teams
+#'
 #' @export
 #'
 #' @examples

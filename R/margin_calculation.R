@@ -128,13 +128,7 @@ calculate_unified_margin <- function(team1_score, team2_score,
     wickets_fallen <- 10 - wickets_remaining
 
     # Get max balls for format to calculate overs bowled
-    format_lower <- tolower(format)
-    max_balls <- switch(format_lower,
-      "t20" = 120, "it20" = 120,
-      "odi" = 300, "odm" = 300,
-      "test" = 540, "mdm" = 540,
-      120
-    )
+    max_balls <- get_max_balls(format)
     balls_bowled <- max_balls - balls_remaining
     overs_bowled <- balls_to_overs_cricket(balls_bowled)
 

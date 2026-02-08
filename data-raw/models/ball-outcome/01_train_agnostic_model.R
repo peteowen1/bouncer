@@ -19,6 +19,11 @@
 #   - gender (male/female)
 #   - is_knockout (knockout match flag)
 #   - event_tier (competition importance)
+#   - league_avg_runs (NEW: historical average runs/ball for this league)
+#   - league_avg_wicket (NEW: historical wicket rate for this league)
+#
+# The league features are continuous values representing historical averages,
+# allowing the model to generalize to new leagues rather than one-hot encoding.
 #
 # EXCLUDES: player identity, team identity, venue identity
 #
@@ -75,16 +80,24 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_rule("{toupper(format)} Format")
   cat("\n")
 
-  # Determine format filter
+  # Determine format filters - different prefixes for different CTEs
   if (format == "t20") {
-    format_filter <- "LOWER(match_type) IN ('t20', 'it20')"
+    format_filter_d <- "LOWER(d.match_type) IN ('t20', 'it20')"
+    format_filter_m <- "LOWER(m.match_type) IN ('t20', 'it20')"
+    format_filter_bare <- "LOWER(match_type) IN ('t20', 'it20')"
   } else if (format == "odi") {
-    format_filter <- "LOWER(match_type) IN ('odi', 'odm')"
+    format_filter_d <- "LOWER(d.match_type) IN ('odi', 'odm')"
+    format_filter_m <- "LOWER(m.match_type) IN ('odi', 'odm')"
+    format_filter_bare <- "LOWER(match_type) IN ('odi', 'odm')"
   } else {
-    format_filter <- "LOWER(match_type) IN ('test', 'mdm')"
+    format_filter_d <- "LOWER(d.match_type) IN ('test', 'mdm')"
+    format_filter_m <- "LOWER(m.match_type) IN ('test', 'mdm')"
+    format_filter_bare <- "LOWER(match_type) IN ('test', 'mdm')"
   }
 
-  # Build SQL query with context features
+  # Build SQL query with context features including league running averages
+  # The league averages are computed from historical data BEFORE each match
+  # to prevent data leakage. We use a window function approach.
   query <- sprintf("
     WITH innings_totals AS (
       SELECT
@@ -114,6 +127,7 @@ for (format in FORMATS_TO_TRAIN) {
     match_context AS (
       SELECT DISTINCT
         m.match_id,
+        m.event_name,
         CASE
           WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
           WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
@@ -132,6 +146,38 @@ for (format in FORMATS_TO_TRAIN) {
           ELSE 3
         END AS event_tier
       FROM matches m
+    ),
+    -- League running averages: compute avg runs/wicket rate for each league
+    -- as of each match date (to prevent data leakage, we use LAG approach)
+    league_stats AS (
+      SELECT
+        m.event_name,
+        m.match_id,
+        m.match_date,
+        AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
+        AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
+      FROM matches m
+      JOIN deliveries d ON m.match_id = d.match_id
+      WHERE %s
+        AND m.event_name IS NOT NULL
+      GROUP BY m.event_name, m.match_id, m.match_date
+    ),
+    league_running_avg AS (
+      SELECT
+        event_name,
+        match_id,
+        -- Running average EXCLUDING current match (lag to prevent data leakage)
+        AVG(match_avg_runs) OVER (
+          PARTITION BY event_name
+          ORDER BY match_date, match_id
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS league_avg_runs,
+        AVG(match_wicket_rate) OVER (
+          PARTITION BY event_name
+          ORDER BY match_date, match_id
+          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+        ) AS league_avg_wicket
+      FROM league_stats
     )
     SELECT
       cs.delivery_id,
@@ -149,13 +195,30 @@ for (format in FORMATS_TO_TRAIN) {
       (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier
+      COALESCE(mc.event_tier, 3) AS event_tier,
+      -- League features: use running average or format default if first match in league
+      COALESCE(lra.league_avg_runs, %f) AS league_avg_runs,
+      COALESCE(lra.league_avg_wicket, %f) AS league_avg_wicket
     FROM cumulative_scores cs
     LEFT JOIN match_context mc ON cs.match_id = mc.match_id
+    LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
     %s
-  ", format_filter, format_filter,
+  ", format_filter_bare,  # innings_totals: bare deliveries table
+     format_filter_d,      # cumulative_scores: d. prefix
+     format_filter_m,      # league_stats: m. prefix for the join
+     # Default league averages by format (used when league has no history)
+     switch(format,
+       "t20" = EXPECTED_RUNS_T20,
+       "odi" = EXPECTED_RUNS_ODI,
+       "test" = EXPECTED_RUNS_TEST,
+       EXPECTED_RUNS_T20),
+     switch(format,
+       "t20" = EXPECTED_WICKET_T20,
+       "odi" = EXPECTED_WICKET_ODI,
+       "test" = EXPECTED_WICKET_TEST,
+       EXPECTED_WICKET_T20),
      if (!is.null(MATCH_LIMIT)) sprintf("LIMIT %d", MATCH_LIMIT * 1000) else "")
 
   # Execute query
@@ -274,7 +337,7 @@ for (format in FORMATS_TO_TRAIN) {
 
   prepare_agnostic_xgb_features <- function(data, fmt) {
     if (fmt %in% c("t20", "odi")) {
-      # Short-form features
+      # Short-form features (including league running averages)
       data %>%
         mutate(
           format_t20 = as.integer(fmt == "t20"),
@@ -292,10 +355,12 @@ for (format in FORMATS_TO_TRAIN) {
           wickets_fallen, runs_difference, overs_left,
           phase_powerplay, phase_middle, phase_death,
           gender_male,
-          is_knockout, event_tier
+          is_knockout, event_tier,
+          # NEW: League features as continuous values (enables generalization to new leagues)
+          league_avg_runs, league_avg_wicket
         )
     } else {
-      # Long-form features
+      # Long-form features (including league running averages)
       data %>%
         mutate(
           phase_new_ball = as.integer(phase == "new_ball"),
@@ -310,7 +375,9 @@ for (format in FORMATS_TO_TRAIN) {
           wickets_fallen, runs_difference,
           phase_new_ball, phase_middle, phase_old_ball,
           gender_male,
-          is_knockout, event_tier
+          is_knockout, event_tier,
+          # NEW: League features as continuous values
+          league_avg_runs, league_avg_wicket
         )
     }
   }

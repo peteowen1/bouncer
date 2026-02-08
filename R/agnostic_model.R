@@ -39,7 +39,7 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
   }
 
   # Agnostic models use XGBoost (for consistency and speed)
-  model_file <- file.path(model_dir, sprintf("agnostic_outcome_%s.ubj", format))
+  model_file <- file.path(model_dir, get_model_filename("agnostic", format))
 
   if (!file.exists(model_file)) {
     cli::cli_abort(c(
@@ -222,7 +222,7 @@ load_full_model <- function(format = c("t20", "odi", "test"),
     model_dir <- get_models_dir()
   }
 
-  model_file <- file.path(model_dir, sprintf("full_outcome_%s.ubj", format))
+  model_file <- file.path(model_dir, get_model_filename("full", format))
 
   if (!file.exists(model_file)) {
     cli::cli_abort(c(

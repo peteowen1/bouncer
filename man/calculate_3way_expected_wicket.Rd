@@ -9,11 +9,14 @@ calculate_3way_expected_wicket(
   batter_wicket_elo,
   bowler_wicket_elo,
   venue_perm_wicket_elo,
-  venue_session_wicket_elo
+  venue_session_wicket_elo,
+  format = "t20",
+  gender = "male"
 )
 }
 \arguments{
-\item{agnostic_wicket}{Numeric. Base wicket probability from agnostic model.}
+\item{agnostic_wicket}{Numeric. Base wicket probability from agnostic model.
+Use per-delivery values from agnostic_predictions table for best results.}
 
 \item{batter_wicket_elo}{Numeric. Batter's wicket ELO (higher = survives better).}
 
@@ -22,11 +25,20 @@ calculate_3way_expected_wicket(
 \item{venue_perm_wicket_elo}{Numeric. Venue permanent wicket ELO.}
 
 \item{venue_session_wicket_elo}{Numeric. Venue session wicket ELO.}
+
+\item{format}{Character. Match format: "t20", "odi", or "test". Default "t20".}
+
+\item{gender}{Character. Gender: "male" or "female". Default "male".}
 }
 \value{
 Numeric. Adjusted expected wicket probability.
 }
 \description{
 Uses agnostic model as baseline with ELO-based adjustments on log-odds scale.
+}
+\details{
+The \code{agnostic_wicket} parameter should come from pre-computed per-delivery
+baselines (see \code{get_agnostic_baselines()}) which account for match context
+and league characteristics. This enables league-specific expected values.
 }
 \keyword{internal}

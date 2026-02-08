@@ -2,17 +2,20 @@
 % Please edit documentation in R/three_way_elo.R
 \name{build_3way_elo_params}
 \alias{build_3way_elo_params}
-\title{Build 3-Way ELO Parameters for Format}
+\title{Build 3-Way ELO Parameters for Format and Gender}
 \usage{
-build_3way_elo_params(format = "t20")
+build_3way_elo_params(format = "t20", gender = "male")
 }
 \arguments{
 \item{format}{Character. Match format: "t20", "odi", or "test".}
+
+\item{gender}{Character. Gender: "male" or "female". Default "male".}
 }
 \value{
 List with all parameters needed for 3-way ELO calculation.
 }
 \description{
-Constructs a parameter list for 3-way ELO calculation.
+Constructs a parameter list for 3-way ELO calculation using
+format-gender-specific optimized parameters.
 }
 \keyword{internal}

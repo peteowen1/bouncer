@@ -60,3 +60,7 @@ List with innings summary:
 \description{
 Simulates a complete innings ball-by-ball.
 }
+\seealso{
+\code{\link{simulate_delivery}} for single-ball simulation,
+\code{\link{simulate_match_ballbyball}} to simulate a full match
+}

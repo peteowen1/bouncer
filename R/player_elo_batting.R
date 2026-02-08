@@ -1,4 +1,14 @@
 # Batting ELO Rating Functions
+#
+# SUPERSEDED: This module implements the original dual-ELO system for batters.
+# It has been superseded by the 3-Way ELO system (three_way_elo.R) which provides:
+#   - Unified batter + bowler + venue rating in a single pass
+#   - Session and permanent venue effects
+#   - Better handling of venue conditions
+#
+# Retained for backwards compatibility. New development should use:
+#   - calculate_3way_elo() from three_way_elo.R
+#   - The {format}_3way_player_elo database tables
 
 # Internal helper for getting ELO (used by both batting and bowling)
 get_elo_internal <- function(player_id, rating_type, match_type, as_of_date, db_path) {
