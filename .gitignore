@@ -14,6 +14,10 @@ docs
 # Internal setup docs (not for repo)
 *_SETUP.md
 *_NOTES.md
+CODE_REVIEW_FINDINGS.md
+
+# Log files
+*.log
 
 # SSH keys and secrets (never commit!)
 *.key
