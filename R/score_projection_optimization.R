@@ -453,7 +453,7 @@ optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.d
   cli::cli_h1("Optimization Complete")
 
   if (length(results) > 0) {
-    summary_df <- do.call(rbind, lapply(results, function(r) {
+    summary_df <- fast_rbind(lapply(results, function(r) {
       data.frame(
         segment = r$segment_id,
         a = round(r$a, 3),

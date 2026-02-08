@@ -769,7 +769,7 @@ batch_skill_query <- function(delivery_ids, query_fn, batch_size = 10000, verbos
     }
   }
 
-  do.call(rbind, all_results)
+  fast_rbind(all_results)
 }
 
 

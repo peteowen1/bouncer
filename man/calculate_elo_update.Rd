@@ -29,3 +29,4 @@ calculate_elo_update(1500, expected = 0.5, actual = 1, k = 32)  # 1516
 calculate_elo_update(1500, expected = 0.5, actual = 0, k = 32)  # 1484
 
 }
+\keyword{internal}

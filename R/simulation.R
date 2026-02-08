@@ -694,7 +694,7 @@ aggregate_season_results <- function(standings_list) {
   n <- length(standings_list)
 
   # Combine all standings
-  all_standings <- do.call(rbind, lapply(seq_along(standings_list), function(i) {
+  all_standings <- fast_rbind(lapply(seq_along(standings_list), function(i) {
     df <- standings_list[[i]]
     df$simulation <- i
     df

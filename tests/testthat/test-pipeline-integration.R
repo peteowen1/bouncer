@@ -120,8 +120,8 @@ test_that("skill alpha values are format-ordered (T20 > ODI > Test)", {
 })
 
 test_that("3-way ELO attribution weights sum to 1", {
-  total <- THREE_WAY_W_BATTER + THREE_WAY_W_BOWLER +
-           THREE_WAY_W_VENUE_SESSION + THREE_WAY_W_VENUE_PERM
+  w <- get_run_elo_weights("T20", "male")
+  total <- w$w_batter + w$w_bowler + w$w_venue_session + w$w_venue_perm
   expect_equal(total, 1.0, tolerance = 1e-10)
 })
 

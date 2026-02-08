@@ -66,7 +66,7 @@ calculate_delivery_wpa <- function(deliveries,
 
   # Combine results
   if (length(results) > 0) {
-    combined <- do.call(rbind, results)
+    combined <- fast_rbind(results)
     return(combined)
   } else {
     return(deliveries)

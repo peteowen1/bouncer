@@ -26,3 +26,4 @@ calculate_elo_expected(1600, 1400)  # 0.76 (100 points advantage)
 calculate_elo_expected(1400, 1600)  # 0.24 (100 points disadvantage)
 
 }
+\keyword{internal}

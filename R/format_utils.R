@@ -95,6 +95,7 @@ normalize_format <- function(format) {
   }
 
   # Default to T20 for domestic leagues and unknown formats
+  cli::cli_warn("Unknown format {.val {format}}, defaulting to T20")
   "t20"
 }
 
@@ -110,7 +111,7 @@ normalize_format <- function(format) {
 #'
 #' @return Character. Canonical format.
 #'
-#' @export
+#' @keywords internal
 normalize_match_type <- function(match_type) {
   normalize_format(match_type)
 }
@@ -152,7 +153,7 @@ get_match_types_for_format <- function(format) {
 #' build_match_type_sql("test", "m.match_type")
 #' # Returns: "m.match_type IN ('Test', 'MDM')"
 #'
-#' @export
+#' @keywords internal
 build_match_type_sql <- function(format, column = "match_type") {
   match_types <- get_match_types_for_format(format)
   types_sql <- paste0("'", match_types, "'", collapse = ", ")

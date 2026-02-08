@@ -34,3 +34,4 @@ At elo_diff = 0: multiplier = 1.0 (no change)
 At elo_diff = +Inf: multiplier approaches max_mult
 At elo_diff = -Inf: multiplier approaches 2 - max_mult (e.g., 0.5 for max_mult=1.5)
 }
+\keyword{internal}

@@ -608,11 +608,11 @@ load_filtered_matches <- function(file_paths,
       batch_players <- batch_players[1:valid_count]
       batch_powerplays <- batch_powerplays[1:valid_count]
 
-      all_matches <- do.call(rbind, batch_matches)
-      all_deliveries <- do.call(rbind, batch_deliveries)
-      all_innings <- do.call(rbind, batch_innings)
-      all_players <- do.call(rbind, batch_players)
-      all_powerplays <- do.call(rbind, batch_powerplays)
+      all_matches <- fast_rbind(batch_matches)
+      all_deliveries <- fast_rbind(batch_deliveries)
+      all_innings <- fast_rbind(batch_innings)
+      all_players <- fast_rbind(batch_players)
+      all_powerplays <- fast_rbind(batch_powerplays)
 
       # Deduplicate based on primary keys (in case same file appears multiple times in batch)
       all_matches <- all_matches[!duplicated(all_matches$match_id), ]

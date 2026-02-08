@@ -40,3 +40,4 @@ calculate_dynamic_k(0, k_max = 60, k_min = 20, halflife = 50)      # 60 (new tea
 calculate_dynamic_k(100, k_max = 60, k_min = 20, halflife = 50)    # ~26.5
 
 }
+\keyword{internal}

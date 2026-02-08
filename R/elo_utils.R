@@ -35,7 +35,7 @@
 #' calculate_dynamic_k(0, k_max = 60, k_min = 20, halflife = 50)      # 60 (new team)
 #' calculate_dynamic_k(100, k_max = 60, k_min = 20, halflife = 50)    # ~26.5
 #'
-#' @export
+#' @keywords internal
 calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
   if (is.null(experience) || is.na(experience)) {
     experience <- 0
@@ -63,7 +63,7 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
 #' params <- list(k_max = 200, k_min = 15, halflife = 500)
 #' calculate_dynamic_k_from_params(100, params)  # ~169
 #'
-#' @export
+#' @keywords internal
 calculate_dynamic_k_from_params <- function(experience, params) {
   calculate_dynamic_k(
     experience = experience,
@@ -94,7 +94,7 @@ calculate_dynamic_k_from_params <- function(experience, params) {
 #' calculate_elo_expected(1600, 1400)  # 0.76 (100 points advantage)
 #' calculate_elo_expected(1400, 1600)  # 0.24 (100 points disadvantage)
 #'
-#' @export
+#' @keywords internal
 calculate_elo_expected <- function(player_elo, opponent_elo, scale = 400) {
   1 / (1 + 10^((opponent_elo - player_elo) / scale))
 }
@@ -118,7 +118,7 @@ calculate_elo_expected <- function(player_elo, opponent_elo, scale = 400) {
 #' # Player loses against equal opponent
 #' calculate_elo_update(1500, expected = 0.5, actual = 0, k = 32)  # 1484
 #'
-#' @export
+#' @keywords internal
 calculate_elo_update <- function(current_elo, expected, actual, k) {
   current_elo + k * (actual - expected)
 }

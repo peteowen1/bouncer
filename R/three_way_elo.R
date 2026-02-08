@@ -88,7 +88,7 @@ get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
     results[[i]] <- DBI::dbGetQuery(conn, query)
   }
 
-  result <- do.call(rbind, results)
+  result <- fast_rbind(results)
 
   # Add defaults for missing deliveries
   missing_ids <- setdiff(delivery_ids, result$delivery_id)
@@ -98,7 +98,7 @@ get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
       agnostic_expected_runs = default_runs,
       agnostic_expected_wicket = default_wicket
     )
-    result <- rbind(result, missing_df)
+    result <- fast_rbind(list(result, missing_df))
   }
 
   # Ensure same order as input
@@ -243,7 +243,7 @@ calculate_combined_elo_diff <- function(batter_run_elo,
 #'   Default uses THREE_WAY_LOGISTIC_MAX_MULTIPLIER.
 #'
 #' @return Numeric. Multiplier to apply to baseline (symmetric around 1.0).
-#' @export
+#' @keywords internal
 calculate_logistic_multiplier <- function(elo_diff,
                                            sensitivity = THREE_WAY_LOGISTIC_SENSITIVITY,
                                            max_mult = THREE_WAY_LOGISTIC_MAX_MULTIPLIER) {

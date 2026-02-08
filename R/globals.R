@@ -264,31 +264,9 @@ utils::globalVariables(c(
   "venue_session_run_elo_after",
   "venue_session_wicket_elo_before",
   "venue_session_wicket_elo_after",
-  # Venue Weights
-  "THREE_WAY_W_VENUE_PERM",
-  "THREE_WAY_W_VENUE_SESSION",
   # Venue Decay Halflives
   "THREE_WAY_VENUE_SESSION_DECAY_HALFLIFE",
   "THREE_WAY_VENUE_PERM_DECAY_HALFLIFE",
-  # Venue K-factors by format
-  "THREE_WAY_K_VENUE_PERM_MAX_T20",
-  "THREE_WAY_K_VENUE_PERM_MIN_T20",
-  "THREE_WAY_K_VENUE_PERM_HALFLIFE_T20",
-  "THREE_WAY_K_VENUE_SESSION_MAX_T20",
-  "THREE_WAY_K_VENUE_SESSION_MIN_T20",
-  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20",
-  "THREE_WAY_K_VENUE_PERM_MAX_ODI",
-  "THREE_WAY_K_VENUE_PERM_MIN_ODI",
-  "THREE_WAY_K_VENUE_PERM_HALFLIFE_ODI",
-  "THREE_WAY_K_VENUE_SESSION_MAX_ODI",
-  "THREE_WAY_K_VENUE_SESSION_MIN_ODI",
-  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_ODI",
-  "THREE_WAY_K_VENUE_PERM_MAX_TEST",
-  "THREE_WAY_K_VENUE_PERM_MIN_TEST",
-  "THREE_WAY_K_VENUE_PERM_HALFLIFE_TEST",
-  "THREE_WAY_K_VENUE_SESSION_MAX_TEST",
-  "THREE_WAY_K_VENUE_SESSION_MIN_TEST",
-  "THREE_WAY_K_VENUE_SESSION_HALFLIFE_TEST",
   # K-Factors
   "k_batter_run",
   "k_bowler_run",
@@ -590,54 +568,6 @@ utils::globalVariables(c(
   # plot_win_probability
   "match_ball",
   "win_prob_after"
-))
-
-
-# ============================================================================
-# 3-Way Glicko Variables (DEPRECATED)
-# ============================================================================
-# NOTE: Glicko system moved to data-raw/_deprecated/three_way_glicko.R
-# These variables are kept for backward compatibility but the system is no longer active.
-
-utils::globalVariables(c(
-  # Glicko constants
-  "GLICKO_Q",
-  "GLICKO_R_START",
-  "GLICKO_RD_START",
-  "GLICKO_RD_MIN",
-  "GLICKO_RD_MAX",
-  "GLICKO_VENUE_RD_START",
-  "GLICKO_VENUE_RD_MIN",
-  "GLICKO_VENUE_RD_MAX",
-  "GLICKO_PHI_T20",
-  "GLICKO_PHI_ODI",
-  "GLICKO_PHI_TEST",
-  "GLICKO_RD_DECAY_PER_DAY",
-  "GLICKO_VENUE_RD_DECAY_PER_DAY",
-  "GLICKO_BASE_RUNS_T20",
-  "GLICKO_BASE_RUNS_ODI",
-  "GLICKO_BASE_RUNS_TEST",
-  "GLICKO_W_BATTER",
-  "GLICKO_W_BOWLER",
-  "GLICKO_W_VENUE",
-  # Player Glicko ratings and RDs
-  "batter_glicko_r",
-  "batter_glicko_rd",
-  "bowler_glicko_r",
-  "bowler_glicko_rd",
-  "batter_glicko_r_after",
-  "batter_glicko_rd_after",
-  "bowler_glicko_r_after",
-  "bowler_glicko_rd_after",
-  # Venue Glicko ratings and RDs
-  "venue_glicko_r",
-  "venue_glicko_rd",
-  "venue_glicko_r_after",
-  "venue_glicko_rd_after",
-  # Combined/expected values
-  "glicko_theta",
-  "glicko_expected_runs",
-  "glicko_composite_rd"
 ))
 
 

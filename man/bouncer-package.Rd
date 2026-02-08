@@ -36,7 +36,6 @@ predictions, score projections, and Monte Carlo simulations.
 \item \code{\link[=predict_match]{predict_match()}} - Pre-match outcome prediction
 \item \code{\link[=predict_win_probability]{predict_win_probability()}} - In-match win probability
 \item \code{\link[=calculate_projected_score]{calculate_projected_score()}} - Score projection from game state
-\item \code{\link[=predict_matchup_outcome]{predict_matchup_outcome()}} - Batter vs bowler predictions
 }
 }
 

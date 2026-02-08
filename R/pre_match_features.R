@@ -318,7 +318,7 @@ batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
     return(data.frame())
   }
 
-  features_df <- do.call(rbind, results)
+  features_df <- fast_rbind(results)
 
   return(features_df)
 }

@@ -7,26 +7,39 @@
 # ATTRIBUTION WEIGHTS TESTS
 # ============================================================================
 
-test_that("attribution weights sum to 1.0", {
-  total <- THREE_WAY_W_BATTER + THREE_WAY_W_BOWLER +
-           THREE_WAY_W_VENUE_SESSION + THREE_WAY_W_VENUE_PERM
+test_that("attribution weights sum to 1.0 for all format-gender combos", {
+  formats <- c("T20", "ODI", "TEST")
+  genders <- c("male", "female")
 
-  expect_equal(total, 1.0, tolerance = 1e-10)
+  for (fmt in formats) {
+    for (gen in genders) {
+      w <- get_run_elo_weights(fmt, gen)
+      total <- w$w_batter + w$w_bowler + w$w_venue_session + w$w_venue_perm
+      expect_equal(total, 1.0, tolerance = 1e-10,
+                   label = paste("Run weights sum for", gen, fmt))
+
+      wk <- get_wicket_elo_weights(fmt, gen)
+      total_wk <- wk$w_batter + wk$w_bowler + wk$w_venue_session + wk$w_venue_perm
+      expect_equal(total_wk, 1.0, tolerance = 1e-10,
+                   label = paste("Wicket weights sum for", gen, fmt))
+    }
+  }
 })
 
 test_that("attribution weights are within valid range", {
-  # All weights should be positive
+  w <- get_run_elo_weights("T20", "male")
 
-  expect_gt(THREE_WAY_W_BATTER, 0)
-  expect_gt(THREE_WAY_W_BOWLER, 0)
-  expect_gt(THREE_WAY_W_VENUE_SESSION, 0)
-  expect_gt(THREE_WAY_W_VENUE_PERM, 0)
+  # All weights should be positive
+  expect_gt(w$w_batter, 0)
+  expect_gt(w$w_bowler, 0)
+  expect_gt(w$w_venue_session, 0)
+  expect_gt(w$w_venue_perm, 0)
 
   # All weights should be less than 1
-  expect_lt(THREE_WAY_W_BATTER, 1)
-  expect_lt(THREE_WAY_W_BOWLER, 1)
-  expect_lt(THREE_WAY_W_VENUE_SESSION, 1)
-  expect_lt(THREE_WAY_W_VENUE_PERM, 1)
+  expect_lt(w$w_batter, 1)
+  expect_lt(w$w_bowler, 1)
+  expect_lt(w$w_venue_session, 1)
+  expect_lt(w$w_venue_perm, 1)
 })
 
 # ============================================================================
@@ -186,14 +199,16 @@ test_that("K-factor decreases with experience", {
 })
 
 test_that("K-factor respects min/max bounds", {
+  k_params <- get_run_k_factors("T20", "male")
+
   # Brand new player should be close to max
   k_new <- get_3way_player_k(deliveries = 0, format = "t20", elo_type = "run")
-  expect_gte(k_new, THREE_WAY_K_RUN_MIN_T20)
-  expect_lte(k_new, THREE_WAY_K_RUN_MAX_T20 * 2)  # Allow for multipliers
+  expect_gte(k_new, k_params$k_min)
+  expect_lte(k_new, k_params$k_max * 2)  # Allow for multipliers
 
   # Very experienced player should be close to min
   k_exp <- get_3way_player_k(deliveries = 10000, format = "t20", elo_type = "run")
-  expect_gte(k_exp, THREE_WAY_K_RUN_MIN_T20 * 0.5)  # Allow for multipliers
+  expect_gte(k_exp, k_params$k_min * 0.5)  # Allow for multipliers
 })
 
 test_that("knockout multiplier increases K-factor", {

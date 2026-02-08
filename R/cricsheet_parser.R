@@ -609,7 +609,7 @@ parse_all_data <- function(json_data, match_info) {
 
   # Combine powerplays from all innings
   powerplays_df <- if (length(powerplays_list) > 0) {
-    do.call(rbind, powerplays_list)
+    fast_rbind(powerplays_list)
   } else {
     data.frame(
       powerplay_id = character(),
@@ -782,7 +782,7 @@ read_json_fast <- function(file_path) {
 #' - long_form: Day-limited matches (Tests, First-class, multi-day)
 #' - short_form: Over/ball-limited matches (ODIs, T20s, The Hundred, etc.)
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' get_format_category("Test")   # "long_form"
 #' get_format_category("ODI")    # "short_form"
@@ -841,7 +841,7 @@ get_model_format <- function(match_type) {
 #'
 #' @return Character: "international" or "club"
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' get_match_type_category("Test")  # "international"
 #' get_match_type_category("ODI")   # "international"

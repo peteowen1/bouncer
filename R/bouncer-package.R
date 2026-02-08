@@ -23,7 +23,6 @@
 #' - [predict_match()] - Pre-match outcome prediction
 #' - [predict_win_probability()] - In-match win probability
 #' - [calculate_projected_score()] - Score projection from game state
-#' - [predict_matchup_outcome()] - Batter vs bowler predictions
 #'
 #' @section Simulation Functions:
 #'
