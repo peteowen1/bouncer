@@ -16,14 +16,11 @@ test_that("get_player returns bouncer_player class for valid player", {
 
   # Query a known player (using partial match)
   result <- get_player("Kohli")
+  skip_if(is.null(result), "Player not found in database")
 
-  # Should return a bouncer_player object or NULL
-
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_player")
-    expect_true("player_id" %in% names(result))
-    expect_true("player_name" %in% names(result))
-  }
+  expect_s3_class(result, "bouncer_player")
+  expect_true("player_id" %in% names(result))
+  expect_true("player_name" %in% names(result))
 })
 
 test_that("get_player returns NULL for non-existent player", {
@@ -38,12 +35,10 @@ test_that("get_player returns NULL for non-existent player", {
 test_that("get_player handles format parameter", {
   skip_if_not(db_available(), "Database not available")
 
-  # Query with format
   result <- get_player("Kohli", format = "t20")
+  skip_if(is.null(result), "Player not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_player")
-  }
+  expect_s3_class(result, "bouncer_player")
 })
 
 test_that("get_player validates format parameter", {
@@ -106,10 +101,9 @@ test_that("compare_players returns comparison object for valid players", {
   skip_if_not(db_available(), "Database not available")
 
   result <- suppressMessages(compare_players("Kohli", "Sharma", format = "t20"))
+  skip_if(is.null(result), "Players not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_player_comparison")
-  }
+  expect_s3_class(result, "bouncer_player_comparison")
 })
 
 # ============================================================================
@@ -120,10 +114,9 @@ test_that("analyze_player returns analysis object", {
   skip_if_not(db_available(), "Database not available")
 
   result <- suppressMessages(analyze_player("Kohli", format = "t20"))
+  skip_if(is.null(result), "Player not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_player_analysis")
-  }
+  expect_s3_class(result, "bouncer_player_analysis")
 })
 
 # ============================================================================
@@ -134,20 +127,18 @@ test_that("print.bouncer_player doesn't error", {
   skip_if_not(db_available(), "Database not available")
 
   player <- get_player("Kohli")
+  skip_if(is.null(player), "Player not found in database")
 
-  if (!is.null(player)) {
-    expect_output(print(player))
-  }
+  expect_output(print(player))
 })
 
 test_that("print.bouncer_player_comparison doesn't error", {
   skip_if_not(db_available(), "Database not available")
 
   comparison <- suppressMessages(compare_players("Kohli", "Sharma", format = "t20"))
+  skip_if(is.null(comparison), "Players not found in database")
 
-  if (!is.null(comparison)) {
-    expect_output(print(comparison))
-  }
+  expect_output(print(comparison))
 })
 
 # ============================================================================
@@ -188,14 +179,12 @@ test_that("get_player rejects empty string", {
 test_that("get_team returns bouncer_team class for valid team", {
   skip_if_not(db_available(), "Database not available")
 
-  # Query a known team
   result <- suppressMessages(get_team("India"))
+  skip_if(is.null(result), "Team not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_team")
-    expect_true("name" %in% names(result))
-    expect_true("elo" %in% names(result))
-  }
+  expect_s3_class(result, "bouncer_team")
+  expect_true("name" %in% names(result))
+  expect_true("elo" %in% names(result))
 })
 
 test_that("get_team returns NULL for non-existent team", {
@@ -210,10 +199,9 @@ test_that("get_team handles format parameter", {
   skip_if_not(db_available(), "Database not available")
 
   result <- suppressMessages(get_team("India", format = "t20"))
+  skip_if(is.null(result), "Team not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_team")
-  }
+  expect_s3_class(result, "bouncer_team")
 })
 
 test_that("get_team rejects empty string", {
@@ -242,12 +230,11 @@ test_that("compare_teams returns comparison object", {
   skip_if_not(db_available(), "Database not available")
 
   result <- suppressMessages(compare_teams("India", "Australia", format = "t20"))
+  skip_if(is.null(result), "Teams not found in database")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_team_comparison")
-    expect_true("team1" %in% names(result))
-    expect_true("team2" %in% names(result))
-  }
+  expect_s3_class(result, "bouncer_team_comparison")
+  expect_true("team1" %in% names(result))
+  expect_true("team2" %in% names(result))
 })
 
 test_that("compare_teams rejects empty team names", {
@@ -267,14 +254,13 @@ test_that("analyze_match returns analysis for valid match_id", {
   match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches LIMIT 1")
   DBI::dbDisconnect(conn, shutdown = TRUE)
 
-  if (nrow(match_ids) > 0) {
-    result <- suppressMessages(analyze_match(match_ids$match_id[1]))
+  skip_if(nrow(match_ids) == 0, "No matches in database")
 
-    if (!is.null(result)) {
-      expect_s3_class(result, "bouncer_match")
-      expect_true("match_id" %in% names(result))
-    }
-  }
+  result <- suppressMessages(analyze_match(match_ids$match_id[1]))
+  skip_if(is.null(result), "Match analysis returned NULL")
+
+  expect_s3_class(result, "bouncer_match")
+  expect_true("match_id" %in% names(result))
 })
 
 test_that("analyze_match rejects empty match_id", {
@@ -295,13 +281,12 @@ test_that("predict_match returns prediction object for valid teams", {
   result <- suppressMessages(
     predict_match("India", "Australia", format = "t20")
   )
+  skip_if(is.null(result), "Prediction returned NULL")
 
-  if (!is.null(result)) {
-    expect_s3_class(result, "bouncer_prediction")
-    expect_true("team1" %in% names(result))
-    expect_true("team2" %in% names(result))
-    expect_true("probabilities" %in% names(result))
-  }
+  expect_s3_class(result, "bouncer_prediction")
+  expect_true("team1" %in% names(result))
+  expect_true("team2" %in% names(result))
+  expect_true("probabilities" %in% names(result))
 })
 
 test_that("predict_match probabilities sum to 1", {
@@ -310,12 +295,11 @@ test_that("predict_match probabilities sum to 1", {
   result <- suppressMessages(
     predict_match("India", "Australia", format = "t20")
   )
+  skip_if(is.null(result), "Prediction returned NULL")
+  skip_if(is.null(result$probabilities), "No probabilities in prediction")
 
-  if (!is.null(result) && !is.null(result$probabilities)) {
-    # Sum of probabilities should be approximately 1
-    prob_sum <- sum(unlist(result$probabilities), na.rm = TRUE)
-    expect_true(prob_sum > 0.99 && prob_sum < 1.01)
-  }
+  prob_sum <- sum(unlist(result$probabilities), na.rm = TRUE)
+  expect_true(prob_sum > 0.99 && prob_sum < 1.01)
 })
 
 test_that("predict_match rejects empty team names", {
@@ -336,28 +320,25 @@ test_that("print.bouncer_team doesn't error", {
   skip_if_not(db_available(), "Database not available")
 
   team <- suppressMessages(get_team("India"))
+  skip_if(is.null(team), "Team not found in database")
 
-  if (!is.null(team)) {
-    expect_output(print(team))
-  }
+  expect_output(print(team))
 })
 
 test_that("print.bouncer_team_comparison doesn't error", {
   skip_if_not(db_available(), "Database not available")
 
   comparison <- suppressMessages(compare_teams("India", "Australia", format = "t20"))
+  skip_if(is.null(comparison), "Team comparison returned NULL")
 
-  if (!is.null(comparison)) {
-    expect_output(print(comparison))
-  }
+  expect_output(print(comparison))
 })
 
 test_that("print.bouncer_prediction doesn't error", {
   skip_if_not(db_available(), "Database not available")
 
   prediction <- suppressMessages(predict_match("India", "Australia", format = "t20"))
+  skip_if(is.null(prediction), "Prediction returned NULL")
 
-  if (!is.null(prediction)) {
-    expect_output(print(prediction))
-  }
+  expect_output(print(prediction))
 })
