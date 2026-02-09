@@ -524,14 +524,16 @@ load_innings <- function(match_type = "all", gender = "all",
 
     join_where <- character()
     if (!identical(match_type, "all")) {
-      types_sql <- paste0("'", match_type, "'", collapse = ", ")
+      types_escaped <- escape_sql_value(match_type)
+      types_sql <- paste0("'", types_escaped, "'", collapse = ", ")
       join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
     }
     if (gender != "all") {
-      join_where <- c(join_where, sprintf("m.gender = '%s'", gender))
+      join_where <- c(join_where, sprintf("m.gender = '%s'", escape_sql_value(gender)))
     }
     if (!is.null(match_ids)) {
-      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      ids_escaped <- escape_sql_value(match_ids)
+      ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       join_where <- c(join_where, sprintf("i.match_id IN (%s)", ids_sql))
     }
 

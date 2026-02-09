@@ -53,9 +53,6 @@ Skill indices represent deviations from format-specific baselines (T20/ODI/Test)
 ## ELO Ratings
 
 * `get_team_elo()` - Team ELO ratings (game-level)
-* `get_player_elo()`, `get_batting_elo()`, `get_bowling_elo()` - Player ELO ratings
-* `get_elo_at_delivery()` - Point-in-time ELO lookup
-* `get_match_elo_progression()` - ELO changes through a match
 * `load_team_elo()` - Historical team ELO data
 
 ## Predictions
