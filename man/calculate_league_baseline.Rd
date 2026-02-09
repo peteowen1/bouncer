@@ -35,6 +35,7 @@ Formula: baseline = w * league_avg + (1-w) * global_avg
 Where:   w = league_deliveries / (league_deliveries + HALFLIFE)
 }
 \examples{
+\dontrun{
 # New league (500 deliveries, avg 1.35) with global 1.28
 calculate_league_baseline(1.35, 500, 1.28)   # ~1.286 (9\% league weight)
 
@@ -43,5 +44,7 @@ calculate_league_baseline(1.35, 20000, 1.28) # ~1.336 (80\% league weight)
 
 # No league data yet
 calculate_league_baseline(NA, 0, 1.28)       # 1.28 (global average)
+}
 
 }
+\keyword{internal}

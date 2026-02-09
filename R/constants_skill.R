@@ -504,11 +504,13 @@ PHASE_TEST_MIDDLE_END <- 80    # Overs 21-80: Middle overs
 #'   }
 #'
 #' @examples
+#' \dontrun{
 #' get_phase_boundaries("t20")
 #' # Returns: list(powerplay_end = 6, middle_end = 16)
 #'
 #' get_phase_boundaries("test")
 #' # Returns: list(new_ball_end = 20, middle_end = 80)
+#' }
 #'
 #' @keywords internal
 get_phase_boundaries <- function(format) {
@@ -550,9 +552,11 @@ get_phase_boundaries <- function(format) {
 #' @return Numeric vector of length 2: c(min, max).
 #'
 #' @examples
+#' \dontrun{
 #' get_projection_bounds("t20")   # c(60, 280)
 #' get_projection_bounds("odi")   # c(100, 450)
 #' get_projection_bounds("test")  # c(80, 700)
+#' }
 #'
 #' @keywords internal
 get_projection_bounds <- function(format) {
@@ -581,11 +585,13 @@ get_projection_bounds <- function(format) {
 #'   }
 #'
 #' @examples
+#' \dontrun{
 #' get_phase_from_over(3, "t20")   # "powerplay"
 #' get_phase_from_over(10, "t20")  # "middle"
 #' get_phase_from_over(18, "t20")  # "death"
 #' get_phase_from_over(50, "test") # "middle"
 #' get_phase_from_over(85, "test") # "old_ball"
+#' }
 #'
 #' @keywords internal
 get_phase_from_over <- function(over, format) {

@@ -29,3 +29,4 @@ Invisibly returns the number of rows deleted.
 Removes centrality snapshots older than the retention period to save space.
 Typically called after generating new snapshots.
 }
+\keyword{internal}

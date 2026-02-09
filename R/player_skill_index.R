@@ -8,25 +8,6 @@
 #   - Is directly interpretable (e.g., BSI of 1.8 = 1.8 runs/ball average)
 
 
-#' Get Skill Alpha for Format
-#'
-#' Returns the EMA alpha (learning rate) for a given format.
-#'
-#' @param format Character. Format: "t20", "odi", or "test"
-#'
-#' @return Numeric. Alpha value for EMA
-#' @keywords internal
-get_skill_alpha <- function(format = "t20") {
-  fmt <- normalize_format(format)
-  switch(fmt,
-    "t20" = SKILL_ALPHA_T20,
-    "odi" = SKILL_ALPHA_ODI,
-    "test" = SKILL_ALPHA_TEST,
-    SKILL_ALPHA_T20
-  )
-}
-
-
 #' Get Starting Skill Values for Format
 #'
 #' Returns starting skill values for a format.
@@ -85,63 +66,6 @@ get_skill_start_values <- function(format = "t20") {
 #' @keywords internal
 update_skill_index <- function(old_value, observation, alpha) {
   alpha * observation + (1 - alpha) * old_value
-}
-
-
-#' Calculate Expected Runs from Skill Indices
-#'
-#' Predicts expected runs for a batter-bowler matchup.
-#'
-#' @param batter_bsi Numeric. Batter Scoring Index (runs/ball average)
-#' @param bowler_bei Numeric. Bowler Economy Index (runs/ball conceded average)
-#' @param base_rate Numeric. Optional calibrated base rate. If NULL, uses average of indices.
-#'
-#' @return Numeric. Expected runs for this delivery
-#' @keywords internal
-calculate_expected_runs_skill <- function(batter_bsi, bowler_bei, base_rate = NULL) {
-  if (is.null(base_rate)) {
-    # Simple average of batter's scoring and bowler's economy
-    return((batter_bsi + bowler_bei) / 2)
-  }
-
-  # Adjust base rate by difference from average
-  # If batter is above average and bowler concedes above average, expect more runs
-  batter_effect <- batter_bsi - base_rate
-  bowler_effect <- bowler_bei - base_rate
-
-  base_rate + (batter_effect + bowler_effect) / 2
-}
-
-
-#' Calculate Expected Wicket Probability from Skill Indices
-#'
-#' Predicts wicket probability for a batter-bowler matchup.
-#'
-#' @param batter_bsr Numeric. Batter Survival Rate (0-1, higher = survives more)
-#' @param bowler_bsi Numeric. Bowler Strike Index (0-1, higher = takes more wickets)
-#' @param base_rate Numeric. Optional calibrated base wicket rate.
-#'
-#' @return Numeric. Expected wicket probability for this delivery
-#' @keywords internal
-calculate_expected_wicket_skill <- function(batter_bsr, bowler_bsi, base_rate = NULL) {
-  # batter_bsr is survival rate (e.g., 0.975 = survives 97.5% of balls)
-  # bowler_bsi is strike rate (e.g., 0.03 = takes wicket on 3% of balls)
-
-  batter_wicket_rate <- 1 - batter_bsr
-  bowler_wicket_rate <- bowler_bsi
-
-  if (is.null(base_rate)) {
-    # Average of the two rates
-    return((batter_wicket_rate + bowler_wicket_rate) / 2)
-  }
-
-  # Adjust base rate
-  batter_effect <- batter_wicket_rate - base_rate
-  bowler_effect <- bowler_wicket_rate - base_rate
-
-  # Clamp to [0, 1]
-  prob <- base_rate + (batter_effect + bowler_effect) / 2
-  max(0, min(1, prob))
 }
 
 

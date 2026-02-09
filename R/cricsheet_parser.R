@@ -784,10 +784,12 @@ read_json_fast <- function(file_path) {
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' get_format_category("Test")   # "long_form"
 #' get_format_category("ODI")    # "short_form"
 #' get_format_category("T20")    # "short_form"
 #' get_format_category("MDM")    # "long_form" (multi-day match)
+#' }
 get_format_category <- function(match_type) {
   # Long form = day-limited (Tests, First-class, multi-day matches)
   long_form_types <- c("Test", "MDM")
@@ -843,10 +845,12 @@ get_model_format <- function(match_type) {
 #'
 #' @keywords internal
 #' @examples
+#' \dontrun{
 #' get_match_type_category("Test")  # "international"
 #' get_match_type_category("ODI")   # "international"
 #' get_match_type_category("T20")   # "club" (franchise T20)
 #' get_match_type_category("IT20")  # "international"
+#' }
 get_match_type_category <- function(match_type) {
   # International match types have specific codes
   international_types <- c("Test", "ODI", "IT20")

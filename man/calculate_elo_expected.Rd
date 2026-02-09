@@ -21,9 +21,11 @@ Computes the expected score (probability of winning) given two ELO ratings.
 Uses the standard ELO formula: E = 1 / (1 + 10^((opponent_elo - player_elo) / 400))
 }
 \examples{
+\dontrun{
 calculate_elo_expected(1500, 1500)  # 0.5 (equal ratings)
 calculate_elo_expected(1600, 1400)  # 0.76 (100 points advantage)
 calculate_elo_expected(1400, 1600)  # 0.24 (100 points disadvantage)
+}
 
 }
 \keyword{internal}

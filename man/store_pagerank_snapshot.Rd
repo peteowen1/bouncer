@@ -35,3 +35,4 @@ Stores a dated PageRank snapshot for later lookup during ELO calculation.
 The snapshot_date should be the date of the most recent match INCLUDED
 in the PageRank calculation.
 }
+\keyword{internal}

@@ -22,11 +22,13 @@ Numeric. The new ELO rating.
 Computes the new ELO rating after a match result.
 }
 \examples{
+\dontrun{
 # Player wins against equal opponent
 calculate_elo_update(1500, expected = 0.5, actual = 1, k = 32)  # 1516
 
 # Player loses against equal opponent
 calculate_elo_update(1500, expected = 0.5, actual = 0, k = 32)  # 1484
+}
 
 }
 \keyword{internal}

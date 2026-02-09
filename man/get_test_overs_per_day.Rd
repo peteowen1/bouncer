@@ -18,7 +18,9 @@ Returns the standard number of overs per day based on Test match duration.
 5-day Tests have standard 90 overs/day.
 }
 \examples{
+\dontrun{
 get_test_overs_per_day(5)  # 90
 get_test_overs_per_day(4)  # 98
+}
 }
 \keyword{internal}

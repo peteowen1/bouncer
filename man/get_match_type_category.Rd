@@ -16,9 +16,11 @@ Character: "international" or "club"
 Determines if a match is international or club/domestic.
 }
 \examples{
+\dontrun{
 get_match_type_category("Test")  # "international"
 get_match_type_category("ODI")   # "international"
 get_match_type_category("T20")   # "club" (franchise T20)
 get_match_type_category("IT20")  # "international"
+}
 }
 \keyword{internal}

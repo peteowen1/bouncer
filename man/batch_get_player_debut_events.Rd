@@ -20,3 +20,4 @@ Named character vector (player_id -> event_name).
 Efficiently finds the debut event for multiple players at once.
 Much faster than calling get_player_debut_event in a loop.
 }
+\keyword{internal}

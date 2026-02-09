@@ -10,6 +10,7 @@
 
 #' @importFrom stats predict setNames runif
 #' @importFrom utils head tail
+#' @importFrom methods as
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data
 #' @importFrom slider slide_dbl
@@ -72,7 +73,11 @@ utils::globalVariables(c(
   "n",
   # data.table symbols
   ".",
-  ":="
+  ":=",
+  ".N",
+  ".SD",
+  "is.data.table",
+  "setDT"
 ))
 
 
@@ -90,15 +95,6 @@ utils::globalVariables(c(
   "elo_bowling_test",
   "elo_bowling_odi",
   "elo_bowling_t20",
-  # Dual ELO system (scoring vs survival)
-  "batter_survival_elo",
-  "batter_scoring_elo",
-  "bowler_strike_elo",
-  "bowler_economy_elo",
-  "exp_survival",
-  "exp_scoring",
-  # Dual ELO constant
-  "DUAL_ELO_START",
   # Team ELO
   "elo_result"
 ))

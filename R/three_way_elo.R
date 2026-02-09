@@ -154,7 +154,7 @@ get_single_baseline <- function(delivery_id, format = "t20",
 #' @param format Character. Match format.
 #'
 #' @return Environment with delivery_id -> list(runs, wicket) mappings.
-#' @export
+#' @keywords internal
 build_baseline_cache <- function(conn, delivery_ids, format = "t20") {
   baselines <- get_agnostic_baselines(conn, delivery_ids, format)
 
@@ -1008,6 +1008,7 @@ get_centrality_implied_elo <- function(centrality_percentile,
 #' @return Numeric. The blended expected runs baseline.
 #'
 #' @examples
+#' \dontrun{
 #' # New league (500 deliveries, avg 1.35) with global 1.28
 #' calculate_league_baseline(1.35, 500, 1.28)   # ~1.286 (9% league weight)
 #'
@@ -1016,8 +1017,9 @@ get_centrality_implied_elo <- function(centrality_percentile,
 #'
 #' # No league data yet
 #' calculate_league_baseline(NA, 0, 1.28)       # 1.28 (global average)
+#' }
 #'
-#' @export
+#' @keywords internal
 calculate_league_baseline <- function(league_avg_runs,
                                        league_deliveries,
                                        global_avg_runs,
@@ -1049,7 +1051,7 @@ calculate_league_baseline <- function(league_avg_runs,
 #' @return Data frame with columns: event_name, match_date, cumulative_runs,
 #'   cumulative_deliveries, running_avg_runs.
 #'
-#' @export
+#' @keywords internal
 build_league_running_averages <- function(conn, format, gender) {
   format <- tolower(format)
 

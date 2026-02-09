@@ -19,8 +19,10 @@ Convenience wrapper that extracts k_max, k_min, and halflife from a
 named list (as used in three_way_elo.R and player_elo_dynamic.R).
 }
 \examples{
+\dontrun{
 params <- list(k_max = 200, k_min = 15, halflife = 500)
 calculate_dynamic_k_from_params(100, params)  # ~169
+}
 
 }
 \keyword{internal}

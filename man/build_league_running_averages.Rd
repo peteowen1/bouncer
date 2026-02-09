@@ -22,3 +22,4 @@ Pre-computes running average runs per delivery for each league, organized
 by match date. This allows efficient lookup of "league average as of date X"
 without data leakage.
 }
+\keyword{internal}

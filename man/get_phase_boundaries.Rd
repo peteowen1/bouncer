@@ -23,11 +23,13 @@ Phases help capture different tactical contexts (powerplay restrictions,
 new ball movement, death overs pressure).
 }
 \examples{
+\dontrun{
 get_phase_boundaries("t20")
 # Returns: list(powerplay_end = 6, middle_end = 16)
 
 get_phase_boundaries("test")
 # Returns: list(new_ball_end = 20, middle_end = 80)
+}
 
 }
 \keyword{internal}

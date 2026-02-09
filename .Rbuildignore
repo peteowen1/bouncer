@@ -11,3 +11,5 @@
 ^\.Rhistory$
 ^CLAUDE\.md$
 ^\.claude$
+^\.github$
+^run_test\.R$

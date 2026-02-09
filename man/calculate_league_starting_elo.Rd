@@ -31,6 +31,7 @@ in the league/event where they debut. Players debuting in isolated leagues
 Formula: starting_elo = ELO_START + (league_avg_centrality - 50) * elo_per_percentile
 }
 \examples{
+\dontrun{
 # IPL debut (high centrality league ~78\%)
 calculate_league_starting_elo(78)  # ~1512
 
@@ -39,5 +40,7 @@ calculate_league_starting_elo(4)   # ~1216
 
 # International debut (very high centrality ~95\%)
 calculate_league_starting_elo(95)  # ~1580
+}
 
 }
+\keyword{internal}

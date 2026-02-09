@@ -18,11 +18,13 @@ Character. SQL fragment like "match_type IN ('T20', 'IT20')"
 Generates SQL WHERE clause fragment for filtering by format.
 }
 \examples{
+\dontrun{
 build_match_type_sql("t20")
 # Returns: "match_type IN ('T20', 'IT20')"
 
 build_match_type_sql("test", "m.match_type")
 # Returns: "m.match_type IN ('Test', 'MDM')"
+}
 
 }
 \keyword{internal}

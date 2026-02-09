@@ -17,9 +17,11 @@ Returns the minimum and maximum reasonable projected scores for a format.
 Used to sanity-check projections.
 }
 \examples{
+\dontrun{
 get_projection_bounds("t20")   # c(60, 280)
 get_projection_bounds("odi")   # c(100, 450)
 get_projection_bounds("test")  # c(80, 700)
+}
 
 }
 \keyword{internal}

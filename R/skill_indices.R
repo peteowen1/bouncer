@@ -304,7 +304,7 @@ bound_skill <- function(skill, skill_type = "run", entity_type = "player") {
 #' @param gender Character. Gender.
 #'
 #' @return List with new_batter, new_bowler, new_venue_perm, new_venue_session.
-#' @export
+#' @keywords internal
 update_run_skills <- function(actual_runs,
                                expected_runs,
                                alpha_batter,
@@ -371,7 +371,7 @@ update_run_skills <- function(actual_runs,
 #' @param gender Character. Gender.
 #'
 #' @return List with new_batter, new_bowler, new_venue_perm, new_venue_session.
-#' @export
+#' @keywords internal
 update_wicket_skills <- function(actual_wicket,
                                   expected_wicket,
                                   alpha_batter,

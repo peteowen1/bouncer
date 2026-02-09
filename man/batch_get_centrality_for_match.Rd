@@ -32,3 +32,4 @@ or empty data frame if no snapshots exist.
 Efficiently retrieves centrality data for all players in a match at once.
 Much faster than individual lookups when processing many deliveries.
 }
+\keyword{internal}

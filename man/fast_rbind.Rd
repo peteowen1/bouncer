@@ -13,7 +13,6 @@ fast_rbind(df_list)
 Combined data frame
 }
 \description{
-Combines a list of data frames efficiently using data.table::rbindlist
-when available, falling back to do.call(rbind, ...) otherwise.
+Combines a list of data frames efficiently using data.table::rbindlist.
 }
 \keyword{internal}

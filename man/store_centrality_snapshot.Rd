@@ -35,3 +35,4 @@ Stores a dated centrality snapshot for later lookup during ELO calculation.
 The snapshot_date should be the date of the most recent match INCLUDED
 in the centrality calculation.
 }
+\keyword{internal}

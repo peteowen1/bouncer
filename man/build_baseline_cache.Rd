@@ -20,3 +20,4 @@ Environment with delivery_id -> list(runs, wicket) mappings.
 Pre-loads agnostic baselines into an environment for fast lookup
 during ELO calculation loops.
 }
+\keyword{internal}

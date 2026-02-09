@@ -62,7 +62,7 @@ ensure_centrality_history_table <- function(format, conn, gender = NULL) {
 #' @param verbose Logical. Print progress messages. Default TRUE.
 #'
 #' @return Invisibly returns the number of rows inserted.
-#' @export
+#' @keywords internal
 store_centrality_snapshot <- function(centrality_result,
                                        snapshot_date,
                                        format,
@@ -182,7 +182,7 @@ get_centrality_as_of <- function(player_id, role, match_date, format, conn, gend
 #'
 #' @return Data frame with player_id, role, percentile columns,
 #'   or empty data frame if no snapshots exist.
-#' @export
+#' @keywords internal
 batch_get_centrality_for_match <- function(player_ids, match_date, format, conn, gender = NULL) {
   format <- tolower(format)
 
@@ -283,7 +283,7 @@ get_centrality_snapshot_dates <- function(format, conn, gender = NULL) {
 #'   backwards compatibility (uses format-only table name).
 #'
 #' @return Invisibly returns the number of rows deleted.
-#' @export
+#' @keywords internal
 delete_old_centrality_snapshots <- function(format,
                                              keep_months = CENTRALITY_SNAPSHOT_KEEP_MONTHS,
                                              conn,
@@ -389,7 +389,7 @@ ensure_pagerank_history_table <- function(format, conn, gender = NULL) {
 #' @param verbose Logical. Print progress messages. Default TRUE.
 #'
 #' @return Invisibly returns the number of rows inserted.
-#' @export
+#' @keywords internal
 store_pagerank_snapshot <- function(pagerank_result,
                                      snapshot_date,
                                      format,
@@ -508,7 +508,7 @@ get_pagerank_as_of <- function(player_id, role, match_date, format, conn, gender
 #'
 #' @return Data frame with player_id, role, percentile columns,
 #'   or empty data frame if no snapshots exist.
-#' @export
+#' @keywords internal
 batch_get_pagerank_for_match <- function(player_ids, match_date, format, conn, gender = NULL) {
   format <- tolower(format)
 
@@ -609,7 +609,7 @@ get_pagerank_snapshot_dates <- function(format, conn, gender = NULL) {
 #'   backwards compatibility (uses format-only table name).
 #'
 #' @return Invisibly returns the number of rows deleted.
-#' @export
+#' @keywords internal
 delete_old_pagerank_snapshots <- function(format,
                                            keep_months = CENTRALITY_SNAPSHOT_KEEP_MONTHS,
                                            conn,

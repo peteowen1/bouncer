@@ -20,36 +20,16 @@ has_arrow_support <- function() {
 }
 
 
-#' Check for data.table Support
-#'
-#' Checks if the data.table package is available for fast data frame binding.
-#' data.table::rbindlist is ~8x faster than do.call(rbind, ...) for combining
-#' many data frames.
-#'
-#' @return Logical. TRUE if data.table is available.
-#' @keywords internal
-has_datatable_support <- function() {
-  requireNamespace("data.table", quietly = TRUE)
-}
-
-
 #' Fast Row Bind
 #'
-#' Combines a list of data frames efficiently using data.table::rbindlist
-#' when available, falling back to do.call(rbind, ...) otherwise.
+#' Combines a list of data frames efficiently using data.table::rbindlist.
 #'
 #' @param df_list List of data frames to combine
 #' @return Combined data frame
 #' @keywords internal
 fast_rbind <- function(df_list) {
   if (length(df_list) == 0) return(NULL)
-
-  if (has_datatable_support()) {
-    # data.table::rbindlist is ~8x faster than do.call(rbind, ...)
-    data.table::rbindlist(df_list, fill = TRUE) |> as.data.frame()
-  } else {
-    do.call(rbind, df_list)
-  }
+  data.table::rbindlist(df_list, fill = TRUE) |> as.data.frame()
 }
 
 
@@ -286,14 +266,10 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
  # Self-contained worker function
  # Workers load the bouncer package and use exported parse_cricsheet_json
  worker_fn <- function(batch_files, batch_id, out_dir) {
-   # Helper: fast row bind using data.table if available
+   # Helper: fast row bind using data.table
    local_fast_rbind <- function(df_list) {
      if (length(df_list) == 0) return(NULL)
-     if (requireNamespace("data.table", quietly = TRUE)) {
-       data.table::rbindlist(df_list, fill = TRUE) |> as.data.frame()
-     } else {
-       do.call(rbind, df_list)
-     }
+     data.table::rbindlist(df_list, fill = TRUE) |> as.data.frame()
    }
 
    # Parse all files in this batch

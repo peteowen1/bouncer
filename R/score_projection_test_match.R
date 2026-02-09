@@ -21,8 +21,10 @@
 #' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' get_test_overs_per_day(5)  # 90
 #' get_test_overs_per_day(4)  # 98
+#' }
 get_test_overs_per_day <- function(days = 5) {
   if (days == 4) {
     return(TEST_OVERS_PER_DAY_4DAY)
@@ -120,7 +122,9 @@ calculate_test_overs_remaining <- function(match_days = 5,
 #' @keywords internal
 #'
 #' @examples
+#' \dontrun{
 #' test_overs_to_balls(45.3)  # 273 balls (45*6 + 3)
+#' }
 test_overs_to_balls <- function(overs_remaining) {
   complete_overs <- floor(overs_remaining)
   partial_balls <- round((overs_remaining - complete_overs) * 10)

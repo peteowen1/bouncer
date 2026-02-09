@@ -22,11 +22,13 @@ Character. Phase name:
 Determines the phase of an innings based on the current over and format.
 }
 \examples{
+\dontrun{
 get_phase_from_over(3, "t20")   # "powerplay"
 get_phase_from_over(10, "t20")  # "middle"
 get_phase_from_over(18, "t20")  # "death"
 get_phase_from_over(50, "test") # "middle"
 get_phase_from_over(85, "test") # "old_ball"
+}
 
 }
 \keyword{internal}

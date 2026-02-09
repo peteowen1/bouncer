@@ -30,6 +30,7 @@ This function consolidates the K-factor decay pattern that was repeated
 in player_elo_dynamic.R, team_elo_optimization.R, and three_way_elo.R.
 }
 \examples{
+\dontrun{
 # Player K-factors (using T20 defaults)
 calculate_dynamic_k(0, k_max = 200, k_min = 15, halflife = 500)    # 200 (new)
 calculate_dynamic_k(500, k_max = 200, k_min = 15, halflife = 500)  # ~107.5 (half)
@@ -38,6 +39,7 @@ calculate_dynamic_k(5000, k_max = 200, k_min = 15, halflife = 500) # ~15 (experi
 # Team K-factors
 calculate_dynamic_k(0, k_max = 60, k_min = 20, halflife = 50)      # 60 (new team)
 calculate_dynamic_k(100, k_max = 60, k_min = 20, halflife = 50)    # ~26.5
+}
 
 }
 \keyword{internal}

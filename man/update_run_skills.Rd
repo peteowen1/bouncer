@@ -55,3 +55,4 @@ Applies continuous decay first, then updates based on residual.
 Formula:
 new_skill = (1 - decay) * old_skill + alpha * residual * weight
 }
+\keyword{internal}

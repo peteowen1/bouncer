@@ -839,6 +839,7 @@ get_centrality_k_multiplier <- function(opponent_percentile) {
 #' @return Numeric. The league-adjusted starting ELO.
 #'
 #' @examples
+#' \dontrun{
 #' # IPL debut (high centrality league ~78%)
 #' calculate_league_starting_elo(78)  # ~1512
 #'
@@ -847,8 +848,9 @@ get_centrality_k_multiplier <- function(opponent_percentile) {
 #'
 #' # International debut (very high centrality ~95%)
 #' calculate_league_starting_elo(95)  # ~1580
+#' }
 #'
-#' @export
+#' @keywords internal
 calculate_league_starting_elo <- function(league_avg_centrality,
                                            elo_start = THREE_WAY_ELO_START,
                                            elo_per_percentile = CENTRALITY_ELO_PER_PERCENTILE) {
@@ -956,7 +958,7 @@ calculate_centrality_regression <- function(current_elo,
 #' event_centrality[["Indian Premier League"]]  # ~78
 #' }
 #'
-#' @export
+#' @keywords internal
 build_event_centrality_lookup <- function(conn, format, gender, min_players = 10) {
   format <- tolower(format)
   gender <- tolower(gender)
@@ -1067,7 +1069,7 @@ get_player_debut_event <- function(player_id, deliveries_dt, role = "batter") {
 #' @param role Character. "batter" or "bowler".
 #'
 #' @return Named character vector (player_id -> event_name).
-#' @export
+#' @keywords internal
 batch_get_player_debut_events <- function(player_ids, deliveries_dt, role = "batter") {
   if (!requireNamespace("data.table", quietly = TRUE)) {
     stop("data.table package required for batch_get_player_debut_events")

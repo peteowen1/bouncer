@@ -147,11 +147,13 @@ get_match_types_for_format <- function(format) {
 #' @return Character. SQL fragment like "match_type IN ('T20', 'IT20')"
 #'
 #' @examples
+#' \dontrun{
 #' build_match_type_sql("t20")
 #' # Returns: "match_type IN ('T20', 'IT20')"
 #'
 #' build_match_type_sql("test", "m.match_type")
 #' # Returns: "m.match_type IN ('Test', 'MDM')"
+#' }
 #'
 #' @keywords internal
 build_match_type_sql <- function(format, column = "match_type") {

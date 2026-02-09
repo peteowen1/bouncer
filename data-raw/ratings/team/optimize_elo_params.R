@@ -311,7 +311,7 @@ for (current_format in formats_to_process) {
                             paste(event_group, event_match_number), ignore.case = TRUE)
       ) %>%
       mutate(
-        # detect_home_team() is from R/venue_country_lookup.R
+        # detect_home_team() is from R/home_advantage.R
         home_team = mapply(detect_home_team, team1, team2, team1_id, team2_id, venue, team_type,
                            MoreArgs = list(club_home_lookup = home_lookups$club_home,
                                            venue_country_lookup = home_lookups$venue_country))

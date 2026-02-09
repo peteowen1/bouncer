@@ -276,9 +276,11 @@ validate_data_quality <- function(df, check_na = TRUE, check_ranges = TRUE) {
 #' @return Logical. TRUE if all required columns exist, FALSE otherwise.
 #'
 #' @examples
+#' \dontrun{
 #' df <- data.frame(a = 1, b = 2)
 #' has_required_columns(df, c("a", "b"))  # TRUE
 #' has_required_columns(df, c("a", "c"))  # FALSE
+#' }
 #'
 #' @keywords internal
 has_required_columns <- function(df, required_cols) {

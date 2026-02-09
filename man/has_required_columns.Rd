@@ -19,9 +19,11 @@ Simple utility to check if required columns exist in a data frame.
 Returns a logical rather than stopping with an error.
 }
 \examples{
+\dontrun{
 df <- data.frame(a = 1, b = 2)
 has_required_columns(df, c("a", "b"))  # TRUE
 has_required_columns(df, c("a", "c"))  # FALSE
+}
 
 }
 \keyword{internal}

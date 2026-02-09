@@ -29,3 +29,4 @@ Invisibly returns the number of rows deleted.
 Removes PageRank snapshots older than the retention period to save space.
 Typically called after generating new snapshots.
 }
+\keyword{internal}
