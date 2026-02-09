@@ -76,8 +76,8 @@ get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
     end_idx <- min(i * batch_size, length(delivery_ids))
     batch_ids <- delivery_ids[start_idx:end_idx]
 
-    # Quote and escape IDs
-    ids_sql <- paste(sprintf("'%s'", batch_ids), collapse = ", ")
+    # Quote and escape IDs (prevent SQL injection)
+    ids_sql <- paste(sprintf("'%s'", escape_sql_strings(batch_ids)), collapse = ", ")
 
     query <- sprintf("
       SELECT delivery_id, agnostic_expected_runs, agnostic_expected_wicket
@@ -1057,7 +1057,8 @@ build_league_running_averages <- function(conn, format, gender) {
 
   # Determine match types for this format using central helper
   match_types <- get_match_types_for_format(format)
-  match_types_sql <- paste0("'", match_types, "'", collapse = ", ")
+  match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
+  gender_escaped <- escape_sql_value(gender)
 
   query <- sprintf("
     WITH match_totals AS (
@@ -1090,12 +1091,16 @@ build_league_running_averages <- function(conn, format, gender) {
       SUM(match_deliveries) OVER (PARTITION BY event_name ORDER BY match_num) as cumulative_deliveries
     FROM ordered_matches
     ORDER BY event_name, match_date
-  ", match_types_sql, gender)
+  ", match_types_sql, gender_escaped)
 
   result <- DBI::dbGetQuery(conn, query)
 
   if (nrow(result) > 0) {
-    result$running_avg_runs <- result$cumulative_runs / result$cumulative_deliveries
+    result$running_avg_runs <- ifelse(
+      result$cumulative_deliveries > 0,
+      result$cumulative_runs / result$cumulative_deliveries,
+      0
+    )
   }
 
   result
@@ -1358,9 +1363,9 @@ get_stored_3way_elo_params <- function(format, conn) {
     return(NULL)
   }
 
-  result <- DBI::dbGetQuery(conn, sprintf("
-    SELECT * FROM three_way_elo_params WHERE format = '%s'
-  ", format))
+  result <- DBI::dbGetQuery(conn,
+    "SELECT * FROM three_way_elo_params WHERE format = ?",
+    params = list(format))
 
   if (nrow(result) == 0) return(NULL)
 
@@ -1386,9 +1391,9 @@ store_3way_elo_params <- function(params, last_delivery_id, last_match_date,
   ensure_3way_params_table(conn)
 
   # Delete existing params for this format
-  DBI::dbExecute(conn, sprintf("
-    DELETE FROM three_way_elo_params WHERE format = '%s'
-  ", params$format))
+  DBI::dbExecute(conn,
+    "DELETE FROM three_way_elo_params WHERE format = ?",
+    params = list(params$format))
 
   # Insert new params
   DBI::dbExecute(conn, sprintf("

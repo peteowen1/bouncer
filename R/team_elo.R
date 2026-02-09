@@ -236,36 +236,9 @@ calculate_team_roster_elo <- function(team, as_of_date, conn,
     })
 
   } else {
-    # Legacy fallback: query deliveries table (for non-T20 or if table missing)
-    batting_query <- sprintf("
-      SELECT batter_id as player_id, batter_elo_after as elo
-      FROM deliveries
-      WHERE batter_id IN (%s)
-        AND match_date < CAST(? AS DATE)
-        AND batter_elo_after IS NOT NULL
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) = 1
-    ", placeholders)
-
-    batting_elos <- tryCatch({
-      DBI::dbGetQuery(conn, batting_query, params = c(as.list(player_ids), as_of_date_str))
-    }, error = function(e) {
-      data.frame(player_id = character(0), elo = numeric(0))
-    })
-
-    bowling_query <- sprintf("
-      SELECT bowler_id as player_id, bowler_elo_after as elo
-      FROM deliveries
-      WHERE bowler_id IN (%s)
-        AND match_date < CAST(? AS DATE)
-        AND bowler_elo_after IS NOT NULL
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) = 1
-    ", placeholders)
-
-    bowling_elos <- tryCatch({
-      DBI::dbGetQuery(conn, bowling_query, params = c(as.list(player_ids), as_of_date_str))
-    }, error = function(e) {
-      data.frame(player_id = character(0), elo = numeric(0))
-    })
+    # No 3-way ELO table available — return empty results (use starting ELO defaults)
+    batting_elos <- data.frame(player_id = character(0), elo = numeric(0))
+    bowling_elos <- data.frame(player_id = character(0), elo = numeric(0))
   }
 
   # Calculate average ELOs (use starting ELO for players without history)

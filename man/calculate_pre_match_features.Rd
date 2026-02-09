@@ -4,12 +4,15 @@
 \alias{calculate_pre_match_features}
 \title{Calculate Pre-Match Features}
 \usage{
-calculate_pre_match_features(match_id, conn)
+calculate_pre_match_features(match_id, conn, home_lookups = NULL)
 }
 \arguments{
 \item{match_id}{Character. Match identifier}
 
 \item{conn}{DBI connection. Database connection}
+
+\item{home_lookups}{List. Pre-built home lookups from build_home_lookups().
+If NULL, builds fresh (expensive for one-off calls).}
 }
 \value{
 Data frame with one row containing all features for the match

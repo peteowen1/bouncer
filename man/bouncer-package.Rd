@@ -64,7 +64,7 @@ predictions, score projections, and Monte Carlo simulations.
 \itemize{
 \item \code{\link[=get_player]{get_player()}}, \code{\link[=search_players]{search_players()}} - Find players
 \item \code{\link[=get_team]{get_team()}}, \code{\link[=search_teams]{search_teams()}} - Find teams
-\item \code{\link[=get_player_elo]{get_player_elo()}}, \code{\link[=get_team_elo]{get_team_elo()}} - Get ELO ratings
+\item \code{\link[=get_team_elo]{get_team_elo()}} - Get team ELO ratings
 }
 }
 

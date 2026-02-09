@@ -70,6 +70,11 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
 #'
 #' @keywords internal
 calculate_dynamic_k_from_params <- function(experience, params) {
+  required <- c("k_max", "k_min", "halflife")
+  missing <- setdiff(required, names(params))
+  if (length(missing) > 0) {
+    cli::cli_abort("params missing required keys: {.field {missing}}")
+  }
   calculate_dynamic_k(
     experience = experience,
     k_max = params$k_max,

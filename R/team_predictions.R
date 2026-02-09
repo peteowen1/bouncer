@@ -29,17 +29,67 @@ calculate_roster_elo <- function(player_ids,
     stop("player_ids cannot be empty")
   }
 
-  # Get ELO for each player
+  # Connect to database
+  check_duckdb_available()
+  if (is.null(db_path)) db_path <- get_default_db_path()
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Determine 3-way ELO table for this format
+  format <- normalize_format(match_type)
+  elo_table <- paste0(format, "_3way_player_elo")
+
+  start_elo <- THREE_WAY_ELO_START
+
   player_elos <- data.frame(
     player_id = player_ids,
-    batting_elo = numeric(length(player_ids)),
-    bowling_elo = numeric(length(player_ids)),
+    batting_elo = rep(start_elo, length(player_ids)),
+    bowling_elo = rep(start_elo, length(player_ids)),
     stringsAsFactors = FALSE
   )
 
-  for (i in seq_along(player_ids)) {
-    player_elos$batting_elo[i] <- get_batting_elo(player_ids[i], match_type, db_path = db_path)
-    player_elos$bowling_elo[i] <- get_bowling_elo(player_ids[i], match_type, db_path = db_path)
+  if (elo_table %in% DBI::dbListTables(conn)) {
+    placeholders <- paste(rep("?", length(player_ids)), collapse = ", ")
+
+    # Get latest batting ELOs from 3-way ELO table
+    batting_query <- sprintf("
+      WITH ranked AS (
+        SELECT batter_id as player_id,
+               (batter_run_elo_after + batter_wicket_elo_after) / 2 as elo,
+               ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) as rn
+        FROM %s
+        WHERE batter_id IN (%s) AND batter_run_elo_after IS NOT NULL
+      )
+      SELECT player_id, elo FROM ranked WHERE rn = 1
+    ", elo_table, placeholders)
+
+    batting_result <- tryCatch(
+      DBI::dbGetQuery(conn, batting_query, params = as.list(player_ids)),
+      error = function(e) data.frame(player_id = character(0), elo = numeric(0))
+    )
+
+    # Get latest bowling ELOs
+    bowling_query <- sprintf("
+      WITH ranked AS (
+        SELECT bowler_id as player_id,
+               (bowler_run_elo_after + bowler_wicket_elo_after) / 2 as elo,
+               ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) as rn
+        FROM %s
+        WHERE bowler_id IN (%s) AND bowler_run_elo_after IS NOT NULL
+      )
+      SELECT player_id, elo FROM ranked WHERE rn = 1
+    ", elo_table, placeholders)
+
+    bowling_result <- tryCatch(
+      DBI::dbGetQuery(conn, bowling_query, params = as.list(player_ids)),
+      error = function(e) data.frame(player_id = character(0), elo = numeric(0))
+    )
+
+    # Merge results
+    bat_match <- match(player_ids, batting_result$player_id)
+    bowl_match <- match(player_ids, bowling_result$player_id)
+    player_elos$batting_elo[!is.na(bat_match)] <- batting_result$elo[bat_match[!is.na(bat_match)]]
+    player_elos$bowling_elo[!is.na(bowl_match)] <- bowling_result$elo[bowl_match[!is.na(bowl_match)]]
   }
 
   # Calculate team aggregates

@@ -43,7 +43,11 @@ expected_wicket = clamp(baseline + batter_wicket_skill + bowler_wicket_skill +
 venue_perm_wicket_skill + venue_session_wicket_skill,
 0.001, 0.50)
 
-Note: Batter wicket skill is positive if they get out MORE often (bad for batter).
+NOTE: Wicket skills use OPPOSITE sign convention from run skills.
+Run skills:    positive = good for entity (batter scores more / bowler restricts more)
+Wicket skills: positive = higher wicket probability for BOTH (bad for batter, good for bowler)
+This is intentional - each skill represents DIRECT contribution to wicket probability.
+
+Batter wicket skill is positive if they get out MORE often (bad for batter).
 Bowler wicket skill is positive if they take MORE wickets (good for bowler).
-Each skill represents the entity's DIRECT contribution to wicket probability.
 }

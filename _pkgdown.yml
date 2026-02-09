@@ -129,12 +129,6 @@ reference:
     desc: Team and player rating functions
     contents:
     - get_team_elo
-    - get_player_elo
-    - get_batting_elo
-    - get_bowling_elo
-    - get_elo_at_delivery
-    - get_match_elo_progression
-    - find_deliveries_by_elo_range
     - get_dynamic_k
 
   - title: Visualization

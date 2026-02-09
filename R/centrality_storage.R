@@ -97,9 +97,9 @@ store_centrality_snapshot <- function(centrality_result,
                                   "deliveries", "unique_opponents", "avg_opponent_degree")]
 
   # Delete existing snapshot for this date (in case of re-run)
-  DBI::dbExecute(conn, sprintf("
-    DELETE FROM %s WHERE snapshot_date = '%s'
-  ", table_name, snapshot_date))
+  DBI::dbExecute(conn, sprintf(
+    "DELETE FROM %s WHERE snapshot_date = ?", table_name),
+    params = list(as.character(snapshot_date)))
 
   # Insert new snapshot
   DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
@@ -151,14 +151,15 @@ get_centrality_as_of <- function(player_id, role, match_date, format, conn, gend
     SELECT centrality, percentile, quality_tier, snapshot_date, deliveries,
            unique_opponents, avg_opponent_degree
     FROM %s
-    WHERE player_id = '%s'
-      AND role = '%s'
-      AND snapshot_date < '%s'
+    WHERE player_id = ?
+      AND role = ?
+      AND snapshot_date < ?
     ORDER BY snapshot_date DESC
     LIMIT 1
-  ", table_name, player_id, role, as.character(match_date))
+  ", table_name)
 
-  result <- DBI::dbGetQuery(conn, query)
+  result <- DBI::dbGetQuery(conn, query,
+    params = list(player_id, role, as.character(match_date)))
 
   if (nrow(result) == 0) {
     return(NULL)
@@ -205,7 +206,7 @@ batch_get_centrality_for_match <- function(player_ids, match_date, format, conn,
   }
 
   # Use window function to get most recent snapshot per player/role
-  player_list <- paste(sprintf("'%s'", player_ids), collapse = ", ")
+  player_list <- paste(sprintf("'%s'", escape_sql_strings(player_ids)), collapse = ", ")
 
   query <- sprintf("
     WITH ranked AS (
@@ -217,14 +218,14 @@ batch_get_centrality_for_match <- function(player_ids, match_date, format, conn,
         ROW_NUMBER() OVER (PARTITION BY player_id, role ORDER BY snapshot_date DESC) as rn
       FROM %s
       WHERE player_id IN (%s)
-        AND snapshot_date < '%s'
+        AND snapshot_date < ?
     )
     SELECT player_id, role, percentile
     FROM ranked
     WHERE rn = 1
-  ", table_name, player_list, as.character(match_date))
+  ", table_name, player_list)
 
-  DBI::dbGetQuery(conn, query)
+  DBI::dbGetQuery(conn, query, params = list(as.character(match_date)))
 }
 
 
@@ -305,9 +306,9 @@ delete_old_centrality_snapshots <- function(format,
 
   cutoff_date <- Sys.Date() - (keep_months * 30)
 
-  result <- DBI::dbExecute(conn, sprintf("
-    DELETE FROM %s WHERE snapshot_date < '%s'
-  ", table_name, cutoff_date))
+  result <- DBI::dbExecute(conn, sprintf(
+    "DELETE FROM %s WHERE snapshot_date < ?", table_name),
+    params = list(as.character(cutoff_date)))
 
   if (result > 0) {
     cli::cli_alert_info("Deleted {result} old centrality snapshots (before {cutoff_date})")
@@ -424,9 +425,9 @@ store_pagerank_snapshot <- function(pagerank_result,
                                   "deliveries")]
 
   # Delete existing snapshot for this date (in case of re-run)
-  DBI::dbExecute(conn, sprintf("
-    DELETE FROM %s WHERE snapshot_date = '%s'
-  ", table_name, snapshot_date))
+  DBI::dbExecute(conn, sprintf(
+    "DELETE FROM %s WHERE snapshot_date = ?", table_name),
+    params = list(as.character(snapshot_date)))
 
   # Insert new snapshot
   DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
@@ -531,7 +532,7 @@ batch_get_pagerank_for_match <- function(player_ids, match_date, format, conn, g
   }
 
   # Use window function to get most recent snapshot per player/role
-  player_list <- paste(sprintf("'%s'", player_ids), collapse = ", ")
+  player_list <- paste(sprintf("'%s'", escape_sql_strings(player_ids)), collapse = ", ")
 
   query <- sprintf("
     WITH ranked AS (
@@ -543,14 +544,14 @@ batch_get_pagerank_for_match <- function(player_ids, match_date, format, conn, g
         ROW_NUMBER() OVER (PARTITION BY player_id, role ORDER BY snapshot_date DESC) as rn
       FROM %s
       WHERE player_id IN (%s)
-        AND snapshot_date < '%s'
+        AND snapshot_date < ?
     )
     SELECT player_id, role, percentile
     FROM ranked
     WHERE rn = 1
-  ", table_name, player_list, as.character(match_date))
+  ", table_name, player_list)
 
-  DBI::dbGetQuery(conn, query)
+  DBI::dbGetQuery(conn, query, params = list(as.character(match_date)))
 }
 
 
@@ -631,9 +632,9 @@ delete_old_pagerank_snapshots <- function(format,
 
   cutoff_date <- Sys.Date() - (keep_months * 30)
 
-  result <- DBI::dbExecute(conn, sprintf("
-    DELETE FROM %s WHERE snapshot_date < '%s'
-  ", table_name, cutoff_date))
+  result <- DBI::dbExecute(conn, sprintf(
+    "DELETE FROM %s WHERE snapshot_date < ?", table_name),
+    params = list(as.character(cutoff_date)))
 
   if (result > 0) {
     cli::cli_alert_info("Deleted {result} old PageRank snapshots (before {cutoff_date})")

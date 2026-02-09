@@ -28,6 +28,7 @@ add_prediction_tables <- function(path = NULL) {
     return(invisible(FALSE))
   }
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -185,6 +186,7 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
       return(invisible(FALSE))
     }
 
+    check_duckdb_available()
     conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
     own_connection <- TRUE
   }

@@ -42,7 +42,7 @@
 #'
 #' - [get_player()], [search_players()] - Find players
 #' - [get_team()], [search_teams()] - Find teams
-#' - [get_player_elo()], [get_team_elo()] - Get ELO ratings
+#' - [get_team_elo()] - Get team ELO ratings
 #'
 #' @section Visualization:
 #'

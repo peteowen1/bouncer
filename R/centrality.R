@@ -536,7 +536,7 @@ normalize_pagerank_by_opponent_diversity <- function(pagerank_scores,
   # Normalize to 0-1 scale
 
   max_unique_opps <- max(player_unique_opps, na.rm = TRUE)
-  if (max_unique_opps == 0) {
+  if (max_unique_opps <= 0 || is.infinite(max_unique_opps)) {
     return(pagerank_scores)  # No normalization possible
   }
 
@@ -1078,6 +1078,10 @@ batch_get_player_debut_events <- function(player_ids, deliveries_dt, role = "bat
   # Ensure data.table
   if (!data.table::is.data.table(deliveries_dt)) {
     deliveries_dt <- data.table::as.data.table(deliveries_dt)
+  }
+
+  if (!"event_name" %in% names(deliveries_dt)) {
+    cli::cli_abort("{.field event_name} column required in {.arg deliveries_dt}")
   }
 
   id_col <- if (role == "batter") "batter_id" else "bowler_id"

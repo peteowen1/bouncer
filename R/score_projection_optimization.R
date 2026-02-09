@@ -421,6 +421,7 @@ optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.d
   cli::cli_h1("Score Projection Parameter Optimization")
   cli::cli_alert_info("Connecting to database: {.file {db_path}}")
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -756,6 +757,7 @@ calculate_all_format_projections <- function(db_path = "../bouncerdata/bouncer.d
   cli::cli_h1("Score Projection Calculation")
   cli::cli_alert_info("Connecting to database: {.file {db_path}}")
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = FALSE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 

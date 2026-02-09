@@ -11,16 +11,18 @@
 #'
 #' @param match_id Character. Match identifier
 #' @param conn DBI connection. Database connection
+#' @param home_lookups List. Pre-built home lookups from build_home_lookups().
+#'   If NULL, builds fresh (expensive for one-off calls).
 #'
 #' @return Data frame with one row containing all features for the match
 #' @keywords internal
-calculate_pre_match_features <- function(match_id, conn) {
+calculate_pre_match_features <- function(match_id, conn, home_lookups = NULL) {
 
   # Get match info
 match_info <- DBI::dbGetQuery(conn, "
     SELECT match_id, match_date, match_type, event_name, venue,
            team1, team2, toss_winner, toss_decision,
-           event_match_number, event_group
+           event_match_number, event_group, team_type, gender
     FROM matches
     WHERE match_id = ?
   ", params = list(match_id))
@@ -36,6 +38,23 @@ match_info <- DBI::dbGetQuery(conn, "
   venue <- match_info$venue
   team1 <- match_info$team1
   team2 <- match_info$team2
+  team_type <- match_info$team_type
+  gender <- match_info$gender
+
+  # Detect neutral venue
+  format <- normalize_format(match_type)
+  team1_id <- make_team_id(team1, gender, format, team_type)
+  team2_id <- make_team_id(team2, gender, format, team_type)
+
+  if (is.null(home_lookups)) {
+    all_matches <- DBI::dbGetQuery(conn,
+      "SELECT team1, team2, venue, team_type, gender, match_type FROM matches")
+    home_lookups <- build_home_lookups(all_matches)
+  }
+  home_result <- detect_home_team(team1, team2, team1_id, team2_id, venue,
+                                   team_type, home_lookups$club_home,
+                                   home_lookups$venue_country)
+  is_neutral_venue <- (home_result == 0L)
 
   # Get Team 1 ELOs
   team1_elo_result <- get_team_elo(team1, match_date, "result", conn)
@@ -133,7 +152,7 @@ match_info <- DBI::dbGetQuery(conn, "
 
     # Match context
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,  # TODO: detect neutral venues
+    is_neutral_venue = is_neutral_venue,
 
     # Toss features
     team1_won_toss = team1_won_toss,
@@ -944,7 +963,8 @@ get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
 #' @keywords internal
 calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_skills,
                                  bowler_skills, player_participation_dt, venue_stats_dt,
-                                 team_skill_dt = NULL, venue_skill_dt = NULL) {
+                                 team_skill_dt = NULL, venue_skill_dt = NULL,
+                                 home_lookups = NULL) {
   # Extract match data
 
   match_id <- matches_with_outcome$match_id[i]
@@ -1003,6 +1023,17 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
   # Knockout
   is_knockout <- detect_knockout_match(event_match_number, event_group)
 
+  # Neutral venue detection
+  if (!is.null(home_lookups)) {
+    team_type <- matches_with_outcome$team_type[i]
+    home_result <- detect_home_team(team1, team2, team1_id, team2_id, venue,
+                                     team_type, home_lookups$club_home,
+                                     home_lookups$venue_country)
+    is_neutral <- (home_result == 0L)
+  } else {
+    is_neutral <- FALSE
+  }
+
   data.frame(
     match_id = match_id,
     match_date = match_date,
@@ -1050,7 +1081,7 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
     venue_dot_rate = venue_skill$dot_rate,
 
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,
+    is_neutral_venue = is_neutral,
     team1_won_toss = team1_won_toss,
     toss_elect_bat = toss_elect_bat,
     created_at = Sys.time(),

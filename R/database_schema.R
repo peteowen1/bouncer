@@ -843,8 +843,60 @@ create_schema <- function(conn, verbose = TRUE) {
   # Create 3-way ELO tables (delegated to database_3way_elo.R)
   create_3way_elo_schema_tables(conn, verbose)
 
+  # Create centrality/PageRank history tables (per format)
+  create_centrality_schema_tables(conn, verbose)
+
   n_tables <- length(DBI::dbListTables(conn))
   cli::cli_alert_success("Schema created successfully ({n_tables} tables)")
+  invisible(TRUE)
+}
+
+
+#' Create Centrality Schema Tables
+#'
+#' Creates format-specific centrality history tables for each format and gender.
+#' Called by create_schema().
+#'
+#' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress.
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_centrality_schema_tables <- function(conn, verbose = TRUE) {
+  log_table <- function(name) {
+    if (verbose) cli::cli_alert_info("Creating {name} table...")
+  }
+
+  formats <- c("t20", "odi", "test")
+  genders <- c("mens", "womens")
+
+  for (gender in genders) {
+    for (format in formats) {
+      table_name <- paste0(gender, "_", format, "_player_centrality_history")
+      log_table(table_name)
+
+      DBI::dbExecute(conn, sprintf("
+        CREATE TABLE IF NOT EXISTS %s (
+          snapshot_date DATE NOT NULL,
+          player_id VARCHAR NOT NULL,
+          role VARCHAR NOT NULL,
+          centrality DOUBLE,
+          percentile DOUBLE,
+          quality_tier VARCHAR,
+          deliveries INTEGER,
+          unique_opponents INTEGER,
+          avg_opponent_degree DOUBLE,
+          PRIMARY KEY (snapshot_date, player_id, role)
+        )
+      ", table_name))
+
+      DBI::dbExecute(conn, sprintf("
+        CREATE INDEX IF NOT EXISTS idx_%s_player_date
+        ON %s (player_id, role, snapshot_date DESC)
+      ", table_name, table_name))
+    }
+  }
+
   invisible(TRUE)
 }
 
