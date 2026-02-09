@@ -165,6 +165,11 @@ cli::cli_alert_success("Data loading complete in {round(load_time, 1)} seconds")
 # Results storage
 all_format_results <- list()
 
+# Build home lookups for neutral venue detection (once, before format loop)
+cli::cli_alert_info("Building home venue lookups...")
+home_lookups <- build_home_lookups(all_matches_dt)
+cli::cli_alert_success("Built home lookups: {length(home_lookups$club_home)} club teams, {length(home_lookups$venue_country)} venues")
+
 # Need write connection for storing (get it once before format loop)
 DBI::dbDisconnect(conn, shutdown = TRUE)
 # Fully shutdown DuckDB to release file lock before reconnecting
@@ -315,7 +320,8 @@ for (current_format in formats_to_process) {
       seq_len(n_matches),
       ~calc_match_features(.x, matches_with_outcome, format_team_elo_dt, batter_skills,
                            bowler_skills, format_participation_dt, format_venue_stats_dt,
-                           format_team_skill_dt, format_venue_skill_dt),
+                           format_team_skill_dt, format_venue_skill_dt,
+                           home_lookups = home_lookups),
       .progress = TRUE,
       .options = furrr_options(seed = TRUE, packages = "bouncer")
     ) %>% bind_rows()
@@ -330,7 +336,8 @@ for (current_format in formats_to_process) {
       results[[i]] <- calc_match_features(
         i, matches_with_outcome, format_team_elo_dt, batter_skills,
         bowler_skills, format_participation_dt, format_venue_stats_dt,
-        format_team_skill_dt, format_venue_skill_dt
+        format_team_skill_dt, format_venue_skill_dt,
+        home_lookups = home_lookups
       )
       if (i %% 100 == 0) cli::cli_progress_update(set = i)
     }

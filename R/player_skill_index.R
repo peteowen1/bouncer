@@ -8,25 +8,6 @@
 #   - Is directly interpretable (e.g., BSI of 1.8 = 1.8 runs/ball average)
 
 
-#' Get Skill Alpha for Format
-#'
-#' Returns the EMA alpha (learning rate) for a given format.
-#'
-#' @param format Character. Format: "t20", "odi", or "test"
-#'
-#' @return Numeric. Alpha value for EMA
-#' @keywords internal
-get_skill_alpha <- function(format = "t20") {
-  fmt <- normalize_format(format)
-  switch(fmt,
-    "t20" = SKILL_ALPHA_T20,
-    "odi" = SKILL_ALPHA_ODI,
-    "test" = SKILL_ALPHA_TEST,
-    SKILL_ALPHA_T20
-  )
-}
-
-
 #' Get Starting Skill Values for Format
 #'
 #' Returns starting skill values for a format.
@@ -85,63 +66,6 @@ get_skill_start_values <- function(format = "t20") {
 #' @keywords internal
 update_skill_index <- function(old_value, observation, alpha) {
   alpha * observation + (1 - alpha) * old_value
-}
-
-
-#' Calculate Expected Runs from Skill Indices
-#'
-#' Predicts expected runs for a batter-bowler matchup.
-#'
-#' @param batter_bsi Numeric. Batter Scoring Index (runs/ball average)
-#' @param bowler_bei Numeric. Bowler Economy Index (runs/ball conceded average)
-#' @param base_rate Numeric. Optional calibrated base rate. If NULL, uses average of indices.
-#'
-#' @return Numeric. Expected runs for this delivery
-#' @keywords internal
-calculate_expected_runs_skill <- function(batter_bsi, bowler_bei, base_rate = NULL) {
-  if (is.null(base_rate)) {
-    # Simple average of batter's scoring and bowler's economy
-    return((batter_bsi + bowler_bei) / 2)
-  }
-
-  # Adjust base rate by difference from average
-  # If batter is above average and bowler concedes above average, expect more runs
-  batter_effect <- batter_bsi - base_rate
-  bowler_effect <- bowler_bei - base_rate
-
-  base_rate + (batter_effect + bowler_effect) / 2
-}
-
-
-#' Calculate Expected Wicket Probability from Skill Indices
-#'
-#' Predicts wicket probability for a batter-bowler matchup.
-#'
-#' @param batter_bsr Numeric. Batter Survival Rate (0-1, higher = survives more)
-#' @param bowler_bsi Numeric. Bowler Strike Index (0-1, higher = takes more wickets)
-#' @param base_rate Numeric. Optional calibrated base wicket rate.
-#'
-#' @return Numeric. Expected wicket probability for this delivery
-#' @keywords internal
-calculate_expected_wicket_skill <- function(batter_bsr, bowler_bsi, base_rate = NULL) {
-  # batter_bsr is survival rate (e.g., 0.975 = survives 97.5% of balls)
-  # bowler_bsi is strike rate (e.g., 0.03 = takes wicket on 3% of balls)
-
-  batter_wicket_rate <- 1 - batter_bsr
-  bowler_wicket_rate <- bowler_bsi
-
-  if (is.null(base_rate)) {
-    # Average of the two rates
-    return((batter_wicket_rate + bowler_wicket_rate) / 2)
-  }
-
-  # Adjust base rate
-  batter_effect <- batter_wicket_rate - base_rate
-  bowler_effect <- bowler_wicket_rate - base_rate
-
-  # Clamp to [0, 1]
-  prob <- base_rate + (batter_effect + bowler_effect) / 2
-  max(0, min(1, prob))
 }
 
 
@@ -548,6 +472,9 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
     return(NULL)
   }
 
+  # Escape player_id to prevent SQL injection
+  player_id_escaped <- escape_sql_strings(player_id)
+
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -560,7 +487,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
       WHERE batter_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, player_id))
+    ", table_name, player_id_escaped))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -573,7 +500,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
       WHERE bowler_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, player_id))
+    ", table_name, player_id_escaped))
   }
 
   if (nrow(result) == 0) {
@@ -603,6 +530,9 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
     return(NULL)
   }
 
+  # Escape player_ids to prevent SQL injection
+  player_ids_escaped <- escape_sql_strings(player_ids)
+
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
       WITH ranked AS (
@@ -619,7 +549,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
       SELECT player_id, scoring_index, survival_rate, balls, match_date
       FROM ranked
       WHERE rn = 1
-    ", table_name, paste(player_ids, collapse = "','")))
+    ", table_name, paste(player_ids_escaped, collapse = "','")))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       WITH ranked AS (
@@ -636,7 +566,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
       SELECT player_id, economy_index, strike_rate, balls, match_date
       FROM ranked
       WHERE rn = 1
-    ", table_name, paste(player_ids, collapse = "','")))
+    ", table_name, paste(player_ids_escaped, collapse = "','")))
   }
 
   result
@@ -670,10 +600,10 @@ add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing
 
     result <- result %>%
       dplyr::mutate(
-        batter_scoring_index = dplyr::coalesce(batter_scoring_index, start_vals$runs),
-        batter_survival_rate = dplyr::coalesce(batter_survival_rate, start_vals$survival),
-        bowler_economy_index = dplyr::coalesce(bowler_economy_index, start_vals$runs),
-        bowler_strike_rate = dplyr::coalesce(bowler_strike_rate, 1 - start_vals$survival),
+        batter_scoring_index = dplyr::coalesce(batter_scoring_index, start_vals$scoring_index),
+        batter_survival_rate = dplyr::coalesce(batter_survival_rate, start_vals$survival_rate),
+        bowler_economy_index = dplyr::coalesce(bowler_economy_index, start_vals$economy_index),
+        bowler_strike_rate = dplyr::coalesce(bowler_strike_rate, start_vals$strike_rate),
         batter_balls_faced = dplyr::coalesce(batter_balls_faced, 0L),
         bowler_balls_bowled = dplyr::coalesce(bowler_balls_bowled, 0L)
       )
@@ -686,4 +616,95 @@ add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing
   }
 
   result
+}
+
+
+# Skill Index Utility Functions ==============================================
+#
+# Common helper functions used across player, team, and venue skill index modules.
+#
+# NOTE: normalize_format() has been moved to format_utils.R and is now exported.
+# Use bouncer::normalize_format() for format normalization.
+
+
+#' Get Format-Specific Skill Table Name
+#'
+#' Returns the database table name for a format and entity type.
+#'
+#' @param format Character. Format name (will be normalized)
+#' @param entity_type Character. One of "player_skill", "team_skill", "venue_skill"
+#'
+#' @return Character. Table name like "t20_player_skill"
+#' @keywords internal
+get_skill_table_name <- function(format, entity_type) {
+  paste0(normalize_format(format), "_", entity_type)
+}
+
+
+#' Check Skill Table Exists
+#'
+#' Checks if a skill table exists in the database.
+#'
+#' @param conn DBI connection
+#' @param format Character. Format name
+#' @param entity_type Character. One of "player_skill", "team_skill", "venue_skill"
+#'
+#' @return Logical. TRUE if table exists
+#' @keywords internal
+skill_table_exists <- function(conn, format, entity_type) {
+  table_name <- get_skill_table_name(format, entity_type)
+  table_name %in% DBI::dbListTables(conn)
+}
+
+
+#' Batch Process Delivery IDs for Skill Join
+#'
+#' Helper function to handle batch processing of large delivery ID lists.
+#' Used internally by join_*_skill_indices functions.
+#'
+#' @param delivery_ids Character vector. Delivery IDs to process
+#' @param query_fn Function. Function that takes a vector of IDs and returns results
+#' @param batch_size Integer. Number of IDs per batch. Default 10000.
+#' @param verbose Logical. Whether to show progress. Default TRUE.
+#'
+#' @return Combined data frame from all batches
+#' @keywords internal
+batch_skill_query <- function(delivery_ids, query_fn, batch_size = 10000, verbose = TRUE) {
+  if (length(delivery_ids) <= batch_size) {
+    return(query_fn(delivery_ids))
+  }
+
+  if (verbose) {
+    cli::cli_alert_info("Fetching skill indices in batches...")
+  }
+
+  n_batches <- ceiling(length(delivery_ids) / batch_size)
+  all_results <- vector("list", n_batches)
+
+  for (i in seq_len(n_batches)) {
+    start_idx <- (i - 1) * batch_size + 1
+    end_idx <- min(i * batch_size, length(delivery_ids))
+    batch_ids <- delivery_ids[start_idx:end_idx]
+
+    all_results[[i]] <- query_fn(batch_ids)
+
+    if (verbose && i %% 10 == 0) {
+      cli::cli_alert_info("Fetched {i}/{n_batches} batches...")
+    }
+  }
+
+  fast_rbind(all_results)
+}
+
+
+#' Escape SQL String Values
+#'
+#' Escapes single quotes in strings for safe SQL injection.
+#'
+#' @param x Character vector. Strings to escape
+#'
+#' @return Character vector. Escaped strings
+#' @keywords internal
+escape_sql_strings <- function(x) {
+  gsub("'", "''", x)
 }

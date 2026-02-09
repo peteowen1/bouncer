@@ -13,7 +13,8 @@ calc_match_features(
   player_participation_dt,
   venue_stats_dt,
   team_skill_dt = NULL,
-  venue_skill_dt = NULL
+  venue_skill_dt = NULL,
+  home_lookups = NULL
 )
 }
 \arguments{

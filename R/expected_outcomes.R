@@ -25,7 +25,7 @@ calculate_expected_runs <- function(probs) {
   probs <- as.matrix(probs)
 
   if (ncol(probs) != 7) {
-    stop("probs must have 7 columns: (wicket, 0, 1, 2, 3, 4, 6)")
+    cli::cli_abort("probs must have 7 columns: (wicket, 0, 1, 2, 3, 4, 6)")
   }
 
   as.vector(probs %*% runs_values)
@@ -46,7 +46,7 @@ calculate_expected_wicket_prob <- function(probs) {
   probs <- as.matrix(probs)
 
   if (ncol(probs) < 1) {
-    stop("probs must have at least 1 column")
+    cli::cli_abort("probs must have at least 1 column")
   }
 
   probs[, 1]
@@ -95,12 +95,12 @@ predict_delivery_outcomes <- function(model,
   # Generate predictions based on model type
   if (model_type == "bam") {
     if (!requireNamespace("mgcv", quietly = TRUE)) {
-      stop("Package 'mgcv' is required for BAM models")
+      cli::cli_abort("Package {.pkg mgcv} is required for BAM models")
     }
     probs <- predict(model, newdata = pred_data, type = "response")
   } else {
     if (!requireNamespace("xgboost", quietly = TRUE)) {
-      stop("Package 'xgboost' is required for XGBoost models")
+      cli::cli_abort("Package {.pkg xgboost} is required for XGBoost models")
     }
 
     # Prepare feature matrix for XGBoost
@@ -225,12 +225,13 @@ prepare_shortform_features <- function(df) {
   }
 
   if (!"phase" %in% names(df)) {
+    # Use centralized phase boundary constants
     df$phase <- dplyr::case_when(
-      tolower(df$match_type) == "t20" & df$over < 6 ~ "powerplay",
-      tolower(df$match_type) == "t20" & df$over < 16 ~ "middle",
+      tolower(df$match_type) == "t20" & df$over < PHASE_T20_POWERPLAY_END ~ "powerplay",
+      tolower(df$match_type) == "t20" & df$over < PHASE_T20_MIDDLE_END ~ "middle",
       tolower(df$match_type) == "t20" ~ "death",
-      tolower(df$match_type) == "odi" & df$over < 10 ~ "powerplay",
-      tolower(df$match_type) == "odi" & df$over < 40 ~ "middle",
+      tolower(df$match_type) == "odi" & df$over < PHASE_ODI_POWERPLAY_END ~ "powerplay",
+      tolower(df$match_type) == "odi" & df$over < PHASE_ODI_MIDDLE_END ~ "middle",
       tolower(df$match_type) == "odi" ~ "death",
       TRUE ~ "middle"
     )
@@ -253,9 +254,10 @@ prepare_longform_features <- function(df) {
   df <- as.data.frame(df)
 
   if (!"phase" %in% names(df)) {
+    # Use centralized phase boundary constants
     df$phase <- dplyr::case_when(
-      df$over < 20 ~ "new_ball",
-      df$over < 80 ~ "middle",
+      df$over < PHASE_TEST_NEW_BALL_END ~ "new_ball",
+      df$over < PHASE_TEST_MIDDLE_END ~ "middle",
       TRUE ~ "old_ball"
     )
   }
@@ -394,47 +396,47 @@ prepare_xgb_longform_features <- function(df, include_venue = TRUE) {
 }
 
 
-#' Get Models Directory
+#' Get Models Directory Path
 #'
-#' Finds the models directory within the bouncerdata directory.
+#' Returns the path to the models directory in bouncerdata.
+#' Uses find_bouncerdata_dir() for robust path resolution.
 #'
-#' @return Character string with path to models directory
-#' @keywords internal
-get_models_dir <- function() {
-  cwd <- getwd()
+#' @param create Logical. Whether to create directory if not found. Default TRUE.
+#'
+#' @return Character string with models directory path.
+#'
+#' @examples
+#' \dontrun{
+#' models_dir <- get_models_dir()
+#' # Returns: "/path/to/bouncerverse/bouncerdata/models"
+#'
+#' model_path <- file.path(get_models_dir(), "agnostic_model.ubj")
+#' }
+#'
+#' @export
+get_models_dir <- function(create = TRUE) {
+  data_dir <- find_bouncerdata_dir(create = FALSE)
 
-  potential_paths <- c(
-    file.path(dirname(cwd), "bouncerdata", "models"),
-    file.path(cwd, "bouncerdata", "models"),
-    file.path(cwd, "..", "bouncerdata", "models")
-  )
-
-  for (path in potential_paths) {
-    if (dir.exists(path)) {
-      return(normalizePath(path))
+  if (is.null(data_dir)) {
+    if (create) {
+      data_dir <- find_bouncerdata_dir(create = TRUE)
+    } else {
+      return(NULL)
     }
   }
 
-  # Create if not found
-
-  models_dir <- file.path(dirname(cwd), "bouncerdata", "models")
-  if (!dir.exists(models_dir)) {
-    tryCatch({
-      dir.create(models_dir, recursive = TRUE)
-      cli::cli_alert_info("Created models directory: {.file {models_dir}}")
-      return(normalizePath(models_dir))
-    }, error = function(e) {
-      # Fall through
-    })
-  }
-
-  # Fallback
-  data_dir <- tools::R_user_dir("bouncerdata", which = "data")
   models_dir <- file.path(data_dir, "models")
-  if (!dir.exists(models_dir)) {
+
+  if (create && !dir.exists(models_dir)) {
     dir.create(models_dir, recursive = TRUE)
+    cli::cli_alert_info("Created models directory: {.file {models_dir}}")
   }
-  return(normalizePath(models_dir))
+
+  if (dir.exists(models_dir)) {
+    return(normalizePath(models_dir, winslash = "/"))
+  } else {
+    return(models_dir)  # Return path even if doesn't exist (create = FALSE)
+  }
 }
 
 
@@ -463,15 +465,19 @@ load_outcome_model <- function(format = c("shortform", "longform"),
   if (model_type == "xgb") {
     model_file <- file.path(model_dir, sprintf("model_xgb_outcome_%s.json", format))
     if (!file.exists(model_file)) {
-      stop(sprintf("XGBoost model not found at: %s\nRun model_xgb_outcome_%s.R to train the model.",
-                   model_file, format))
+      cli::cli_abort(c(
+        "XGBoost model not found at: {.file {model_file}}",
+        "i" = "Run model_xgb_outcome_{format}.R to train the model."
+      ))
     }
     model <- xgboost::xgb.load(model_file)
   } else {
     model_file <- file.path(model_dir, sprintf("model_bam_outcome_%s.rds", format))
     if (!file.exists(model_file)) {
-      stop(sprintf("BAM model not found at: %s\nRun model_bam_outcome_%s.R to train the model.",
-                   model_file, format))
+      cli::cli_abort(c(
+        "BAM model not found at: {.file {model_file}}",
+        "i" = "Run model_bam_outcome_{format}.R to train the model."
+      ))
     }
     model <- readRDS(model_file)
   }

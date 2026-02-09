@@ -36,7 +36,6 @@ predictions, score projections, and Monte Carlo simulations.
 \item \code{\link[=predict_match]{predict_match()}} - Pre-match outcome prediction
 \item \code{\link[=predict_win_probability]{predict_win_probability()}} - In-match win probability
 \item \code{\link[=calculate_projected_score]{calculate_projected_score()}} - Score projection from game state
-\item \code{\link[=predict_matchup_outcome]{predict_matchup_outcome()}} - Batter vs bowler predictions
 }
 }
 
@@ -65,7 +64,7 @@ predictions, score projections, and Monte Carlo simulations.
 \itemize{
 \item \code{\link[=get_player]{get_player()}}, \code{\link[=search_players]{search_players()}} - Find players
 \item \code{\link[=get_team]{get_team()}}, \code{\link[=search_teams]{search_teams()}} - Find teams
-\item \code{\link[=get_player_elo]{get_player_elo()}}, \code{\link[=get_team_elo]{get_team_elo()}} - Get ELO ratings
+\item \code{\link[=get_team_elo]{get_team_elo()}} - Get team ELO ratings
 }
 }
 

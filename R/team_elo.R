@@ -236,36 +236,9 @@ calculate_team_roster_elo <- function(team, as_of_date, conn,
     })
 
   } else {
-    # Legacy fallback: query deliveries table (for non-T20 or if table missing)
-    batting_query <- sprintf("
-      SELECT batter_id as player_id, batter_elo_after as elo
-      FROM deliveries
-      WHERE batter_id IN (%s)
-        AND match_date < CAST(? AS DATE)
-        AND batter_elo_after IS NOT NULL
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) = 1
-    ", placeholders)
-
-    batting_elos <- tryCatch({
-      DBI::dbGetQuery(conn, batting_query, params = c(as.list(player_ids), as_of_date_str))
-    }, error = function(e) {
-      data.frame(player_id = character(0), elo = numeric(0))
-    })
-
-    bowling_query <- sprintf("
-      SELECT bowler_id as player_id, bowler_elo_after as elo
-      FROM deliveries
-      WHERE bowler_id IN (%s)
-        AND match_date < CAST(? AS DATE)
-        AND bowler_elo_after IS NOT NULL
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) = 1
-    ", placeholders)
-
-    bowling_elos <- tryCatch({
-      DBI::dbGetQuery(conn, bowling_query, params = c(as.list(player_ids), as_of_date_str))
-    }, error = function(e) {
-      data.frame(player_id = character(0), elo = numeric(0))
-    })
+    # No 3-way ELO table available — return empty results (use starting ELO defaults)
+    batting_elos <- data.frame(player_id = character(0), elo = numeric(0))
+    bowling_elos <- data.frame(player_id = character(0), elo = numeric(0))
   }
 
   # Calculate average ELOs (use starting ELO for players without history)
@@ -534,12 +507,12 @@ calculate_team_roster_skill <- function(team, as_of_date, conn,
     # Return default values if no skill data
     start_vals <- get_skill_start_values(format)
     return(list(
-      batter_scoring_avg = start_vals$runs,
-      batter_scoring_top5 = start_vals$runs,
-      batter_survival_avg = start_vals$survival,
-      bowler_economy_avg = start_vals$runs,
-      bowler_economy_top5 = start_vals$runs,
-      bowler_strike_avg = 1 - start_vals$survival,
+      batter_scoring_avg = start_vals$scoring_index,
+      batter_scoring_top5 = start_vals$scoring_index,
+      batter_survival_avg = start_vals$survival_rate,
+      bowler_economy_avg = start_vals$economy_index,
+      bowler_economy_top5 = start_vals$economy_index,
+      bowler_strike_avg = start_vals$strike_rate,
       n_batters = 0L,
       n_bowlers = 0L
     ))
@@ -554,12 +527,12 @@ calculate_team_roster_skill <- function(team, as_of_date, conn,
   if (nrow(likely_xi) == 0) {
     start_vals <- get_skill_start_values(format)
     return(list(
-      batter_scoring_avg = start_vals$runs,
-      batter_scoring_top5 = start_vals$runs,
-      batter_survival_avg = start_vals$survival,
-      bowler_economy_avg = start_vals$runs,
-      bowler_economy_top5 = start_vals$runs,
-      bowler_strike_avg = 1 - start_vals$survival,
+      batter_scoring_avg = start_vals$scoring_index,
+      batter_scoring_top5 = start_vals$scoring_index,
+      batter_survival_avg = start_vals$survival_rate,
+      bowler_economy_avg = start_vals$economy_index,
+      bowler_economy_top5 = start_vals$economy_index,
+      bowler_strike_avg = start_vals$strike_rate,
       n_batters = 0L,
       n_bowlers = 0L
     ))
@@ -645,9 +618,9 @@ calculate_team_roster_skill <- function(team, as_of_date, conn,
     }
     n_batters <- nrow(batter_skills)
   } else {
-    batter_scoring_avg <- start_vals$runs
-    batter_scoring_top5 <- start_vals$runs
-    batter_survival_avg <- start_vals$survival
+    batter_scoring_avg <- start_vals$scoring_index
+    batter_scoring_top5 <- start_vals$scoring_index
+    batter_survival_avg <- start_vals$survival_rate
     n_batters <- 0L
   }
 
@@ -671,9 +644,9 @@ calculate_team_roster_skill <- function(team, as_of_date, conn,
     }
     n_bowlers <- nrow(bowler_skills)
   } else {
-    bowler_economy_avg <- start_vals$runs
-    bowler_economy_top5 <- start_vals$runs
-    bowler_strike_avg <- 1 - start_vals$survival
+    bowler_economy_avg <- start_vals$economy_index
+    bowler_economy_top5 <- start_vals$economy_index
+    bowler_strike_avg <- start_vals$strike_rate
     n_bowlers <- 0L
   }
 

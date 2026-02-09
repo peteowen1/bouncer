@@ -292,7 +292,7 @@ if (should_run(3)) {
     }
 
     # Source the calculation script (already supports incremental)
-    source(file.path(DATA_RAW_DIR, "ratings/player/03_calculate_skill_indices.R"), local = TRUE)
+    source(file.path(DATA_RAW_DIR, "ratings/player/skill-indices/01_calculate_skill_indices.R"), local = TRUE)
 
     # Update pipeline state
     conn <- get_db_connection(read_only = FALSE)

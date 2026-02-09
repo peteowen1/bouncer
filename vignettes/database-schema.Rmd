@@ -1,0 +1,533 @@
+---
+title: "Database Schema Reference"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Database Schema Reference}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+The bouncer package stores cricket data in a DuckDB database (`bouncer.duckdb`). This vignette documents all tables, their columns, and relationships. The database contains approximately:
+
+- **15,000+ matches** spanning international cricket and major leagues
+- **6 million+ deliveries** of ball-by-ball data
+- **25,000+ players** in the registry
+
+## Quick Database Access
+
+```{r}
+library(bouncer)
+
+# Connect to database (read-only is safest)
+conn <- connect_to_bouncer(read_only = TRUE)
+
+# List all tables
+DBI::dbListTables(conn)
+
+# Query example
+result <- DBI::dbGetQuery(conn, "SELECT COUNT(*) FROM matches")
+
+# Always disconnect when done
+disconnect_bouncer(conn)
+```
+
+## Table Categories
+
+| Category | Tables | Purpose |
+|----------|--------|---------|
+| **Core** | matches, deliveries, players, match_innings, innings_powerplays | Raw cricket data |
+| **Ratings** | team_elo, player_elo_history | Game-level ELO ratings |
+| **Player Skills** | t20/odi/test_player_skill | Ball-by-ball player indices |
+| **Team Skills** | t20/odi/test_team_skill | Ball-by-ball team indices |
+| **Venue Skills** | t20/odi/test_venue_skill | Venue characteristics |
+| **Projections** | t20/odi/test_score_projection | Per-delivery score projections |
+| **Predictions** | pre_match_features, pre_match_predictions | Pre-game model data |
+| **Simulation** | simulation_results | Monte Carlo outputs |
+
+---
+
+## Core Tables
+
+### matches
+
+Match metadata including teams, venue, outcome, and officials.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | VARCHAR | **Primary Key** - Unique match identifier (Cricsheet ID) |
+| `season` | VARCHAR | Season/year (e.g., "2024", "2023/24") |
+| `match_type` | VARCHAR | Format code: T20, IT20, ODI, ODM, Test, MDM |
+| `match_type_number` | INTEGER | Match number for Tests (1st, 2nd, etc.) |
+| `match_date` | DATE | Start date of match |
+| `venue` | VARCHAR | Ground name |
+| `city` | VARCHAR | City name |
+| `gender` | VARCHAR | "male" or "female" |
+| `team_type` | VARCHAR | "international", "club", etc. |
+| `team1` | VARCHAR | First team name |
+| `team2` | VARCHAR | Second team name |
+| `balls_per_over` | INTEGER | Balls per over (usually 6) |
+| `overs_per_innings` | INTEGER | Max overs (20 for T20, 50 for ODI, NULL for Test) |
+| `toss_winner` | VARCHAR | Team that won the toss |
+| `toss_decision` | VARCHAR | "bat" or "field" |
+| `outcome_type` | VARCHAR | "normal", "tie", "no result", "draw" |
+| `outcome_winner` | VARCHAR | Winning team name |
+| `outcome_by_runs` | INTEGER | Margin if won batting first |
+| `outcome_by_wickets` | INTEGER | Margin if won chasing |
+| `outcome_method` | VARCHAR | "D/L", "VJD" if applicable |
+| `umpire1` | VARCHAR | On-field umpire |
+| `umpire2` | VARCHAR | On-field umpire |
+| `tv_umpire` | VARCHAR | Third umpire |
+| `referee` | VARCHAR | Match referee |
+| `player_of_match_id` | VARCHAR | Player of match ID |
+| `event_name` | VARCHAR | Tournament name (e.g., "Indian Premier League") |
+| `event_match_number` | INTEGER | Match number in tournament |
+| `event_group` | VARCHAR | Group stage identifier |
+| `data_version` | VARCHAR | Cricsheet data format version |
+| `data_created` | DATE | When Cricsheet created this file |
+| `data_revision` | INTEGER | Cricsheet revision number |
+
+**Example Query:**
+```{r}
+# Get all IPL 2024 matches
+ipl_2024 <- DBI::dbGetQuery(conn, "
+  SELECT match_id, match_date, team1, team2, outcome_winner
+  FROM matches
+  WHERE event_name = 'Indian Premier League' AND season = '2024'
+  ORDER BY match_date
+")
+```
+
+---
+
+### deliveries
+
+Ball-by-ball data - the heart of cricket analytics.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `delivery_id` | VARCHAR | **Primary Key** - Format: `{match_id}_{team}_{inn}_{over}_{ball}` |
+| `match_id` | VARCHAR | Foreign key to matches |
+| `season` | VARCHAR | Season/year |
+| `match_type` | VARCHAR | Format code |
+| `match_date` | DATE | Match date |
+| `venue` | VARCHAR | Ground name |
+| `city` | VARCHAR | City |
+| `gender` | VARCHAR | "male" or "female" |
+| `batting_team` | VARCHAR | Team batting |
+| `bowling_team` | VARCHAR | Team bowling |
+| `innings` | INTEGER | Innings number (1, 2, 3, 4 for Tests; super overs are 3+) |
+| `over` | INTEGER | Over number (0-indexed: 0 = first over) |
+| `ball` | INTEGER | Ball within over (1-6, can exceed 6 for extras) |
+| `over_ball` | DECIMAL | Decimal format (e.g., 5.3 = 6th over, 3rd ball) |
+| `batter_id` | VARCHAR | Batter's player ID |
+| `bowler_id` | VARCHAR | Bowler's player ID |
+| `non_striker_id` | VARCHAR | Non-striker's player ID |
+| `runs_batter` | INTEGER | Runs scored by batter (0-6 typically) |
+| `runs_extras` | INTEGER | Extra runs (wides, no balls, byes, leg byes) |
+| `runs_total` | INTEGER | Total runs from this delivery |
+| `is_boundary` | BOOLEAN | TRUE if boundary (4 or 6) |
+| `is_four` | BOOLEAN | TRUE if four |
+| `is_six` | BOOLEAN | TRUE if six |
+| `wides` | INTEGER | Wide runs (includes +1 for the wide itself) |
+| `noballs` | INTEGER | No ball runs |
+| `byes` | INTEGER | Bye runs |
+| `legbyes` | INTEGER | Leg bye runs |
+| `penalty` | INTEGER | Penalty runs |
+| `is_wicket` | BOOLEAN | TRUE if wicket fell |
+| `wicket_kind` | VARCHAR | Dismissal type (bowled, caught, lbw, etc.) |
+| `player_out_id` | VARCHAR | Dismissed player's ID |
+| `fielder1_id` | VARCHAR | Primary fielder involved |
+| `fielder2_id` | VARCHAR | Secondary fielder (run outs) |
+| `fielder1_is_sub` | BOOLEAN | TRUE if fielder was substitute |
+| `has_review` | BOOLEAN | TRUE if DRS review taken |
+| `review_by` | VARCHAR | Team that reviewed |
+| `review_decision` | VARCHAR | "upheld", "overturned", etc. |
+| `has_replacement` | BOOLEAN | TRUE if player replacement occurred |
+| `replacement_in` | VARCHAR | Incoming player ID |
+| `replacement_out` | VARCHAR | Outgoing player ID |
+| `replacement_reason` | VARCHAR | "concussion", "impact player", etc. |
+| `total_runs` | INTEGER | Running innings total |
+| `wickets_fallen` | INTEGER | Running wickets count |
+
+**Delivery ID Format:**
+```
+{match_id}_{batting_team}_{innings}_{over:03d}_{ball:02d}
+Example: "64012_India_1_005_03" = Match 64012, India batting, 1st innings, over 5, ball 3
+```
+
+**Example Query:**
+```{r}
+# Get Kohli's boundaries in IPL 2024
+kohli_boundaries <- DBI::dbGetQuery(conn, "
+  SELECT d.match_date, d.runs_batter, d.is_four, d.is_six, d.bowler_id
+  FROM deliveries d
+  JOIN matches m ON d.match_id = m.match_id
+  WHERE d.batter_id = 'V Kohli'
+    AND d.is_boundary = TRUE
+    AND m.event_name = 'Indian Premier League'
+    AND m.season = '2024'
+")
+```
+
+---
+
+### players
+
+Player registry with demographic information.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `player_id` | VARCHAR | **Primary Key** - Format varies by source |
+| `player_name` | VARCHAR | Full display name |
+| `country` | VARCHAR | Primary country |
+| `dob` | DATE | Date of birth (where available) |
+| `batting_style` | VARCHAR | "right-hand bat", "left-hand bat" |
+| `bowling_style` | VARCHAR | "right-arm fast", "slow left-arm orthodox", etc. |
+
+---
+
+### match_innings
+
+Innings-level summaries.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | VARCHAR | **Primary Key (part)** |
+| `innings` | INTEGER | **Primary Key (part)** - Innings number |
+| `batting_team` | VARCHAR | Team batting |
+| `bowling_team` | VARCHAR | Team bowling |
+| `total_runs` | INTEGER | Final innings total |
+| `total_wickets` | INTEGER | Wickets lost |
+| `total_overs` | DECIMAL | Overs faced |
+| `declared` | BOOLEAN | TRUE if innings declared (Tests) |
+| `forfeited` | BOOLEAN | TRUE if innings forfeited |
+| `target_runs` | INTEGER | Chase target (2nd innings limited overs) |
+| `target_overs` | INTEGER | Overs available (may differ due to DLS) |
+| `is_super_over` | BOOLEAN | TRUE for super over innings |
+| `absent_hurt` | VARCHAR | JSON array of players who couldn't bat |
+
+---
+
+### innings_powerplays
+
+Powerplay periods for limited-overs matches.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `powerplay_id` | VARCHAR | **Primary Key** - `{match_id}_{innings}_{seq}` |
+| `match_id` | VARCHAR | Match identifier |
+| `innings` | INTEGER | Innings number |
+| `from_over` | REAL | Powerplay start (e.g., 0.1) |
+| `to_over` | REAL | Powerplay end (e.g., 5.6) |
+| `powerplay_type` | VARCHAR | "mandatory", "batting", "bowling" |
+
+---
+
+## Rating Tables
+
+### team_elo
+
+Game-level team ELO ratings (updated after each match).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `team_id` | VARCHAR | **Primary Key (part)** - Team name |
+| `match_id` | VARCHAR | **Primary Key (part)** - Match identifier |
+| `match_date` | DATE | Match date |
+| `match_type` | VARCHAR | Format code |
+| `event_name` | VARCHAR | Tournament name |
+| `elo_result` | DOUBLE | Result-based ELO (updates on win/loss/draw) |
+| `elo_roster_batting` | DOUBLE | Aggregated batting ELO from player roster |
+| `elo_roster_bowling` | DOUBLE | Aggregated bowling ELO from player roster |
+| `elo_roster_combined` | DOUBLE | Combined roster ELO |
+| `matches_played` | INTEGER | Running match count |
+
+**ELO Interpretation:**
+- 1500 = average team
+- 1600+ = strong team
+- 1400- = weaker team
+- Difference of 100 points ≈ 64% expected win rate
+
+---
+
+### player_elo_history
+
+Historical player ELO snapshots (one row per player per match played).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `player_id` | VARCHAR | **Primary Key (part)** |
+| `match_id` | VARCHAR | **Primary Key (part)** |
+| `match_date` | DATE | Match date |
+| `match_type` | VARCHAR | Format played |
+| `elo_batting` | DOUBLE | Overall batting ELO |
+| `elo_bowling` | DOUBLE | Overall bowling ELO |
+| `elo_batting_test` | DOUBLE | Test-specific batting ELO |
+| `elo_batting_odi` | DOUBLE | ODI-specific batting ELO |
+| `elo_batting_t20` | DOUBLE | T20-specific batting ELO |
+| `elo_bowling_test` | DOUBLE | Test-specific bowling ELO |
+| `elo_bowling_odi` | DOUBLE | ODI-specific bowling ELO |
+| `elo_bowling_t20` | DOUBLE | T20-specific bowling ELO |
+
+---
+
+## Player Skill Tables
+
+These tables store per-delivery skill indices using an exponential moving average (EMA) approach. Available for each format: `t20_player_skill`, `odi_player_skill`, `test_player_skill`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `delivery_id` | VARCHAR | **Primary Key** |
+| `match_id` | VARCHAR | Match identifier |
+| `match_date` | DATE | Match date |
+| `batter_id` | VARCHAR | Batter's player ID |
+| `bowler_id` | VARCHAR | Bowler's player ID |
+| `batter_scoring_index` | DOUBLE | Runs per ball vs expected (+ is better) |
+| `batter_survival_rate` | DOUBLE | Probability of surviving each ball (0.95-0.99 typical) |
+| `bowler_economy_index` | DOUBLE | Runs conceded vs expected (- is better for bowlers) |
+| `bowler_strike_rate` | DOUBLE | Wickets per ball (higher = more wicket-taking) |
+| `exp_runs` | DOUBLE | Expected runs (from skill combination) |
+| `exp_wicket` | DOUBLE | Expected wicket probability |
+| `actual_runs` | INTEGER | Actual runs scored |
+| `is_wicket` | BOOLEAN | Whether wicket fell |
+| `batter_balls_faced` | INTEGER | Career balls faced (for reliability) |
+| `bowler_balls_bowled` | INTEGER | Career balls bowled |
+
+**Skill Index Interpretation:**
+
+| Index | Good Value | Average | Poor Value |
+|-------|------------|---------|------------|
+| Batter Scoring | +0.10 | 0.00 | -0.10 |
+| Batter Survival | 0.99 | 0.97 | 0.95 |
+| Bowler Economy | -0.10 | 0.00 | +0.10 |
+| Bowler Strike Rate | 0.06 | 0.04 | 0.02 |
+
+---
+
+## Team Skill Tables
+
+Per-delivery team skill indices. Available as `t20_team_skill`, `odi_team_skill`, `test_team_skill`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `delivery_id` | VARCHAR | **Primary Key** |
+| `match_id` | VARCHAR | Match identifier |
+| `match_date` | DATE | Match date |
+| `batting_team_id` | VARCHAR | Batting team |
+| `bowling_team_id` | VARCHAR | Bowling team |
+| `batting_team_runs_skill` | DOUBLE | Team batting runs residual (+ is better) |
+| `batting_team_wicket_skill` | DOUBLE | Team batting wicket residual (+ means loses fewer wickets) |
+| `bowling_team_runs_skill` | DOUBLE | Team bowling runs residual (- is better for bowling) |
+| `bowling_team_wicket_skill` | DOUBLE | Team bowling wicket residual (+ means takes more wickets) |
+| `exp_runs_agnostic` | DOUBLE | Expected runs (agnostic model) |
+| `exp_wicket_agnostic` | DOUBLE | Expected wicket prob (agnostic model) |
+| `actual_runs` | INTEGER | Actual runs |
+| `is_wicket` | BOOLEAN | Wicket fell |
+| `batting_team_balls` | INTEGER | Team balls batted (reliability) |
+| `bowling_team_balls` | INTEGER | Team balls bowled |
+
+---
+
+## Venue Skill Tables
+
+Per-delivery venue characteristics. Available as `t20_venue_skill`, `odi_venue_skill`, `test_venue_skill`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `delivery_id` | VARCHAR | **Primary Key** |
+| `match_id` | VARCHAR | Match identifier |
+| `match_date` | DATE | Match date |
+| `venue` | VARCHAR | Ground name |
+| `venue_run_rate` | DOUBLE | Average runs per ball at venue |
+| `venue_wicket_rate` | DOUBLE | Average wicket probability at venue |
+| `venue_boundary_rate` | DOUBLE | Boundary percentage at venue |
+| `venue_dot_rate` | DOUBLE | Dot ball percentage at venue |
+| `venue_balls` | INTEGER | Total balls at venue (reliability) |
+| `actual_runs` | INTEGER | Actual runs this delivery |
+| `is_wicket` | BOOLEAN | Wicket fell |
+| `is_boundary` | BOOLEAN | Boundary hit |
+| `is_dot` | BOOLEAN | Dot ball |
+
+---
+
+## Score Projection Tables
+
+Per-delivery innings projections. Available as `t20_score_projection`, `odi_score_projection`, `test_score_projection`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `delivery_id` | VARCHAR | **Primary Key** |
+| `match_id` | VARCHAR | Match identifier |
+| `match_date` | DATE | Match date |
+| `innings` | INTEGER | Innings number |
+| `batting_team_id` | VARCHAR | Batting team |
+| `current_score` | INTEGER | Score at this delivery |
+| `balls_remaining` | INTEGER | Balls left in innings |
+| `wickets_remaining` | INTEGER | Wickets in hand |
+| `resource_remaining` | DOUBLE | DLS-style resource % (0-1) |
+| `resource_used` | DOUBLE | Resources consumed (0-1) |
+| `eis_agnostic` | DOUBLE | Expected Initial Score (baseline model) |
+| `eis_full` | DOUBLE | Expected Initial Score (full model with skills) |
+| `projected_agnostic` | DOUBLE | Projected final score (baseline) |
+| `projected_full` | DOUBLE | Projected final score (with skills) |
+| `final_innings_total` | INTEGER | Actual final score (for validation) |
+| `projection_change_agnostic` | DOUBLE | Change from previous delivery |
+| `projection_change_full` | DOUBLE | Change from previous delivery |
+
+---
+
+## Prediction Tables
+
+### pre_match_features
+
+Features used for pre-match prediction models.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | VARCHAR | **Primary Key** |
+| `match_date` | DATE | Match date |
+| `match_type` | VARCHAR | Format code |
+| `event_name` | VARCHAR | Tournament |
+| `team1` | VARCHAR | First team |
+| `team2` | VARCHAR | Second team |
+| `team1_elo_result` | DOUBLE | Team 1's result-based ELO |
+| `team1_elo_roster` | DOUBLE | Team 1's roster-based ELO |
+| `team1_form_last5` | DOUBLE | Team 1's win rate in last 5 matches |
+| `team1_h2h_wins` | INTEGER | Team 1's H2H wins vs Team 2 |
+| `team1_h2h_total` | INTEGER | Total H2H matches |
+| `team1_bat_scoring_avg` | DOUBLE | Avg batting scoring index |
+| `team1_bat_scoring_top5` | DOUBLE | Top 5 batters' avg scoring index |
+| `team1_bat_survival_avg` | DOUBLE | Avg survival rate |
+| `team1_bowl_economy_avg` | DOUBLE | Avg bowling economy index |
+| `team1_bowl_economy_top5` | DOUBLE | Top 5 bowlers' avg economy |
+| `team1_bowl_strike_avg` | DOUBLE | Avg bowling strike rate |
+| `team2_*` | ... | Same features for Team 2 |
+| `venue` | VARCHAR | Match venue |
+| `venue_avg_score` | DOUBLE | Average first innings score at venue |
+| `venue_chase_success_rate` | DOUBLE | Historical chase success rate |
+| `venue_matches` | INTEGER | Matches at venue (reliability) |
+| `is_knockout` | BOOLEAN | Knockout/playoff match |
+| `is_neutral_venue` | BOOLEAN | Neutral venue |
+| `expected_margin` | DOUBLE | Predicted margin from ELO |
+| `actual_margin` | DOUBLE | Actual margin (backfilled) |
+
+---
+
+### pre_match_predictions
+
+Model predictions for each match.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `prediction_id` | VARCHAR | **Primary Key** |
+| `match_id` | VARCHAR | Match identifier |
+| `model_version` | VARCHAR | Model version string |
+| `model_type` | VARCHAR | Model architecture |
+| `prediction_date` | TIMESTAMP | When prediction was made |
+| `team1_win_prob` | DOUBLE | Team 1 win probability (0-1) |
+| `team2_win_prob` | DOUBLE | Team 2 win probability (0-1) |
+| `predicted_winner` | VARCHAR | Predicted winning team |
+| `confidence` | DOUBLE | Model confidence |
+| `actual_winner` | VARCHAR | Actual winner (backfilled) |
+| `prediction_correct` | BOOLEAN | Was prediction correct |
+
+---
+
+### simulation_results
+
+Monte Carlo simulation outputs.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `simulation_id` | VARCHAR | **Primary Key** |
+| `simulation_type` | VARCHAR | "season", "playoffs", "match" |
+| `event_name` | VARCHAR | Tournament simulated |
+| `season` | VARCHAR | Season |
+| `simulation_date` | TIMESTAMP | When simulation ran |
+| `n_simulations` | INTEGER | Number of iterations |
+| `parameters` | VARCHAR | JSON simulation parameters |
+| `team_results` | VARCHAR | JSON team-level results |
+| `match_results` | VARCHAR | JSON match-level results |
+| `created_at` | TIMESTAMP | Creation timestamp |
+
+---
+
+## Parameter Tables
+
+### projection_params
+
+Optimized parameters for score projection by segment.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `segment_id` | VARCHAR | **Primary Key** - Format/gender/team_type combo |
+| `format` | VARCHAR | t20, odi, test |
+| `gender` | VARCHAR | male, female |
+| `team_type` | VARCHAR | international, club |
+| `param_a` | DOUBLE | Resource curve parameter |
+| `param_b` | DOUBLE | Resource curve parameter |
+| `param_z` | DOUBLE | Wicket decay parameter |
+| `param_y` | DOUBLE | Additional parameter |
+| `eis_agnostic` | DOUBLE | Expected initial score (format average) |
+| `train_rmse` | DOUBLE | Training RMSE |
+| `validation_rmse` | DOUBLE | Validation RMSE |
+| `n_innings` | INTEGER | Innings in training set |
+
+---
+
+## Helper Functions
+
+The bouncer package provides functions to load these tables into R without writing SQL:
+
+```{r}
+# Load core tables
+matches <- load_matches(format = "t20", season = "2024")
+deliveries <- load_deliveries(match_ids = "1234567")
+players <- load_players()
+
+# Load skill tables
+player_skills <- load_player_skill(format = "t20")
+team_skills <- load_team_skill(format = "t20")
+venue_skills <- load_venue_skill(format = "t20")
+
+# Load ELO ratings
+team_elo <- load_team_elo(team = "India", format = "t20")
+```
+
+## Live Database Statistics
+
+Run this code to see current database statistics:
+
+```{r}
+library(bouncer)
+
+conn <- connect_to_bouncer(read_only = TRUE)
+
+# Table row counts
+tables <- c("matches", "deliveries", "players", "match_innings",
+            "team_elo", "t20_player_skill", "t20_team_skill", "t20_venue_skill")
+
+for (tbl in tables) {
+  count <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) as n FROM %s", tbl))
+  cat(sprintf("%s: %s rows\n", tbl, format(count$n, big.mark = ",")))
+}
+
+disconnect_bouncer(conn)
+```
+
+## See Also
+
+- `vignette("getting-started")` - Package setup and basic usage
+- `vignette("player-analysis")` - Working with player skill indices
+- `vignette("match-analysis")` - Match-level analysis
+- `vignette("predictions")` - Using prediction models

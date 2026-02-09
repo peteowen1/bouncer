@@ -2,11 +2,11 @@
 
 ## Overview
 
-This module provides a framework for simulating cricket matches, seasons, and playoffs. It uses pre-match prediction probabilities to run Monte Carlo simulations and project outcomes.
+This module provides a framework for simulating cricket matches, seasons, and playoffs. It uses the full ball-outcome model to run ball-by-ball Monte Carlo simulations.
 
 ## Status
 
-**Framework Only** - Core infrastructure is in place, but simulation scripts are stubs awaiting implementation.
+**Implemented** - Ball-by-ball simulation is fully functional via `R/simulation.R` package functions.
 
 ## Quick Start
 
@@ -59,12 +59,32 @@ Results stored in `simulation_results` table:
 
 ## Dependencies
 
-- Requires: `data-raw/predictive-modelling/` (pre-match predictions)
+- Requires: Full outcome model from `data-raw/models/ball-outcome/02_train_full_model.R`
+- Requires: Player/team/venue skill indices from `data-raw/ratings/`
 - Requires: bouncer package functions via `devtools::load_all()`
+
+## Package Functions
+
+The `R/simulation.R` file provides these simulation functions:
+
+```r
+# Ball-by-ball match simulation
+simulate_match_ballbyball(model, format, ...)
+quick_match_simulation(model, format)
+
+# Innings simulation
+simulate_innings(model, format, ...)
+
+# Season simulation
+simulate_season(fixtures, n_sims, ...)
+simulate_season_n(fixtures, n_sims, ...)
+
+# Playoff simulation
+simulate_ipl_playoffs(standings, n_sims, ...)
+```
 
 ## Future Enhancements
 
-- [ ] Ball-by-ball simulation (detailed)
 - [ ] What-if scenarios (roster changes)
 - [ ] Live match simulation updates
 - [ ] Tournament bracket visualization

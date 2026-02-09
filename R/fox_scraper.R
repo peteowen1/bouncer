@@ -496,12 +496,16 @@ generate_match_id_variants <- function(year, series, match, format = "TEST") {
 #' @param output_dir Base directory for match files (default: bouncerdata/fox_cricket)
 #' @param cache_file File to cache discovered match IDs (default: format-specific)
 #' @param verbose Print progress messages
+#' @param scan_for_new If FALSE and cached matches exist, return them immediately without
+#'   re-enumerating (fast path for already-scraped formats). If TRUE, scan all years for
+#'   new matches. Default TRUE.
 #' @return Character vector of valid match IDs
 #' @keywords internal
 fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024:2025,
                                   max_series = NULL, max_matches = NULL,
                                   output_dir = "../bouncerdata/fox_cricket",
-                                  cache_file = NULL, verbose = TRUE) {
+                                  cache_file = NULL, verbose = TRUE,
+                                  scan_for_new = TRUE) {
 
   # Validate format
   if (!format %in% names(FOX_FORMATS)) {
@@ -534,27 +538,45 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
   }
 
   # Get list of already-downloaded matches (support both .rds and .parquet)
+  # Exclude _players and _details auxiliary files - only count actual match ball files
   existing_files <- character(0)
   if (dir.exists(format_dir)) {
     file_pattern <- paste0("^", prefix, ".*\\.(rds|parquet)$")
     existing_files <- list.files(format_dir, pattern = file_pattern)
     existing_files <- sub("\\.(rds|parquet)$", "", existing_files)
+    # Filter out _players and _details file stems (they're not valid match IDs)
+    existing_files <- existing_files[!grepl("_(players|details)$", existing_files)]
   }
 
   # Combine cached + downloaded as "known" matches
   known_matches <- unique(c(cached_matches, existing_files))
-  if (verbose && length(known_matches) > 0) {
-    cli::cli_alert_info("Found {length(known_matches)} known {format} matches (will skip API checks)")
+
+  # FAST PATH: If we have known matches and don't need to scan for new ones, return immediately
+  if (length(known_matches) > 0 && !scan_for_new) {
+    if (verbose) {
+      cli::cli_alert_success("Fast path: returning {length(known_matches)} known {format} matches (skipping enumeration)")
+    }
+    return(known_matches)
   }
 
-  if (verbose) cli::cli_alert_info("Discovering {format} match IDs by enumeration...")
+  if (verbose && length(known_matches) > 0) {
+    cli::cli_alert_info("Found {length(known_matches)} known {format} matches")
+  }
 
-  valid_matches <- character(0)
+  # Convert known_matches to a set for O(1) lookup instead of O(n)
+  known_set <- new.env(hash = TRUE, size = length(known_matches) + 100)
+  for (m in known_matches) known_set[[m]] <- TRUE
+
+  if (verbose) cli::cli_alert_info("Scanning for new {format} matches...")
+
+  # Pre-allocate lists for efficiency (avoid c() in loop)
+  valid_list <- vector("list", length(years) * max_series * max_matches)
+  list_idx <- 0
   skipped_known <- 0
   new_discoveries <- 0
 
   for (year in years) {
-    if (verbose) cli::cli_alert("Scanning year {year}...")
+    year_found <- 0
 
     for (series in 1:max_series) {
       series_found_any <- FALSE
@@ -565,46 +587,52 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
         match_found <- FALSE
 
         for (match_id in variants) {
-          # Check if already known - skip API call (no delay!)
-          if (match_id %in% known_matches) {
-            valid_matches <- c(valid_matches, match_id)
+          # Check if already known using hash lookup - O(1) instead of O(n)
+          if (exists(match_id, envir = known_set, inherits = FALSE)) {
+            list_idx <- list_idx + 1
+            valid_list[[list_idx]] <- match_id
             series_found_any <- TRUE
             match_found <- TRUE
             skipped_known <- skipped_known + 1
-            if (verbose) cli::cli_alert_success("  Found (cached): {match_id}")
+            year_found <- year_found + 1
             break
           }
 
           # Not known - check API (with delay)
-          exists <- fox_match_exists(browser, match_id, userkey)
+          exists_on_api <- fox_match_exists(browser, match_id, userkey)
           Sys.sleep(0.3 + runif(1, 0, 0.5))  # Only delay after API calls
 
-          if (exists) {
-            valid_matches <- c(valid_matches, match_id)
+          if (exists_on_api) {
+            list_idx <- list_idx + 1
+            valid_list[[list_idx]] <- match_id
             series_found_any <- TRUE
             match_found <- TRUE
             new_discoveries <- new_discoveries + 1
-            if (verbose) cli::cli_alert_success("  Found: {match_id}")
+            if (verbose) cli::cli_alert_success("  NEW: {match_id}")
             break
           }
         }
 
         if (!match_found) break
-        # No delay after cached matches - only API calls need delays
+      }
+    }
+
+    if (verbose) {
+      if (year_found > 0 || new_discoveries > 0) {
+        cli::cli_alert("Year {year}: {year_found} cached, {new_discoveries} new")
       }
     }
   }
+
+  # Convert list to vector (only non-NULL elements)
+  valid_matches <- unlist(valid_list[1:list_idx])
 
   # Save updated cache
   all_discovered <- unique(c(cached_matches, valid_matches))
   saveRDS(all_discovered, cache_file)
 
   if (verbose) {
-    cli::cli_alert_success("Discovered {length(valid_matches)} valid {format} matches")
-    if (skipped_known > 0) {
-      cli::cli_alert_info("  ({skipped_known} from cache, {new_discoveries} new)")
-    }
-    cli::cli_alert_info("Cache saved to {cache_file}")
+    cli::cli_alert_success("Total: {length(valid_matches)} {format} matches ({skipped_known} cached, {new_discoveries} new)")
   }
 
   return(valid_matches)
@@ -948,4 +976,49 @@ fox_list_formats <- function(details = FALSE) {
   } else {
     names(FOX_FORMATS)
   }
+}
+
+#' Generate Fox Sports manifest from combined parquet files
+#'
+#' Creates a manifest summarizing the Fox Sports data for a given output directory.
+#' Scans for combined parquet files (all_*_matches.parquet) in each format subdirectory.
+#'
+#' @param output_dir Base directory containing format subdirectories (default: bouncerdata/fox_cricket)
+#' @param formats Vector of format codes to include (default: all available)
+#' @return List with manifest data (created_at, formats, summary)
+#' @keywords internal
+fox_generate_manifest <- function(output_dir = "../bouncerdata/fox_cricket",
+                                   formats = NULL) {
+  if (is.null(formats)) {
+    formats <- fox_list_formats()
+  }
+
+  summary <- list()
+
+  for (format in formats) {
+    format_dir <- file.path(output_dir, tolower(format))
+    matches_file <- file.path(format_dir, paste0("all_", tolower(format), "_matches.parquet"))
+    players_file <- file.path(format_dir, paste0("all_", tolower(format), "_players.parquet"))
+    details_file <- file.path(format_dir, paste0("all_", tolower(format), "_details.parquet"))
+
+    if (file.exists(matches_file)) {
+      matches_df <- arrow::read_parquet(matches_file)
+      match_ids <- unique(matches_df$match_id)
+
+      summary[[format]] <- list(
+        match_count = length(match_ids),
+        ball_count = nrow(matches_df),
+        match_ids = match_ids,
+        has_players = file.exists(players_file),
+        has_details = file.exists(details_file)
+      )
+    }
+  }
+
+  list(
+    created_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ"),
+    source = "foxsports",
+    formats = names(summary),
+    summary = summary
+  )
 }

@@ -1,4 +1,4 @@
-# Calculate Per-Delivery Score Projections
+# Calculate Per-Delivery Score Projections ----
 #
 # This script calculates and stores score projections for every delivery
 # in the database, using the optimized parameters from step 01.
@@ -14,7 +14,8 @@ library(cli)
 
 devtools::load_all()
 
-# Calculate projections for all formats
+# Calculate Projections ----
+
 calculate_all_format_projections(
   db_path = get_db_path(),
   formats = c("t20", "odi", "test"),

@@ -25,3 +25,7 @@ search_players("Kohli")
 search_players("Smith")
 }
 }
+\seealso{
+\code{\link{get_player}} to get detailed info for a specific player,
+\code{\link{compare_players}} to compare two players
+}

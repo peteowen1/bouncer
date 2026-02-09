@@ -26,3 +26,8 @@ analysis <- analyze_player("Virat Kohli", format = "t20")
 print(analysis)
 }
 }
+\seealso{
+\code{\link{get_player}} for basic player lookup,
+\code{\link{compare_players}} to compare two players,
+\code{\link{plot_skill_progression}} to visualize skill changes over time
+}

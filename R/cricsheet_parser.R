@@ -609,7 +609,7 @@ parse_all_data <- function(json_data, match_info) {
 
   # Combine powerplays from all innings
   powerplays_df <- if (length(powerplays_list) > 0) {
-    do.call(rbind, powerplays_list)
+    fast_rbind(powerplays_list)
   } else {
     data.frame(
       powerplay_id = character(),
@@ -755,7 +755,9 @@ has_simd_json <- function() {
 #' @keywords internal
 read_json_fast <- function(file_path) {
  if (has_simd_json()) {
-   RcppSimdJson::fload(file_path)
+   # simplify_to=0 prevents array-to-vector simplification, keeping structure
+   # consistent with jsonlite's simplifyVector=FALSE behavior
+   RcppSimdJson::fload(file_path, simplify_to = 0)
  } else {
    jsonlite::fromJSON(file_path, simplifyVector = FALSE)
  }
@@ -780,12 +782,14 @@ read_json_fast <- function(file_path) {
 #' - long_form: Day-limited matches (Tests, First-class, multi-day)
 #' - short_form: Over/ball-limited matches (ODIs, T20s, The Hundred, etc.)
 #'
-#' @export
+#' @keywords internal
 #' @examples
+#' \dontrun{
 #' get_format_category("Test")   # "long_form"
 #' get_format_category("ODI")    # "short_form"
 #' get_format_category("T20")    # "short_form"
 #' get_format_category("MDM")    # "long_form" (multi-day match)
+#' }
 get_format_category <- function(match_type) {
   # Long form = day-limited (Tests, First-class, multi-day matches)
   long_form_types <- c("Test", "MDM")
@@ -839,12 +843,14 @@ get_model_format <- function(match_type) {
 #'
 #' @return Character: "international" or "club"
 #'
-#' @export
+#' @keywords internal
 #' @examples
+#' \dontrun{
 #' get_match_type_category("Test")  # "international"
 #' get_match_type_category("ODI")   # "international"
 #' get_match_type_category("T20")   # "club" (franchise T20)
 #' get_match_type_category("IT20")  # "international"
+#' }
 get_match_type_category <- function(match_type) {
   # International match types have specific codes
   international_types <- c("Test", "ODI", "IT20")
@@ -878,7 +884,7 @@ get_match_type_category <- function(match_type) {
 #' - short_form_female_international
 #' - short_form_female_club
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' match_data <- parse_cricsheet_json("12345.json")

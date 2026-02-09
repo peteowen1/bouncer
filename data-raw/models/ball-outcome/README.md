@@ -23,10 +23,12 @@ T20 and ODI share the shortform model because limited-overs dynamics are similar
 
 ### Model Types
 
-| Model | Strengths | Best For |
-|-------|-----------|----------|
-| **XGBoost** | Higher accuracy, faster inference, explicit feature importance | Production, predictions |
-| **BAM** | Better calibrated probabilities, interpretable smooth terms, venue effects | Analysis, understanding |
+| Model | Strengths | Status |
+|-------|-----------|--------|
+| **XGBoost** | Higher accuracy, faster inference, SHAP support | **Active** |
+| **BAM** | Better calibrated probabilities, interpretable smooth terms | Deprecated (see `legacy/`) |
+
+> **Note:** BAM models have been moved to `legacy/` as XGBoost is now used for both agnostic and full models. See `legacy/README.md` for details.
 
 ## Directory Structure
 
@@ -34,23 +36,26 @@ T20 and ODI share the shortform model because limited-overs dynamics are similar
 ball-outcome/
 ├── README.md                          # This file
 │
-├── Runner Scripts
-│   ├── run_outcome_models_t20.R       # T20 pipeline (shortform)
-│   ├── run_outcome_models_odi.R       # ODI pipeline (shortform)
-│   └── run_outcome_models_test.R      # Test pipeline (longform)
+├── Main Pipeline Scripts
+│   ├── 01_train_agnostic_model.R      # Agnostic baseline (context-only features)
+│   └── 02_train_full_model.R          # Full model (with player/team/venue skills)
 │
-├── Model Training
-│   ├── model_xgb_outcome_shortform.R  # XGBoost T20/ODI
-│   ├── model_xgb_outcome_longform.R   # XGBoost Test
-│   ├── model_bam_outcome_shortform.R  # BAM T20/ODI
-│   └── model_bam_outcome_longform.R   # BAM Test
+├── Format-Specific Scripts
+│   ├── run_outcome_models_t20.R       # T20 pipeline
+│   ├── run_outcome_models_odi.R       # ODI pipeline
+│   └── run_outcome_models_test.R      # Test pipeline
 │
-├── Analysis
-│   ├── compare_models.R               # Compare BAM vs XGBoost
+├── Analysis Scripts
+│   ├── compare_models.R               # Compare model variants
 │   └── visualize_comparison.R         # Visual comparison
 │
-└── Utilities
-    └── add_all_predictions.R          # Add predictions to database
+├── Utilities
+│   └── add_all_predictions.R          # Add predictions to database
+│
+└── legacy/                            # Deprecated models
+    ├── README.md                      # Why BAM was deprecated
+    ├── model_bam_outcome_longform.R   # Deprecated BAM for Test/ODI
+    └── model_bam_outcome_shortform.R  # Deprecated BAM for T20
 ```
 
 ## Quick Start
@@ -61,22 +66,19 @@ ball-outcome/
 # From bouncer package root directory
 devtools::load_all()
 
-# T20 models (default: XGBoost)
-source("data-raw/models/ball-outcome/run_outcome_models_t20.R")
+# Step 1: Train agnostic models (baseline for skill calculation)
+source("data-raw/models/ball-outcome/01_train_agnostic_model.R")
 
-# Test models
-source("data-raw/models/ball-outcome/run_outcome_models_test.R")
-```
+# Step 2: Calculate skill indices (uses agnostic baseline)
+source("data-raw/ratings/player/03_calculate_skill_indices.R")
+source("data-raw/ratings/team/02_calculate_team_skill_indices.R")
+source("data-raw/ratings/venue/01_calculate_venue_skill_indices.R")
 
-### Configuration
+# Step 3: Train full models (uses skill indices)
+source("data-raw/models/ball-outcome/02_train_full_model.R")
 
-Edit runner scripts to configure:
-
-```r
-MODEL_TYPE <- "xgboost"      # "xgboost" (default), "bam", or "both"
-RUN_COMPARISON <- TRUE       # Compare BAM vs XGBoost
-RUN_VISUALIZATION <- TRUE    # Generate plots
-ADD_PREDICTIONS <- TRUE      # Add to deliveries table
+# Or run everything via the main pipeline:
+source("data-raw/run_full_pipeline.R")
 ```
 
 ## Output Files
@@ -85,13 +87,17 @@ Models are saved to `bouncerdata/models/`:
 
 | File | Description |
 |------|-------------|
-| `xgb_outcome_shortform.ubj` | XGBoost T20/ODI model |
-| `xgb_outcome_longform.ubj` | XGBoost Test model |
-| `model_bam_outcome_shortform.rds` | BAM T20/ODI model |
-| `model_bam_outcome_longform.rds` | BAM Test model |
-| `model_data_splits_shortform.rds` | Train/test data (shortform) |
-| `model_data_splits_longform.rds` | Train/test data (longform) |
-| `model_xgb_results_*.rds` | Training metrics |
+| `agnostic_outcome_t20.ubj` | Agnostic model for T20 (context-only baseline) |
+| `agnostic_outcome_odi.ubj` | Agnostic model for ODI |
+| `agnostic_outcome_test.ubj` | Agnostic model for Test |
+| `full_outcome_t20.ubj` | Full model for T20 (with player/team/venue skills) |
+| `full_outcome_odi.ubj` | Full model for ODI |
+| `full_outcome_test.ubj` | Full model for Test |
+
+**Agnostic vs Full:**
+- **Agnostic** models use only context features (over, wickets, phase, etc.) - no player/team identity
+- **Full** models add player skill indices, team skills, and venue skills for maximum accuracy
+- Skill indices are calculated as residuals from agnostic predictions (see ARCHITECTURE.md)
 
 ## Model Features
 

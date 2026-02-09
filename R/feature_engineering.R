@@ -26,67 +26,77 @@
 #' @keywords internal
 calculate_rolling_features <- function(dt, ball_windows = c(12, 24), over_windows = c(3, 6)) {
 
-  df <- as.data.frame(dt)
-  df <- dplyr::arrange(df, match_id, innings, over, ball)
+  # OPTIMIZED: Use data.table throughout with frollsum for C-optimized rolling
+  if (!data.table::is.data.table(dt)) {
+    dt <- data.table::as.data.table(dt)
+  } else {
+    dt <- data.table::copy(dt)  # Avoid modifying original
 
-  # Ball-level rolling features
+  }
+
+  # Ensure sorted by match/innings/over/ball
+  data.table::setorder(dt, match_id, innings, over, ball)
+
+  # Pre-compute helper columns for rolling features
+  dt[, `:=`(
+    is_dot = as.integer(runs_total == 0 & !is_wicket),
+    is_boundary = as.integer(is_four | is_six),
+    is_wicket_int = as.integer(is_wicket)
+  )]
+
+  # Ball-level rolling features using frollsum (C-optimized)
   for (window in ball_windows) {
     col_runs <- paste0("runs_last_", window, "_balls")
     col_dots <- paste0("dots_last_", window, "_balls")
     col_boundaries <- paste0("boundaries_last_", window, "_balls")
     col_wickets <- paste0("wickets_last_", window, "_balls")
 
-    df <- df %>%
-      dplyr::group_by(match_id, innings) %>%
-      dplyr::mutate(
-        !!col_runs := slider::slide_dbl(runs_total, sum, .before = window - 1, .complete = FALSE),
-        !!col_dots := slider::slide_dbl(as.integer(runs_total == 0 & !is_wicket), sum, .before = window - 1, .complete = FALSE),
-        !!col_boundaries := slider::slide_dbl(as.integer(is_four | is_six), sum, .before = window - 1, .complete = FALSE),
-        !!col_wickets := slider::slide_dbl(as.integer(is_wicket), sum, .before = window - 1, .complete = FALSE)
-      ) %>%
-      dplyr::ungroup()
+    dt[, (col_runs) := data.table::frollsum(runs_total, n = window, align = "right", fill = NA),
+       by = .(match_id, innings)]
+    dt[, (col_dots) := data.table::frollsum(is_dot, n = window, align = "right", fill = NA),
+       by = .(match_id, innings)]
+    dt[, (col_boundaries) := data.table::frollsum(is_boundary, n = window, align = "right", fill = NA),
+       by = .(match_id, innings)]
+    dt[, (col_wickets) := data.table::frollsum(is_wicket_int, n = window, align = "right", fill = NA),
+       by = .(match_id, innings)]
   }
 
   # Over-level aggregation for rolling over features
-  over_agg <- df %>%
-    dplyr::group_by(match_id, innings, over) %>%
-    dplyr::summarise(
-      over_runs = sum(runs_total, na.rm = TRUE),
-      over_wickets = sum(as.integer(is_wicket), na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::arrange(match_id, innings, over)
+  over_agg <- dt[, .(
+    over_runs = sum(runs_total, na.rm = TRUE),
+    over_wickets = sum(is_wicket_int, na.rm = TRUE)
+  ), by = .(match_id, innings, over)]
+  data.table::setorder(over_agg, match_id, innings, over)
 
-  # Calculate rolling over features
+  # Calculate rolling over features using frollsum
   for (window in over_windows) {
     col_runs <- paste0("runs_last_", window, "_overs")
     col_wickets <- paste0("wickets_last_", window, "_overs")
     col_rr <- paste0("rr_last_", window, "_overs")
 
-    over_agg <- over_agg %>%
-      dplyr::group_by(match_id, innings) %>%
-      dplyr::mutate(
-        !!col_runs := slider::slide_dbl(over_runs, sum, .before = window - 1, .complete = FALSE),
-        !!col_wickets := slider::slide_dbl(over_wickets, sum, .before = window - 1, .complete = FALSE),
-        !!col_rr := .data[[col_runs]] / window
-      ) %>%
-      dplyr::ungroup()
+    over_agg[, (col_runs) := data.table::frollsum(over_runs, n = window, align = "right", fill = NA),
+             by = .(match_id, innings)]
+    over_agg[, (col_wickets) := data.table::frollsum(over_wickets, n = window, align = "right", fill = NA),
+             by = .(match_id, innings)]
+    over_agg[, (col_rr) := get(col_runs) / window]
   }
 
-  # Merge back to ball-level data
+  # Merge back to ball-level data using data.table join
   merge_cols <- grep("^(runs_last|wickets_last|rr_last).*overs$", names(over_agg), value = TRUE)
-  over_agg_merge <- over_agg %>%
-    dplyr::select(match_id, innings, over, dplyr::all_of(merge_cols))
+  over_agg_merge <- over_agg[, c("match_id", "innings", "over", merge_cols), with = FALSE]
 
-  df <- dplyr::left_join(df, over_agg_merge, by = c("match_id", "innings", "over"))
+  dt <- over_agg_merge[dt, on = .(match_id, innings, over)]
 
-  # Fill NA values at start of innings with 0
-  rolling_cols <- grep("^(runs_last|dots_last|boundaries_last|wickets_last|rr_last)", names(df), value = TRUE)
+  # Fill NA values at start of innings with 0 using data.table::nafill
+  rolling_cols <- grep("^(runs_last|dots_last|boundaries_last|wickets_last|rr_last)", names(dt), value = TRUE)
   for (col in rolling_cols) {
-    df[[col]] <- dplyr::coalesce(df[[col]], 0)
+    data.table::set(dt, which(is.na(dt[[col]])), col, 0)
   }
 
-  return(df)
+  # Remove helper columns
+  dt[, `:=`(is_dot = NULL, is_boundary = NULL, is_wicket_int = NULL)]
+
+  return(dt)
 }
 
 
@@ -113,39 +123,40 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
 
   match_type <- tolower(match_type)
 
+  # Use data.table::fcase for vectorized conditionals (faster than case_when)
   if (match_type == "t20") {
-    phase <- dplyr::case_when(
-      over < 6  ~ "powerplay",
-      over < 16 ~ "middle",
-      TRUE      ~ "death"
+    phase <- data.table::fcase(
+      over < 6,  "powerplay",
+      over < 16, "middle",
+      default = "death"
     )
 
-    overs_into_phase <- dplyr::case_when(
-      over < 6  ~ over,
-      over < 16 ~ over - 6,
-      TRUE      ~ over - 16
+    overs_into_phase <- data.table::fcase(
+      over < 6,  over,
+      over < 16, over - 6,
+      default = over - 16
     )
 
     total_overs <- 20
 
   } else if (match_type == "odi") {
-    phase <- dplyr::case_when(
-      over < 10 ~ "powerplay",
-      over < 40 ~ "middle",
-      TRUE      ~ "death"
+    phase <- data.table::fcase(
+      over < 10, "powerplay",
+      over < 40, "middle",
+      default = "death"
     )
 
-    overs_into_phase <- dplyr::case_when(
-      over < 10 ~ over,
-      over < 40 ~ over - 10,
-      TRUE      ~ over - 40
+    overs_into_phase <- data.table::fcase(
+      over < 10, over,
+      over < 40, over - 10,
+      default = over - 40
     )
 
     total_overs <- 50
 
   } else {
     # Test match - no phases
-    phase <- "test"
+    phase <- rep("test", length(over))
     overs_into_phase <- over
     total_overs <- NA_real_
   }
@@ -276,22 +287,23 @@ calculate_pressure_metrics <- function(target, current_runs, current_wickets,
   wickets_in_hand <- 10 - current_wickets
   overs_remaining <- balls_remaining / 6
 
-  required_run_rate <- dplyr::case_when(
-    runs_needed <= 0 ~ 0,
-    overs_remaining <= 0 ~ Inf,
-    TRUE ~ runs_needed / overs_remaining
+  # Use data.table::fcase for vectorized conditionals (faster than case_when)
+  required_run_rate <- data.table::fcase(
+    runs_needed <= 0, 0,
+    overs_remaining <= 0, Inf,
+    default = runs_needed / overs_remaining
   )
 
   rr_differential <- required_run_rate - current_run_rate
 
-  balls_per_run_needed <- dplyr::case_when(
-    runs_needed <= 0 ~ Inf,
-    TRUE ~ balls_remaining / runs_needed
+  balls_per_run_needed <- data.table::fcase(
+    runs_needed <= 0, Inf,
+    default = balls_remaining / runs_needed
   )
 
-  balls_per_wicket_available <- dplyr::case_when(
-    wickets_in_hand <= 0 ~ 0,
-    TRUE ~ balls_remaining / wickets_in_hand
+  balls_per_wicket_available <- data.table::fcase(
+    wickets_in_hand <= 0, 0,
+    default = balls_remaining / wickets_in_hand
   )
 
   is_death_chase <- balls_remaining <= 24 & balls_remaining > 0
@@ -320,9 +332,9 @@ calculate_pressure_metrics <- function(target, current_runs, current_wickets,
 #' @keywords internal
 calculate_run_rate <- function(runs, balls) {
   overs <- balls / 6
-  dplyr::case_when(
-    overs <= 0 ~ 0,
-    TRUE ~ runs / overs
+  data.table::fcase(
+    overs <= 0, 0,
+    default = runs / overs
   )
 }
 
@@ -345,10 +357,10 @@ calculate_run_rate <- function(runs, balls) {
 #' @keywords internal
 calculate_expected_runs_per_ball <- function(projected_score, current_runs, balls_remaining) {
 
-  expected_runs <- dplyr::case_when(
-    balls_remaining <= 0 ~ 0,
-    projected_score <= current_runs ~ 0,  # Already exceeded projection
-    TRUE ~ (projected_score - current_runs) / balls_remaining
+  expected_runs <- data.table::fcase(
+    balls_remaining <= 0, 0,
+    projected_score <= current_runs, 0,  # Already exceeded projection
+    default = (projected_score - current_runs) / balls_remaining
   )
 
   # Cap between 0 and 6 (max possible per ball)
@@ -411,35 +423,35 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
 
   # Runs per ball needed (key metric for chase difficulty)
   # Cap at 6 (max possible per ball) for Inf cases
-  runs_per_ball_needed <- dplyr::case_when(
-    runs_needed <= 0 ~ 0,
-    balls_remaining <= 0 ~ 6,  # Cap at max possible
-    TRUE ~ pmin(runs_needed / balls_remaining, 6)
+  runs_per_ball_needed <- data.table::fcase(
+    runs_needed <= 0, 0,
+    balls_remaining <= 0, 6,  # Cap at max possible
+    default = pmin(runs_needed / balls_remaining, 6)
   )
 
   # Balls per run available (inverse - higher = easier)
   # Cap at 20 for very easy chases
-  balls_per_run_available <- dplyr::case_when(
-    runs_needed <= 0 ~ 20,  # Cap for completed chase
-    balls_remaining <= 0 ~ 0,
-    TRUE ~ pmin(balls_remaining / runs_needed, 20)
+  balls_per_run_available <- data.table::fcase(
+    runs_needed <= 0, 20,  # Cap for completed chase
+    balls_remaining <= 0, 0,
+    default = pmin(balls_remaining / runs_needed, 20)
   )
 
   # Combined resources: balls + wickets * 6 (each wicket worth ~6 balls)
   # This captures that having wickets in hand is like having extra balls
   total_resources <- balls_remaining + (wickets_in_hand * 6)
-  resources_per_run <- dplyr::case_when(
-    runs_needed <= 0 ~ 30,  # Cap for completed chase
-    TRUE ~ pmin(total_resources / pmax(runs_needed, 1), 30)
+  resources_per_run <- data.table::fcase(
+    runs_needed <= 0, 30,  # Cap for completed chase
+    default = pmin(total_resources / pmax(runs_needed, 1), 30)
   )
 
   # Chase buffer: how many "spare" balls beyond what's strictly needed
   chase_buffer <- balls_remaining - runs_needed
 
   # Chase buffer ratio (normalized)
-  chase_buffer_ratio <- dplyr::case_when(
-    balls_remaining <= 0 ~ -1,
-    TRUE ~ chase_buffer / balls_remaining
+  chase_buffer_ratio <- data.table::fcase(
+    balls_remaining <= 0, -1,
+    default = chase_buffer / balls_remaining
   )
 
   # Binary indicators for easy/difficult situations

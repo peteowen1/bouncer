@@ -29,3 +29,8 @@ pred <- predict_match("India", "Australia", format = "t20")
 print(pred)
 }
 }
+\seealso{
+\code{\link{compare_teams}} for ELO comparison without full prediction,
+\code{\link{get_team}} to look up team ratings,
+\code{\link{analyze_match}} to analyze completed matches
+}

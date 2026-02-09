@@ -90,7 +90,7 @@ Positive = performs better than context-expected, Negative = worse.
 
 ### Player Skill Index
 
-**Location:** `data-raw/ratings/player/03_calculate_skill_indices.R`
+**Location:** `data-raw/ratings/player/skill-indices/01_calculate_skill_indices.R`
 
 **Output Tables:** `t20_player_skill`, `odi_player_skill`, `test_player_skill`
 
@@ -368,7 +368,7 @@ source("data-raw/run_full_pipeline.R")
 source("data-raw/models/ball-outcome/01_train_agnostic_model.R")
 
 # Step 3: Player skills
-source("data-raw/ratings/player/03_calculate_skill_indices.R")
+source("data-raw/ratings/player/skill-indices/01_calculate_skill_indices.R")
 
 # Step 4: Team skills
 source("data-raw/ratings/team/02_calculate_team_skill_indices.R")

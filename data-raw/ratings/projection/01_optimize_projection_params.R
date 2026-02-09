@@ -1,4 +1,4 @@
-# Optimize Score Projection Parameters
+# Optimize Score Projection Parameters ----
 #
 # This script optimizes the projection parameters (a, b, z, y) for each
 # segment (format x gender x team_type) by minimizing RMSE against actual
@@ -12,7 +12,8 @@ library(cli)
 
 devtools::load_all()
 
-# Run optimization for all segments
+# Run Optimization ----
+
 results <- optimize_all_projection_segments(
   db_path = get_db_path(),
   output_dir = file.path(find_bouncerdata_dir(), "models"),

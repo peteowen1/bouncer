@@ -122,13 +122,11 @@ normalize_venue <- function(venue, conn) {
     return(venue)
   }
 
-  # Look up in aliases table
-  result <- DBI::dbGetQuery(conn, sprintf("
-    SELECT canonical_venue
-    FROM venue_aliases
-    WHERE alias = '%s'
-    LIMIT 1
-  ", gsub("'", "''", venue)))
+  # Look up in aliases table (using parameterized query for safety)
+  result <- DBI::dbGetQuery(conn,
+    "SELECT canonical_venue FROM venue_aliases WHERE alias = ? LIMIT 1",
+    params = list(venue)
+  )
 
   if (nrow(result) > 0) {
     return(result$canonical_venue[1])
@@ -161,8 +159,9 @@ normalize_venues <- function(venues, conn) {
   # Get unique venues
   unique_venues <- unique(venues)
 
-  # Escape single quotes
-  escaped_venues <- gsub("'", "''", unique_venues)
+  # Escape single quotes using helper for IN clause
+  # (parameterized queries don't easily support variable-length IN clauses)
+  escaped_venues <- escape_sql_strings(unique_venues)
 
   # Query all aliases at once
   aliases <- DBI::dbGetQuery(conn, sprintf("
@@ -273,15 +272,22 @@ add_venue_alias <- function(alias, canonical, country = NULL, conn) {
     return(invisible(FALSE))
   }
 
-  country_sql <- if (is.null(country)) "NULL" else sprintf("'%s'", country)
-
-  DBI::dbExecute(conn, sprintf("
-    INSERT INTO venue_aliases (alias, canonical_venue, country)
-    VALUES ('%s', '%s', %s)
-    ON CONFLICT (alias) DO UPDATE SET canonical_venue = EXCLUDED.canonical_venue
-  ", gsub("'", "''", alias),
-     gsub("'", "''", canonical),
-     country_sql))
+  # Use parameterized query for safety
+  if (is.null(country)) {
+    DBI::dbExecute(conn,
+      "INSERT INTO venue_aliases (alias, canonical_venue, country)
+       VALUES (?, ?, NULL)
+       ON CONFLICT (alias) DO UPDATE SET canonical_venue = EXCLUDED.canonical_venue",
+      params = list(alias, canonical)
+    )
+  } else {
+    DBI::dbExecute(conn,
+      "INSERT INTO venue_aliases (alias, canonical_venue, country)
+       VALUES (?, ?, ?)
+       ON CONFLICT (alias) DO UPDATE SET canonical_venue = EXCLUDED.canonical_venue",
+      params = list(alias, canonical, country)
+    )
+  }
 
   cli::cli_alert_success("Added alias: '{alias}' -> '{canonical}'")
   invisible(TRUE)
@@ -530,6 +536,7 @@ get_venue_skill <- function(venue, format = "t20", conn) {
   # Normalize venue name
   venue_canonical <- normalize_venue(venue, conn)
 
+  # Use parameterized query for the venue filter (table_name is safe - from code)
   result <- DBI::dbGetQuery(conn, sprintf("
     SELECT
       venue,
@@ -540,10 +547,10 @@ get_venue_skill <- function(venue, format = "t20", conn) {
       venue_balls as balls,
       match_date
     FROM %s
-    WHERE venue = '%s'
+    WHERE venue = ?
     ORDER BY match_date DESC, delivery_id DESC
     LIMIT 1
-  ", table_name, gsub("'", "''", venue_canonical)))
+  ", table_name), params = list(venue_canonical))
 
   if (nrow(result) == 0) {
     return(NULL)

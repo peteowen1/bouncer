@@ -289,7 +289,7 @@ update_manifest <- function(manifest, new_match_ids, partition_updates = NULL) {
 #'
 #' @return Invisible NULL.
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' clear_manifest_cache()

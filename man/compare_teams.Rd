@@ -35,3 +35,7 @@ and predicted win probability.
 compare_teams("India", "Australia", format = "t20")
 }
 }
+\seealso{
+\code{\link{get_team}} to look up a single team,
+\code{\link{predict_match}} for detailed match prediction
+}

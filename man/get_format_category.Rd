@@ -24,8 +24,11 @@ Used for data folder organization and user-facing APIs.
 }
 }
 \examples{
+\dontrun{
 get_format_category("Test")   # "long_form"
 get_format_category("ODI")    # "short_form"
 get_format_category("T20")    # "short_form"
 get_format_category("MDM")    # "long_form" (multi-day match)
 }
+}
+\keyword{internal}

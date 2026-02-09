@@ -94,7 +94,7 @@ predict_match_outcome <- function(match_id, model, conn,
   }
 
   # Ensure probability is in valid range
-  team1_win_prob <- max(0.01, min(0.99, team1_win_prob))
+  team1_win_prob <- max(MIN_WIN_PROBABILITY, min(MAX_WIN_PROBABILITY, team1_win_prob))
   team2_win_prob <- 1 - team1_win_prob
 
   # Determine predicted winner and confidence
@@ -338,7 +338,7 @@ calculate_prediction_accuracy <- function(predictions) {
 
   # Log loss
   # Clip probabilities to avoid log(0)
-  probs <- pmax(0.01, pmin(0.99, with_outcomes$confidence))
+  probs <- pmax(MIN_WIN_PROBABILITY, pmin(MAX_WIN_PROBABILITY, with_outcomes$confidence))
   actuals <- as.integer(with_outcomes$prediction_correct)
 
   log_loss <- -mean(actuals * log(probs) + (1 - actuals) * log(1 - probs))

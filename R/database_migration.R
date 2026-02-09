@@ -1,7 +1,7 @@
 # Database Migration Functions
 #
-# Functions to add new tables to existing databases without losing data.
-
+# Functions for migrating existing databases to new schemas.
+# Split from database_setup.R for better maintainability.
 
 #' Add Prediction Tables to Database
 #'
@@ -28,6 +28,7 @@ add_prediction_tables <- function(path = NULL) {
     return(invisible(FALSE))
   }
 
+  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
@@ -174,7 +175,6 @@ add_prediction_tables <- function(path = NULL) {
 #' @keywords internal
 add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
   # Handle connection - use provided or create new
-
   own_connection <- FALSE
   if (is.null(conn)) {
     if (is.null(path)) {
@@ -186,12 +186,12 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
       return(invisible(FALSE))
     }
 
+    check_duckdb_available()
     conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
     own_connection <- TRUE
   }
 
   # Only disconnect if we created the connection
-
   if (own_connection) {
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
   }
@@ -333,4 +333,93 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
   }
 
   invisible(TRUE)
+}
+
+
+#' Ensure Match Metrics Table Exists
+#'
+#' Ensures the match_metrics table exists for storing calculated match data
+#' like unified_margin. Also ensures pre_match_features has margin columns.
+#'
+#' @param conn DBI connection. If provided, uses this connection (does not close it).
+#' @param path Character. Database file path. If NULL, uses default. Ignored if conn is provided.
+#'
+#' @return Invisibly returns TRUE on success
+#' @keywords internal
+ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
+  # If connection provided, use it (caller is responsible for closing)
+  own_conn <- is.null(conn)
+
+  if (own_conn) {
+    if (is.null(path)) {
+      path <- get_default_db_path()
+    }
+
+    if (!file.exists(path)) {
+      cli::cli_alert_danger("Database not found at {.file {path}}")
+      cli::cli_alert_info("Run {.fn initialize_bouncer_database} first")
+      return(invisible(FALSE))
+    }
+
+    check_duckdb_available()
+    conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  }
+
+  cli::cli_h2("Ensuring match_metrics table exists")
+
+  # Check if match_metrics table exists
+  tables <- DBI::dbListTables(conn)
+
+  if (!"match_metrics" %in% tables) {
+    cli::cli_alert_info("Creating match_metrics table...")
+    DBI::dbExecute(conn, "
+      CREATE TABLE IF NOT EXISTS match_metrics (
+        match_id VARCHAR PRIMARY KEY,
+        unified_margin DOUBLE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP
+      )
+    ")
+    cli::cli_alert_success("Created match_metrics table")
+  } else {
+    cli::cli_alert_info("match_metrics table already exists")
+  }
+
+  # Check if pre_match_features table has margin columns
+  pmf_cols <- DBI::dbGetQuery(conn, "SELECT column_name FROM information_schema.columns WHERE table_name = 'pre_match_features'")$column_name
+
+  if (!"expected_margin" %in% pmf_cols) {
+    cli::cli_alert_info("Adding expected_margin column to pre_match_features table...")
+    DBI::dbExecute(conn, "ALTER TABLE pre_match_features ADD COLUMN expected_margin DOUBLE")
+    cli::cli_alert_success("Added expected_margin column to pre_match_features")
+  }
+
+  if (!"actual_margin" %in% pmf_cols) {
+    cli::cli_alert_info("Adding actual_margin column to pre_match_features table...")
+    DBI::dbExecute(conn, "ALTER TABLE pre_match_features ADD COLUMN actual_margin DOUBLE")
+    cli::cli_alert_success("Added actual_margin column to pre_match_features")
+  }
+
+  cli::cli_alert_success("Match metrics tables ready")
+  invisible(TRUE)
+}
+
+
+#' Add Margin of Victory Columns to Existing Database
+#'
+#' @description
+#' `r lifecycle::badge("deprecated")`
+#'
+#' This function is deprecated. Use ensure_match_metrics_table() instead.
+#' Margin data is now stored in the match_metrics table, not in matches.
+#'
+#' @param conn DBI connection.
+#' @param path Character. Database file path.
+#'
+#' @return Invisibly returns TRUE on success
+#' @keywords internal
+add_margin_columns <- function(conn = NULL, path = NULL) {
+  cli::cli_alert_warning("add_margin_columns() is deprecated - use ensure_match_metrics_table()")
+  ensure_match_metrics_table(conn = conn, path = path)
 }

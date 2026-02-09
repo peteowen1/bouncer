@@ -63,8 +63,8 @@ if (!dir.exists(output_dir)) {
 # All helper functions are in the package:
 #   - load_category_params(): R/team_elo_optimization.R
 #   - get_dynamic_k(): R/team_elo_optimization.R
-#   - build_home_lookups(): R/venue_country_lookup.R
-#   - detect_home_team(): R/venue_country_lookup.R
+#   - build_home_lookups(): R/home_advantage.R
+#   - detect_home_team(): R/home_advantage.R
 
 
 # 4. Database Connection ----

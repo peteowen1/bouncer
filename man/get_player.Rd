@@ -52,3 +52,7 @@ kohli_remote <- get_player("Virat Kohli", format = "t20", source = "remote")
 print(kohli)
 }
 }
+\seealso{
+\code{\link{compare_players}} to compare two players side-by-side,
+\code{\link{analyze_player}} for detailed performance analysis
+}

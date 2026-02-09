@@ -26,3 +26,8 @@ Head-to-head comparison of two players' batting and bowling records.
 compare_players("Virat Kohli", "Steve Smith", format = "test")
 }
 }
+\seealso{
+\code{\link{get_player}} for basic player lookup,
+\code{\link{analyze_player}} for single-player detailed analysis,
+\code{\link{plot_player_comparison}} for visual comparison
+}

@@ -6,3 +6,10 @@
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^CODE_REVIEW_FINDINGS\.md$
+^.*\.log$
+^\.Rhistory$
+^CLAUDE\.md$
+^\.claude$
+^\.github$
+^run_test\.R$

@@ -11,16 +11,18 @@
 #'
 #' @param match_id Character. Match identifier
 #' @param conn DBI connection. Database connection
+#' @param home_lookups List. Pre-built home lookups from build_home_lookups().
+#'   If NULL, builds fresh (expensive for one-off calls).
 #'
 #' @return Data frame with one row containing all features for the match
 #' @keywords internal
-calculate_pre_match_features <- function(match_id, conn) {
+calculate_pre_match_features <- function(match_id, conn, home_lookups = NULL) {
 
   # Get match info
 match_info <- DBI::dbGetQuery(conn, "
     SELECT match_id, match_date, match_type, event_name, venue,
            team1, team2, toss_winner, toss_decision,
-           event_match_number, event_group
+           event_match_number, event_group, team_type, gender
     FROM matches
     WHERE match_id = ?
   ", params = list(match_id))
@@ -36,6 +38,23 @@ match_info <- DBI::dbGetQuery(conn, "
   venue <- match_info$venue
   team1 <- match_info$team1
   team2 <- match_info$team2
+  team_type <- match_info$team_type
+  gender <- match_info$gender
+
+  # Detect neutral venue
+  format <- normalize_format(match_type)
+  team1_id <- make_team_id(team1, gender, format, team_type)
+  team2_id <- make_team_id(team2, gender, format, team_type)
+
+  if (is.null(home_lookups)) {
+    all_matches <- DBI::dbGetQuery(conn,
+      "SELECT team1, team2, venue, team_type, gender, match_type FROM matches")
+    home_lookups <- build_home_lookups(all_matches)
+  }
+  home_result <- detect_home_team(team1, team2, team1_id, team2_id, venue,
+                                   team_type, home_lookups$club_home,
+                                   home_lookups$venue_country)
+  is_neutral_venue <- (home_result == 0L)
 
   # Get Team 1 ELOs
   team1_elo_result <- get_team_elo(team1, match_date, "result", conn)
@@ -133,7 +152,7 @@ match_info <- DBI::dbGetQuery(conn, "
 
     # Match context
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,  # TODO: detect neutral venues
+    is_neutral_venue = is_neutral_venue,
 
     # Toss features
     team1_won_toss = team1_won_toss,
@@ -318,7 +337,7 @@ batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
     return(data.frame())
   }
 
-  features_df <- do.call(rbind, results)
+  features_df <- fast_rbind(results)
 
   return(features_df)
 }
@@ -408,13 +427,13 @@ prepare_prediction_features <- function(df) {
       elo_diff_roster = team1_elo_roster - team2_elo_roster,
 
       # Raw ELO values (scaled to be centered around 0)
-      team1_elo_scaled = (team1_elo_result - 1500) / 100,
-      team2_elo_scaled = (team2_elo_result - 1500) / 100,
-      team1_roster_scaled = (team1_elo_roster - 1500) / 100,
-      team2_roster_scaled = (team2_elo_roster - 1500) / 100,
+      team1_elo_scaled = (team1_elo_result - ELO_START_RATING) / 100,
+      team2_elo_scaled = (team2_elo_result - ELO_START_RATING) / 100,
+      team1_roster_scaled = (team1_elo_roster - ELO_START_RATING) / 100,
+      team2_roster_scaled = (team2_elo_roster - ELO_START_RATING) / 100,
 
       # Average match quality (higher = stronger teams)
-      match_quality = (team1_elo_result + team2_elo_result) / 2 - 1500,
+      match_quality = (team1_elo_result + team2_elo_result) / 2 - ELO_START_RATING,
 
       # Form features
       form_diff = dplyr::coalesce(team1_form_last5, 0.5) - dplyr::coalesce(team2_form_last5, 0.5),
@@ -567,7 +586,7 @@ load_margin_model <- function(format, model_dir = NULL) {
     model_dir <- get_default_models_path()
   }
 
-  model_path <- file.path(model_dir, paste0(format, "_margin_model.ubj"))
+  model_path <- file.path(model_dir, get_model_filename("margin", format))
 
   if (!file.exists(model_path)) {
     cli::cli_alert_warning("Margin model not found at {model_path}")
@@ -652,13 +671,13 @@ get_prediction_feature_cols_full <- function(include_margin = TRUE) {
 get_team_elo_fast <- function(team, as_of_date, team_elo_dt) {
   idx <- which(team_elo_dt$team_id == team & team_elo_dt$match_date < as_of_date)
   if (length(idx) == 0) {
-    return(list(elo_result = 1500, elo_roster = 1500))
+    return(list(elo_result = ELO_START_RATING, elo_roster = ELO_START_RATING))
   }
   subset_dt <- team_elo_dt[idx, , drop = FALSE]
   best_idx <- which.max(subset_dt$match_date)
   list(
     elo_result = subset_dt$elo_result[best_idx],
-    elo_roster = subset_dt$elo_roster_combined[best_idx] %||% 1500
+    elo_roster = subset_dt$elo_roster_combined[best_idx] %||% ELO_START_RATING
   )
 }
 
@@ -944,7 +963,8 @@ get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
 #' @keywords internal
 calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_skills,
                                  bowler_skills, player_participation_dt, venue_stats_dt,
-                                 team_skill_dt = NULL, venue_skill_dt = NULL) {
+                                 team_skill_dt = NULL, venue_skill_dt = NULL,
+                                 home_lookups = NULL) {
   # Extract match data
 
   match_id <- matches_with_outcome$match_id[i]
@@ -1003,6 +1023,17 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
   # Knockout
   is_knockout <- detect_knockout_match(event_match_number, event_group)
 
+  # Neutral venue detection
+  if (!is.null(home_lookups)) {
+    team_type <- matches_with_outcome$team_type[i]
+    home_result <- detect_home_team(team1, team2, team1_id, team2_id, venue,
+                                     team_type, home_lookups$club_home,
+                                     home_lookups$venue_country)
+    is_neutral <- (home_result == 0L)
+  } else {
+    is_neutral <- FALSE
+  }
+
   data.frame(
     match_id = match_id,
     match_date = match_date,
@@ -1050,7 +1081,7 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
     venue_dot_rate = venue_skill$dot_rate,
 
     is_knockout = is_knockout,
-    is_neutral_venue = FALSE,
+    is_neutral_venue = is_neutral,
     team1_won_toss = team1_won_toss,
     toss_elect_bat = toss_elect_bat,
     created_at = Sys.time(),

@@ -1,51 +1,92 @@
-# Global Variable Declarations for R CMD check
+# Core Global Variable Declarations
+#
+# This file contains:
+# - Package imports
+# - Pipe operator export
+# - Null-coalescing operator
+# - All global variable declarations for R CMD check compliance
+#
+# All globalVariables() moved here from constants.R for centralized management.
 
 #' @importFrom stats predict setNames runif
 #' @importFrom utils head tail
+#' @importFrom methods as
 #' @importFrom dplyr %>%
 #' @importFrom rlang .data
 #' @importFrom slider slide_dbl
+#' @importFrom Matrix sparseMatrix rowSums colSums crossprod
 NULL
 
 # Null coalescing operator (like %||% in purrr)
 # Returns y if x is NULL, otherwise returns x
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-#' Pipe operator
-#'
-#' See \code{dplyr::\link[dplyr:reexports]{\%>\%}} for details.
-#'
-#' @name %>%
-#' @rdname pipe
-#' @keywords internal
-#' @export
+# Import pipe for internal use (not re-exported to users)
 #' @importFrom dplyr %>%
-#' @usage lhs \%>\% rhs
-#' @param lhs A value or the dplyr/magrittr placeholder.
-#' @param rhs A function call using the dplyr/magrittr semantics.
-#' @return The result of calling \code{rhs(lhs)}.
 NULL
 
-# Declare global variables used in dplyr/tidyr operations
+# ============================================================================
+# Core Data Variables
+# ============================================================================
+# Variables used throughout the package for deliveries, matches, and players
+
 utils::globalVariables(c(
+  # Tables
   "deliveries",
   "matches",
+  # Match identifiers
   "match_id",
   "match_type",
   "match_date",
+  "season",
+  # Player identifiers
   "player_id",
   "batter_id",
   "bowler_id",
+  # Teams
+  "team1",
+  "team2",
   "batting_team",
   "bowling_team",
+  # Venue and context
   "venue",
   "innings",
   "over",
   "ball",
+  "delivery_id",
+  # Runs and wickets
   "runs_batter",
   "runs_total",
+  "total_runs",
   "is_wicket",
   "wicket_kind",
+  "wickets_fallen",
+  # Match outcome
+  "outcome_winner",
+  "outcome_method",
+  "outcome_type",
+  # Extras
+  "is_extra",
+  "is_wide",
+  "is_noball",
+  # Count helper
+  "n",
+  # data.table symbols
+  ".",
+  ":=",
+  ".N",
+  ".SD",
+  "is.data.table",
+  "setDT"
+))
+
+
+# ============================================================================
+# ELO System Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # Basic ELO ratings by format
   "elo_batting",
   "elo_bowling",
   "elo_batting_test",
@@ -54,101 +95,15 @@ utils::globalVariables(c(
   "elo_bowling_test",
   "elo_bowling_odi",
   "elo_bowling_t20",
-  "delivery_id",
-  "season",
-  "team1",
-  "team2",
-  "outcome_winner",
-  "total_runs",
-  "wickets_fallen",
-  "n",
-  # Dual ELO system variables
-  "batter_survival_elo",
-  "batter_scoring_elo",
-  "bowler_strike_elo",
-  "bowler_economy_elo",
-  "exp_survival",
-  "exp_scoring",
-  # WPA/ERA variables
-  "predicted_before",
-  "predicted_after",
-  "wpa",
-  "batter_wpa",
-  "bowler_wpa",
-  "expected_runs",
-  "era",
-  "batter_era",
-  "bowler_era",
-  "total_wpa",
-  "total_era",
-  "wpa_per_delivery",
-  "era_per_delivery",
-  "key_moment_wpa",
-  "clutch_moments",
-  "positive_wpa_pct",
-  "role",
-  "is_extra",
-  "is_wide",
-  "is_noball",
-  # data.table symbols
-  ".",
-  ":=",
-  # Column names from feature engineering and outcome classification
-  "phase",
-  "gender",
-  "match_type_t20",
-  "match_type_odi",
-  "innings_num",
-  "runs_difference",
-  "overs_left",
-  "phase_powerplay",
-  "phase_middle",
-  "phase_death",
-  "phase_new_ball",
-  "phase_old_ball",
-  "gender_male",
-  "is_four",
-  "is_six",
-  "over_runs",
-  "over_wickets",
-  # Outcome classification variables
-  "outcome_method",
-  "outcome_type",
-  "event_match_number",
-  "event_group",
-  "outcome_method_lower",
-  "outcome_type_lower",
-  "is_super_over",
-  "event_match_number_lower",
-  "event_group_lower",
-  "is_pure_tie",
-  "is_no_result",
-  "is_dls_match",
-  "normal_results",
-  "dls_matches",
-  "super_over_matches",
-  "pure_ties",
-  "no_results",
-  # Tail calibration features
-  "chase_completed",
-  "chase_impossible",
-  "runs_per_ball_needed",
-  "balls_per_run_available",
-  "resources_per_run",
-  "chase_buffer",
-  "chase_buffer_ratio",
-  "is_easy_chase",
-  "is_difficult_chase",
-  "theoretical_min_balls",
-  "balls_surplus"
+  # Team ELO
+  "elo_result"
 ))
 
-# Dual ELO constants (declared for package use)
-utils::globalVariables(c(
-  "DUAL_ELO_START"
-))
 
-# Event tier constants (from event_tiers.R)
+# ============================================================================
+# Event Tier Variables
+# ============================================================================
+
 utils::globalVariables(c(
   "TIER_1_STARTING_ELO",
   "TIER_2_STARTING_ELO",
@@ -165,7 +120,11 @@ utils::globalVariables(c(
   "team_tier"
 ))
 
-# Team correlation constants (from team_correlation.R)
+
+# ============================================================================
+# Team Correlation Variables
+# ============================================================================
+
 utils::globalVariables(c(
   "CORRELATION_W_OPPONENTS",
   "CORRELATION_W_EVENTS",
@@ -177,26 +136,47 @@ utils::globalVariables(c(
   "team_matchups"
 ))
 
-# Skill index variables (from player_skill_index.R)
+
+# ============================================================================
+# Player Skill Index Variables
+# ============================================================================
+
 utils::globalVariables(c(
+  # Batter skills
   "batter_scoring_index",
   "batter_survival_rate",
+  "batter_balls_faced",
+  "batter_experience",
+  # Bowler skills
   "bowler_economy_index",
   "bowler_strike_rate",
-  "batter_balls_faced",
-  "bowler_balls_bowled"
+  "bowler_balls_bowled",
+  "bowler_experience"
 ))
 
-# Player metrics variables (from player_metrics.R)
+
+# ============================================================================
+# Team Skill Index Variables
+# ============================================================================
+
 utils::globalVariables(c(
-  "player_out_id",
-  "balls_faced",
-  "runs_scored",
-  "wickets",
-  "balls_bowled"
+  "batting_team_runs_skill",
+  "batting_team_wicket_skill",
+  "bowling_team_runs_skill",
+  "bowling_team_wicket_skill",
+  "batting_team_balls",
+  "bowling_team_balls",
+  "team1_team_runs_skill",
+  "team2_team_runs_skill",
+  "team1_team_wicket_skill",
+  "team2_team_wicket_skill"
 ))
 
-# Venue skill index variables (from venue_skill_index.R)
+
+# ============================================================================
+# Venue Skill Index Variables
+# ============================================================================
+
 utils::globalVariables(c(
   "venue_run_rate",
   "venue_wicket_rate",
@@ -208,10 +188,240 @@ utils::globalVariables(c(
   "canonical_venue",
   "is_boundary",
   "is_dot",
-  "alias"
+  "is_wicket_int",  # Helper for rolling feature calculations
+  "alias",
+  "venue_run_rate_skill",
+  "venue_wicket_rate_skill"
 ))
 
-# JSON parser enhanced fields (from cricsheet_parser.R)
+
+# ============================================================================
+# Player Metrics Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  "player_out_id",
+  "balls_faced",
+  "runs_scored",
+  "wickets",
+  "balls_bowled"
+))
+
+
+# ============================================================================
+# 3-Way ELO Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # 3-Way ELO Constants
+  "THREE_WAY_ELO_START",
+  "THREE_WAY_ELO_TARGET_MEAN",
+  "THREE_WAY_ELO_DIVISOR",
+  "THREE_WAY_REPLACEMENT_LEVEL",
+  "THREE_WAY_UPDATE_RULE",
+  # Sample-size blending
+  "THREE_WAY_RELIABILITY_HALFLIFE",
+  # Anchor calibration
+  "THREE_WAY_CALIBRATION_K_BOOST",
+  "THREE_WAY_ANCHOR_THRESHOLD",
+  "THREE_WAY_ANCHOR_EVENTS",
+  "THREE_WAY_PLAYER_TIER_K_MULT_1",
+  "THREE_WAY_PLAYER_TIER_K_MULT_2",
+  "THREE_WAY_PLAYER_TIER_K_MULT_3",
+  "THREE_WAY_PLAYER_TIER_K_MULT_4",
+  # Player Run ELOs
+  "batter_run_elo_before",
+  "batter_run_elo_after",
+  "bowler_run_elo_before",
+  "bowler_run_elo_after",
+  # Player Wicket ELOs
+  "batter_wicket_elo_before",
+  "batter_wicket_elo_after",
+  "bowler_wicket_elo_before",
+  "bowler_wicket_elo_after",
+  # Venue Permanent ELOs
+  "venue_perm_run_elo_before",
+  "venue_perm_run_elo_after",
+  "venue_perm_wicket_elo_before",
+  "venue_perm_wicket_elo_after",
+  # Venue Session ELOs
+  "venue_session_run_elo_before",
+  "venue_session_run_elo_after",
+  "venue_session_wicket_elo_before",
+  "venue_session_wicket_elo_after",
+  # Venue Decay Halflives
+  "THREE_WAY_VENUE_SESSION_DECAY_HALFLIFE",
+  "THREE_WAY_VENUE_PERM_DECAY_HALFLIFE",
+  # K-Factors
+  "k_batter_run",
+  "k_bowler_run",
+  "k_venue_perm_run",
+  "k_venue_session_run",
+  "k_batter_wicket",
+  "k_bowler_wicket",
+  "k_venue_perm_wicket",
+  "k_venue_session_wicket",
+  # Context variables
+  "batter_balls",
+  "bowler_balls",
+  "venue_balls",
+  "balls_in_match",
+  "days_inactive_batter",
+  "days_inactive_bowler",
+  "is_knockout",
+  "phase",
+  # Expected values
+  "exp_runs",
+  "exp_wicket",
+  "actual_runs",
+  "agnostic_runs",
+  "agnostic_wicket"
+))
+
+
+# ============================================================================
+# WPA/ERA Attribution Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  "predicted_before",
+  "predicted_after",
+  "wpa",
+  "batter_wpa",
+  "bowler_wpa",
+  "expected_runs",
+  "era",
+  "batter_era",
+  "bowler_era",
+  "total_wpa",
+  "total_era",
+  "wpa_per_delivery",
+  "era_per_delivery",
+  "key_moment_wpa",
+  "clutch_moments",
+  "positive_wpa_pct",
+  "role"
+))
+
+
+# ============================================================================
+# Feature Engineering Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # Phase of play
+  "phase_powerplay",
+  "phase_middle",
+  "phase_death",
+  "phase_new_ball",
+  "phase_old_ball",
+  # Match context
+  "gender",
+  "gender_male",
+  "format_t20",
+  "format_odi",
+  "match_type_t20",
+  "match_type_odi",
+  "innings_num",
+  # Game state
+  "runs_difference",
+  "overs_left",
+  # Ball outcomes
+  "is_four",
+  "is_six",
+  "over_runs",
+  "over_wickets"
+))
+
+
+# ============================================================================
+# Outcome Classification Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  "event_match_number",
+  "event_group",
+  "outcome_method_lower",
+  "outcome_type_lower",
+  "is_super_over",
+  "event_match_number_lower",
+  "event_group_lower",
+  "is_pure_tie",
+  "is_no_result",
+  "is_dls_match",
+  "normal_results",
+  "dls_matches",
+  "super_over_matches",
+  "pure_ties",
+  "no_results"
+))
+
+
+# ============================================================================
+# Chase Calibration Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  "chase_completed",
+  "chase_impossible",
+  "runs_per_ball_needed",
+  "balls_per_run_available",
+  "resources_per_run",
+  "chase_buffer",
+  "chase_buffer_ratio",
+  "is_easy_chase",
+  "is_difficult_chase",
+  "theoretical_min_balls",
+  "balls_surplus"
+))
+
+
+# ============================================================================
+# Pre-Match Prediction Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # Team 1 features
+  "team1_elo_result",
+  "team1_elo_roster",
+  "team1_form_last5",
+  "team1_h2h_total",
+  "team1_h2h_wins",
+  "team1_bat_scoring_avg",
+  "team1_bat_scoring_top5",
+  "team1_bat_survival_avg",
+  "team1_bowl_economy_avg",
+  "team1_bowl_economy_top5",
+  "team1_bowl_strike_avg",
+  "team1_won_toss",
+  # Team 2 features
+  "team2_elo_result",
+  "team2_elo_roster",
+  "team2_form_last5",
+  "team2_bat_scoring_avg",
+  "team2_bat_scoring_top5",
+  "team2_bat_survival_avg",
+  "team2_bowl_economy_avg",
+  "team2_bowl_economy_top5",
+  "team2_bowl_strike_avg",
+  # Derived features (differences)
+  "elo_diff_result",
+  "form_diff",
+  "bat_scoring_diff",
+  "bat_scoring_top5_diff",
+  "bowl_economy_diff",
+  "bowl_economy_top5_diff",
+  # Match context
+  "toss_elect_bat",
+  "venue_avg_score",
+  "venue_chase_success_rate"
+))
+
+
+# ============================================================================
+# JSON Parser Enhanced Variables
+# ============================================================================
+
 utils::globalVariables(c(
   # Match-level
   "reserve_umpire",
@@ -242,117 +452,34 @@ utils::globalVariables(c(
   "powerplay_type"
 ))
 
-# Pre-match features variables (from pre_match_features.R)
-utils::globalVariables(c(
-  # Team 1 features
-  "team1_elo_result",
-  "team1_elo_roster",
-  "team1_form_last5",
-  "team1_h2h_total",
-  "team1_h2h_wins",
-  "team1_bat_scoring_avg",
-  "team1_bat_scoring_top5",
-  "team1_bat_survival_avg",
-  "team1_bowl_economy_avg",
-  "team1_bowl_economy_top5",
-  "team1_bowl_strike_avg",
-  "team1_won_toss",
-  # Team 2 features
-  "team2_elo_result",
-  "team2_elo_roster",
-  "team2_form_last5",
-  "team2_bat_scoring_avg",
-  "team2_bat_scoring_top5",
-  "team2_bat_survival_avg",
-  "team2_bowl_economy_avg",
-  "team2_bowl_economy_top5",
-  "team2_bowl_strike_avg",
-  # Derived features
-  "elo_diff_result",
-  "form_diff",
-  "bat_scoring_diff",
-  "bat_scoring_top5_diff",
-  "bowl_economy_diff",
-  "bowl_economy_top5_diff",
-  # Match context
-  "toss_elect_bat",
-  "venue_avg_score",
-  "venue_chase_success_rate",
-  "is_knockout"
-))
 
-# Fox Sports scraper variables (from fox_scraper.R)
-utils::globalVariables(c(
-  "running_over"
-))
+# ============================================================================
+# Pipeline State Variables
+# ============================================================================
 
-# Pipeline state variables (from pipeline_state.R)
 utils::globalVariables(c(
-
   "step_name",
   "last_run_at",
   "last_match_count",
   "last_delivery_count"
 ))
 
-#' Check for Parallel Support
-#'
-#' Checks if the required packages for parallel file parsing are available.
-#'
-#' @return Logical. TRUE if future and furrr are available.
-#' @keywords internal
-has_parallel_support <- function() {
-  requireNamespace("future", quietly = TRUE) &&
-    requireNamespace("furrr", quietly = TRUE)
-}
 
-# Team skill variables (from team_skill_index.R and agnostic_model.R)
+# ============================================================================
+# Fox Sports Scraper Variables
+# ============================================================================
+
 utils::globalVariables(c(
-  "batting_team_runs_skill",
-  "batting_team_wicket_skill",
-  "bowling_team_runs_skill",
-  "bowling_team_wicket_skill",
-  "batting_team_balls",
-  "bowling_team_balls",
-  "format_t20",
-  "format_odi",
-  "batter_experience",
-  "bowler_experience",
-  "team1_team_runs_skill",
-  "team2_team_runs_skill",
-  "team1_team_wicket_skill",
-  "team2_team_wicket_skill",
-  "venue_run_rate_skill",
-  "venue_wicket_rate_skill"
+  "running_over"
 ))
 
-# Visualization variables (from plotting functions)
-utils::globalVariables(c(
-  # plot_elo_history
-  "elo_result",
-  # plot_player_comparison
-  "Metric",
-  "Value",
-  "NormValue",
-  "Player",
-  # plot_score_progression
-  "ball_number",
-  "cumulative_runs",
-  # plot_skill_progression
-  "value",
-  "match_num",
-  "skill_type",
-  # plot_team_strength
-  "Skill",
-  "Category",
-  # plot_win_probability
-  "match_ball",
-  "win_prob_after"
-))
 
-# Score projection constants (from constants.R and score_projection.R)
+# ============================================================================
+# Score Projection Variables
+# ============================================================================
+
 utils::globalVariables(c(
-  # EIS constants
+  # EIS Constants
   "EIS_T20_MALE_INTL",
   "EIS_T20_MALE_CLUB",
   "EIS_T20_FEMALE_INTL",
@@ -379,14 +506,13 @@ utils::globalVariables(c(
   "PROJ_MAX_SCORE_ODI",
   "PROJ_MIN_SCORE_TEST",
   "PROJ_MAX_SCORE_TEST",
-  # Max balls
+  # Format-specific constants
   "MAX_BALLS_T20",
   "MAX_BALLS_ODI",
   "MAX_BALLS_TEST",
-  # Test overs per day
   "TEST_OVERS_PER_DAY_5DAY",
   "TEST_OVERS_PER_DAY_4DAY",
-  # Score projection table columns
+  # Projection table columns
   "current_score",
   "balls_remaining",
   "balls_bowled",
@@ -402,3 +528,100 @@ utils::globalVariables(c(
   "projection_change_full",
   "avg_score"
 ))
+
+
+# ============================================================================
+# Visualization Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # plot_player_comparison
+  "Metric",
+  "Value",
+  "NormValue",
+  "Player",
+  # plot_score_progression
+  "ball_number",
+  "cumulative_runs",
+  # plot_skill_progression
+  "value",
+  "match_num",
+  "skill_type",
+  # plot_team_strength
+  "Skill",
+  "Category",
+  # plot_win_probability
+  "match_ball",
+  "win_prob_after"
+))
+
+
+# ============================================================================
+# Network Centrality Player Quality Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # Network centrality constants
+  "CENTRALITY_ALPHA",
+  "CENTRALITY_MEAN_TYPE",
+  "CENTRALITY_MIN_DELIVERIES",
+  # Centrality outputs
+  "batter_centrality",
+  "bowler_centrality",
+  "centrality_quality_tier",
+  "centrality_percentile",
+  "unique_opponents",
+  "avg_opponent_degree",
+  # Matchup matrix building
+  "is_wicket_val",
+  "is_wicket_delivery",
+  "count",
+  "total"
+))
+
+
+# ============================================================================
+# Centrality Integration Variables
+# ============================================================================
+
+utils::globalVariables(c(
+  # Snapshot generation
+  "CENTRALITY_SNAPSHOT_INTERVAL_GAMES",
+  "CENTRALITY_SNAPSHOT_KEEP_MONTHS",
+  # K-factor modulation (Option A)
+  "CENTRALITY_K_FLOOR",
+  "CENTRALITY_K_CEILING",
+  "CENTRALITY_K_MIDPOINT",
+  "CENTRALITY_K_STEEPNESS",
+  # Periodic correction (Option D)
+  "CENTRALITY_CORRECTION_RATE",
+  "CENTRALITY_ELO_PER_PERCENTILE",
+  # Continuous regression (Stronger Bayesian prior)
+  "CENTRALITY_REGRESSION_STRENGTH",
+  # League-adjusted baseline
+  "LEAGUE_BASELINE_BLEND_HALFLIFE",
+  # Cold start defaults
+  "CENTRALITY_COLD_START_TIER_1",
+  "CENTRALITY_COLD_START_TIER_2",
+  "CENTRALITY_COLD_START_TIER_3",
+  "CENTRALITY_COLD_START_TIER_4",
+  # Snapshot lookup results
+  "opponent_centrality_percentile",
+  "centrality_snapshot_date"
+))
+
+
+# ============================================================================
+# Utility Functions
+# ============================================================================
+
+#' Check for Parallel Support
+#'
+#' Checks if the required packages for parallel file parsing are available.
+#'
+#' @return Logical. TRUE if future and furrr are available.
+#' @keywords internal
+has_parallel_support <- function() {
+  requireNamespace("future", quietly = TRUE) &&
+    requireNamespace("furrr", quietly = TRUE)
+}

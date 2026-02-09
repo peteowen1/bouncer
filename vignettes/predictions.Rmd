@@ -121,24 +121,25 @@ Resources depend on:
 
 ## Understanding ELO and Win Probability
 
-The `calculate_expected_outcome()` function shows how ELO ratings convert to win probability:
+ELO ratings convert to win probability using the standard logistic formula:
 
-```{r}
-# Educational: How does ELO work?
-# Team A has 1650 ELO, Team B has 1550 ELO
-prob_a_wins <- calculate_expected_outcome(1650, 1550)
-print(prob_a_wins)  # ~0.64 (64% chance for Team A)
+**Formula:** `P(A wins) = 1 / (1 + 10^((ELO_B - ELO_A) / 400))`
 
-# Equal teams
-prob_equal <- calculate_expected_outcome(1500, 1500)
-print(prob_equal)  # 0.50 (50-50)
+**Example calculations:**
 
-# Large ELO gap
-prob_favorite <- calculate_expected_outcome(1700, 1400)
-print(prob_favorite)  # ~0.85 (85% chance for higher-rated team)
-```
+| ELO Difference | Higher-Rated Team Win Probability |
+|----------------|-----------------------------------|
+| 0 (equal teams) | 50% |
+| +100 points | ~64% |
+| +200 points | ~76% |
+| +300 points | ~85% |
 
-The formula is: `P(A wins) = 1 / (1 + 10^((ELO_B - ELO_A) / 400))`
+The 400 divisor means that a 400-point difference corresponds to roughly 10:1 odds (91% win probability).
+
+**In bouncer:**
+- Starting ELO is 1500 for all teams
+- ELO updates after each match based on result vs expectation
+- Format-specific ELO tracks performance within T20/ODI/Test separately
 
 ## Matchup Predictions
 
