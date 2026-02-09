@@ -335,7 +335,7 @@ delete_old_centrality_snapshots <- function(format,
 #'   backwards compatibility (uses format-only table name).
 #'
 #' @return Invisibly returns TRUE.
-#' @export
+#' @keywords internal
 ensure_pagerank_history_table <- function(format, conn, gender = NULL) {
   format <- tolower(format)
 

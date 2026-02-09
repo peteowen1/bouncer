@@ -510,7 +510,7 @@ PHASE_TEST_MIDDLE_END <- 80    # Overs 21-80: Middle overs
 #' get_phase_boundaries("test")
 #' # Returns: list(new_ball_end = 20, middle_end = 80)
 #'
-#' @export
+#' @keywords internal
 get_phase_boundaries <- function(format) {
   format <- tolower(format)
 
@@ -554,7 +554,7 @@ get_phase_boundaries <- function(format) {
 #' get_projection_bounds("odi")   # c(100, 450)
 #' get_projection_bounds("test")  # c(80, 700)
 #'
-#' @export
+#' @keywords internal
 get_projection_bounds <- function(format) {
   canonical <- normalize_format(format)
 
@@ -587,7 +587,7 @@ get_projection_bounds <- function(format) {
 #' get_phase_from_over(50, "test") # "middle"
 #' get_phase_from_over(85, "test") # "old_ball"
 #'
-#' @export
+#' @keywords internal
 get_phase_from_over <- function(over, format) {
   format <- tolower(format)
   bounds <- get_phase_boundaries(format)

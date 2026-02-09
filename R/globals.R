@@ -20,19 +20,8 @@ NULL
 # Returns y if x is NULL, otherwise returns x
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-#' Pipe operator
-#'
-#' See \code{dplyr::\link[dplyr:reexports]{\%>\%}} for details.
-#'
-#' @name %>%
-#' @rdname pipe
-#' @keywords internal
-#' @export
+# Import pipe for internal use (not re-exported to users)
 #' @importFrom dplyr %>%
-#' @usage lhs \%>\% rhs
-#' @param lhs A value or the dplyr/magrittr placeholder.
-#' @param rhs A function call using the dplyr/magrittr semantics.
-#' @return The result of calling \code{rhs(lhs)}.
 NULL
 
 # ============================================================================

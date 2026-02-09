@@ -18,3 +18,4 @@ the next call to re-download from GitHub.
 clear_manifest_cache()
 }
 }
+\keyword{internal}

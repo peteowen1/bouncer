@@ -4,10 +4,10 @@
 \alias{load_player_skill}
 \title{Load Player Skill Indices}
 \usage{
-load_player_skill(match_format = "all", source = c("local", "remote"))
+load_player_skill(match_type = "all", source = c("local", "remote"))
 }
 \arguments{
-\item{match_format}{Character. "t20", "odi", "test", or "all" (default).}
+\item{match_type}{Character. "t20", "odi", "test", or "all" (default).}
 
 \item{source}{Character. "local" (default) or "remote".}
 }

@@ -25,3 +25,4 @@ Required columns for agnostic model:
 \item Optional but recommended: gender, match_type
 }
 }
+\keyword{internal}

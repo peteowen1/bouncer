@@ -663,7 +663,7 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
 #'
 #' Load player skill indices for a specific format or all formats.
 #'
-#' @param match_format Character. "t20", "odi", "test", or "all" (default).
+#' @param match_type Character. "t20", "odi", "test", or "all" (default).
 #' @param source Character. "local" (default) or "remote".
 #'
 #' @return Data frame of player skill indices.
@@ -677,10 +677,10 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
 #' # Load all formats
 #' all_skills <- load_player_skill("all")
 #' }
-load_player_skill <- function(match_format = "all", source = c("local", "remote")) {
+load_player_skill <- function(match_type = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
+  formats <- if (match_type == "all") c("t20", "odi", "test") else tolower(match_type)
 
   if (source == "remote") {
     # Fast remote: download + local query for each format
@@ -742,10 +742,10 @@ load_player_skill <- function(match_format = "all", source = c("local", "remote"
 #' @return Data frame of team skill indices.
 #'
 #' @export
-load_team_skill <- function(match_format = "all", source = c("local", "remote")) {
+load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
+  formats <- if (match_type == "all") c("t20", "odi", "test") else tolower(match_type)
 
   if (source == "remote") {
     # Fast remote: download + local query for each format
@@ -807,10 +807,10 @@ load_team_skill <- function(match_format = "all", source = c("local", "remote"))
 #' @return Data frame of venue skill indices.
 #'
 #' @export
-load_venue_skill <- function(match_format = "all", source = c("local", "remote")) {
+load_venue_skill <- function(match_type = "all", source = c("local", "remote")) {
   source <- match.arg(source)
 
-  formats <- if (match_format == "all") c("t20", "odi", "test") else tolower(match_format)
+  formats <- if (match_type == "all") c("t20", "odi", "test") else tolower(match_type)
 
   if (source == "remote") {
     # Fast remote: download + local query for each format

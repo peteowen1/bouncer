@@ -18,7 +18,7 @@
 #' @param days Integer. Number of days in the Test match (4 or 5).
 #'
 #' @return Integer. Overs scheduled per day.
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' get_test_overs_per_day(5)  # 90
@@ -117,7 +117,7 @@ calculate_test_overs_remaining <- function(match_days = 5,
 #' @param overs_remaining Numeric. Overs remaining in match.
 #'
 #' @return Integer. Balls remaining.
-#' @export
+#' @keywords internal
 #'
 #' @examples
 #' test_overs_to_balls(45.3)  # 273 balls (45*6 + 3)

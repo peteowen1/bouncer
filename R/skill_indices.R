@@ -544,7 +544,7 @@ build_skill_index_params <- function(format = "t20", gender = "male") {
 #' @param skill_type Character. "run" for runs, "wicket" for wickets.
 #'
 #' @return Numeric. Approximate skill index value.
-#' @export
+#' @keywords internal
 elo_to_skill <- function(elo, format = "t20", gender = "male", skill_type = "run") {
   elo_start <- THREE_WAY_ELO_START
 
@@ -572,7 +572,7 @@ elo_to_skill <- function(elo, format = "t20", gender = "male", skill_type = "run
 #' @param skill_type Character. "run" for runs, "wicket" for wickets.
 #'
 #' @return Numeric. Approximate ELO rating.
-#' @export
+#' @keywords internal
 skill_to_elo <- function(skill, format = "t20", gender = "male", skill_type = "run") {
   elo_start <- THREE_WAY_ELO_START
 

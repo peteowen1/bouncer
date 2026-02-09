@@ -24,3 +24,4 @@ Named list with validation results:
 \description{
 Checks for common data quality issues in delivery data.
 }
+\keyword{internal}

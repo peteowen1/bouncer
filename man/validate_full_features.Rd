@@ -32,3 +32,4 @@ bowling_team_runs_skill, bowling_team_wicket_skill
 \item Venue skills: venue_run_rate, venue_wicket_rate
 }
 }
+\keyword{internal}

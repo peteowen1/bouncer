@@ -28,7 +28,7 @@
 #' validate_delivery_data(df, required_cols = c("match_id", "over", "ball"))
 #' }
 #'
-#' @export
+#' @keywords internal
 validate_delivery_data <- function(df,
                                     required_cols = NULL,
                                     context = "validate_delivery_data") {
@@ -87,7 +87,7 @@ if (!is.data.frame(df)) {
 #' - Core: over, ball, innings, wickets_fallen
 #' - Optional but recommended: gender, match_type
 #'
-#' @export
+#' @keywords internal
 validate_agnostic_features <- function(df, format = "t20") {
   # Core required columns
   core_cols <- c("over", "ball", "innings", "wickets_fallen")
@@ -143,7 +143,7 @@ validate_agnostic_features <- function(df, format = "t20") {
 #'   bowling_team_runs_skill, bowling_team_wicket_skill
 #' - Venue skills: venue_run_rate, venue_wicket_rate
 #'
-#' @export
+#' @keywords internal
 validate_full_features <- function(df, format = "t20", strict = FALSE) {
   # First validate core delivery data
   validate_agnostic_features(df, format)
@@ -203,7 +203,7 @@ validate_full_features <- function(df, format = "t20", strict = FALSE) {
 #'   - issues: Character vector of issues found
 #'   - stats: Named list of summary statistics
 #'
-#' @export
+#' @keywords internal
 validate_data_quality <- function(df, check_na = TRUE, check_ranges = TRUE) {
   issues <- character(0)
   stats <- list()
@@ -280,7 +280,7 @@ validate_data_quality <- function(df, check_na = TRUE, check_ranges = TRUE) {
 #' has_required_columns(df, c("a", "b"))  # TRUE
 #' has_required_columns(df, c("a", "c"))  # FALSE
 #'
-#' @export
+#' @keywords internal
 has_required_columns <- function(df, required_cols) {
   all(required_cols %in% names(df))
 }

@@ -37,3 +37,4 @@ folder <- classify_match(match_data$match_info)
 # e.g., "short_form_male_club" for an IPL match
 }
 }
+\keyword{internal}

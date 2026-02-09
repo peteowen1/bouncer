@@ -30,3 +30,4 @@ get_phase_boundaries("test")
 # Returns: list(new_ball_end = 20, middle_end = 80)
 
 }
+\keyword{internal}

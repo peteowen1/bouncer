@@ -33,3 +33,4 @@ Examples (Men's T20, runs_per_100_elo = 0.0745):
 ELO 1600 -> skill = (1600 - 1400) * 0.0745 / 100 = +0.149
 ELO 1200 -> skill = (1200 - 1400) * 0.0745 / 100 = -0.149
 }
+\keyword{internal}

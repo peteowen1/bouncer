@@ -18,3 +18,4 @@ Converts overs remaining to balls for use in projection functions.
 \examples{
 test_overs_to_balls(45.3)  # 273 balls (45*6 + 3)
 }
+\keyword{internal}

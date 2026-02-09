@@ -880,7 +880,7 @@ get_match_type_category <- function(match_type) {
 #' - short_form_female_international
 #' - short_form_female_club
 #'
-#' @export
+#' @keywords internal
 #' @examples
 #' \dontrun{
 #' match_data <- parse_cricsheet_json("12345.json")

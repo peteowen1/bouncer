@@ -22,3 +22,4 @@ Creates the dated PageRank snapshot table for a format/gender if it doesn't exis
 This table stores historical PageRank snapshots that can be looked up by date
 to prevent data leakage during ELO calculation.
 }
+\keyword{internal}

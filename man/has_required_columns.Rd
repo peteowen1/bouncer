@@ -24,3 +24,4 @@ has_required_columns(df, c("a", "b"))  # TRUE
 has_required_columns(df, c("a", "c"))  # FALSE
 
 }
+\keyword{internal}

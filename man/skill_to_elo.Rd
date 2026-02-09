@@ -22,3 +22,4 @@ Numeric. Approximate ELO rating.
 Provides an approximate conversion from skill indices to ELO ratings
 for comparison or migration purposes.
 }
+\keyword{internal}
