@@ -283,6 +283,10 @@ predict_win_probability <- function(current_score,
 }
 
 
+#' Print method for bouncer_win_prob objects
+#'
+#' @param x A bouncer_win_prob object from predict_win_probability()
+#' @param ... Additional arguments (unused)
 #' @export
 print.bouncer_win_prob <- function(x, ...) {
   cli::cli_h2("Win Probability Prediction")

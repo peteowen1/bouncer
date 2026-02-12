@@ -3,6 +3,8 @@ url: https://peteowen1.github.io/bouncer/
 template:
   bootstrap: 5
   bootswatch: flatly
+  bslib:
+    pkgdown-nav-height: 100px
 
 navbar:
   structure:
@@ -44,7 +46,6 @@ reference:
     - install_parquets_from_release
     - update_bouncerdata
     - get_latest_release
-    - initialize_bouncer_database
 
   - title: Database Connection
     desc: Connect to and manage the database
@@ -53,7 +54,6 @@ reference:
     - disconnect_bouncer
     - get_db_path
     - find_bouncerdata_dir
-    - verify_database
     - force_close_duckdb
 
   - title: Data Loading
@@ -109,7 +109,6 @@ reference:
     contents:
     - predict_match
     - predict_match_outcome
-    - predict_matchup_outcome
     - predict_win_probability
     - calculate_projected_score
 
@@ -130,6 +129,20 @@ reference:
     contents:
     - get_team_elo
     - get_dynamic_k
+
+  - title: Centrality & PageRank
+    desc: Network-based player quality adjustment
+    contents:
+    - get_centrality_as_of
+    - get_centrality_snapshot_dates
+    - calculate_player_centrality
+    - apply_centrality_correction
+    - calculate_centrality_regression
+    - get_pagerank_as_of
+    - get_pagerank_snapshot_dates
+    - get_top_pagerank_players
+    - print_centrality_summary
+    - print_pagerank_summary
 
   - title: Visualization
     desc: ggplot2-based cricket charts
@@ -154,10 +167,7 @@ reference:
     desc: Parse Cricsheet JSON files
     contents:
     - parse_cricsheet_json
-    - classify_match
-    - get_format_category
     - get_model_format
-    - get_match_type_category
 
   - title: Score Projection
     desc: Innings score projection utilities
@@ -167,8 +177,6 @@ reference:
     - calculate_test_overs_remaining
     - estimate_test_innings_overs_remaining
     - estimate_test_total_overs
-    - get_test_overs_per_day
-    - test_overs_to_balls
 
   - title: Remote Data
     desc: Remote data source utilities
@@ -178,7 +186,6 @@ reference:
     - get_remote_partition_info
     - get_remote_tables
     - clear_remote_cache
-    - clear_manifest_cache
     - fox_list_formats
 
   - title: Utilities
@@ -188,6 +195,45 @@ reference:
     - get_all_data_folders
     - add_prediction_tables
     - list_available_formats
+
+  - title: Rating Internals
+    desc: Low-level functions for ELO and skill index calculations
+    contents:
+    - bound_player_elo
+    - bound_skill
+    - bound_venue_elo
+    - calculate_expected_runs_skill
+    - calculate_expected_wicket_skill
+    - build_skill_index_params
+    - normalize_format
+    - model_exists
+    - get_model_filename
+    - get_model_path
+
+  - title: Constants & Configuration
+    desc: Getters for format-specific constants and model configuration
+    contents:
+    - get_agnostic_baselines
+    - get_centrality_k_multiplier
+    - get_format_groups
+    - get_gender_categories
+    - get_league_baseline_as_of
+    - get_league_starting_elo
+    - get_match_types_for_format
+    - get_max_balls
+    - get_max_overs
+    - get_models_dir
+    - get_run_elo_weights
+    - get_run_k_factors
+    - get_runs_per_100_elo
+    - get_skill_alpha
+    - get_skill_alpha_params
+    - get_skill_decay
+    - get_skill_weights
+    - get_venue_k_factors
+    - get_wicket_elo_divisor
+    - get_wicket_elo_weights
+    - get_wicket_k_factors
 
   - title: S3 Methods
     desc: Print methods for bouncer objects
@@ -199,3 +245,4 @@ reference:
     - print.bouncer_prediction
     - print.bouncer_team
     - print.bouncer_team_comparison
+    - print.bouncer_win_prob
