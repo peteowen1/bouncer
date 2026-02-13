@@ -283,6 +283,10 @@ predict_win_probability <- function(current_score,
 }
 
 
+#' Print method for bouncer_win_prob objects
+#'
+#' @param x A bouncer_win_prob object from predict_win_probability()
+#' @param ... Additional arguments (unused)
 #' @export
 print.bouncer_win_prob <- function(x, ...) {
   cli::cli_h2("Win Probability Prediction")
@@ -304,7 +308,7 @@ print.bouncer_win_prob <- function(x, ...) {
     cli::cli_text("Score: {x$current_score}/{x$wickets} ({overs_str} overs)")
     runs_needed <- x$target - x$current_score
     if (runs_needed > 0) {
-      cli::cli_text("Need: {runs_needed} runs from {round((120 - overs_to_balls(x$overs)) / 6, 1)} overs")
+      cli::cli_text("Need: {runs_needed} runs from {round((get_max_balls(x$format) - overs_to_balls(x$overs)) / 6, 1)} overs")
     }
   }
 

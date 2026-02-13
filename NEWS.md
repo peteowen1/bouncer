@@ -1,5 +1,49 @@
 # bouncer (development version)
 
+## Major Changes
+
+* **3-Way ELO system** - New primary rating system with separate ELO ratings for
+  batter, bowler, and venue (session + permanent) on every delivery. Attribution
+  weights: batter 52%, bowler 22%, venue session 21%, venue permanent 5%.
+
+* **PageRank/centrality quality adjustment** - Network-based system that detects
+  inflated ratings from isolated competitions. New functions:
+  `get_centrality_as_of()`, `get_pagerank_as_of()`, `get_top_pagerank_players()`,
+  `calculate_player_centrality()`, `apply_centrality_correction()`.
+
+* **Score projection system** - Per-delivery projected innings totals using
+  optimized resource-based models. `calculate_projected_score()` now supports
+  all formats with team/venue-adjusted projections.
+
+* **Season & playoff simulation** - `simulate_season()`, `simulate_season_n()`
+  for Monte Carlo tournament simulation, plus `simulate_ipl_playoffs()` for
+  IPL-specific playoff brackets.
+
+* **Glicko system deprecated** - Removed in favour of the 3-Way ELO + centrality
+  approach. Legacy code archived in `data-raw/_deprecated/`.
+
+## Improvements
+
+* `install_all_bouncer_data()` provides one-step data installation from GitHub
+  releases, replacing the multi-step manual process.
+
+* New constant getter functions (`get_skill_alpha()`, `get_run_elo_weights()`,
+ `get_venue_k_factors()`, etc.) replace hard-coded values with format-aware
+  configuration.
+
+* Remote data loading now supported - load data directly from GitHub releases
+  without a local DuckDB database.
+
+## Internal
+
+* Major file reorganization: split monolithic files into domain modules
+  (database, ELO, centrality, constants, user API).
+* Removed ~10 dead code files (old dual-ELO player processing pipeline).
+* Tightened exports: ~14 internal functions un-exported, replaced with
+  proper getter APIs.
+* SQL injection fixes in database query functions.
+* Comprehensive test coverage for ELO, simulation, and user API.
+
 # bouncer 0.1.0
 
 Initial CRAN-ready release of bouncer - Cricket analytics with player skill indices.
@@ -10,7 +54,6 @@ Initial CRAN-ready release of bouncer - Cricket analytics with player skill indi
 * `install_bouncerdata_from_release()` - Install pre-processed data from GitHub releases
 * `update_bouncerdata()` - Incremental data updates
 * `connect_to_bouncer()`, `disconnect_bouncer()` - Database connection management
-* `verify_database()` - Check database integrity
 * `load_matches()`, `load_deliveries()`, `load_players()`, `load_innings()` - Load core tables into R
 
 ## Skill Index System
@@ -60,7 +103,6 @@ Skill indices represent deviations from format-specific baselines (T20/ODI/Test)
 * `predict_match()` - Pre-match win probability
 * `predict_match_outcome()` - Match result prediction with confidence
 * `predict_win_probability()` - In-game win probability
-* `predict_matchup_outcome()` - Batter vs bowler expected outcome
 * `calculate_projected_score()` - Innings score projection
 * `calculate_projection_resource()` - Duckworth-Lewis style resource percentage
 
@@ -70,8 +112,6 @@ Skill indices represent deviations from format-specific baselines (T20/ODI/Test)
 * `quick_match_simulation()` - Fast match simulation
 * `simulate_innings()` - Single innings simulation
 * `simulate_delivery()` - Ball outcome simulation
-* `simulate_season()`, `simulate_season_n()` - Tournament simulation
-* `simulate_ipl_playoffs()` - IPL playoff structure
 * `create_simulation_config()` - Configure simulation parameters
 
 ## Visualization
@@ -97,9 +137,7 @@ Advanced users can query the database directly:
 * `calculate_test_projected_score()` - Test match score projection
 * `calculate_test_overs_remaining()` - Remaining overs estimation
 * `estimate_test_innings_overs_remaining()` - Innings overs estimation
-* `get_test_overs_per_day()` - Historical overs per day
 
 ## Data Parsing
 
 * `parse_cricsheet_json()` - Parse Cricsheet JSON files
-* `classify_match()`, `get_format_category()` - Match type classification

@@ -19,7 +19,8 @@ FOX_FORMATS <- list(
   BBL = list(prefix = "BBL", max_innings = 2, max_series = 10, max_matches = 70),
   WBBL = list(prefix = "WBBL", max_innings = 2, max_series = 10, max_matches = 70),
   WNCL = list(prefix = "WNCL", max_innings = 2, max_series = 10, max_matches = 30),
-  WPL = list(prefix = "WPL", max_innings = 2, max_series = 5, max_matches = 30)
+  WPL = list(prefix = "WPL", max_innings = 2, max_series = 5, max_matches = 30),
+  IPL = list(prefix = "IPL", max_innings = 2, max_series = 5, max_matches = 80)
 )
 
 #' Get Stored Fox Browser Session
