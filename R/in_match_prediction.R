@@ -308,7 +308,7 @@ print.bouncer_win_prob <- function(x, ...) {
     cli::cli_text("Score: {x$current_score}/{x$wickets} ({overs_str} overs)")
     runs_needed <- x$target - x$current_score
     if (runs_needed > 0) {
-      cli::cli_text("Need: {runs_needed} runs from {round((120 - overs_to_balls(x$overs)) / 6, 1)} overs")
+      cli::cli_text("Need: {runs_needed} runs from {round((get_max_balls(x$format) - overs_to_balls(x$overs)) / 6, 1)} overs")
     }
   }
 
