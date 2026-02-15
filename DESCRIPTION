@@ -1,7 +1,7 @@
 Package: bouncer
 Type: Package
 Title: Cricket Analytics with Ball-by-Ball Skill Tracking
-Version: 0.2.0.9000
+Version: 0.3.0
 Authors@R: person("Pete", "Owen", email = "peteowen1@gmail.com",
                   role = c("aut", "cre", "cph"))
 Description: Cricket analytics featuring a 5-component prediction pipeline with
