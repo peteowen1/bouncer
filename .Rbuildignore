@@ -12,7 +12,5 @@
 ^CLAUDE\.md$
 ^\.claude$
 ^\.github$
-^run_test\.R$
-^run_check\.R$
-^tmp_bulk_t20wc\.R$
+^debug$
 ^cran-comments\.md$
