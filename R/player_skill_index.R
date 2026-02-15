@@ -608,8 +608,11 @@ add_skill_features <- function(deliveries_df, format = "t20", conn, fill_missing
         bowler_balls_bowled = dplyr::coalesce(bowler_balls_bowled, 0L)
       )
 
-    n_filled <- sum(is.na(deliveries_df$batter_scoring_index) |
-                    !("batter_scoring_index" %in% names(deliveries_df)))
+    n_filled <- if ("batter_scoring_index" %in% names(deliveries_df)) {
+      sum(is.na(deliveries_df$batter_scoring_index))
+    } else {
+      nrow(deliveries_df)
+    }
     if (n_filled > 0) {
       cli::cli_alert_info("Filled {n_filled} missing skill values with starting defaults")
     }

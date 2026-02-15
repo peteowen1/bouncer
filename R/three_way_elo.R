@@ -315,7 +315,7 @@ calculate_3way_expected_runs <- function(agnostic_runs,
   }
 
   # Bound to reasonable range (0 to 6 runs)
-  max(0, min(6, expected_runs))
+  pmax(0, pmin(6, expected_runs))
 }
 
 
@@ -350,7 +350,7 @@ calculate_3way_expected_wicket <- function(agnostic_wicket,
   divisor <- get_wicket_elo_divisor(format, gender)
 
   # Prevent log(0) or log(Inf)
-  agnostic_wicket <- max(0.001, min(0.999, agnostic_wicket))
+  agnostic_wicket <- pmax(0.001, pmin(0.999, agnostic_wicket))
 
   # Convert to log-odds
   base_logit <- log(agnostic_wicket / (1 - agnostic_wicket))
@@ -369,7 +369,7 @@ calculate_3way_expected_wicket <- function(agnostic_wicket,
   expected_wicket <- 1 / (1 + exp(-adjusted_logit))
 
   # Bound to reasonable range
-  max(0.001, min(0.5, expected_wicket))
+  pmax(0.001, pmin(0.5, expected_wicket))
 }
 
 
@@ -799,7 +799,7 @@ reset_venue_session_elo <- function() {
 #' @keywords internal
 calculate_reliability <- function(balls,
                                    halflife = THREE_WAY_RELIABILITY_HALFLIFE) {
-  if (is.na(balls) || balls <= 0) {
+  if (is.null(balls) || is.na(balls) || balls <= 0) {
     return(0)
   }
   balls / (balls + halflife)
@@ -1276,7 +1276,7 @@ get_match_phase <- function(over, format = "t20") {
 #' @return Logical. TRUE if high chase situation.
 #' @keywords internal
 is_high_chase_situation <- function(innings, runs_required, balls_remaining) {
-  if (innings != 2) return(FALSE)
+  if (!innings %in% c(2, 4)) return(FALSE)
   if (is.na(runs_required) || is.na(balls_remaining)) return(FALSE)
   if (balls_remaining <= 0) return(FALSE)
 
@@ -1427,7 +1427,7 @@ store_3way_elo_params <- function(params, last_delivery_id, last_match_date,
     params = list(params$format))
 
   # Insert new params
-  DBI::dbExecute(conn, sprintf("
+  DBI::dbExecute(conn, "
     INSERT INTO three_way_elo_params (
       format, k_run_max, k_run_min, k_run_halflife,
       k_wicket_max, k_wicket_min, k_wicket_halflife,
@@ -1437,15 +1437,15 @@ store_3way_elo_params <- function(params, last_delivery_id, last_match_date,
       runs_per_100_elo, inactivity_halflife, replacement_level,
       last_delivery_id, last_match_date, total_deliveries, calculated_at
     ) VALUES (
-      '%s', %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f, %f,
-      %f, %f, %f,
-      '%s', '%s', %d, CURRENT_TIMESTAMP
+      ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, CURRENT_TIMESTAMP
     )
-  ",
+  ", params = list(
     params$format,
     params$k_run_max, params$k_run_min, params$k_run_halflife,
     params$k_wicket_max, params$k_wicket_min, params$k_wicket_halflife,
@@ -1478,13 +1478,13 @@ log_3way_drift_metrics <- function(format, dimension, entity_type,
   # Ensure table exists
   ensure_3way_drift_table(conn)
 
-  DBI::dbExecute(conn, sprintf("
+  DBI::dbExecute(conn, "
     INSERT OR REPLACE INTO three_way_elo_drift_metrics (
       metric_date, format, dimension, entity_type, mean_elo, std_elo
     ) VALUES (
-      CURRENT_DATE, '%s', '%s', '%s', %f, %f
+      CURRENT_DATE, ?, ?, ?, ?, ?
     )
-  ", format, dimension, entity_type, mean_elo, std_elo))
+  ", params = list(format, dimension, entity_type, mean_elo, std_elo))
 
   invisible(TRUE)
 }

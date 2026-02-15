@@ -392,7 +392,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
       WHERE batting_team_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, team_id))
+    ", table_name, escape_sql_strings(team_id)))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -405,7 +405,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
       WHERE bowling_team_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, team_id))
+    ", table_name, escape_sql_strings(team_id)))
   }
 
   if (nrow(result) == 0) {

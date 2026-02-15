@@ -130,16 +130,13 @@ test_overs_to_balls <- function(overs_remaining) {
   partial_balls <- round((overs_remaining - complete_overs) * 10)
 
   # Cricket notation: .1-.6 for balls, but some data uses decimal
-  # Handle both cases
-  if (partial_balls > 6) {
-    # True decimal (e.g., 45.5 = 45.5 overs, not 45 overs 5 balls)
-    total_balls <- round(overs_remaining * 6)
-  } else {
-    # Cricket notation (e.g., 45.3 = 45 overs 3 balls)
-    total_balls <- complete_overs * 6 + partial_balls
-  }
+  # Handle both cases (vectorized)
+  total_balls <- ifelse(partial_balls > 6,
+    round(overs_remaining * 6),
+    complete_overs * 6 + partial_balls
+  )
 
-  return(as.integer(total_balls))
+  as.integer(total_balls)
 }
 
 

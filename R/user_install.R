@@ -192,9 +192,9 @@ get_data_info <- function(path = NULL) {
   ")
 
   cli::cli_h2("Bouncer Cricket Data Summary")
-  cli::cli_alert_info("Matches: {scales::comma(n_matches)}")
-  cli::cli_alert_info("Deliveries: {scales::comma(n_deliveries)}")
-  cli::cli_alert_info("Players: {scales::comma(n_players)}")
+  cli::cli_alert_info("Matches: {format_number(n_matches)}")
+  cli::cli_alert_info("Deliveries: {format_number(n_deliveries)}")
+  cli::cli_alert_info("Players: {format_number(n_players)}")
 
   if (nrow(date_range) > 0 && !is.na(date_range$earliest)) {
     cli::cli_alert_info("Date range: {date_range$earliest} to {date_range$latest}")
@@ -285,7 +285,7 @@ list_available_formats <- function(path = NULL) {
 #'   If NULL, loads both genders.
 #' @param download_path Path to store downloaded/extracted files. If NULL, uses temp directory.
 #' @param keep_downloads Logical. If TRUE, keeps downloaded JSON files. Default FALSE.
-#' @param batch_size Number of files per database transaction. Default 100.
+#' @param batch_size Number of files per database transaction. Default 500.
 #'
 #' @return Invisibly returns database path
 #' @export
@@ -375,9 +375,10 @@ install_all_bouncer_data <- function(db_path = NULL,
 
     # Delete changed matches from database
     conn <- get_db_connection(path = db_path, read_only = FALSE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-
-    delete_matches_from_db(changed_match_ids, conn)
+    tryCatch(
+      delete_matches_from_db(changed_match_ids, conn),
+      finally = DBI::dbDisconnect(conn, shutdown = TRUE)
+    )
   }
 
   # Determine which files to load
@@ -889,14 +890,12 @@ install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
     cli::cli_alert_info("Downloading {zip_name} ({round(size_mb, 1)} MB)...")
 
     temp_zip <- tempfile(fileext = ".zip")
+    folder_path <- file.path(json_dir, folder)
+    dir.create(folder_path, showWarnings = FALSE, recursive = TRUE)
 
     # Use tryCatch to ensure temp file cleanup on error
     tryCatch({
       download_release_asset(asset$browser_download_url, temp_zip)
-
-      # Extract to json_dir
-      folder_path <- file.path(json_dir, folder)
-      dir.create(folder_path, showWarnings = FALSE, recursive = TRUE)
       zip::unzip(temp_zip, exdir = folder_path)
     }, finally = {
       # Always clean up temp file

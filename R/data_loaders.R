@@ -480,7 +480,7 @@ load_innings <- function(match_type = "all", gender = "all",
   # Build WHERE clause
   where_clauses <- character()
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
@@ -585,7 +585,7 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
   # Build WHERE clause for match_ids
   where_clauses <- character()
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
@@ -628,11 +628,11 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
 
     join_where <- character()
     if (!identical(match_type, "all")) {
-      types_sql <- paste0("'", match_type, "'", collapse = ", ")
+      types_sql <- paste0("'", escape_sql_strings(match_type), "'", collapse = ", ")
       join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
     }
     if (!is.null(match_ids)) {
-      ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+      ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
       join_where <- c(join_where, sprintf("p.match_id IN (%s)", ids_sql))
     }
 

@@ -103,7 +103,7 @@ calculate_expected_runs_skill <- function(agnostic_runs,
   expected_runs <- agnostic_runs + skill_effect
 
   # Bound to reasonable range (0 to 6 runs per ball)
-  max(0, min(6, expected_runs))
+  pmax(0, pmin(6, expected_runs))
 }
 
 
@@ -164,7 +164,7 @@ calculate_expected_wicket_skill <- function(agnostic_wicket,
   expected_wicket <- agnostic_wicket + skill_effect
 
   # Bound to valid probability range
-  max(0.001, min(0.50, expected_wicket))
+  pmax(0.001, pmin(0.50, expected_wicket))
 }
 
 

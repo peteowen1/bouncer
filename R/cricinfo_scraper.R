@@ -290,6 +290,7 @@ cricinfo_capture_commentary <- function(browser, series_id, match_id,
   }
 
   browser$Network$responseReceived(callback = cdp_callback)
+  on.exit(tryCatch(browser$Network$responseReceived(callback = NULL), error = function(e) NULL), add = TRUE)
 
   # Navigate and wait for load event (not fixed sleep)
   browser$Page$navigate(url)
@@ -955,6 +956,8 @@ cricinfo_discover_matches <- function(browser, series_id) {
 cricinfo_list_current <- function(browser, auth_token) {
   url <- paste0(CRICINFO_API_BASE, "/v1/pages/matches/current?lang=en&latest=true")
 
+  safe_url <- gsub('"', '\\\\"', url)
+  safe_token <- gsub('"', '\\\\"', auth_token)
   js_xhr <- sprintf('
     (function() {
       try {
@@ -968,7 +971,7 @@ cricinfo_list_current <- function(browser, auth_token) {
         return null;
       } catch(e) { return null; }
     })()
-  ', url, auth_token)
+  ', safe_url, safe_token)
 
   tryCatch({
     result <- browser$Runtime$evaluate(js_xhr, returnByValue = TRUE, timeout_ = 30)

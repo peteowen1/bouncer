@@ -518,7 +518,7 @@ add_win_probability <- function(deliveries,
     # Calculate overs in cricket notation
     over_num <- row$over
     ball_num <- row$ball
-    overs <- over_num + (ball_num - 1) / 10  # Approximate cricket notation
+    overs <- over_num + ball_num / 10  # Cricket notation: state after delivery
 
     # Get win probability before this delivery
     # Use previous ball's total_runs and wickets

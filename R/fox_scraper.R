@@ -288,6 +288,7 @@ fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
 #' @return Parsed data.frame or NULL on error
 #' @keywords internal
 fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
+  safe_url <- gsub("'", "\\\\'", url)
   js_fetch <- sprintf("
     (async () => {
       try {
@@ -297,7 +298,7 @@ fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
         return {error: e.message};
       }
     })();
-  ", url)
+  ", safe_url)
 
   tryCatch({
     result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 30)
@@ -369,12 +370,13 @@ fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_inn
       match_id, inning_num, inning_num, userkey
     )
 
+    safe_innings_url <- gsub("'", "\\\\'", innings_url)
     js_fetch <- sprintf("
       (async () => {
         const response = await fetch('%s');
         return await response.json();
       })();
-    ", innings_url)
+    ", safe_innings_url)
 
     tryCatch({
       result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)
@@ -431,6 +433,7 @@ fox_match_exists <- function(browser, match_id, userkey) {
     match_id, userkey
   )
 
+  safe_innings_url <- gsub("'", "\\\\'", innings_url)
   js_fetch <- sprintf("
     (async () => {
       try {
@@ -441,7 +444,7 @@ fox_match_exists <- function(browser, match_id, userkey) {
         return {error: e.message};
       }
     })();
-  ", innings_url)
+  ", safe_innings_url)
 
   tryCatch({
     result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 10)
@@ -626,7 +629,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
   }
 
   # Convert list to vector (only non-NULL elements)
-  valid_matches <- unlist(valid_list[1:list_idx])
+  valid_matches <- if (list_idx > 0) unlist(valid_list[seq_len(list_idx)]) else character(0)
 
   # Save updated cache
   all_discovered <- unique(c(cached_matches, valid_matches))
@@ -843,7 +846,7 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
 
   # Update browser reference in package environment if it changed
   if (!identical(current_browser, browser)) {
-    cli::cli_alert_info("Note: Browser was reconnected. Access with bouncer::fox_get_browser()")
+    cli::cli_alert_info("Note: Browser was reconnected. Access with bouncer:::fox_get_browser()")
     .fox_env$browser <- current_browser
   }
 

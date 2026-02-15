@@ -208,11 +208,11 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
   result_ball <- integer(max_deliveries)
   result_runs <- numeric(max_deliveries)
   result_is_wicket <- logical(max_deliveries)
-  result_total_runs <- integer(max_deliveries)
+  result_total_runs <- numeric(max_deliveries)
   result_wickets <- integer(max_deliveries)
 
   # Initialize state
-  runs <- 0L
+  runs <- 0
   wickets <- 0L
   balls <- 0L
   delivery_count <- 0L
@@ -262,7 +262,7 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
                                      venue_skills, mode)
 
     # Update state
-    runs <- runs + as.integer(sim_result$runs)
+    runs <- runs + sim_result$runs
     balls <- balls + 1L
     batter_balls[current_batter_idx] <- batter_balls[current_batter_idx] + 1L
     bowler_balls[current_bowler_idx] <- bowler_balls[current_bowler_idx] + 1L
@@ -688,10 +688,10 @@ simulate_match_outcome <- function(team1_win_prob, team1, team2) {
   winner <- if (team1_wins) team1 else team2
   loser <- if (team1_wins) team2 else team1
 
-  # Simulate margin (simplified - just for display)
-  margin_type <- sample(c("runs", "wickets"), 1, prob = c(0.5, 0.5))
-
-  if (margin_type == "runs") {
+  # Margin type is deterministic in cricket:
+  # Team batting first wins by runs, team batting second wins by wickets.
+  # Convention: team1 bats first.
+  if (team1_wins) {
     margin <- sample(1:50, 1, prob = stats::dnorm(1:50, mean = 20, sd = 15))
     margin_str <- paste(margin, "runs")
   } else {

@@ -98,7 +98,7 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
   if (verbose) cli::cli_alert_info("Deleting {n_matches} matches and related data...")
 
   # Build SQL IN clause
-  match_ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+  match_ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
 
   # Tables to delete from, in order (to handle foreign keys if any)
   tables_with_match_id <- c(

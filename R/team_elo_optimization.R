@@ -146,10 +146,14 @@ calculate_elos_for_optimization <- function(matches, k_max, k_min, k_halflife, c
       # Team 1 won: boost t1's K for beating strong opponent, reduce t2's penalty
       k1_modifier <- 1 + max(0, t1_opp_strength * opp_k_boost)
       k2_modifier <- 1 - max(0, t1_opp_strength * opp_k_reduce)
-    } else {
+    } else if (actual1 == 0) {
       # Team 2 won: boost t2's K for beating strong opponent, reduce t1's penalty
       k1_modifier <- 1 - max(0, t2_opp_strength * opp_k_reduce)
       k2_modifier <- 1 + max(0, t2_opp_strength * opp_k_boost)
+    } else {
+      # Draw: neutral modifiers
+      k1_modifier <- 1
+      k2_modifier <- 1
     }
 
     # Clamp modifiers to reasonable range [0.5, 2.0]

@@ -467,7 +467,7 @@ parse_all_data <- function(json_data, match_info) {
             del_innings[delivery_idx] <- innings_num
             del_over[delivery_idx] <- over_num
             del_ball[delivery_idx] <- ball_num
-            del_over_ball[delivery_idx] <- over_num + ball_num / 10
+            del_over_ball[delivery_idx] <- over_num + ball_num / 100
             del_batter_id[delivery_idx] <- get_player_id(delivery$batter)
             del_bowler_id[delivery_idx] <- get_player_id(delivery$bowler)
             del_non_striker_id[delivery_idx] <- get_player_id(delivery$non_striker)

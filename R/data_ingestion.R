@@ -500,6 +500,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
+ on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = TRUE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM matches")
  DBI::dbDisconnect(conn_check, shutdown = TRUE)
  existing_ids <- existing_matches$match_id
