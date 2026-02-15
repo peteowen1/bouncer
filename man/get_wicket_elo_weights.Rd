@@ -17,3 +17,8 @@ Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
 \description{
 Get Wicket ELO attribution weights for format-gender
 }
+\examples{
+get_wicket_elo_weights("t20")
+get_wicket_elo_weights("test", gender = "female")
+
+}

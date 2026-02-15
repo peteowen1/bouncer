@@ -19,3 +19,8 @@ Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
 \description{
 Get Skill Index Attribution Weights
 }
+\examples{
+get_skill_weights("t20")
+get_skill_weights("test", skill_type = "wicket")
+
+}

@@ -39,6 +39,13 @@
 #' @return Data frame with columns: delivery_id, agnostic_expected_runs,
 #'   agnostic_expected_wicket. Missing deliveries get format defaults.
 #'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' baselines <- get_agnostic_baselines(conn, c("64012_India_1_005_03"), "t20")
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
   format <- tolower(format)
@@ -626,6 +633,12 @@ update_3way_wicket_elos <- function(actual_wicket,
 #' @param elo Numeric. Current or updated ELO rating.
 #'
 #' @return Numeric. Bounded ELO rating.
+#'
+#' @examples
+#' bound_player_elo(1500)
+#' bound_player_elo(2000)  # Capped to max
+#' bound_player_elo(800)   # Raised to min
+#'
 #' @export
 bound_player_elo <- function(elo) {
   if (!THREE_WAY_APPLY_BOUNDS) {
@@ -646,6 +659,11 @@ bound_player_elo <- function(elo) {
 #' @param elo Numeric. Current or updated venue ELO rating.
 #'
 #' @return Numeric. Bounded venue ELO rating.
+#'
+#' @examples
+#' bound_venue_elo(1400)
+#' bound_venue_elo(1800)  # Capped to max
+#'
 #' @export
 bound_venue_elo <- function(elo) {
   if (!THREE_WAY_APPLY_BOUNDS) {
@@ -1121,6 +1139,14 @@ build_league_running_averages <- function(conn, format, gender) {
 #'
 #' @return Numeric. The blended expected runs baseline for this league/date.
 #'
+#' @examples
+#' \dontrun{
+#' league_lookup <- build_league_running_averages(conn, "t20")
+#' baseline <- get_league_baseline_as_of(
+#'   "Indian Premier League", "2024-04-01", league_lookup, 1.138
+#' )
+#' }
+#'
 #' @export
 get_league_baseline_as_of <- function(event_name,
                                        match_date,
@@ -1168,6 +1194,11 @@ get_league_baseline_as_of <- function(event_name,
 #' @param match_type Character. The match type (e.g., "T20", "IT20", "Test").
 #'
 #' @return Numeric. The starting ELO for players debuting in this event.
+#'
+#' @examples
+#' get_league_starting_elo("Indian Premier League")
+#' get_league_starting_elo("Big Bash League")
+#'
 #' @export
 get_league_starting_elo <- function(event_name, match_type = NULL) {
   # Handle NULL/NA

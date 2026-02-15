@@ -19,3 +19,11 @@ Logical. TRUE if model file exists.
 \description{
 Checks if a model file exists in the models directory.
 }
+\examples{
+\dontrun{
+model_exists("agnostic", "shortform")
+model_exists("full", "longform")
+model_exists("margin", "t20")
+}
+
+}

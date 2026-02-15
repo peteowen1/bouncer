@@ -742,6 +742,15 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
 #'
 #' @return Data frame of team skill indices.
 #'
+#' @examples
+#' \dontrun{
+#' # Load T20 team skills
+#' t20_teams <- load_team_skill("t20")
+#'
+#' # Load all formats
+#' all_teams <- load_team_skill("all")
+#' }
+#'
 #' @export
 load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
   source <- match.arg(source)
@@ -806,6 +815,15 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
 #' @inheritParams load_player_skill
 #'
 #' @return Data frame of venue skill indices.
+#'
+#' @examples
+#' \dontrun{
+#' # Load T20 venue skills
+#' t20_venues <- load_venue_skill("t20")
+#'
+#' # Load all formats
+#' all_venues <- load_venue_skill("all")
+#' }
 #'
 #' @export
 load_venue_skill <- function(match_type = "all", source = c("local", "remote")) {

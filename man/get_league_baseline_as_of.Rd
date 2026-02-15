@@ -31,3 +31,12 @@ Looks up the league's running average and calculates the blended baseline
 for a specific match date. Uses the most recent data BEFORE the match date
 to prevent data leakage.
 }
+\examples{
+\dontrun{
+league_lookup <- build_league_running_averages(conn, "t20")
+baseline <- get_league_baseline_as_of(
+  "Indian Premier League", "2024-04-01", league_lookup, 1.138
+)
+}
+
+}

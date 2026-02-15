@@ -20,3 +20,12 @@ Data frame with simulated standings
 Simulates a complete season using pre-match win probabilities.
 For each match, simulates the outcome based on the ELO-derived win probability.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+fixtures <- get_season_fixtures("Indian Premier League", "2024", conn)
+standings <- simulate_season(fixtures)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

@@ -17,3 +17,8 @@ Numeric value
 \description{
 Get runs per 100 ELO points for format-gender
 }
+\examples{
+get_runs_per_100_elo("t20")
+get_runs_per_100_elo("odi")
+
+}

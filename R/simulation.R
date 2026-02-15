@@ -54,6 +54,20 @@
 #' \code{\link{simulate_match_ballbyball}} to simulate a full match,
 #' \code{\link{load_full_model}} to load the prediction model
 #'
+#' @examples
+#' \dontrun{
+#' model <- load_full_model("shortform")
+#' state <- list(format = "t20", innings = 1, over = 5, ball = 3,
+#'               wickets_fallen = 1, runs_scored = 42)
+#' player <- list(batter_scoring_index = 1.3, batter_survival_rate = 0.97,
+#'                bowler_economy_index = 1.2, bowler_strike_rate = 0.03)
+#' team <- list(batting_team_runs_skill = 0.05, batting_team_wicket_skill = 0,
+#'              bowling_team_runs_skill = -0.02, bowling_team_wicket_skill = 0)
+#' venue <- list(venue_run_rate = 0, venue_wicket_rate = 0,
+#'               venue_boundary_rate = 0.15, venue_dot_rate = 0.35)
+#' result <- simulate_delivery(model, state, player, team, venue)
+#' }
+#'
 #' @export
 simulate_delivery <- function(model, match_state, player_skills, team_skills,
                                venue_skills, mode = c("categorical", "expected")) {
@@ -160,6 +174,22 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 #' @seealso
 #' \code{\link{simulate_delivery}} for single-ball simulation,
 #' \code{\link{simulate_match_ballbyball}} to simulate a full match
+#'
+#' @examples
+#' \dontrun{
+#' model <- load_full_model("shortform")
+#' batters <- create_default_batters(11, "t20")
+#' bowlers <- create_default_bowlers(6, "t20")
+#' bat_skills <- list(runs_skill = 0.05, wicket_skill = 0)
+#' bowl_skills <- list(runs_skill = -0.02, wicket_skill = 0)
+#' venue <- list(venue_run_rate = 0, venue_wicket_rate = 0,
+#'               venue_boundary_rate = 0.15, venue_dot_rate = 0.35)
+#' result <- simulate_innings(model, format = "t20", innings = 1,
+#'                            batting_team_skills = bat_skills,
+#'                            bowling_team_skills = bowl_skills,
+#'                            venue_skills = venue,
+#'                            batters = batters, bowlers = bowlers)
+#' }
 #'
 #' @export
 simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
@@ -321,6 +351,15 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
 #' \code{\link{simulate_innings}} for single-innings simulation,
 #' \code{\link{simulate_delivery}} for ball-by-ball control
 #'
+#' @examples
+#' \dontrun{
+#' model <- load_full_model("shortform")
+#' result <- quick_match_simulation(model, format = "t20",
+#'                                  team1_skill = 0.3, team2_skill = -0.1)
+#' result$winner
+#' result$margin
+#' }
+#'
 #' @export
 simulate_match_ballbyball <- function(model, format = "t20",
                                        team1_batters, team1_bowlers,
@@ -479,6 +518,15 @@ create_default_bowlers <- function(n = 6, format = "t20") {
 #' @param mode Character. "categorical" or "expected"
 #'
 #' @return Match result from simulate_match_ballbyball()
+#'
+#' @examples
+#' \dontrun{
+#' model <- load_full_model("shortform")
+#' result <- quick_match_simulation(model, format = "t20")
+#' result <- quick_match_simulation(model, format = "odi",
+#'                                  team1_skill = 0.5, team2_skill = -0.3)
+#' }
+#'
 #' @export
 quick_match_simulation <- function(model, format = "t20",
                                     team1_skill = 0, team2_skill = 0,
@@ -549,6 +597,16 @@ quick_match_simulation <- function(model, format = "t20",
 #' @param model_version Character. Model version to use (default "v1.0")
 #'
 #' @return List with simulation configuration
+#'
+#' @examples
+#' create_simulation_config()
+#' create_simulation_config(
+#'   simulation_type = "match",
+#'   event_name = "Big Bash League",
+#'   season = "2025",
+#'   n_simulations = 100
+#' )
+#'
 #' @export
 create_simulation_config <- function(
     simulation_type = "season",
@@ -969,6 +1027,15 @@ elo_win_probability <- function(team1_elo, team2_elo, divisor = 400) {
 #' @param points_for_loss Integer. Points awarded for a loss (default 0)
 #'
 #' @return Data frame with simulated standings
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' fixtures <- get_season_fixtures("Indian Premier League", "2024", conn)
+#' standings <- simulate_season(fixtures)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 simulate_season <- function(fixtures, points_for_win = 2, points_for_loss = 0) {
   # Get all teams
@@ -1026,6 +1093,15 @@ simulate_season <- function(fixtures, points_for_win = 2, points_for_loss = 0) {
 #' @param progress Logical. Show progress bar (default TRUE)
 #'
 #' @return Data frame with aggregated probabilities per team
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' fixtures <- get_season_fixtures("Indian Premier League", "2024", conn)
+#' results <- simulate_season_n(fixtures, n_simulations = 1000, seed = 42)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 simulate_season_n <- function(fixtures, n_simulations = 1000, seed = NULL,
                                progress = TRUE) {
@@ -1134,6 +1210,18 @@ get_playoff_teams <- function(standings, fixtures) {
 #' @param teams Data frame. Top 4 teams with columns: team, elo, position
 #'
 #' @return List with winner and path
+#'
+#' @examples
+#' \dontrun{
+#' teams <- data.frame(
+#'   team = c("Team A", "Team B", "Team C", "Team D"),
+#'   elo = c(1600, 1550, 1520, 1480),
+#'   position = 1:4
+#' )
+#' result <- simulate_ipl_playoffs(teams)
+#' result$champion
+#' }
+#'
 #' @export
 simulate_ipl_playoffs <- function(teams) {
   # Ensure teams are ordered by position

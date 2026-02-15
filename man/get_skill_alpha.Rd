@@ -36,3 +36,9 @@ Examples (Men's T20 Run):
 300 balls: alpha ~ 0.03 (halfway to min)
 1000 balls: alpha ~ 0.01 (near min, stable)
 }
+\examples{
+get_skill_alpha(0, "t20")     # New player: max alpha
+get_skill_alpha(300, "t20")   # Experienced: mid alpha
+get_skill_alpha(1000, "t20")  # Veteran: near min alpha
+
+}

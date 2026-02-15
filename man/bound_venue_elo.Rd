@@ -20,3 +20,8 @@ should be more stable over time.
 \details{
 Uses THREE_WAY_VENUE_ELO_MIN and THREE_WAY_VENUE_ELO_MAX constants.
 }
+\examples{
+bound_venue_elo(1400)
+bound_venue_elo(1800)  # Capped to max
+
+}

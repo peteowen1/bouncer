@@ -267,6 +267,14 @@ store_centrality_snapshot <- function(centrality_result, snapshot_date, format,
 #'
 #' @return List with centrality, percentile, quality_tier, snapshot_date,
 #'   unique_opponents, avg_opponent_degree, or NULL if no snapshot exists.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' result <- get_centrality_as_of("VKohli", "batter", "2024-01-15", "t20", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_centrality_as_of <- function(player_id, role, match_date, format, conn, gender = NULL) {
   get_metric_as_of(player_id, role, match_date, "centrality", format, conn, gender)
@@ -299,6 +307,14 @@ batch_get_centrality_for_match <- function(player_ids, match_date, format, conn,
 #' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Character vector of snapshot dates, or empty vector if none.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' dates <- get_centrality_snapshot_dates("t20", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_centrality_snapshot_dates <- function(format, conn, gender = NULL) {
   get_metric_snapshot_dates("centrality", format, conn, gender)
@@ -373,6 +389,14 @@ store_pagerank_snapshot <- function(pagerank_result, snapshot_date, format,
 #'
 #' @return List with pagerank, percentile, quality_tier, snapshot_date,
 #'   or NULL if no snapshot exists.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' result <- get_pagerank_as_of("SPSmith", "batter", "2024-03-01", "test", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_pagerank_as_of <- function(player_id, role, match_date, format, conn, gender = NULL) {
   get_metric_as_of(player_id, role, match_date, "pagerank", format, conn, gender)
@@ -405,6 +429,14 @@ batch_get_pagerank_for_match <- function(player_ids, match_date, format, conn, g
 #' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Character vector of snapshot dates, or empty vector if none.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' dates <- get_pagerank_snapshot_dates("odi", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_pagerank_snapshot_dates <- function(format, conn, gender = NULL) {
   get_metric_snapshot_dates("pagerank", format, conn, gender)
@@ -544,6 +576,15 @@ calculate_player_pagerank <- function(conn,
 #'
 #' @return Data frame with top players.
 #'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' pr <- calculate_player_pagerank(conn, format = "t20")
+#' top_batters <- get_top_pagerank_players(pr, role = "batter", n = 10)
+#' top_all <- get_top_pagerank_players(pr, role = "both", n = 20)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_top_pagerank_players <- function(pagerank_result, role = "both", n = 20) {
   if (role == "batter") {
@@ -612,6 +653,17 @@ compare_pagerank_elo <- function(pagerank_result, elo_ratings, role = "batter") 
 #'
 #' @param pagerank_result Result from calculate_player_pagerank().
 #' @param n_top Integer. Number of top players to show per role.
+#'
+#' @return Called for side effects (printing). Returns `NULL` invisibly.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' pr <- calculate_player_pagerank(conn, format = "t20")
+#' print_pagerank_summary(pr)
+#' print_pagerank_summary(pr, n_top = 5)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
 #'
 #' @export
 print_pagerank_summary <- function(pagerank_result, n_top = 10) {
@@ -794,6 +846,17 @@ calculate_player_centrality <- function(conn,
 #'
 #' @param centrality_result Result from calculate_player_centrality().
 #' @param n_top Integer. Number of top players to show per role.
+#'
+#' @return Called for side effects (printing). Returns `NULL` invisibly.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' cent <- calculate_player_centrality(conn, format = "t20")
+#' print_centrality_summary(cent)
+#' print_centrality_summary(cent, n_top = 5)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
 #'
 #' @export
 print_centrality_summary <- function(centrality_result, n_top = 10) {

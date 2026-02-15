@@ -51,3 +51,7 @@ This is intentional - each skill represents DIRECT contribution to wicket probab
 Batter wicket skill is positive if they get out MORE often (bad for batter).
 Bowler wicket skill is positive if they take MORE wickets (good for bowler).
 }
+\examples{
+calculate_expected_wicket_skill(0.054, 0.01, 0.02, 0.005, 0.0)
+
+}

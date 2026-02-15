@@ -19,3 +19,9 @@ Numeric. Bounded skill value.
 \description{
 Clips skill to soft bounds to prevent extreme values.
 }
+\examples{
+bound_skill(0.3, "run", "player")
+bound_skill(0.8, "run", "player")  # Capped to max
+bound_skill(0.01, "wicket", "venue")
+
+}

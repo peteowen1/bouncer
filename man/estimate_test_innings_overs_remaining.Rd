@@ -34,3 +34,17 @@ For Test matches, estimates how many overs might be bowled in the current
 innings based on typical innings lengths and declarations.
 This is inherently uncertain and uses heuristics.
 }
+\examples{
+# First innings, early in the match
+estimate_test_innings_overs_remaining(
+  wickets_fallen = 2, current_score = 85,
+  overs_bowled = 30, innings_number = 1
+)
+
+# Third innings with large lead (likely declaration)
+estimate_test_innings_overs_remaining(
+  wickets_fallen = 3, current_score = 350,
+  overs_bowled = 80, innings_number = 3, lead = 320
+)
+
+}

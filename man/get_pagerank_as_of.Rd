@@ -26,3 +26,11 @@ or NULL if no snapshot exists.
 \description{
 Returns a player's PageRank from the most recent snapshot BEFORE the given date.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+result <- get_pagerank_as_of("SPSmith", "batter", "2024-03-01", "test", conn)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

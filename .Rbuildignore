@@ -13,3 +13,6 @@
 ^\.claude$
 ^\.github$
 ^run_test\.R$
+^run_check\.R$
+^tmp_bulk_t20wc\.R$
+^cran-comments\.md$

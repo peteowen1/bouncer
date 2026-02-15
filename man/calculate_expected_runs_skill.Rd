@@ -40,3 +40,7 @@ batter, bowler, and venue skill indices.
 Formula:
 expected_runs = baseline + combined_skill_effect
 }
+\examples{
+calculate_expected_runs_skill(1.1, 0.2, -0.1, 0.05, 0.0)
+
+}

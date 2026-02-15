@@ -60,6 +60,16 @@ List with match summary:
 \description{
 Simulates a complete match ball-by-ball using the full model.
 }
+\examples{
+\dontrun{
+model <- load_full_model("shortform")
+result <- quick_match_simulation(model, format = "t20",
+                                 team1_skill = 0.3, team2_skill = -0.1)
+result$winner
+result$margin
+}
+
+}
 \seealso{
 \code{\link{simulate_innings}} for single-innings simulation,
 \code{\link{simulate_delivery}} for ball-by-ball control

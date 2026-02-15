@@ -60,6 +60,23 @@ List with innings summary:
 \description{
 Simulates a complete innings ball-by-ball.
 }
+\examples{
+\dontrun{
+model <- load_full_model("shortform")
+batters <- create_default_batters(11, "t20")
+bowlers <- create_default_bowlers(6, "t20")
+bat_skills <- list(runs_skill = 0.05, wicket_skill = 0)
+bowl_skills <- list(runs_skill = -0.02, wicket_skill = 0)
+venue <- list(venue_run_rate = 0, venue_wicket_rate = 0,
+              venue_boundary_rate = 0.15, venue_dot_rate = 0.35)
+result <- simulate_innings(model, format = "t20", innings = 1,
+                           batting_team_skills = bat_skills,
+                           bowling_team_skills = bowl_skills,
+                           venue_skills = venue,
+                           batters = batters, bowlers = bowlers)
+}
+
+}
 \seealso{
 \code{\link{simulate_delivery}} for single-ball simulation,
 \code{\link{simulate_match_ballbyball}} to simulate a full match

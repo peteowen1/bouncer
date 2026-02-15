@@ -247,6 +247,11 @@ calculate_weighted_log_loss <- function(actual, predicted, weights, eps = 1e-7) 
 #' @param k_halflife Matches until K decays halfway
 #'
 #' @return K factor value
+#'
+#' @examples
+#' get_dynamic_k(0, k_max = 40, k_min = 20, k_halflife = 50)
+#' get_dynamic_k(100, k_max = 40, k_min = 20, k_halflife = 50)
+#'
 #' @export
 get_dynamic_k <- function(matches_played, k_max, k_min, k_halflife) {
   k_min + (k_max - k_min) * exp(-matches_played / k_halflife)

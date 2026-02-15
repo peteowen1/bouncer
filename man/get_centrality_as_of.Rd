@@ -26,3 +26,11 @@ unique_opponents, avg_opponent_degree, or NULL if no snapshot exists.
 \description{
 Returns a player's centrality from the most recent snapshot BEFORE the given date.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+result <- get_centrality_as_of("VKohli", "batter", "2024-01-15", "t20", conn)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

@@ -17,3 +17,13 @@ Data frame of venue skill indices.
 \description{
 Load venue skill indices for a specific format or all formats.
 }
+\examples{
+\dontrun{
+# Load T20 venue skills
+t20_venues <- load_venue_skill("t20")
+
+# Load all formats
+all_venues <- load_venue_skill("all")
+}
+
+}

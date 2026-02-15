@@ -298,6 +298,16 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_ind
 #' @param create Logical. Whether to create directory if not found. Default TRUE.
 #'
 #' @return Character string with directory path
+#'
+#' @examples
+#' \dontrun{
+#' # Find existing bouncerdata directory
+#' data_dir <- find_bouncerdata_dir(create = FALSE)
+#'
+#' # Find or create bouncerdata directory
+#' data_dir <- find_bouncerdata_dir()
+#' }
+#'
 #' @export
 find_bouncerdata_dir <- function(create = TRUE) {
   cwd <- normalizePath(getwd(), winslash = "/")

@@ -35,3 +35,13 @@ List with simulation configuration
 \description{
 Creates a configuration object for simulations.
 }
+\examples{
+create_simulation_config()
+create_simulation_config(
+  simulation_type = "match",
+  event_name = "Big Bash League",
+  season = "2025",
+  n_simulations = 100
+)
+
+}

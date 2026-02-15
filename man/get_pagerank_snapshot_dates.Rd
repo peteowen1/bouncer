@@ -19,3 +19,11 @@ Character vector of snapshot dates, or empty vector if none.
 \description{
 Returns all available snapshot dates for a format.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+dates <- get_pagerank_snapshot_dates("odi", conn)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

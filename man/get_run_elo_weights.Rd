@@ -17,3 +17,8 @@ Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
 \description{
 Get Run ELO attribution weights for format-gender
 }
+\examples{
+get_run_elo_weights("t20")
+get_run_elo_weights("odi", gender = "female")
+
+}

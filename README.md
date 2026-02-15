@@ -20,7 +20,10 @@ Cricket analytics R package with a **5-component prediction pipeline** featuring
 ## Installation
 
 ```r
-# Install from GitHub
+# Install from CRAN
+install.packages("bouncer")
+
+# Or install the development version from GitHub
 remotes::install_github("peteowen1/bouncer")
 ```
 

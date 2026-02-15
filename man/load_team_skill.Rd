@@ -17,3 +17,13 @@ Data frame of team skill indices.
 \description{
 Load team skill indices for a specific format or all formats.
 }
+\examples{
+\dontrun{
+# Load T20 team skills
+t20_teams <- load_team_skill("t20")
+
+# Load all formats
+all_teams <- load_team_skill("all")
+}
+
+}

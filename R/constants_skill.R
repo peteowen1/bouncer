@@ -368,6 +368,11 @@ SKILL_VENUE_WICKET_LOW <- -0.01     # Batter-friendly venue
 #' @param gender Gender (male or female)
 #' @param skill_type "run" or "wicket"
 #' @return Named list with alpha_max, alpha_min, halflife
+#'
+#' @examples
+#' get_skill_alpha_params("t20")
+#' get_skill_alpha_params("odi", skill_type = "wicket")
+#'
 #' @export
 get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
@@ -386,6 +391,11 @@ get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") 
 #' @param gender Gender (male or female)
 #' @param skill_type "run" or "wicket"
 #' @return Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
+#'
+#' @examples
+#' get_skill_weights("t20")
+#' get_skill_weights("test", skill_type = "wicket")
+#'
 #' @export
 get_skill_weights <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
@@ -403,6 +413,11 @@ get_skill_weights <- function(format, gender = "male", skill_type = "run") {
 #'
 #' @param format Format (T20, ODI, TEST)
 #' @return Numeric decay rate per delivery
+#'
+#' @examples
+#' get_skill_decay("t20")
+#' get_skill_decay("test")
+#'
 #' @export
 get_skill_decay <- function(format) {
   format_clean <- toupper(format)

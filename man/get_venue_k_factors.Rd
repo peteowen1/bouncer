@@ -17,3 +17,8 @@ Named list with perm and session k-factor parameters
 \description{
 Get venue K-factors for format-gender
 }
+\examples{
+get_venue_k_factors("t20")
+get_venue_k_factors("test")
+
+}

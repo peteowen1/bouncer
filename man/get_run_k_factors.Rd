@@ -17,3 +17,8 @@ Named list with k_max, k_min, halflife
 \description{
 Get player Run K-factors for format-gender
 }
+\examples{
+get_run_k_factors("t20")
+get_run_k_factors("test", gender = "female")
+
+}

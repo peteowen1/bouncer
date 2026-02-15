@@ -17,3 +17,8 @@ Numeric value (400 or 200)
 \description{
 Get wicket ELO divisor for format-gender
 }
+\examples{
+get_wicket_elo_divisor("t20")
+get_wicket_elo_divisor("t20", gender = "female")
+
+}

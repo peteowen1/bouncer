@@ -18,3 +18,8 @@ List with all parameters needed for skill index calculation.
 Constructs a parameter list for skill index calculation using
 format-gender-specific parameters.
 }
+\examples{
+build_skill_index_params("t20")
+build_skill_index_params("test", gender = "female")
+
+}
