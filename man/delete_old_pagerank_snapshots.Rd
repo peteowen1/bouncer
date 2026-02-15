@@ -14,19 +14,16 @@ delete_old_pagerank_snapshots(
 \arguments{
 \item{format}{Character. Match format: "t20", "odi", or "test".}
 
-\item{keep_months}{Integer. Months of history to retain.
-Default uses CENTRALITY_SNAPSHOT_KEEP_MONTHS constant.}
+\item{keep_months}{Integer. Months of history to retain.}
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
 Invisibly returns the number of rows deleted.
 }
 \description{
-Removes PageRank snapshots older than the retention period to save space.
-Typically called after generating new snapshots.
+Removes PageRank snapshots older than the retention period.
 }
 \keyword{internal}

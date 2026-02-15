@@ -11,21 +11,18 @@ get_pagerank_as_of(player_id, role, match_date, format, conn, gender = NULL)
 
 \item{role}{Character. "batter" or "bowler".}
 
-\item{match_date}{Date or character. The match date (PageRank must be from BEFORE this).}
+\item{match_date}{Date or character. The match date.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
 List with pagerank, percentile, quality_tier, snapshot_date,
-or NULL if no snapshot exists before that date.
+or NULL if no snapshot exists.
 }
 \description{
 Returns a player's PageRank from the most recent snapshot BEFORE the given date.
-This ensures no data leakage - we only use PageRank computed from matches
-that occurred before the current match being processed.
 }

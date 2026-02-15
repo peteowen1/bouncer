@@ -341,7 +341,7 @@ THREE_WAY_WICKET_ELO_DIVISOR_WOMENS_TEST <- 400
 # Set to 1.0 for original values, 0.1 for 10x reduction.
 # This affects PERMANENT venue K only (session resets each match anyway).
 
-THREE_WAY_VENUE_PERM_K_MULTIPLIER <- 0.1  # 10x reduction (was 1.0)
+THREE_WAY_VENUE_PERM_K_MULTIPLIER <- 0.1  # 10x reduction to prevent excessive venue drift
 
 # ============================================================================
 # VENUE DECAY HALFLIVES (Time-based decay toward replacement)

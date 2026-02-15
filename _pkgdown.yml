@@ -187,6 +187,13 @@ reference:
     - get_remote_tables
     - clear_remote_cache
     - fox_list_formats
+    - cricinfo_discover_series
+    - cricinfo_discover_matches
+    - cricinfo_list_current
+    - cricinfo_fetch_match
+    - cricinfo_fetch_matches
+    - cricinfo_combine_matches
+    - cricinfo_list_formats
 
   - title: Utilities
     desc: Additional helper functions

@@ -697,14 +697,4 @@ batch_skill_query <- function(delivery_ids, query_fn, batch_size = 10000, verbos
 }
 
 
-#' Escape SQL String Values
-#'
-#' Escapes single quotes in strings for safe SQL injection.
-#'
-#' @param x Character vector. Strings to escape
-#'
-#' @return Character vector. Escaped strings
-#' @keywords internal
-escape_sql_strings <- function(x) {
-  gsub("'", "''", x)
-}
+# escape_sql_strings() moved to validation_helpers.R (single canonical location)

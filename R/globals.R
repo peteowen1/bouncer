@@ -565,6 +565,12 @@ utils::globalVariables(c(
   "CENTRALITY_ALPHA",
   "CENTRALITY_MEAN_TYPE",
   "CENTRALITY_MIN_DELIVERIES",
+  # Quality tier thresholds
+  "QUALITY_TIER_ELITE",
+  "QUALITY_TIER_VERY_GOOD",
+  "QUALITY_TIER_ABOVE_AVERAGE",
+  "QUALITY_TIER_AVERAGE",
+  "QUALITY_TIER_BELOW_AVERAGE",
   # Centrality outputs
   "batter_centrality",
   "bowler_centrality",

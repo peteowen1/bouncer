@@ -479,13 +479,13 @@ classify_centrality_tiers <- function(centrality_scores, n_players = NULL) {
   ranks <- rank(centrality_scores, ties.method = "average")
   percentiles <- ranks / n_players * 100
 
-  # Assign tiers based on percentiles (using data.table::fcase for performance)
+  # Assign tiers based on percentiles (thresholds from constants_skill.R)
   quality_tier <- data.table::fcase(
-    percentiles >= 95, "Elite",
-    percentiles >= 80, "Very Good",
-    percentiles >= 60, "Above Average",
-    percentiles >= 40, "Average",
-    percentiles >= 20, "Below Average",
+    percentiles >= QUALITY_TIER_ELITE, "Elite",
+    percentiles >= QUALITY_TIER_VERY_GOOD, "Very Good",
+    percentiles >= QUALITY_TIER_ABOVE_AVERAGE, "Above Average",
+    percentiles >= QUALITY_TIER_AVERAGE, "Average",
+    percentiles >= QUALITY_TIER_BELOW_AVERAGE, "Below Average",
     default = "Weak"
   )
 
@@ -750,13 +750,13 @@ classify_pagerank_tiers <- function(pagerank_scores,
   ranks <- rank(pagerank_scores, ties.method = "average")
   percentiles <- ranks / n_players * 100
 
-  # Assign tiers based on percentiles
+  # Assign tiers based on percentiles (thresholds from constants_skill.R)
   quality_tier <- dplyr::case_when(
-    percentiles >= 95 ~ "Elite",
-    percentiles >= 80 ~ "Very Good",
-    percentiles >= 60 ~ "Above Average",
-    percentiles >= 40 ~ "Average",
-    percentiles >= 20 ~ "Below Average",
+    percentiles >= QUALITY_TIER_ELITE ~ "Elite",
+    percentiles >= QUALITY_TIER_VERY_GOOD ~ "Very Good",
+    percentiles >= QUALITY_TIER_ABOVE_AVERAGE ~ "Above Average",
+    percentiles >= QUALITY_TIER_AVERAGE ~ "Average",
+    percentiles >= QUALITY_TIER_BELOW_AVERAGE ~ "Below Average",
     TRUE ~ "Weak"
   )
 

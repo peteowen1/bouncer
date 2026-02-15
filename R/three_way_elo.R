@@ -1058,7 +1058,7 @@ build_league_running_averages <- function(conn, format, gender) {
   # Determine match types for this format using central helper
   match_types <- get_match_types_for_format(format)
   match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
-  gender_escaped <- escape_sql_value(gender)
+  gender_escaped <- escape_sql_strings(gender)
 
   query <- sprintf("
     WITH match_totals AS (

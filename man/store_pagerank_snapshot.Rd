@@ -16,14 +16,13 @@ store_pagerank_snapshot(
 \arguments{
 \item{pagerank_result}{Result from calculate_player_pagerank().}
 
-\item{snapshot_date}{Date. The date of this snapshot (typically last match date).}
+\item{snapshot_date}{Date. The date of this snapshot.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 
 \item{verbose}{Logical. Print progress messages. Default TRUE.}
 }
@@ -32,7 +31,5 @@ Invisibly returns the number of rows inserted.
 }
 \description{
 Stores a dated PageRank snapshot for later lookup during ELO calculation.
-The snapshot_date should be the date of the most recent match INCLUDED
-in the PageRank calculation.
 }
 \keyword{internal}

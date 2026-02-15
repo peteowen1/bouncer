@@ -11,13 +11,11 @@ get_pagerank_snapshot_dates(format, conn, gender = NULL)
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
 Character vector of snapshot dates, or empty vector if none.
 }
 \description{
 Returns all available snapshot dates for a format.
-Useful for checking snapshot coverage or debugging.
 }

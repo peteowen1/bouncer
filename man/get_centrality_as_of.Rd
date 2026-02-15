@@ -11,21 +11,18 @@ get_centrality_as_of(player_id, role, match_date, format, conn, gender = NULL)
 
 \item{role}{Character. "batter" or "bowler".}
 
-\item{match_date}{Date or character. The match date (centrality must be from BEFORE this).}
+\item{match_date}{Date or character. The match date.}
 
 \item{format}{Character. Match format: "t20", "odi", or "test".}
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
 List with centrality, percentile, quality_tier, snapshot_date,
-unique_opponents, avg_opponent_degree, or NULL if no snapshot exists before that date.
+unique_opponents, avg_opponent_degree, or NULL if no snapshot exists.
 }
 \description{
 Returns a player's centrality from the most recent snapshot BEFORE the given date.
-This ensures no data leakage - we only use centrality computed from matches
-that occurred before the current match being processed.
 }
