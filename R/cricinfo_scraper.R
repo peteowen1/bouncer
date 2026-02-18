@@ -23,6 +23,23 @@ CRICINFO_FORMATS <- list(
 )
 
 # ============================================================================
+# INTERNAL HELPERS
+# ============================================================================
+
+#' Clean a list row for data.frame conversion
+#'
+#' Replaces NULL, empty, and nested list elements with NA so the row can be
+#' safely passed to as.data.frame().
+#' @param row Named list from parsed API response
+#' @return Named list with problematic elements replaced by NA
+#' @keywords internal
+clean_list_row <- function(row) {
+  lapply(row, function(x) {
+    if (is.null(x) || length(x) == 0 || is.list(x)) NA else x
+  })
+}
+
+# ============================================================================
 # SESSION MANAGEMENT
 # ============================================================================
 
@@ -57,7 +74,10 @@ cricinfo_apply_stealth <- function(browser) {
       Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
       Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
     ")
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    message("Stealth script injection failed: ", conditionMessage(e))
+    NULL
+  })
 
   # Set realistic user-agent
   tryCatch({
@@ -67,7 +87,10 @@ cricinfo_apply_stealth <- function(browser) {
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
       )
     )
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    message("User-agent override failed: ", conditionMessage(e))
+    NULL
+  })
 
   invisible(NULL)
 }
@@ -121,7 +144,10 @@ cricinfo_extract_nextdata <- function(browser) {
       returnByValue = TRUE, timeout_ = 30
     )
     jsonlite::fromJSON(result$result$value, simplifyVector = FALSE)
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    message("__NEXT_DATA__ extraction failed: ", conditionMessage(e))
+    NULL
+  })
 }
 
 #' Navigate to Page and Extract __NEXT_DATA__
@@ -257,15 +283,15 @@ cricinfo_token_valid <- function(token, buffer_minutes = 5) {
 #' @param series_id Integer series objectId
 #' @param match_id Integer match objectId
 #' @param scroll_pause Seconds between scroll actions (default 1.5)
-#' @param max_scrolls Maximum number of scroll actions (default 30)
-#' @param stale_threshold Stop after this many scrolls with no new data (default 6)
+#' @param max_scrolls Maximum number of scroll actions (default 150)
+#' @param stale_threshold Stop after this many scrolls with no new data (default 10)
 #' @param all_innings Logical. Whether to capture all innings (default TRUE)
 #' @return List with $initial_data (from __NEXT_DATA__) and $api_responses (from scroll)
 #' @keywords internal
 cricinfo_capture_commentary <- function(browser, series_id, match_id,
                                          scroll_pause = 1.5,
-                                         max_scrolls = 30,
-                                         stale_threshold = 6,
+                                         max_scrolls = 150,
+                                         stale_threshold = 10,
                                          all_innings = TRUE) {
   url <- cricinfo_match_url(series_id, match_id, "ball-by-ball-commentary")
 
@@ -285,7 +311,10 @@ cricinfo_capture_commentary <- function(browser, series_id, match_id,
           capture_env$count <- capture_env$count + 1
           capture_env$responses[[capture_env$count]] <- body$body
         }
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        message("CDP getResponseBody failed: ", conditionMessage(e))
+        NULL
+      })
     }
   }
 
@@ -303,6 +332,16 @@ cricinfo_capture_commentary <- function(browser, series_id, match_id,
   # Extract __NEXT_DATA__ for initial commentary + match metadata
   initial_data <- cricinfo_extract_nextdata(browser)
 
+  # Early exit: if page has no comments and no innings structure, commentary
+  # is not available for this match — skip scrolling entirely
+  has_comments <- !is.null(initial_data$content$comments) &&
+    length(initial_data$content$comments) > 0
+  has_innings <- !is.null(initial_data$content$innings) &&
+    length(initial_data$content$innings) > 0
+  if (!has_comments && !has_innings) {
+    return(list(initial_data = initial_data, api_responses = list()))
+  }
+
   # Determine how many innings to capture
   num_innings <- 1L
   current_inn <- tryCatch(
@@ -314,21 +353,56 @@ cricinfo_capture_commentary <- function(browser, series_id, match_id,
   }
 
   # Helper: scroll one innings worth of commentary
+  # Tracks page height growth to distinguish "still loading" from "truly done"
   scroll_innings <- function() {
-    prev <- capture_env$count
+    prev_count <- capture_env$count
     stale <- 0
+    prev_height <- tryCatch({
+      r <- browser$Runtime$evaluate("document.documentElement.scrollHeight",
+                                     returnByValue = TRUE, timeout_ = 5)
+      as.numeric(r$result$value)
+    }, error = function(e) 0)
+
     for (i in seq_len(max_scrolls)) {
       tryCatch(
         browser$Runtime$evaluate("window.scrollBy(0, 1500)"),
         error = function(e) NULL
       )
       Sys.sleep(scroll_pause)
-      if (capture_env$count > prev) {
-        prev <- capture_env$count
+
+      # Check if new API responses arrived
+      if (capture_env$count > prev_count) {
+        prev_count <- capture_env$count
         stale <- 0
-      } else {
-        stale <- stale + 1
+        next
       }
+
+      # Check if page height grew (content loading but API not yet captured)
+      cur_height <- tryCatch({
+        r <- browser$Runtime$evaluate("document.documentElement.scrollHeight",
+                                       returnByValue = TRUE, timeout_ = 5)
+        as.numeric(r$result$value)
+      }, error = function(e) prev_height)
+
+      if (cur_height > prev_height) {
+        prev_height <- cur_height
+        stale <- 0
+        next
+      }
+
+      # Check if we're at the bottom — be extra patient for lazy content
+      at_bottom <- tryCatch({
+        r <- browser$Runtime$evaluate(
+          "(window.scrollY + window.innerHeight) >= (document.documentElement.scrollHeight - 100)",
+          returnByValue = TRUE, timeout_ = 5)
+        isTRUE(r$result$value)
+      }, error = function(e) FALSE)
+
+      if (at_bottom) {
+        Sys.sleep(scroll_pause)  # extra wait for content to grow
+      }
+
+      stale <- stale + 1
       if (stale >= stale_threshold) break
     }
   }
@@ -336,46 +410,134 @@ cricinfo_capture_commentary <- function(browser, series_id, match_id,
   # Capture current innings
   scroll_innings()
 
+  # Build innings-to-team mapping from initial data
+  # The dropdown shows team abbreviations (e.g. "CAN", "UAE"), not "1st Innings"
+  innings_teams <- list()
+  if (!is.null(initial_data$content$innings)) {
+    for (inn in initial_data$content$innings) {
+      inn_num <- inn$inningNumber
+      team_name <- inn$team$abbreviation %||% inn$team$name %||% ""
+      if (!is.null(inn_num) && nzchar(team_name)) {
+        innings_teams[[as.character(inn_num)]] <- team_name
+      }
+    }
+  }
+
+  # Helper: switch to a specific innings via team dropdown
+  # Uses CDP Input.dispatchMouseEvent for clicks (isTrusted=true required by React)
+  # Must remove marketing overlays (wzrk-overlay) that block clicks after scrolling
+  switch_innings <- function(target_inn) {
+    target_team <- innings_teams[[as.character(target_inn)]]
+    if (is.null(target_team) || !nzchar(target_team)) return(FALSE)
+
+    # Scroll to top and remove any overlays that block clicks
+    tryCatch(browser$Runtime$evaluate("window.scrollTo(0, 0)"), error = function(e) NULL)
+    Sys.sleep(0.5)
+    tryCatch(browser$Runtime$evaluate(
+      'document.querySelectorAll(".wzrk-overlay, [class*=overlay]").forEach(function(el) { if (window.getComputedStyle(el).position === "fixed") el.remove(); })'
+    ), error = function(e) NULL)
+
+    # Step 1: Find the innings dropdown button by team abbreviation
+    all_teams_json <- jsonlite::toJSON(tolower(unique(unlist(innings_teams))), auto_unbox = FALSE)
+    btn_coords <- tryCatch({
+      js <- sprintf('
+        (function() {
+          var teams = %s;
+          var btns = document.querySelectorAll("button");
+          for (var b of btns) {
+            var text = b.textContent.trim().toLowerCase();
+            var rect = b.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            if (teams.indexOf(text) >= 0) {
+              return {x: rect.x + rect.width / 2, y: rect.y + rect.height / 2};
+            }
+          }
+          return null;
+        })()
+      ', all_teams_json)
+      r <- browser$Runtime$evaluate(js, returnByValue = TRUE, timeout_ = 5)
+      r$result$value
+    }, error = function(e) NULL)
+
+    if (is.null(btn_coords)) return(FALSE)
+
+    # CDP click on button (needs isTrusted=true for React)
+    tryCatch({
+      browser$Input$dispatchMouseEvent(type = "mousePressed", x = btn_coords$x,
+                                       y = btn_coords$y, button = "left", clickCount = 1L)
+      Sys.sleep(0.05)
+      browser$Input$dispatchMouseEvent(type = "mouseReleased", x = btn_coords$x,
+                                       y = btn_coords$y, button = "left", clickCount = 1L)
+    }, error = function(e) NULL)
+    Sys.sleep(1)  # Wait for dropdown to appear
+
+    # Step 2: Find the target team <li> item and click it via CDP
+    safe_target <- jsonlite::toJSON(target_team, auto_unbox = TRUE)
+    item_coords <- tryCatch({
+      js <- sprintf('
+        (function() {
+          var target = %s.toLowerCase();
+          var items = document.querySelectorAll("li");
+          for (var item of items) {
+            var text = item.textContent.trim().toLowerCase();
+            var rect = item.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && text === target) {
+              return {x: rect.x + rect.width / 2, y: rect.y + rect.height / 2};
+            }
+          }
+          for (var item of items) {
+            var text = item.textContent.trim().toLowerCase();
+            var rect = item.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0 && text.includes(target)) {
+              return {x: rect.x + rect.width / 2, y: rect.y + rect.height / 2};
+            }
+          }
+          return null;
+        })()
+      ', safe_target)
+      r <- browser$Runtime$evaluate(js, returnByValue = TRUE, timeout_ = 5)
+      r$result$value
+    }, error = function(e) NULL)
+
+    if (is.null(item_coords)) {
+      # Dismiss dropdown
+      tryCatch({
+        browser$Input$dispatchMouseEvent(type = "mousePressed", x = 10, y = 10,
+                                         button = "left", clickCount = 1L)
+        Sys.sleep(0.05)
+        browser$Input$dispatchMouseEvent(type = "mouseReleased", x = 10, y = 10,
+                                         button = "left", clickCount = 1L)
+      }, error = function(e) NULL)
+      return(FALSE)
+    }
+
+    tryCatch({
+      browser$Input$dispatchMouseEvent(type = "mousePressed", x = item_coords$x,
+                                       y = item_coords$y, button = "left", clickCount = 1L)
+      Sys.sleep(0.05)
+      browser$Input$dispatchMouseEvent(type = "mouseReleased", x = item_coords$x,
+                                       y = item_coords$y, button = "left", clickCount = 1L)
+    }, error = function(e) NULL)
+    return(TRUE)
+  }
+
   # Switch to other innings and capture those too
   if (all_innings && num_innings > 1) {
     for (inn in seq_len(num_innings)) {
       if (inn == current_inn) next
 
-      # Click the innings tab via JavaScript
-      switched <- tryCatch({
-        js <- sprintf('
-          (function() {
-            var tabs = document.querySelectorAll("[data-testid*=\\"innings\\"], button, [role=\\"tab\\"]");
-            for (var t of tabs) {
-              var text = t.textContent.trim();
-              if (text.match(/^(1st|2nd|3rd|4th)\\s*inn/i) && text.match(/%d/)) {
-                t.click();
-                return true;
-              }
-              if (text === "%d" || text === "Inn %d" || text === "Innings %d") {
-                t.click();
-                return true;
-              }
-            }
-            // Try ordinal matching
-            var ordinals = ["1st", "2nd", "3rd", "4th"];
-            var target = ordinals[%d - 1];
-            for (var t of tabs) {
-              if (t.textContent.trim().toLowerCase().startsWith(target)) {
-                t.click();
-                return true;
-              }
-            }
-            return false;
-          })()
-        ', inn, inn, inn, inn, inn)
-        r <- browser$Runtime$evaluate(js, returnByValue = TRUE, timeout_ = 5)
-        isTRUE(r$result$value)
-      }, error = function(e) FALSE)
+      switched <- tryCatch(switch_innings(inn), error = function(e) FALSE)
+
+      if (!switched) {
+        message(sprintf("  [innings switch] Could not switch to innings %d for match %d", inn, match_id))
+      }
 
       if (switched) {
         Sys.sleep(2)  # Wait for innings data to start loading
-        # Scroll back to top and then down to trigger lazy loading
+        # Remove overlays and scroll to top before scrolling new innings
+        tryCatch(browser$Runtime$evaluate(
+          'document.querySelectorAll(".wzrk-overlay, [class*=overlay]").forEach(function(el) { if (window.getComputedStyle(el).position === "fixed") el.remove(); })'
+        ), error = function(e) NULL)
         tryCatch(browser$Runtime$evaluate("window.scrollTo(0, 0)"), error = function(e) NULL)
         Sys.sleep(1)
         scroll_innings()
@@ -479,9 +641,7 @@ parse_cricinfo_balls_from_overs <- function(innings_data, match_id,
           timestamp            = to_scalar(ball$timestamp)
         )
 
-        row <- lapply(row, function(x) {
-          if (is.null(x) || length(x) == 0 || is.list(x)) NA else x
-        })
+        row <- clean_list_row(row)
         all_balls[[length(all_balls) + 1]] <- as.data.frame(row, stringsAsFactors = FALSE)
       }
     }
@@ -631,7 +791,7 @@ parse_cricinfo_scorecard <- function(data, match_id) {
           is_out        = bat$isOut %||% NA,
           minutes       = bat$minutes
         )
-        row <- lapply(row, function(x) if (is.null(x) || length(x) == 0 || is.list(x)) NA else x)
+        row <- clean_list_row(row)
         all_batting[[length(all_batting) + 1]] <- as.data.frame(row, stringsAsFactors = FALSE)
       }
     }
@@ -655,7 +815,7 @@ parse_cricinfo_scorecard <- function(data, match_id) {
           wides         = bowl$wides,
           noballs       = bowl$noballs
         )
-        row <- lapply(row, function(x) if (is.null(x) || length(x) == 0 || is.list(x)) NA else x)
+        row <- clean_list_row(row)
         all_bowling[[length(all_bowling) + 1]] <- as.data.frame(row, stringsAsFactors = FALSE)
       }
     }
@@ -713,7 +873,7 @@ parse_cricinfo_details <- function(data, match_id) {
     result          = to_scalar(match$result),
     result_text     = to_scalar(match$resultText %||% match$statusText)
   )
-  row <- lapply(row, function(x) if (is.null(x) || length(x) == 0 || is.list(x)) NA else x)
+  row <- clean_list_row(row)
   as.data.frame(row, stringsAsFactors = FALSE)
 }
 
@@ -745,7 +905,7 @@ parse_cricinfo_over_summaries <- function(data, match_id) {
         total_wickets  = ov$totalWickets %||% NA,
         is_complete    = ov$isComplete %||% NA
       )
-      row <- lapply(row, function(x) if (is.null(x) || length(x) == 0 || is.list(x)) NA else x)
+      row <- clean_list_row(row)
       all_overs[[length(all_overs) + 1]] <- as.data.frame(row, stringsAsFactors = FALSE)
     }
   }
@@ -791,7 +951,7 @@ parse_cricinfo_schedule <- function(data, series_id) {
       team2_id    = team2$team$id %||% NA,
       team2_name  = team2$team$name %||% team2$team$longName %||% NA
     )
-    row <- lapply(row, function(x) if (is.null(x) || length(x) == 0 || is.list(x)) NA else x)
+    row <- clean_list_row(row)
     all_matches[[length(all_matches) + 1]] <- as.data.frame(row, stringsAsFactors = FALSE)
   }
 
@@ -956,14 +1116,14 @@ cricinfo_discover_matches <- function(browser, series_id) {
 cricinfo_list_current <- function(browser, auth_token) {
   url <- paste0(CRICINFO_API_BASE, "/v1/pages/matches/current?lang=en&latest=true")
 
-  safe_url <- gsub('"', '\\\\"', url)
-  safe_token <- gsub('"', '\\\\"', auth_token)
+  safe_url <- jsonlite::toJSON(url, auto_unbox = TRUE)
+  safe_token <- jsonlite::toJSON(auth_token, auto_unbox = TRUE)
   js_xhr <- sprintf('
     (function() {
       try {
         var xhr = new XMLHttpRequest();
-        xhr.open("GET", "%s", false);
-        xhr.setRequestHeader("x-hsci-auth-token", "%s");
+        xhr.open("GET", %s, false);
+        xhr.setRequestHeader("x-hsci-auth-token", %s);
         xhr.send();
         if (xhr.status === 200) {
           return JSON.parse(xhr.responseText);
@@ -1075,8 +1235,14 @@ cricinfo_fetch_match <- function(browser, series_id, match_id,
     if (length(all_commentary) > 0) {
       combined <- dplyr::bind_rows(all_commentary)
       # Remove duplicates (initial data may overlap with first API response)
+      # Use timestamp to distinguish extras (wides/noballs share ball_number)
       if (nrow(combined) > 0 && "over" %in% names(combined)) {
-        combined <- combined[!duplicated(combined[, c("innings", "over", "ball_number")]), ]
+        dedup_cols <- if ("timestamp" %in% names(combined) && any(!is.na(combined$timestamp))) {
+          c("innings", "over", "ball_number", "timestamp")
+        } else {
+          c("innings", "over", "ball_number")
+        }
+        combined <- combined[!duplicated(combined[, dedup_cols]), ]
       }
       result$commentary <- combined
     }

@@ -674,10 +674,13 @@ get_simulation_seeds <- function(n, base_seed = 42) {
 #' Simulate Match Outcome
 #'
 #' Simulates a single match outcome based on win probabilities.
+#' Important: team1 is assumed to bat first. This determines margin type
+#' (team batting first wins by runs, team batting second wins by wickets).
+#' Callers must ensure team order reflects batting order.
 #'
 #' @param team1_win_prob Numeric. Probability that team1 wins (0-1)
-#' @param team1 Character. Team 1 name
-#' @param team2 Character. Team 2 name
+#' @param team1 Character. Team 1 name (batting first)
+#' @param team2 Character. Team 2 name (batting second)
 #'
 #' @return List with winner, loser, margin, and team1_won flag
 #' @keywords internal

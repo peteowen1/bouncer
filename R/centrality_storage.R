@@ -65,6 +65,33 @@ ensure_metric_history_table <- function(metric, format, conn, gender = NULL) {
 }
 
 
+#' Build SQL filter clauses for format and gender
+#' @param format Format string (t20, odi, test, or "all")
+#' @param gender Gender string (male, female, or "all")
+#' @return List with format_filter and gender_filter SQL strings
+#' @keywords internal
+build_format_gender_filters <- function(format, gender) {
+  valid_formats <- c("all", "t20", "odi", "test")
+  valid_genders <- c("all", "male", "female")
+  format <- match.arg(tolower(format), valid_formats)
+  gender <- match.arg(tolower(gender), valid_genders)
+
+  format_filter <- if (format == "all") {
+    "1=1"
+  } else {
+    glue::glue("LOWER(m.match_type) IN ('{format}', 'i{format}')")
+  }
+
+  gender_filter <- if (gender == "all") {
+    "1=1"
+  } else {
+    glue::glue("m.gender = '{gender}'")
+  }
+
+  list(format_filter = format_filter, gender_filter = gender_filter)
+}
+
+
 #' Store a metric snapshot (centrality or pagerank)
 #' @keywords internal
 store_metric_snapshot <- function(result, snapshot_date, metric, format, conn,
@@ -89,12 +116,18 @@ store_metric_snapshot <- function(result, snapshot_date, metric, format, conn,
   available_cols <- intersect(base_cols, names(combined_df))
   combined_df <- combined_df[, available_cols]
 
-  # Delete existing snapshot for this date (in case of re-run)
-  DBI::dbExecute(conn, sprintf(
-    "DELETE FROM %s WHERE snapshot_date = ?", table_name),
-    params = list(as.character(snapshot_date)))
-
-  DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
+  # Atomic replace: delete old snapshot + insert new in a single transaction
+  DBI::dbBegin(conn)
+  tryCatch({
+    DBI::dbExecute(conn, sprintf(
+      "DELETE FROM %s WHERE snapshot_date = ?", table_name),
+      params = list(as.character(snapshot_date)))
+    DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
+    DBI::dbCommit(conn)
+  }, error = function(e) {
+    DBI::dbRollback(conn)
+    cli::cli_abort("Failed to store {metric} snapshot: {conditionMessage(e)}")
+  })
 
   if (verbose) {
     cli::cli_alert_success(
@@ -211,7 +244,7 @@ delete_old_metric_snapshots <- function(metric, format,
     return(invisible(0L))
   }
 
-  cutoff_date <- Sys.Date() - (keep_months * 30)
+  cutoff_date <- seq(Sys.Date(), length.out = 2, by = paste0("-", keep_months, " months"))[2]
 
   result <- DBI::dbExecute(conn, sprintf(
     "DELETE FROM %s WHERE snapshot_date < ?", table_name),
@@ -473,19 +506,7 @@ calculate_player_pagerank <- function(conn,
     cli::cli_alert_info("Format: {format}, Gender: {gender}, Min deliveries: {min_deliveries}")
   }
 
-  # Build query based on format and gender
-  format_filter <- if (format == "all") {
-    "1=1"
-  } else {
-    format_lower <- tolower(format)
-    glue::glue("LOWER(m.match_type) IN ('{format_lower}', 'i{format_lower}')")
-  }
-
-  gender_filter <- if (gender == "all") {
-    "1=1"
-  } else {
-    glue::glue("m.gender = '{gender}'")
-  }
+  filters <- build_format_gender_filters(format, gender)
 
   query <- glue::glue("
     SELECT
@@ -496,8 +517,8 @@ calculate_player_pagerank <- function(conn,
       m.match_type
     FROM deliveries d
     JOIN matches m ON d.match_id = m.match_id
-    WHERE {format_filter}
-      AND {gender_filter}
+    WHERE {filters$format_filter}
+      AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL
       AND d.bowler_id IS NOT NULL
   ")
@@ -541,6 +562,10 @@ calculate_player_pagerank <- function(conn,
     n_players = length(matrices$batter_ids)
   )
   batter_df$deliveries <- matrices$batter_deliveries[batter_df$player_id]
+  missing_batters <- !batter_df$player_id %in% names(matrices$batter_deliveries)
+  if (any(missing_batters)) {
+    cli::cli_warn("{sum(missing_batters)} batter(s) missing from deliveries lookup in PageRank")
+  }
   batter_df$role <- "batter"
 
   bowler_df <- classify_pagerank_tiers(
@@ -548,6 +573,10 @@ calculate_player_pagerank <- function(conn,
     n_players = length(matrices$bowler_ids)
   )
   bowler_df$deliveries <- matrices$bowler_deliveries[bowler_df$player_id]
+  missing_bowlers <- !bowler_df$player_id %in% names(matrices$bowler_deliveries)
+  if (any(missing_bowlers)) {
+    cli::cli_warn("{sum(missing_bowlers)} bowler(s) missing from deliveries lookup in PageRank")
+  }
   bowler_df$role <- "bowler"
 
   list(
@@ -628,12 +657,24 @@ compare_pagerank_elo <- function(pagerank_result, elo_ratings, role = "batter") 
   if (nrow(merged) > 0 && "run_elo" %in% names(merged)) {
     elo_min <- min(merged$run_elo, na.rm = TRUE)
     elo_max <- max(merged$run_elo, na.rm = TRUE)
-    merged$elo_normalized <- (merged$run_elo - elo_min) / (elo_max - elo_min + 0.01)
+    elo_range <- elo_max - elo_min
+    if (elo_range == 0) {
+      cli::cli_warn("All ELO values are identical ({elo_min}) - normalization will produce 0.5")
+      merged$elo_normalized <- 0.5
+    } else {
+      merged$elo_normalized <- (merged$run_elo - elo_min) / elo_range
+    }
 
     # PageRank is already normalized (sums to 1), but rescale to similar range
     pr_min <- min(merged$pagerank, na.rm = TRUE)
     pr_max <- max(merged$pagerank, na.rm = TRUE)
-    merged$pr_normalized <- (merged$pagerank - pr_min) / (pr_max - pr_min + 0.01)
+    pr_range <- pr_max - pr_min
+    if (pr_range == 0) {
+      cli::cli_warn("All PageRank values are identical - normalization will produce 0.5")
+      merged$pr_normalized <- 0.5
+    } else {
+      merged$pr_normalized <- (merged$pagerank - pr_min) / pr_range
+    }
 
     # Discrepancy: positive = ELO higher than PageRank suggests (potentially inflated)
     merged$elo_pr_discrepancy <- merged$elo_normalized - merged$pr_normalized
@@ -740,19 +781,7 @@ calculate_player_centrality <- function(conn,
     cli::cli_alert_info("Format: {format}, Gender: {gender}, Min deliveries: {min_deliveries}, Alpha: {alpha}")
   }
 
-  # Build query based on format and gender
-  format_filter <- if (format == "all") {
-    "1=1"
-  } else {
-    format_lower <- tolower(format)
-    glue::glue("LOWER(m.match_type) IN ('{format_lower}', 'i{format_lower}')")
-  }
-
-  gender_filter <- if (gender == "all") {
-    "1=1"
-  } else {
-    glue::glue("m.gender = '{gender}'")
-  }
+  filters <- build_format_gender_filters(format, gender)
 
   query <- glue::glue("
     SELECT
@@ -763,8 +792,8 @@ calculate_player_centrality <- function(conn,
       m.match_type
     FROM deliveries d
     JOIN matches m ON d.match_id = m.match_id
-    WHERE {format_filter}
-      AND {gender_filter}
+    WHERE {filters$format_filter}
+      AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL
       AND d.bowler_id IS NOT NULL
   ")
@@ -807,6 +836,10 @@ calculate_player_centrality <- function(conn,
   batter_df$deliveries <- matrices$batter_deliveries[batter_df$player_id]
   batter_df$unique_opponents <- cent_result$batter_unique_opps[batter_df$player_id]
   batter_df$avg_opponent_degree <- cent_result$batter_avg_opp_degree[batter_df$player_id]
+  missing_batters <- !batter_df$player_id %in% names(matrices$batter_deliveries)
+  if (any(missing_batters)) {
+    cli::cli_warn("{sum(missing_batters)} batter(s) missing from deliveries lookup in centrality")
+  }
   batter_df$role <- "batter"
 
   bowler_df <- classify_centrality_tiers(
@@ -816,6 +849,10 @@ calculate_player_centrality <- function(conn,
   bowler_df$deliveries <- matrices$bowler_deliveries[bowler_df$player_id]
   bowler_df$unique_opponents <- cent_result$bowler_unique_opps[bowler_df$player_id]
   bowler_df$avg_opponent_degree <- cent_result$bowler_avg_opp_degree[bowler_df$player_id]
+  missing_bowlers <- !bowler_df$player_id %in% names(matrices$bowler_deliveries)
+  if (any(missing_bowlers)) {
+    cli::cli_warn("{sum(missing_bowlers)} bowler(s) missing from deliveries lookup in centrality")
+  }
   bowler_df$role <- "bowler"
 
   if (verbose) {

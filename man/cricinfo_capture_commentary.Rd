@@ -9,8 +9,8 @@ cricinfo_capture_commentary(
   series_id,
   match_id,
   scroll_pause = 1.5,
-  max_scrolls = 30,
-  stale_threshold = 6,
+  max_scrolls = 150,
+  stale_threshold = 10,
   all_innings = TRUE
 )
 }
@@ -23,9 +23,9 @@ cricinfo_capture_commentary(
 
 \item{scroll_pause}{Seconds between scroll actions (default 1.5)}
 
-\item{max_scrolls}{Maximum number of scroll actions (default 30)}
+\item{max_scrolls}{Maximum number of scroll actions (default 150)}
 
-\item{stale_threshold}{Stop after this many scrolls with no new data (default 6)}
+\item{stale_threshold}{Stop after this many scrolls with no new data (default 10)}
 
 \item{all_innings}{Logical. Whether to capture all innings (default TRUE)}
 }
