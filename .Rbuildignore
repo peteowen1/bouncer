@@ -12,4 +12,5 @@
 ^CLAUDE\.md$
 ^\.claude$
 ^\.github$
-^run_test\.R$
+^debug$
+^cran-comments\.md$

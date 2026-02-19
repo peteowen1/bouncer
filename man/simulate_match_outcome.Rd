@@ -9,14 +9,17 @@ simulate_match_outcome(team1_win_prob, team1, team2)
 \arguments{
 \item{team1_win_prob}{Numeric. Probability that team1 wins (0-1)}
 
-\item{team1}{Character. Team 1 name}
+\item{team1}{Character. Team 1 name (batting first)}
 
-\item{team2}{Character. Team 2 name}
+\item{team2}{Character. Team 2 name (batting second)}
 }
 \value{
 List with winner, loser, margin, and team1_won flag
 }
 \description{
 Simulates a single match outcome based on win probabilities.
+Important: team1 is assumed to bat first. This determines margin type
+(team batting first wins by runs, team batting second wins by wickets).
+Callers must ensure team order reflects batting order.
 }
 \keyword{internal}

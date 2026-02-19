@@ -11,6 +11,19 @@ print_centrality_summary(centrality_result, n_top = 10)
 
 \item{n_top}{Integer. Number of top players to show per role.}
 }
+\value{
+Called for side effects (printing). Returns \code{NULL} invisibly.
+}
 \description{
 Prints a formatted summary of network centrality results.
+}
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+cent <- calculate_player_centrality(conn, format = "t20")
+print_centrality_summary(cent)
+print_centrality_summary(cent, n_top = 5)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
 }

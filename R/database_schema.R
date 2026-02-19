@@ -1340,7 +1340,7 @@ delete_3way_elo_matches <- function(match_ids, format, conn, verbose = TRUE) {
     return(invisible(0))
   }
 
-  match_ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+  match_ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
   sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
 
   n_deleted <- tryCatch({
@@ -1644,7 +1644,7 @@ delete_3way_skill_matches <- function(match_ids, format, conn, verbose = TRUE) {
     return(invisible(0))
   }
 
-  match_ids_sql <- paste0("'", match_ids, "'", collapse = ", ")
+  match_ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
   sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
 
   n_deleted <- tryCatch({

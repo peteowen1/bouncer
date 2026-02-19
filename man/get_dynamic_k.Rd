@@ -22,3 +22,8 @@ K factor value
 Calculates the K factor for a team based on matches played.
 Uses exponential decay from k_max to k_min.
 }
+\examples{
+get_dynamic_k(0, k_max = 40, k_min = 20, k_halflife = 50)
+get_dynamic_k(100, k_max = 40, k_min = 20, k_halflife = 50)
+
+}

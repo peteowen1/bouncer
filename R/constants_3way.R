@@ -341,7 +341,7 @@ THREE_WAY_WICKET_ELO_DIVISOR_WOMENS_TEST <- 400
 # Set to 1.0 for original values, 0.1 for 10x reduction.
 # This affects PERMANENT venue K only (session resets each match anyway).
 
-THREE_WAY_VENUE_PERM_K_MULTIPLIER <- 0.1  # 10x reduction (was 1.0)
+THREE_WAY_VENUE_PERM_K_MULTIPLIER <- 0.1  # 10x reduction to prevent excessive venue drift
 
 # ============================================================================
 # VENUE DECAY HALFLIVES (Time-based decay toward replacement)
@@ -569,6 +569,11 @@ get_3way_constant <- function(prefix, format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
+#'
+#' @examples
+#' get_run_elo_weights("t20")
+#' get_run_elo_weights("odi", gender = "female")
+#'
 #' @export
 get_run_elo_weights <- function(format, gender = "male") {
   list(
@@ -584,6 +589,11 @@ get_run_elo_weights <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
+#'
+#' @examples
+#' get_wicket_elo_weights("t20")
+#' get_wicket_elo_weights("test", gender = "female")
+#'
 #' @export
 get_wicket_elo_weights <- function(format, gender = "male") {
   list(
@@ -599,6 +609,11 @@ get_wicket_elo_weights <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Numeric value
+#'
+#' @examples
+#' get_runs_per_100_elo("t20")
+#' get_runs_per_100_elo("odi")
+#'
 #' @export
 get_runs_per_100_elo <- function(format, gender = "male") {
   get_3way_constant("THREE_WAY_RUNS_PER_100_ELO_POINTS", format, gender)
@@ -609,6 +624,11 @@ get_runs_per_100_elo <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Named list with k_max, k_min, halflife
+#'
+#' @examples
+#' get_run_k_factors("t20")
+#' get_run_k_factors("test", gender = "female")
+#'
 #' @export
 get_run_k_factors <- function(format, gender = "male") {
   list(
@@ -623,6 +643,11 @@ get_run_k_factors <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Named list with k_max, k_min, halflife
+#'
+#' @examples
+#' get_wicket_k_factors("t20")
+#' get_wicket_k_factors("odi", gender = "female")
+#'
 #' @export
 get_wicket_k_factors <- function(format, gender = "male") {
   list(
@@ -637,6 +662,11 @@ get_wicket_k_factors <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Named list with perm and session k-factor parameters
+#'
+#' @examples
+#' get_venue_k_factors("t20")
+#' get_venue_k_factors("test")
+#'
 #' @export
 get_venue_k_factors <- function(format, gender = "male") {
   list(
@@ -654,6 +684,11 @@ get_venue_k_factors <- function(format, gender = "male") {
 #' @param format Format (T20, ODI, TEST)
 #' @param gender Gender (male or female)
 #' @return Numeric value (400 or 200)
+#'
+#' @examples
+#' get_wicket_elo_divisor("t20")
+#' get_wicket_elo_divisor("t20", gender = "female")
+#'
 #' @export
 get_wicket_elo_divisor <- function(format, gender = "male") {
   get_3way_constant("THREE_WAY_WICKET_ELO_DIVISOR", format, gender)

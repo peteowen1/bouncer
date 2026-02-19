@@ -15,3 +15,15 @@ List with winner and path
 \description{
 Simulates the IPL playoff bracket (Qualifier 1, Eliminator, Qualifier 2, Final).
 }
+\examples{
+\dontrun{
+teams <- data.frame(
+  team = c("Team A", "Team B", "Team C", "Team D"),
+  elo = c(1600, 1550, 1520, 1480),
+  position = 1:4
+)
+result <- simulate_ipl_playoffs(teams)
+result$champion
+}
+
+}

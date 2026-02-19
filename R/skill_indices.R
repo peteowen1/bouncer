@@ -78,6 +78,10 @@ calculate_combined_skill_effect <- function(batter_run_skill,
 #' @param gender Character. Gender: "male" or "female". Default "male".
 #'
 #' @return Numeric. Adjusted expected runs.
+#'
+#' @examples
+#' calculate_expected_runs_skill(1.1, 0.2, -0.1, 0.05, 0.0)
+#'
 #' @export
 calculate_expected_runs_skill <- function(agnostic_runs,
                                            batter_run_skill,
@@ -99,7 +103,7 @@ calculate_expected_runs_skill <- function(agnostic_runs,
   expected_runs <- agnostic_runs + skill_effect
 
   # Bound to reasonable range (0 to 6 runs per ball)
-  max(0, min(6, expected_runs))
+  pmax(0, pmin(6, expected_runs))
 }
 
 
@@ -131,6 +135,10 @@ calculate_expected_runs_skill <- function(agnostic_runs,
 #' @param gender Character. Gender (unused, kept for API consistency).
 #'
 #' @return Numeric. Adjusted expected wicket probability.
+#'
+#' @examples
+#' calculate_expected_wicket_skill(0.054, 0.01, 0.02, 0.005, 0.0)
+#'
 #' @export
 calculate_expected_wicket_skill <- function(agnostic_wicket,
                                              batter_wicket_skill,
@@ -156,7 +164,7 @@ calculate_expected_wicket_skill <- function(agnostic_wicket,
   expected_wicket <- agnostic_wicket + skill_effect
 
   # Bound to valid probability range
-  max(0.001, min(0.50, expected_wicket))
+  pmax(0.001, pmin(0.50, expected_wicket))
 }
 
 
@@ -183,6 +191,12 @@ calculate_expected_wicket_skill <- function(agnostic_wicket,
 #' @param gender Character. Gender: "male" or "female". Default "male".
 #'
 #' @return Numeric. The learning rate (alpha) for this player.
+#'
+#' @examples
+#' get_skill_alpha(0, "t20")     # New player: max alpha
+#' get_skill_alpha(300, "t20")   # Experienced: mid alpha
+#' get_skill_alpha(1000, "t20")  # Veteran: near min alpha
+#'
 #' @export
 get_skill_alpha <- function(deliveries,
                              format = "t20",
@@ -268,6 +282,12 @@ apply_skill_decay <- function(skill, decay_rate = SKILL_DECAY_PER_DELIVERY) {
 #' @param entity_type Character. "player" or "venue".
 #'
 #' @return Numeric. Bounded skill value.
+#'
+#' @examples
+#' bound_skill(0.3, "run", "player")
+#' bound_skill(0.8, "run", "player")  # Capped to max
+#' bound_skill(0.01, "wicket", "venue")
+#'
 #' @export
 bound_skill <- function(skill, skill_type = "run", entity_type = "player") {
   if (entity_type == "venue") {
@@ -453,6 +473,11 @@ reset_venue_session_skill <- function() {
 #' @param gender Character. Gender: "male" or "female". Default "male".
 #'
 #' @return List with all parameters needed for skill index calculation.
+#'
+#' @examples
+#' build_skill_index_params("t20")
+#' build_skill_index_params("test", gender = "female")
+#'
 #' @export
 build_skill_index_params <- function(format = "t20", gender = "male") {
   format <- tolower(format)

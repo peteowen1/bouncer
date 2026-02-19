@@ -671,7 +671,7 @@ calculate_all_delivery_projections <- function(conn, format,
           # For full projection, would need team/venue skills
           # For now, just use agnostic
           batch_data$projected_full[mask] <- proj_agnostic
-          batch_data$eis_full <- eis
+          batch_data$eis_full[mask] <- eis
         }
       }
     }

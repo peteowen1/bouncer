@@ -130,16 +130,13 @@ test_overs_to_balls <- function(overs_remaining) {
   partial_balls <- round((overs_remaining - complete_overs) * 10)
 
   # Cricket notation: .1-.6 for balls, but some data uses decimal
-  # Handle both cases
-  if (partial_balls > 6) {
-    # True decimal (e.g., 45.5 = 45.5 overs, not 45 overs 5 balls)
-    total_balls <- round(overs_remaining * 6)
-  } else {
-    # Cricket notation (e.g., 45.3 = 45 overs 3 balls)
-    total_balls <- complete_overs * 6 + partial_balls
-  }
+  # Handle both cases (vectorized)
+  total_balls <- ifelse(partial_balls > 6,
+    round(overs_remaining * 6),
+    complete_overs * 6 + partial_balls
+  )
 
-  return(as.integer(total_balls))
+  as.integer(total_balls)
 }
 
 
@@ -157,6 +154,20 @@ test_overs_to_balls <- function(overs_remaining) {
 #' @param match_overs_remaining Numeric. Overs remaining in match.
 #'
 #' @return Numeric. Estimated overs remaining in innings.
+#'
+#' @examples
+#' # First innings, early in the match
+#' estimate_test_innings_overs_remaining(
+#'   wickets_fallen = 2, current_score = 85,
+#'   overs_bowled = 30, innings_number = 1
+#' )
+#'
+#' # Third innings with large lead (likely declaration)
+#' estimate_test_innings_overs_remaining(
+#'   wickets_fallen = 3, current_score = 350,
+#'   overs_bowled = 80, innings_number = 3, lead = 320
+#' )
+#'
 #' @export
 estimate_test_innings_overs_remaining <- function(wickets_fallen,
                                                   current_score,
@@ -231,6 +242,17 @@ estimate_test_innings_overs_remaining <- function(wickets_fallen,
 #' @param team_type Character. "international" or "club".
 #'
 #' @return Numeric. Projected innings total.
+#'
+#' @examples
+#' \dontrun{
+#' # Day 2 of a 5-day Test, 8 wickets in hand, 50 overs bowled
+#' calculate_test_projected_score(
+#'   current_score = 180, wickets_remaining = 8,
+#'   overs_bowled = 50, match_days = 5,
+#'   day_number = 2, overs_bowled_today = 50
+#' )
+#' }
+#'
 #' @export
 calculate_test_projected_score <- function(current_score,
                                            wickets_remaining,

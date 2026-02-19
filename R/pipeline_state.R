@@ -66,11 +66,11 @@ get_pipeline_state <- function(step_name, conn) {
     return(NULL)
   }
 
-  result <- DBI::dbGetQuery(conn, sprintf("
+  result <- DBI::dbGetQuery(conn, "
     SELECT *
     FROM pipeline_state
-    WHERE step_name = '%s'
-  ", step_name))
+    WHERE step_name = ?
+  ", params = list(step_name))
 
   if (nrow(result) == 0) {
     return(NULL)
@@ -101,22 +101,23 @@ update_pipeline_state <- function(step_name, conn, status = "success") {
   current_time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
 
   # Upsert state
-  DBI::dbExecute(conn, sprintf("
+  DBI::dbExecute(conn, "
     INSERT INTO pipeline_state (step_name, last_run_at, last_match_date, last_match_count, last_delivery_count, status)
-    VALUES ('%s', '%s', '%s', %d, %d, '%s')
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT (step_name) DO UPDATE SET
-      last_run_at = '%s',
+      last_run_at = EXCLUDED.last_run_at,
       last_match_date = EXCLUDED.last_match_date,
       last_match_count = EXCLUDED.last_match_count,
       last_delivery_count = EXCLUDED.last_delivery_count,
       status = EXCLUDED.status
-  ", step_name,
+  ", params = list(
+     step_name,
      current_time,
      as.character(stats$last_match_date),
      stats$match_count,
      stats$delivery_count,
-     status,
-     current_time))
+     status
+  ))
 
   invisible(TRUE)
 }

@@ -163,6 +163,13 @@ get_model_path <- function(model_type, format, models_dir = NULL) {
 #'
 #' @return Logical. TRUE if model file exists.
 #'
+#' @examples
+#' \dontrun{
+#' model_exists("agnostic", "shortform")
+#' model_exists("full", "longform")
+#' model_exists("margin", "t20")
+#' }
+#'
 #' @export
 model_exists <- function(model_type, format, models_dir = NULL) {
   path <- get_model_path(model_type, format, models_dir)

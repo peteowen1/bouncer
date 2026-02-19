@@ -17,3 +17,8 @@ Named list with k_max, k_min, halflife
 \description{
 Get player Wicket K-factors for format-gender
 }
+\examples{
+get_wicket_k_factors("t20")
+get_wicket_k_factors("odi", gender = "female")
+
+}

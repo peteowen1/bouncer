@@ -140,15 +140,20 @@ parse_batch_to_parquet <- function(file_paths, output_dir, batch_id) {
  players_list <- list()
  powerplays_list <- list()
 
- error_count <- 0
+ error_details <- list()
 
  for (f in file_paths) {
    result <- tryCatch(
      parse_cricsheet_json(f),
-     error = function(e) NULL
+     error = function(e) {
+       cli::cli_alert_warning("Parse failed: {basename(f)} - {conditionMessage(e)}")
+       list(.error = conditionMessage(e), .file = f)
+     }
    )
 
-   if (!is.null(result) && !is.null(result$match_info) && nrow(result$match_info) > 0) {
+   if (!is.null(result$.error)) {
+     error_details[[length(error_details) + 1]] <- result[c(".file", ".error")]
+   } else if (!is.null(result) && !is.null(result$match_info) && nrow(result$match_info) > 0) {
      matches_list[[length(matches_list) + 1]] <- result$match_info
      deliveries_list[[length(deliveries_list) + 1]] <- result$deliveries
      innings_list[[length(innings_list) + 1]] <- result$innings
@@ -157,7 +162,7 @@ parse_batch_to_parquet <- function(file_paths, output_dir, batch_id) {
        powerplays_list[[length(powerplays_list) + 1]] <- result$powerplays
      }
    } else {
-     error_count <- error_count + 1
+     error_details[[length(error_details) + 1]] <- list(.file = f, .error = "Empty or NULL result")
    }
  }
 
@@ -197,7 +202,7 @@ parse_batch_to_parquet <- function(file_paths, output_dir, batch_id) {
    arrow::write_parquet(all_powerplays, file.path(output_dir, sprintf("powerplays_%04d.parquet", batch_id)))
  }
 
- list(n_matches = n_matches, n_errors = error_count)
+ list(n_matches = n_matches, n_errors = length(error_details), errors = error_details)
 }
 
 
@@ -243,17 +248,19 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
 
    total_matches <- 0
    total_errors <- 0
+   all_errors <- list()
 
    for (i in seq_along(batches)) {
      result <- parse_batch_to_parquet(batches[[i]], output_dir, i)
      total_matches <- total_matches + result$n_matches
      total_errors <- total_errors + result$n_errors
+     all_errors <- c(all_errors, result$errors)
      if (progress) cli::cli_progress_update()
    }
 
    if (progress) cli::cli_progress_done()
 
-   return(list(n_matches = total_matches, n_errors = total_errors))
+   return(list(n_matches = total_matches, n_errors = total_errors, errors = all_errors))
  }
 
  # Package is installed - use parallel processing
@@ -278,15 +285,19 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
    innings_list <- list()
    players_list <- list()
    powerplays_list <- list()
-   error_count <- 0
+   error_details <- list()
 
    for (f in batch_files) {
      result <- tryCatch({
        # Parse using bouncer's exported parser
        bouncer::parse_cricsheet_json(f)
-     }, error = function(e) NULL)
+     }, error = function(e) {
+       list(.error = conditionMessage(e), .file = f)
+     })
 
-     if (!is.null(result) && !is.null(result$match_info) && nrow(result$match_info) > 0) {
+     if (!is.null(result$.error)) {
+       error_details[[length(error_details) + 1]] <- result[c(".file", ".error")]
+     } else if (!is.null(result) && !is.null(result$match_info) && nrow(result$match_info) > 0) {
        matches_list[[length(matches_list) + 1]] <- result$match_info
        deliveries_list[[length(deliveries_list) + 1]] <- result$deliveries
        innings_list[[length(innings_list) + 1]] <- result$innings
@@ -295,7 +306,7 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
          powerplays_list[[length(powerplays_list) + 1]] <- result$powerplays
        }
      } else {
-       error_count <- error_count + 1
+       error_details[[length(error_details) + 1]] <- list(.file = f, .error = "Empty or NULL result")
      }
    }
 
@@ -334,7 +345,7 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
      arrow::write_parquet(all_powerplays, file.path(out_dir, sprintf("powerplays_%04d.parquet", bid)))
    }
 
-   list(n_matches = n_matches, n_errors = error_count)
+   list(n_matches = n_matches, n_errors = length(error_details), errors = error_details)
  }
 
  # Process batches in parallel with bouncer package loaded in workers
@@ -359,8 +370,9 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
  # Summarize results
  total_matches <- sum(vapply(results, function(x) as.integer(x$n_matches), integer(1)))
  total_errors <- sum(vapply(results, function(x) as.integer(x$n_errors), integer(1)))
+ all_errors <- do.call(c, lapply(results, function(x) x$errors))
 
- list(n_matches = total_matches, n_errors = total_errors)
+ list(n_matches = total_matches, n_errors = total_errors, errors = all_errors)
 }
 
 
@@ -488,6 +500,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
+ on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = TRUE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM matches")
  DBI::dbDisconnect(conn_check, shutdown = TRUE)
  existing_ids <- existing_matches$match_id

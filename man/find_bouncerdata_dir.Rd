@@ -17,3 +17,13 @@ Finds or creates the bouncerdata directory for storing data files.
 Prefers project-local directory (bouncerverse/bouncerdata) if it exists,
 otherwise falls back to system data directory.
 }
+\examples{
+\dontrun{
+# Find existing bouncerdata directory
+data_dir <- find_bouncerdata_dir(create = FALSE)
+
+# Find or create bouncerdata directory
+data_dir <- find_bouncerdata_dir()
+}
+
+}

@@ -1,21 +1,20 @@
 Package: bouncer
 Type: Package
 Title: Cricket Analytics with Ball-by-Ball Skill Tracking
-Version: 0.2.0.9000
+Version: 0.3.0
 Authors@R: person("Pete", "Owen", email = "peteowen1@gmail.com",
-                  role = c("aut", "cre"))
+                  role = c("aut", "cre", "cph"))
 Description: Cricket analytics featuring a 5-component prediction pipeline with
-    ball-by-ball skill tracking. Combines a 3-Way ELO system (batter, bowler,
-    venue) with residual-based skill indices built on XGBoost context models.
+    ball-by-ball skill tracking. Combines a 3-Way Elo system (batter, bowler,
+    venue) with residual-based skill indices built on 'XGBoost' context models.
     Provides match simulation, score projection, pre-match win probability, and
-    PageRank network quality adjustment across T20, ODI, and Test formats.
+    'PageRank' network quality adjustment across T20, ODI, and Test formats.
     Includes data management functions to download and parse cricket data from
-    Cricsheet, storing it in a DuckDB database for efficient querying.
+    'Cricsheet', storing it in a 'DuckDB' database for efficient querying.
 License: MIT + file LICENSE
 Depends:
     R (>= 4.1.0)
 Encoding: UTF-8
-LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Imports:

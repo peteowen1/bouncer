@@ -15,3 +15,8 @@ Numeric decay rate per delivery
 \description{
 Get Skill Decay Rate for Format
 }
+\examples{
+get_skill_decay("t20")
+get_skill_decay("test")
+
+}

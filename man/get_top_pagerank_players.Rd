@@ -19,3 +19,13 @@ Data frame with top players.
 \description{
 Returns the top N players ranked by PageRank quality score.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+pr <- calculate_player_pagerank(conn, format = "t20")
+top_batters <- get_top_pagerank_players(pr, role = "batter", n = 10)
+top_all <- get_top_pagerank_players(pr, role = "both", n = 20)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

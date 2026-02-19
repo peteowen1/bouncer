@@ -45,3 +45,14 @@ Numeric. Projected innings total.
 Wrapper for calculate_projected_score() with Test-specific handling.
 Estimates overs remaining from match metadata if not provided.
 }
+\examples{
+\dontrun{
+# Day 2 of a 5-day Test, 8 wickets in hand, 50 overs bowled
+calculate_test_projected_score(
+  current_score = 180, wickets_remaining = 8,
+  overs_bowled = 50, match_days = 5,
+  day_number = 2, overs_bowled_today = 50
+)
+}
+
+}

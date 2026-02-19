@@ -368,6 +368,11 @@ SKILL_VENUE_WICKET_LOW <- -0.01     # Batter-friendly venue
 #' @param gender Gender (male or female)
 #' @param skill_type "run" or "wicket"
 #' @return Named list with alpha_max, alpha_min, halflife
+#'
+#' @examples
+#' get_skill_alpha_params("t20")
+#' get_skill_alpha_params("odi", skill_type = "wicket")
+#'
 #' @export
 get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
@@ -386,6 +391,11 @@ get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") 
 #' @param gender Gender (male or female)
 #' @param skill_type "run" or "wicket"
 #' @return Named list with w_batter, w_bowler, w_venue_session, w_venue_perm
+#'
+#' @examples
+#' get_skill_weights("t20")
+#' get_skill_weights("test", skill_type = "wicket")
+#'
 #' @export
 get_skill_weights <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
@@ -403,6 +413,11 @@ get_skill_weights <- function(format, gender = "male", skill_type = "run") {
 #'
 #' @param format Format (T20, ODI, TEST)
 #' @return Numeric decay rate per delivery
+#'
+#' @examples
+#' get_skill_decay("t20")
+#' get_skill_decay("test")
+#'
 #' @export
 get_skill_decay <- function(format) {
   format_clean <- toupper(format)
@@ -624,6 +639,13 @@ get_phase_from_over <- function(over, format) {
 # NETWORK CENTRALITY CONSTANTS (from constants_centrality.R)
 # ============================================================================
 
+# Quality tier percentile thresholds for centrality/PageRank classification
+QUALITY_TIER_ELITE <- 95
+QUALITY_TIER_VERY_GOOD <- 80
+QUALITY_TIER_ABOVE_AVERAGE <- 60
+QUALITY_TIER_AVERAGE <- 40
+QUALITY_TIER_BELOW_AVERAGE <- 20
+
 CENTRALITY_MEAN_TYPE <- "arithmetic"
 
 # Alpha parameter: controls balance between breadth and quality
@@ -728,7 +750,7 @@ CENTRALITY_K_STEEPNESS <- 0.08      # Sigmoid steepness (higher = sharper transi
 #   - 1500 ELO, 50th percentile centrality -> implied ELO = 1400, minimal correction
 
 CENTRALITY_CORRECTION_RATE <- 0.01  # Base correction per delivery (scales with gap)
-CENTRALITY_ELO_PER_PERCENTILE <- 6  # ELO points per percentile (50th = start, +/-300 range) (was 4)
+CENTRALITY_ELO_PER_PERCENTILE <- 6  # ELO points per percentile (50th = start, +/-300 range)
 
 # -----------------------------------------------------------------------------
 # CONTINUOUS REGRESSION TO CENTRALITY-IMPLIED ELO (Stronger Bayesian Prior)
@@ -740,18 +762,18 @@ CENTRALITY_ELO_PER_PERCENTILE <- 6  # ELO points per percentile (50th = start, +
 # Formula: correction = REGRESSION_STRENGTH * (implied_elo - current_elo)
 # Where:   implied_elo = ELO_START + (centrality - 50) * ELO_PER_PERCENTILE
 #
-# Effect examples (with REGRESSION_STRENGTH = 0.002):
+# Effect examples (with REGRESSION_STRENGTH = 0.005, ELO_PER_PERCENTILE = 6):
 #   - Player at 2400 ELO with 5% centrality:
-#     implied_elo = 1400 + (5-50)*4 = 1220
-#     correction = 0.002 * (1220 - 2400) = -2.36 per delivery
-#     Over 300 balls: ~700 point regression toward implied level
+#     implied_elo = 1400 + (5-50)*6 = 1130
+#     correction = 0.005 * (1130 - 2400) = -6.35 per delivery
+#     Over 300 balls: ~1900 point regression toward implied level
 #
 #   - Player at 1800 ELO with 90% centrality:
-#     implied_elo = 1400 + (90-50)*4 = 1560
-#     correction = 0.002 * (1560 - 1800) = -0.48 per delivery
-#     Over 300 balls: ~144 point regression (much smaller since closer to implied)
+#     implied_elo = 1400 + (90-50)*6 = 1640
+#     correction = 0.005 * (1640 - 1800) = -0.80 per delivery
+#     Over 300 balls: ~240 point regression (much smaller since closer to implied)
 
-CENTRALITY_REGRESSION_STRENGTH <- 0.005  # Pull strength per delivery toward implied ELO (was 0.002)
+CENTRALITY_REGRESSION_STRENGTH <- 0.005  # Pull strength per delivery toward implied ELO
 
 # -----------------------------------------------------------------------------
 # LEAGUE-ADJUSTED BASELINE (Environment-Aware Expected Runs)

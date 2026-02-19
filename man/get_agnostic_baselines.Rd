@@ -21,3 +21,11 @@ agnostic_expected_wicket. Missing deliveries get format defaults.
 Retrieves pre-computed agnostic model predictions for a set of deliveries.
 These serve as the baseline expected values before ELO adjustments.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+baselines <- get_agnostic_baselines(conn, c("64012_India_1_005_03"), "t20")
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

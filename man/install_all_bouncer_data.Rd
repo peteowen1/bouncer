@@ -30,7 +30,7 @@ If NULL, loads both genders.}
 
 \item{keep_downloads}{Logical. If TRUE, keeps downloaded JSON files. Default FALSE.}
 
-\item{batch_size}{Number of files per database transaction. Default 100.}
+\item{batch_size}{Number of files per database transaction. Default 500.}
 }
 \value{
 Invisibly returns database path

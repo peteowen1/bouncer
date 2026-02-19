@@ -19,3 +19,8 @@ Named list with alpha_max, alpha_min, halflife
 \description{
 Get Skill Index Alpha (Learning Rate) Parameters
 }
+\examples{
+get_skill_alpha_params("t20")
+get_skill_alpha_params("odi", skill_type = "wicket")
+
+}

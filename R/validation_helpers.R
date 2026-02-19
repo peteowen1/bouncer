@@ -286,3 +286,22 @@ validate_data_quality <- function(df, check_na = TRUE, check_ranges = TRUE) {
 has_required_columns <- function(df, required_cols) {
   all(required_cols %in% names(df))
 }
+
+
+# ============================================================================
+# SQL VALUE ESCAPING
+# ============================================================================
+
+#' Escape SQL String Values
+#'
+#' Escapes single quotes in strings for safe SQL value interpolation.
+#' Use this when parameterized queries (DBI ? placeholders) aren't feasible,
+#' such as variable-length IN clauses.
+#'
+#' @param x Character vector. Strings to escape.
+#'
+#' @return Character vector with single quotes doubled.
+#' @keywords internal
+escape_sql_strings <- function(x) {
+  gsub("'", "''", x)
+}

@@ -187,15 +187,12 @@ load_projection_params <- function(format = "t20",
 
   # Try to load from database
   if (!is.null(conn)) {
-    query <- sprintf(
-      "SELECT param_a, param_b, param_z, param_y, eis_agnostic
+    query <- "SELECT param_a, param_b, param_z, param_y, eis_agnostic
        FROM projection_params
-       WHERE segment_id = '%s'",
-      segment_id
-    )
+       WHERE segment_id = ?"
 
     result <- tryCatch(
-      DBI::dbGetQuery(conn, query),
+      DBI::dbGetQuery(conn, query, params = list(segment_id)),
       error = function(e) NULL
     )
 

@@ -22,8 +22,7 @@ store_centrality_snapshot(
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category: "mens" or "womens". Default NULL.}
 
 \item{verbose}{Logical. Print progress messages. Default TRUE.}
 }
@@ -32,7 +31,5 @@ Invisibly returns the number of rows inserted.
 }
 \description{
 Stores a dated centrality snapshot for later lookup during ELO calculation.
-The snapshot_date should be the date of the most recent match INCLUDED
-in the centrality calculation.
 }
 \keyword{internal}

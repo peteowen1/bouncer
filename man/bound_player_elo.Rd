@@ -16,3 +16,9 @@ Numeric. Bounded ELO rating.
 Ensures player ELO stays within defined bounds to prevent extreme drift.
 Uses THREE_WAY_PLAYER_ELO_MIN and THREE_WAY_PLAYER_ELO_MAX constants.
 }
+\examples{
+bound_player_elo(1500)
+bound_player_elo(2000)  # Capped to max
+bound_player_elo(800)   # Raised to min
+
+}

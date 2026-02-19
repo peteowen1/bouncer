@@ -63,7 +63,7 @@ download_cricsheet_data <- function(match_type,
 
   tryCatch({
     httr2::request(url) |>
-      httr2::req_user_agent("bouncerdata R package (https://github.com/yourusername/bouncerverse)") |>
+      httr2::req_user_agent("bouncer R package (https://github.com/peteowen1/bouncer)") |>
       httr2::req_progress() |>
       httr2::req_perform(path = dest_file)
 

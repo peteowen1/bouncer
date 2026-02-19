@@ -6,35 +6,53 @@
 # - High-level interface (calculate, display, compare)
 #
 # Consolidated from centrality_history.R, centrality_interface.R, player_centrality.R
+#
+# Internal helpers (build_metric_table_name, ensure_metric_history_table, etc.)
+# provide shared logic for both centrality and pagerank metric types.
 
-ensure_centrality_history_table <- function(format, conn, gender = NULL) {
+# ============================================================================
+# INTERNAL HELPERS (shared by centrality + pagerank public functions)
+# ============================================================================
+
+#' Build table name for a metric type
+#' @param metric "centrality" or "pagerank"
+#' @param format Format string (t20, odi, test)
+#' @param gender Optional gender prefix
+#' @return Table name string
+#' @keywords internal
+build_metric_table_name <- function(metric, format, gender = NULL) {
   format <- tolower(format)
+  prefix <- if (!is.null(gender)) paste0(tolower(gender), "_") else ""
+  paste0(prefix, format, "_player_", metric, "_history")
+}
 
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
-  } else {
-    table_name <- paste0(format, "_player_centrality_history")
-  }
+
+#' Ensure a metric history table exists
+#' @keywords internal
+ensure_metric_history_table <- function(metric, format, conn, gender = NULL) {
+  table_name <- build_metric_table_name(metric, format, gender)
 
   if (!table_name %in% DBI::dbListTables(conn)) {
+    # Centrality tables have extra network columns
+    extra_cols <- if (metric == "centrality") {
+      ",\n        unique_opponents INTEGER,\n        avg_opponent_degree DOUBLE"
+    } else {
+      ""
+    }
+
     DBI::dbExecute(conn, sprintf("
       CREATE TABLE IF NOT EXISTS %s (
         snapshot_date DATE NOT NULL,
         player_id VARCHAR NOT NULL,
         role VARCHAR NOT NULL,
-        centrality DOUBLE,
+        %s DOUBLE,
         percentile DOUBLE,
         quality_tier VARCHAR,
-        deliveries INTEGER,
-        unique_opponents INTEGER,
-        avg_opponent_degree DOUBLE,
+        deliveries INTEGER%s,
         PRIMARY KEY (snapshot_date, player_id, role)
       )
-    ", table_name))
+    ", table_name, metric, extra_cols))
 
-    # Create index for fast date-based lookups
     DBI::dbExecute(conn, sprintf("
       CREATE INDEX IF NOT EXISTS idx_%s_player_date
       ON %s (player_id, role, snapshot_date DESC)
@@ -47,66 +65,73 @@ ensure_centrality_history_table <- function(format, conn, gender = NULL) {
 }
 
 
-#' Store Centrality Snapshot
-#'
-#' Stores a dated centrality snapshot for later lookup during ELO calculation.
-#' The snapshot_date should be the date of the most recent match INCLUDED
-#' in the centrality calculation.
-#'
-#' @param centrality_result Result from calculate_player_centrality().
-#' @param snapshot_date Date. The date of this snapshot (typically last match date).
-#' @param format Character. Match format: "t20", "odi", or "test".
-#' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
-#' @param verbose Logical. Print progress messages. Default TRUE.
-#'
-#' @return Invisibly returns the number of rows inserted.
+#' Build SQL filter clauses for format and gender
+#' @param format Format string (t20, odi, test, or "all")
+#' @param gender Gender string (male, female, or "all")
+#' @return List with format_filter and gender_filter SQL strings
 #' @keywords internal
-store_centrality_snapshot <- function(centrality_result,
-                                       snapshot_date,
-                                       format,
-                                       conn,
-                                       gender = NULL,
-                                       verbose = TRUE) {
-  format <- tolower(format)
+build_format_gender_filters <- function(format, gender) {
+  valid_formats <- c("all", "t20", "odi", "test")
+  valid_genders <- c("all", "male", "female")
+  format <- match.arg(tolower(format), valid_formats)
+  gender <- match.arg(tolower(gender), valid_genders)
 
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
+  format_filter <- if (format == "all") {
+    "1=1"
   } else {
-    table_name <- paste0(format, "_player_centrality_history")
+    glue::glue("LOWER(m.match_type) IN ('{format}', 'i{format}')")
   }
 
-  # Ensure table exists
-  ensure_centrality_history_table(format, conn, gender)
+  gender_filter <- if (gender == "all") {
+    "1=1"
+  } else {
+    glue::glue("m.gender = '{gender}'")
+  }
 
-  # Combine batters and bowlers
-  batters_df <- centrality_result$batters
+  list(format_filter = format_filter, gender_filter = gender_filter)
+}
+
+
+#' Store a metric snapshot (centrality or pagerank)
+#' @keywords internal
+store_metric_snapshot <- function(result, snapshot_date, metric, format, conn,
+                                  gender = NULL, verbose = TRUE) {
+  table_name <- build_metric_table_name(metric, format, gender)
+  ensure_metric_history_table(metric, format, conn, gender)
+
+  batters_df <- result$batters
   batters_df$snapshot_date <- as.character(snapshot_date)
 
-  bowlers_df <- centrality_result$bowlers
+  bowlers_df <- result$bowlers
   bowlers_df$snapshot_date <- as.character(snapshot_date)
 
   combined_df <- rbind(batters_df, bowlers_df)
 
-  # Reorder columns for insert
-  combined_df <- combined_df[, c("snapshot_date", "player_id", "role",
-                                  "centrality", "percentile", "quality_tier",
-                                  "deliveries", "unique_opponents", "avg_opponent_degree")]
+  # Select columns that exist in this metric's table
+  base_cols <- c("snapshot_date", "player_id", "role", metric,
+                 "percentile", "quality_tier", "deliveries")
+  if (metric == "centrality") {
+    base_cols <- c(base_cols, "unique_opponents", "avg_opponent_degree")
+  }
+  available_cols <- intersect(base_cols, names(combined_df))
+  combined_df <- combined_df[, available_cols]
 
-  # Delete existing snapshot for this date (in case of re-run)
-  DBI::dbExecute(conn, sprintf(
-    "DELETE FROM %s WHERE snapshot_date = ?", table_name),
-    params = list(as.character(snapshot_date)))
-
-  # Insert new snapshot
-  DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
+  # Atomic replace: delete old snapshot + insert new in a single transaction
+  DBI::dbBegin(conn)
+  tryCatch({
+    DBI::dbExecute(conn, sprintf(
+      "DELETE FROM %s WHERE snapshot_date = ?", table_name),
+      params = list(as.character(snapshot_date)))
+    DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
+    DBI::dbCommit(conn)
+  }, error = function(e) {
+    DBI::dbRollback(conn)
+    cli::cli_abort("Failed to store {metric} snapshot: {conditionMessage(e)}")
+  })
 
   if (verbose) {
     cli::cli_alert_success(
-      "Stored centrality snapshot for {snapshot_date}: {nrow(combined_df)} player-roles ({nrow(batters_df)} batters, {nrow(bowlers_df)} bowlers)"
+      "Stored {metric} snapshot for {snapshot_date}: {nrow(combined_df)} player-roles ({nrow(batters_df)} batters, {nrow(bowlers_df)} bowlers)"
     )
   }
 
@@ -114,49 +139,31 @@ store_centrality_snapshot <- function(centrality_result,
 }
 
 
-#' Get Centrality As Of Date
-#'
-#' Returns a player's centrality from the most recent snapshot BEFORE the given date.
-#' This ensures no data leakage - we only use centrality computed from matches
-#' that occurred before the current match being processed.
-#'
-#' @param player_id Character. The player ID to look up.
-#' @param role Character. "batter" or "bowler".
-#' @param match_date Date or character. The match date (centrality must be from BEFORE this).
-#' @param format Character. Match format: "t20", "odi", or "test".
-#' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
-#'
-#' @return List with centrality, percentile, quality_tier, snapshot_date,
-#'   unique_opponents, avg_opponent_degree, or NULL if no snapshot exists before that date.
-#' @export
-get_centrality_as_of <- function(player_id, role, match_date, format, conn, gender = NULL) {
-  format <- tolower(format)
+#' Get metric value as of a date (most recent snapshot before match_date)
+#' @keywords internal
+get_metric_as_of <- function(player_id, role, match_date, metric, format, conn, gender = NULL) {
+  table_name <- build_metric_table_name(metric, format, gender)
 
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
-  } else {
-    table_name <- paste0(format, "_player_centrality_history")
-  }
-
-  # Check if table exists
   if (!table_name %in% DBI::dbListTables(conn)) {
     return(NULL)
   }
 
+  # Build SELECT columns based on metric type
+  extra_cols <- if (metric == "centrality") {
+    ", unique_opponents, avg_opponent_degree"
+  } else {
+    ""
+  }
+
   query <- sprintf("
-    SELECT centrality, percentile, quality_tier, snapshot_date, deliveries,
-           unique_opponents, avg_opponent_degree
+    SELECT %s, percentile, quality_tier, snapshot_date, deliveries%s
     FROM %s
     WHERE player_id = ?
       AND role = ?
       AND snapshot_date < ?
     ORDER BY snapshot_date DESC
     LIMIT 1
-  ", table_name)
+  ", metric, extra_cols, table_name)
 
   result <- DBI::dbGetQuery(conn, query,
     params = list(player_id, role, as.character(match_date)))
@@ -169,33 +176,11 @@ get_centrality_as_of <- function(player_id, role, match_date, format, conn, gend
 }
 
 
-#' Batch Get Centrality For Match
-#'
-#' Efficiently retrieves centrality data for all players in a match at once.
-#' Much faster than individual lookups when processing many deliveries.
-#'
-#' @param player_ids Character vector. All unique player IDs in the match.
-#' @param match_date Date or character. The match date.
-#' @param format Character. Match format: "t20", "odi", or "test".
-#' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
-#'
-#' @return Data frame with player_id, role, percentile columns,
-#'   or empty data frame if no snapshots exist.
+#' Batch get metric values for a match
 #' @keywords internal
-batch_get_centrality_for_match <- function(player_ids, match_date, format, conn, gender = NULL) {
-  format <- tolower(format)
+batch_get_metric_for_match <- function(player_ids, match_date, metric, format, conn, gender = NULL) {
+  table_name <- build_metric_table_name(metric, format, gender)
 
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
-  } else {
-    table_name <- paste0(format, "_player_centrality_history")
-  }
-
-  # Check if table exists
   if (!table_name %in% DBI::dbListTables(conn)) {
     return(data.frame(
       player_id = character(0),
@@ -205,7 +190,6 @@ batch_get_centrality_for_match <- function(player_ids, match_date, format, conn,
     ))
   }
 
-  # Use window function to get most recent snapshot per player/role
   player_list <- paste(sprintf("'%s'", escape_sql_strings(player_ids)), collapse = ", ")
 
   query <- sprintf("
@@ -226,421 +210,287 @@ batch_get_centrality_for_match <- function(player_ids, match_date, format, conn,
   ", table_name, player_list)
 
   DBI::dbGetQuery(conn, query, params = list(as.character(match_date)))
+}
+
+
+#' Get all snapshot dates for a metric
+#' @keywords internal
+get_metric_snapshot_dates <- function(metric, format, conn, gender = NULL) {
+  table_name <- build_metric_table_name(metric, format, gender)
+
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    return(character(0))
+  }
+
+  result <- DBI::dbGetQuery(conn, sprintf("
+    SELECT DISTINCT snapshot_date
+    FROM %s
+    ORDER BY snapshot_date DESC
+  ", table_name))
+
+  if (nrow(result) == 0) return(character(0))
+  as.character(result$snapshot_date)
+}
+
+
+#' Delete old metric snapshots
+#' @keywords internal
+delete_old_metric_snapshots <- function(metric, format,
+                                         keep_months = CENTRALITY_SNAPSHOT_KEEP_MONTHS,
+                                         conn, gender = NULL) {
+  table_name <- build_metric_table_name(metric, format, gender)
+
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    return(invisible(0L))
+  }
+
+  cutoff_date <- seq(Sys.Date(), length.out = 2, by = paste0("-", keep_months, " months"))[2]
+
+  result <- DBI::dbExecute(conn, sprintf(
+    "DELETE FROM %s WHERE snapshot_date < ?", table_name),
+    params = list(as.character(cutoff_date)))
+
+  if (result > 0) {
+    cli::cli_alert_info("Deleted {result} old {metric} snapshots (before {cutoff_date})")
+  }
+
+  invisible(result)
+}
+
+
+# ============================================================================
+# CENTRALITY PUBLIC FUNCTIONS (delegate to internal helpers)
+# ============================================================================
+
+ensure_centrality_history_table <- function(format, conn, gender = NULL) {
+  ensure_metric_history_table("centrality", format, conn, gender)
+}
+
+
+#' Store Centrality Snapshot
+#'
+#' Stores a dated centrality snapshot for later lookup during ELO calculation.
+#'
+#' @param centrality_result Result from calculate_player_centrality().
+#' @param snapshot_date Date. The date of this snapshot (typically last match date).
+#' @param format Character. Match format: "t20", "odi", or "test".
+#' @param conn DBI connection to the database.
+#' @param gender Character. Gender category: "mens" or "womens". Default NULL.
+#' @param verbose Logical. Print progress messages. Default TRUE.
+#'
+#' @return Invisibly returns the number of rows inserted.
+#' @keywords internal
+store_centrality_snapshot <- function(centrality_result, snapshot_date, format,
+                                       conn, gender = NULL, verbose = TRUE) {
+  store_metric_snapshot(centrality_result, snapshot_date, "centrality", format,
+                        conn, gender, verbose)
+}
+
+
+#' Get Centrality As Of Date
+#'
+#' Returns a player's centrality from the most recent snapshot BEFORE the given date.
+#'
+#' @param player_id Character. The player ID to look up.
+#' @param role Character. "batter" or "bowler".
+#' @param match_date Date or character. The match date.
+#' @param format Character. Match format: "t20", "odi", or "test".
+#' @param conn DBI connection to the database.
+#' @param gender Character. Gender category. Default NULL.
+#'
+#' @return List with centrality, percentile, quality_tier, snapshot_date,
+#'   unique_opponents, avg_opponent_degree, or NULL if no snapshot exists.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' result <- get_centrality_as_of("VKohli", "batter", "2024-01-15", "t20", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
+#' @export
+get_centrality_as_of <- function(player_id, role, match_date, format, conn, gender = NULL) {
+  get_metric_as_of(player_id, role, match_date, "centrality", format, conn, gender)
+}
+
+
+#' Batch Get Centrality For Match
+#'
+#' Efficiently retrieves centrality data for all players in a match at once.
+#'
+#' @param player_ids Character vector. All unique player IDs in the match.
+#' @param match_date Date or character. The match date.
+#' @param format Character. Match format: "t20", "odi", or "test".
+#' @param conn DBI connection to the database.
+#' @param gender Character. Gender category. Default NULL.
+#'
+#' @return Data frame with player_id, role, percentile columns.
+#' @keywords internal
+batch_get_centrality_for_match <- function(player_ids, match_date, format, conn, gender = NULL) {
+  batch_get_metric_for_match(player_ids, match_date, "centrality", format, conn, gender)
 }
 
 
 #' Get Centrality Snapshot Dates
 #'
 #' Returns all available snapshot dates for a format.
-#' Useful for checking snapshot coverage or debugging.
 #'
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Character vector of snapshot dates, or empty vector if none.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' dates <- get_centrality_snapshot_dates("t20", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_centrality_snapshot_dates <- function(format, conn, gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
-  } else {
-    table_name <- paste0(format, "_player_centrality_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(character(0))
-  }
-
-  result <- DBI::dbGetQuery(conn, sprintf("
-    SELECT DISTINCT snapshot_date
-    FROM %s
-    ORDER BY snapshot_date DESC
-  ", table_name))
-
-  if (nrow(result) == 0) {
-    return(character(0))
-  }
-
-  as.character(result$snapshot_date)
+  get_metric_snapshot_dates("centrality", format, conn, gender)
 }
 
 
 #' Delete Old Centrality Snapshots
 #'
-#' Removes centrality snapshots older than the retention period to save space.
-#' Typically called after generating new snapshots.
+#' Removes centrality snapshots older than the retention period.
 #'
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param keep_months Integer. Months of history to retain.
-#'   Default uses CENTRALITY_SNAPSHOT_KEEP_MONTHS constant.
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Invisibly returns the number of rows deleted.
 #' @keywords internal
 delete_old_centrality_snapshots <- function(format,
                                              keep_months = CENTRALITY_SNAPSHOT_KEEP_MONTHS,
-                                             conn,
-                                             gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_centrality_history")
-  } else {
-    table_name <- paste0(format, "_player_centrality_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(invisible(0L))
-  }
-
-  cutoff_date <- Sys.Date() - (keep_months * 30)
-
-  result <- DBI::dbExecute(conn, sprintf(
-    "DELETE FROM %s WHERE snapshot_date < ?", table_name),
-    params = list(as.character(cutoff_date)))
-
-  if (result > 0) {
-    cli::cli_alert_info("Deleted {result} old centrality snapshots (before {cutoff_date})")
-  }
-
-  invisible(result)
+                                             conn, gender = NULL) {
+  delete_old_metric_snapshots("centrality", format, keep_months, conn, gender)
 }
 
 
 # ============================================================================
-# LEGACY PAGERANK HISTORY FUNCTIONS (Backward Compatibility)
+# PAGERANK PUBLIC FUNCTIONS (delegate to internal helpers)
 # ============================================================================
-# These functions are kept for backward compatibility with existing tables.
-# New code should use the centrality functions above.
 
 #' Ensure PageRank History Table Exists
 #'
-#' Creates the dated PageRank snapshot table for a format/gender if it doesn't exist.
-#' This table stores historical PageRank snapshots that can be looked up by date
-#' to prevent data leakage during ELO calculation.
-#'
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Invisibly returns TRUE.
 #' @keywords internal
 ensure_pagerank_history_table <- function(format, conn, gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    DBI::dbExecute(conn, sprintf("
-      CREATE TABLE IF NOT EXISTS %s (
-        snapshot_date DATE NOT NULL,
-        player_id VARCHAR NOT NULL,
-        role VARCHAR NOT NULL,
-        pagerank DOUBLE,
-        percentile DOUBLE,
-        quality_tier VARCHAR,
-        deliveries INTEGER,
-        PRIMARY KEY (snapshot_date, player_id, role)
-      )
-    ", table_name))
-
-    # Create index for fast date-based lookups
-    DBI::dbExecute(conn, sprintf("
-      CREATE INDEX IF NOT EXISTS idx_%s_player_date
-      ON %s (player_id, role, snapshot_date DESC)
-    ", table_name, table_name))
-
-    cli::cli_alert_success("Created table: {table_name}")
-  }
-
-  invisible(TRUE)
+  ensure_metric_history_table("pagerank", format, conn, gender)
 }
 
 
 #' Store PageRank Snapshot
 #'
 #' Stores a dated PageRank snapshot for later lookup during ELO calculation.
-#' The snapshot_date should be the date of the most recent match INCLUDED
-#' in the PageRank calculation.
 #'
 #' @param pagerank_result Result from calculate_player_pagerank().
-#' @param snapshot_date Date. The date of this snapshot (typically last match date).
+#' @param snapshot_date Date. The date of this snapshot.
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #' @param verbose Logical. Print progress messages. Default TRUE.
 #'
 #' @return Invisibly returns the number of rows inserted.
 #' @keywords internal
-store_pagerank_snapshot <- function(pagerank_result,
-                                     snapshot_date,
-                                     format,
-                                     conn,
-                                     gender = NULL,
-                                     verbose = TRUE) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  # Ensure table exists
-  ensure_pagerank_history_table(format, conn, gender)
-
-  # Combine batters and bowlers
-  batters_df <- pagerank_result$batters
-  batters_df$snapshot_date <- as.character(snapshot_date)
-
-  bowlers_df <- pagerank_result$bowlers
-  bowlers_df$snapshot_date <- as.character(snapshot_date)
-
-  combined_df <- rbind(batters_df, bowlers_df)
-
-  # Reorder columns for insert
-  combined_df <- combined_df[, c("snapshot_date", "player_id", "role",
-                                  "pagerank", "percentile", "quality_tier",
-                                  "deliveries")]
-
-  # Delete existing snapshot for this date (in case of re-run)
-  DBI::dbExecute(conn, sprintf(
-    "DELETE FROM %s WHERE snapshot_date = ?", table_name),
-    params = list(as.character(snapshot_date)))
-
-  # Insert new snapshot
-  DBI::dbWriteTable(conn, table_name, combined_df, append = TRUE, row.names = FALSE)
-
-  if (verbose) {
-    cli::cli_alert_success(
-      "Stored snapshot for {snapshot_date}: {nrow(combined_df)} player-roles ({nrow(batters_df)} batters, {nrow(bowlers_df)} bowlers)"
-    )
-  }
-
-  invisible(nrow(combined_df))
+store_pagerank_snapshot <- function(pagerank_result, snapshot_date, format,
+                                     conn, gender = NULL, verbose = TRUE) {
+  store_metric_snapshot(pagerank_result, snapshot_date, "pagerank", format,
+                        conn, gender, verbose)
 }
 
 
 #' Get PageRank As Of Date
 #'
 #' Returns a player's PageRank from the most recent snapshot BEFORE the given date.
-#' This ensures no data leakage - we only use PageRank computed from matches
-#' that occurred before the current match being processed.
 #'
 #' @param player_id Character. The player ID to look up.
 #' @param role Character. "batter" or "bowler".
-#' @param match_date Date or character. The match date (PageRank must be from BEFORE this).
+#' @param match_date Date or character. The match date.
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return List with pagerank, percentile, quality_tier, snapshot_date,
-#'   or NULL if no snapshot exists before that date.
+#'   or NULL if no snapshot exists.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' result <- get_pagerank_as_of("SPSmith", "batter", "2024-03-01", "test", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_pagerank_as_of <- function(player_id, role, match_date, format, conn, gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(NULL)
-  }
-
-  query <- sprintf("
-    SELECT pagerank, percentile, quality_tier, snapshot_date, deliveries
-    FROM %s
-    WHERE player_id = '%s'
-      AND role = '%s'
-      AND snapshot_date < '%s'
-    ORDER BY snapshot_date DESC
-    LIMIT 1
-  ", table_name, player_id, role, as.character(match_date))
-
-  result <- DBI::dbGetQuery(conn, query)
-
-  if (nrow(result) == 0) {
-    return(NULL)
-  }
-
-  as.list(result)
+  get_metric_as_of(player_id, role, match_date, "pagerank", format, conn, gender)
 }
 
 
 #' Batch Get PageRank For Match
 #'
 #' Efficiently retrieves PageRank data for all players in a match at once.
-#' Much faster than individual lookups when processing many deliveries.
 #'
 #' @param player_ids Character vector. All unique player IDs in the match.
 #' @param match_date Date or character. The match date.
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
-#' @return Data frame with player_id, role, percentile columns,
-#'   or empty data frame if no snapshots exist.
+#' @return Data frame with player_id, role, percentile columns.
 #' @keywords internal
 batch_get_pagerank_for_match <- function(player_ids, match_date, format, conn, gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(data.frame(
-      player_id = character(0),
-      role = character(0),
-      percentile = numeric(0),
-      stringsAsFactors = FALSE
-    ))
-  }
-
-  # Use window function to get most recent snapshot per player/role
-  player_list <- paste(sprintf("'%s'", escape_sql_strings(player_ids)), collapse = ", ")
-
-  query <- sprintf("
-    WITH ranked AS (
-      SELECT
-        player_id,
-        role,
-        percentile,
-        snapshot_date,
-        ROW_NUMBER() OVER (PARTITION BY player_id, role ORDER BY snapshot_date DESC) as rn
-      FROM %s
-      WHERE player_id IN (%s)
-        AND snapshot_date < ?
-    )
-    SELECT player_id, role, percentile
-    FROM ranked
-    WHERE rn = 1
-  ", table_name, player_list)
-
-  DBI::dbGetQuery(conn, query, params = list(as.character(match_date)))
+  batch_get_metric_for_match(player_ids, match_date, "pagerank", format, conn, gender)
 }
 
 
 #' Get PageRank Snapshot Dates
 #'
 #' Returns all available snapshot dates for a format.
-#' Useful for checking snapshot coverage or debugging.
 #'
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Character vector of snapshot dates, or empty vector if none.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' dates <- get_pagerank_snapshot_dates("odi", conn)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_pagerank_snapshot_dates <- function(format, conn, gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(character(0))
-  }
-
-  result <- DBI::dbGetQuery(conn, sprintf("
-    SELECT DISTINCT snapshot_date
-    FROM %s
-    ORDER BY snapshot_date DESC
-  ", table_name))
-
-  if (nrow(result) == 0) {
-    return(character(0))
-  }
-
-  as.character(result$snapshot_date)
+  get_metric_snapshot_dates("pagerank", format, conn, gender)
 }
 
 
 #' Delete Old PageRank Snapshots
 #'
-#' Removes PageRank snapshots older than the retention period to save space.
-#' Typically called after generating new snapshots.
+#' Removes PageRank snapshots older than the retention period.
 #'
 #' @param format Character. Match format: "t20", "odi", or "test".
 #' @param keep_months Integer. Months of history to retain.
-#'   Default uses CENTRALITY_SNAPSHOT_KEEP_MONTHS constant.
 #' @param conn DBI connection to the database.
-#' @param gender Character. Gender category: "mens" or "womens". Default NULL for
-#'   backwards compatibility (uses format-only table name).
+#' @param gender Character. Gender category. Default NULL.
 #'
 #' @return Invisibly returns the number of rows deleted.
 #' @keywords internal
 delete_old_pagerank_snapshots <- function(format,
                                            keep_months = CENTRALITY_SNAPSHOT_KEEP_MONTHS,
-                                           conn,
-                                           gender = NULL) {
-  format <- tolower(format)
-
-  # Build table name with optional gender prefix
-  if (!is.null(gender)) {
-    gender <- tolower(gender)
-    table_name <- paste0(gender, "_", format, "_player_pagerank_history")
-  } else {
-    table_name <- paste0(format, "_player_pagerank_history")
-  }
-
-  # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
-    return(invisible(0L))
-  }
-
-  cutoff_date <- Sys.Date() - (keep_months * 30)
-
-  result <- DBI::dbExecute(conn, sprintf(
-    "DELETE FROM %s WHERE snapshot_date < ?", table_name),
-    params = list(as.character(cutoff_date)))
-
-  if (result > 0) {
-    cli::cli_alert_info("Deleted {result} old PageRank snapshots (before {cutoff_date})")
-  }
-
-  invisible(result)
+                                           conn, gender = NULL) {
+  delete_old_metric_snapshots("pagerank", format, keep_months, conn, gender)
 }
 
 
@@ -656,19 +506,7 @@ calculate_player_pagerank <- function(conn,
     cli::cli_alert_info("Format: {format}, Gender: {gender}, Min deliveries: {min_deliveries}")
   }
 
-  # Build query based on format and gender
-  format_filter <- if (format == "all") {
-    "1=1"
-  } else {
-    format_lower <- tolower(format)
-    glue::glue("LOWER(m.match_type) IN ('{format_lower}', 'i{format_lower}')")
-  }
-
-  gender_filter <- if (gender == "all") {
-    "1=1"
-  } else {
-    glue::glue("m.gender = '{gender}'")
-  }
+  filters <- build_format_gender_filters(format, gender)
 
   query <- glue::glue("
     SELECT
@@ -679,8 +517,8 @@ calculate_player_pagerank <- function(conn,
       m.match_type
     FROM deliveries d
     JOIN matches m ON d.match_id = m.match_id
-    WHERE {format_filter}
-      AND {gender_filter}
+    WHERE {filters$format_filter}
+      AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL
       AND d.bowler_id IS NOT NULL
   ")
@@ -724,6 +562,10 @@ calculate_player_pagerank <- function(conn,
     n_players = length(matrices$batter_ids)
   )
   batter_df$deliveries <- matrices$batter_deliveries[batter_df$player_id]
+  missing_batters <- !batter_df$player_id %in% names(matrices$batter_deliveries)
+  if (any(missing_batters)) {
+    cli::cli_warn("{sum(missing_batters)} batter(s) missing from deliveries lookup in PageRank")
+  }
   batter_df$role <- "batter"
 
   bowler_df <- classify_pagerank_tiers(
@@ -731,6 +573,10 @@ calculate_player_pagerank <- function(conn,
     n_players = length(matrices$bowler_ids)
   )
   bowler_df$deliveries <- matrices$bowler_deliveries[bowler_df$player_id]
+  missing_bowlers <- !bowler_df$player_id %in% names(matrices$bowler_deliveries)
+  if (any(missing_bowlers)) {
+    cli::cli_warn("{sum(missing_bowlers)} bowler(s) missing from deliveries lookup in PageRank")
+  }
   bowler_df$role <- "bowler"
 
   list(
@@ -758,6 +604,15 @@ calculate_player_pagerank <- function(conn,
 #' @param n Integer. Number of top players to return.
 #'
 #' @return Data frame with top players.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' pr <- calculate_player_pagerank(conn, format = "t20")
+#' top_batters <- get_top_pagerank_players(pr, role = "batter", n = 10)
+#' top_all <- get_top_pagerank_players(pr, role = "both", n = 20)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
 #'
 #' @export
 get_top_pagerank_players <- function(pagerank_result, role = "both", n = 20) {
@@ -802,12 +657,24 @@ compare_pagerank_elo <- function(pagerank_result, elo_ratings, role = "batter") 
   if (nrow(merged) > 0 && "run_elo" %in% names(merged)) {
     elo_min <- min(merged$run_elo, na.rm = TRUE)
     elo_max <- max(merged$run_elo, na.rm = TRUE)
-    merged$elo_normalized <- (merged$run_elo - elo_min) / (elo_max - elo_min + 0.01)
+    elo_range <- elo_max - elo_min
+    if (elo_range == 0) {
+      cli::cli_warn("All ELO values are identical ({elo_min}) - normalization will produce 0.5")
+      merged$elo_normalized <- 0.5
+    } else {
+      merged$elo_normalized <- (merged$run_elo - elo_min) / elo_range
+    }
 
     # PageRank is already normalized (sums to 1), but rescale to similar range
     pr_min <- min(merged$pagerank, na.rm = TRUE)
     pr_max <- max(merged$pagerank, na.rm = TRUE)
-    merged$pr_normalized <- (merged$pagerank - pr_min) / (pr_max - pr_min + 0.01)
+    pr_range <- pr_max - pr_min
+    if (pr_range == 0) {
+      cli::cli_warn("All PageRank values are identical - normalization will produce 0.5")
+      merged$pr_normalized <- 0.5
+    } else {
+      merged$pr_normalized <- (merged$pagerank - pr_min) / pr_range
+    }
 
     # Discrepancy: positive = ELO higher than PageRank suggests (potentially inflated)
     merged$elo_pr_discrepancy <- merged$elo_normalized - merged$pr_normalized
@@ -827,6 +694,17 @@ compare_pagerank_elo <- function(pagerank_result, elo_ratings, role = "batter") 
 #'
 #' @param pagerank_result Result from calculate_player_pagerank().
 #' @param n_top Integer. Number of top players to show per role.
+#'
+#' @return Called for side effects (printing). Returns `NULL` invisibly.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' pr <- calculate_player_pagerank(conn, format = "t20")
+#' print_pagerank_summary(pr)
+#' print_pagerank_summary(pr, n_top = 5)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
 #'
 #' @export
 print_pagerank_summary <- function(pagerank_result, n_top = 10) {
@@ -903,19 +781,7 @@ calculate_player_centrality <- function(conn,
     cli::cli_alert_info("Format: {format}, Gender: {gender}, Min deliveries: {min_deliveries}, Alpha: {alpha}")
   }
 
-  # Build query based on format and gender
-  format_filter <- if (format == "all") {
-    "1=1"
-  } else {
-    format_lower <- tolower(format)
-    glue::glue("LOWER(m.match_type) IN ('{format_lower}', 'i{format_lower}')")
-  }
-
-  gender_filter <- if (gender == "all") {
-    "1=1"
-  } else {
-    glue::glue("m.gender = '{gender}'")
-  }
+  filters <- build_format_gender_filters(format, gender)
 
   query <- glue::glue("
     SELECT
@@ -926,8 +792,8 @@ calculate_player_centrality <- function(conn,
       m.match_type
     FROM deliveries d
     JOIN matches m ON d.match_id = m.match_id
-    WHERE {format_filter}
-      AND {gender_filter}
+    WHERE {filters$format_filter}
+      AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL
       AND d.bowler_id IS NOT NULL
   ")
@@ -970,6 +836,10 @@ calculate_player_centrality <- function(conn,
   batter_df$deliveries <- matrices$batter_deliveries[batter_df$player_id]
   batter_df$unique_opponents <- cent_result$batter_unique_opps[batter_df$player_id]
   batter_df$avg_opponent_degree <- cent_result$batter_avg_opp_degree[batter_df$player_id]
+  missing_batters <- !batter_df$player_id %in% names(matrices$batter_deliveries)
+  if (any(missing_batters)) {
+    cli::cli_warn("{sum(missing_batters)} batter(s) missing from deliveries lookup in centrality")
+  }
   batter_df$role <- "batter"
 
   bowler_df <- classify_centrality_tiers(
@@ -979,6 +849,10 @@ calculate_player_centrality <- function(conn,
   bowler_df$deliveries <- matrices$bowler_deliveries[bowler_df$player_id]
   bowler_df$unique_opponents <- cent_result$bowler_unique_opps[bowler_df$player_id]
   bowler_df$avg_opponent_degree <- cent_result$bowler_avg_opp_degree[bowler_df$player_id]
+  missing_bowlers <- !bowler_df$player_id %in% names(matrices$bowler_deliveries)
+  if (any(missing_bowlers)) {
+    cli::cli_warn("{sum(missing_bowlers)} bowler(s) missing from deliveries lookup in centrality")
+  }
   bowler_df$role <- "bowler"
 
   if (verbose) {
@@ -1009,6 +883,17 @@ calculate_player_centrality <- function(conn,
 #'
 #' @param centrality_result Result from calculate_player_centrality().
 #' @param n_top Integer. Number of top players to show per role.
+#'
+#' @return Called for side effects (printing). Returns `NULL` invisibly.
+#'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' cent <- calculate_player_centrality(conn, format = "t20")
+#' print_centrality_summary(cent)
+#' print_centrality_summary(cent, n_top = 5)
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
 #'
 #' @export
 print_centrality_summary <- function(centrality_result, n_top = 10) {

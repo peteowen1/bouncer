@@ -11,15 +11,12 @@ ensure_pagerank_history_table(format, conn, gender = NULL)
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
 Invisibly returns TRUE.
 }
 \description{
-Creates the dated PageRank snapshot table for a format/gender if it doesn't exist.
-This table stores historical PageRank snapshots that can be looked up by date
-to prevent data leakage during ELO calculation.
+Ensure PageRank History Table Exists
 }
 \keyword{internal}

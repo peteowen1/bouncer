@@ -21,3 +21,12 @@ Data frame with aggregated probabilities per team
 \description{
 Runs multiple season simulations and aggregates the results.
 }
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+fixtures <- get_season_fixtures("Indian Premier League", "2024", conn)
+results <- simulate_season_n(fixtures, n_simulations = 1000, seed = 42)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
+}

@@ -11,6 +11,19 @@ print_pagerank_summary(pagerank_result, n_top = 10)
 
 \item{n_top}{Integer. Number of top players to show per role.}
 }
+\value{
+Called for side effects (printing). Returns \code{NULL} invisibly.
+}
 \description{
 Prints a formatted summary of PageRank results.
+}
+\examples{
+\dontrun{
+conn <- get_db_connection(read_only = TRUE)
+pr <- calculate_player_pagerank(conn, format = "t20")
+print_pagerank_summary(pr)
+print_pagerank_summary(pr, n_top = 5)
+DBI::dbDisconnect(conn, shutdown = TRUE)
+}
+
 }

@@ -20,7 +20,14 @@ FOX_FORMATS <- list(
   WBBL = list(prefix = "WBBL", max_innings = 2, max_series = 10, max_matches = 70),
   WNCL = list(prefix = "WNCL", max_innings = 2, max_series = 10, max_matches = 30),
   WPL = list(prefix = "WPL", max_innings = 2, max_series = 5, max_matches = 30),
-  IPL = list(prefix = "IPL", max_innings = 2, max_series = 5, max_matches = 80)
+  IPL = list(prefix = "IPL", max_innings = 2, max_series = 5, max_matches = 80),
+  # Australian domestic formats
+  SHEF = list(prefix = "SHEF", max_innings = 4, max_series = 5, max_matches = 40),
+  # ICC tournament formats (separate prefixes from bilateral series)
+  T20WC = list(prefix = "T20WC", max_innings = 2, max_series = 3, max_matches = 60),
+  WT20WC = list(prefix = "WT20WC", max_innings = 2, max_series = 3, max_matches = 35),
+  CT = list(prefix = "CT", max_innings = 2, max_series = 3, max_matches = 20),
+  ODIWC = list(prefix = "ODIWC", max_innings = 2, max_series = 3, max_matches = 55)
 )
 
 #' Get Stored Fox Browser Session
@@ -288,6 +295,7 @@ fox_get_userkey <- function(browser, sample_match_id, timeout_sec = 60) {
 #' @return Parsed data.frame or NULL on error
 #' @keywords internal
 fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
+  safe_url <- gsub("'", "\\\\'", url)
   js_fetch <- sprintf("
     (async () => {
       try {
@@ -297,7 +305,7 @@ fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
         return {error: e.message};
       }
     })();
-  ", url)
+  ", safe_url)
 
   tryCatch({
     result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 30)
@@ -369,12 +377,13 @@ fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_inn
       match_id, inning_num, inning_num, userkey
     )
 
+    safe_innings_url <- gsub("'", "\\\\'", innings_url)
     js_fetch <- sprintf("
       (async () => {
         const response = await fetch('%s');
         return await response.json();
       })();
-    ", innings_url)
+    ", safe_innings_url)
 
     tryCatch({
       result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 60)
@@ -431,6 +440,7 @@ fox_match_exists <- function(browser, match_id, userkey) {
     match_id, userkey
   )
 
+  safe_innings_url <- gsub("'", "\\\\'", innings_url)
   js_fetch <- sprintf("
     (async () => {
       try {
@@ -441,7 +451,7 @@ fox_match_exists <- function(browser, match_id, userkey) {
         return {error: e.message};
       }
     })();
-  ", innings_url)
+  ", safe_innings_url)
 
   tryCatch({
     result <- browser$Runtime$evaluate(js_fetch, awaitPromise = TRUE, returnByValue = TRUE, timeout_ = 10)
@@ -578,6 +588,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
 
   for (year in years) {
     year_found <- 0
+    year_new <- 0
 
     for (series in 1:max_series) {
       series_found_any <- FALSE
@@ -609,6 +620,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
             series_found_any <- TRUE
             match_found <- TRUE
             new_discoveries <- new_discoveries + 1
+            year_new <- year_new + 1
             if (verbose) cli::cli_alert_success("  NEW: {match_id}")
             break
           }
@@ -619,14 +631,12 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
     }
 
     if (verbose) {
-      if (year_found > 0 || new_discoveries > 0) {
-        cli::cli_alert("Year {year}: {year_found} cached, {new_discoveries} new")
-      }
+      cli::cli_alert("Year {year}: {year_found} cached, {year_new} new")
     }
   }
 
   # Convert list to vector (only non-NULL elements)
-  valid_matches <- unlist(valid_list[1:list_idx])
+  valid_matches <- if (list_idx > 0) unlist(valid_list[seq_len(list_idx)]) else character(0)
 
   # Save updated cache
   all_discovered <- unique(c(cached_matches, valid_matches))
@@ -843,7 +853,7 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
 
   # Update browser reference in package environment if it changed
   if (!identical(current_browser, browser)) {
-    cli::cli_alert_info("Note: Browser was reconnected. Access with bouncer::fox_get_browser()")
+    cli::cli_alert_info("Note: Browser was reconnected. Access with bouncer:::fox_get_browser()")
     .fox_env$browser <- current_browser
   }
 

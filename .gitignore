@@ -27,5 +27,8 @@ ssh-key*
 .env
 .secrets
 
+# Debug/scratch scripts (temp files, one-off checks, CRAN prep scripts)
+debug/
+
 # Archived files (obsolete VM scripts, etc.)
 archive/

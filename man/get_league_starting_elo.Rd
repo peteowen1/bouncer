@@ -19,3 +19,8 @@ Returns the starting ELO for a new player based on their debut league.
 Players debuting in elite leagues (IPL, internationals) start higher than
 players debuting in development leagues, providing a better prior.
 }
+\examples{
+get_league_starting_elo("Indian Premier League")
+get_league_starting_elo("Big Bash League")
+
+}

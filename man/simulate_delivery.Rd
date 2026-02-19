@@ -60,6 +60,21 @@ List with outcome details:
 \description{
 Simulates a single delivery outcome using the full prediction model.
 }
+\examples{
+\dontrun{
+model <- load_full_model("shortform")
+state <- list(format = "t20", innings = 1, over = 5, ball = 3,
+              wickets_fallen = 1, runs_scored = 42)
+player <- list(batter_scoring_index = 1.3, batter_survival_rate = 0.97,
+               bowler_economy_index = 1.2, bowler_strike_rate = 0.03)
+team <- list(batting_team_runs_skill = 0.05, batting_team_wicket_skill = 0,
+             bowling_team_runs_skill = -0.02, bowling_team_wicket_skill = 0)
+venue <- list(venue_run_rate = 0, venue_wicket_rate = 0,
+              venue_boundary_rate = 0.15, venue_dot_rate = 0.35)
+result <- simulate_delivery(model, state, player, team, venue)
+}
+
+}
 \seealso{
 \code{\link{simulate_innings}} to simulate a full innings,
 \code{\link{simulate_match_ballbyball}} to simulate a full match,

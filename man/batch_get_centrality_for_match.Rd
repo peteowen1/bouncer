@@ -21,15 +21,12 @@ batch_get_centrality_for_match(
 
 \item{conn}{DBI connection to the database.}
 
-\item{gender}{Character. Gender category: "mens" or "womens". Default NULL for
-backwards compatibility (uses format-only table name).}
+\item{gender}{Character. Gender category. Default NULL.}
 }
 \value{
-Data frame with player_id, role, percentile columns,
-or empty data frame if no snapshots exist.
+Data frame with player_id, role, percentile columns.
 }
 \description{
 Efficiently retrieves centrality data for all players in a match at once.
-Much faster than individual lookups when processing many deliveries.
 }
 \keyword{internal}

@@ -39,6 +39,13 @@
 #' @return Data frame with columns: delivery_id, agnostic_expected_runs,
 #'   agnostic_expected_wicket. Missing deliveries get format defaults.
 #'
+#' @examples
+#' \dontrun{
+#' conn <- get_db_connection(read_only = TRUE)
+#' baselines <- get_agnostic_baselines(conn, c("64012_India_1_005_03"), "t20")
+#' DBI::dbDisconnect(conn, shutdown = TRUE)
+#' }
+#'
 #' @export
 get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
   format <- tolower(format)
@@ -308,7 +315,7 @@ calculate_3way_expected_runs <- function(agnostic_runs,
   }
 
   # Bound to reasonable range (0 to 6 runs)
-  max(0, min(6, expected_runs))
+  pmax(0, pmin(6, expected_runs))
 }
 
 
@@ -343,7 +350,7 @@ calculate_3way_expected_wicket <- function(agnostic_wicket,
   divisor <- get_wicket_elo_divisor(format, gender)
 
   # Prevent log(0) or log(Inf)
-  agnostic_wicket <- max(0.001, min(0.999, agnostic_wicket))
+  agnostic_wicket <- pmax(0.001, pmin(0.999, agnostic_wicket))
 
   # Convert to log-odds
   base_logit <- log(agnostic_wicket / (1 - agnostic_wicket))
@@ -362,7 +369,7 @@ calculate_3way_expected_wicket <- function(agnostic_wicket,
   expected_wicket <- 1 / (1 + exp(-adjusted_logit))
 
   # Bound to reasonable range
-  max(0.001, min(0.5, expected_wicket))
+  pmax(0.001, pmin(0.5, expected_wicket))
 }
 
 
@@ -626,6 +633,12 @@ update_3way_wicket_elos <- function(actual_wicket,
 #' @param elo Numeric. Current or updated ELO rating.
 #'
 #' @return Numeric. Bounded ELO rating.
+#'
+#' @examples
+#' bound_player_elo(1500)
+#' bound_player_elo(2000)  # Capped to max
+#' bound_player_elo(800)   # Raised to min
+#'
 #' @export
 bound_player_elo <- function(elo) {
   if (!THREE_WAY_APPLY_BOUNDS) {
@@ -646,6 +659,11 @@ bound_player_elo <- function(elo) {
 #' @param elo Numeric. Current or updated venue ELO rating.
 #'
 #' @return Numeric. Bounded venue ELO rating.
+#'
+#' @examples
+#' bound_venue_elo(1400)
+#' bound_venue_elo(1800)  # Capped to max
+#'
 #' @export
 bound_venue_elo <- function(elo) {
   if (!THREE_WAY_APPLY_BOUNDS) {
@@ -781,7 +799,7 @@ reset_venue_session_elo <- function() {
 #' @keywords internal
 calculate_reliability <- function(balls,
                                    halflife = THREE_WAY_RELIABILITY_HALFLIFE) {
-  if (is.na(balls) || balls <= 0) {
+  if (is.null(balls) || is.na(balls) || balls <= 0) {
     return(0)
   }
   balls / (balls + halflife)
@@ -1058,7 +1076,7 @@ build_league_running_averages <- function(conn, format, gender) {
   # Determine match types for this format using central helper
   match_types <- get_match_types_for_format(format)
   match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
-  gender_escaped <- escape_sql_value(gender)
+  gender_escaped <- escape_sql_strings(gender)
 
   query <- sprintf("
     WITH match_totals AS (
@@ -1121,6 +1139,14 @@ build_league_running_averages <- function(conn, format, gender) {
 #'
 #' @return Numeric. The blended expected runs baseline for this league/date.
 #'
+#' @examples
+#' \dontrun{
+#' league_lookup <- build_league_running_averages(conn, "t20")
+#' baseline <- get_league_baseline_as_of(
+#'   "Indian Premier League", "2024-04-01", league_lookup, 1.138
+#' )
+#' }
+#'
 #' @export
 get_league_baseline_as_of <- function(event_name,
                                        match_date,
@@ -1168,6 +1194,11 @@ get_league_baseline_as_of <- function(event_name,
 #' @param match_type Character. The match type (e.g., "T20", "IT20", "Test").
 #'
 #' @return Numeric. The starting ELO for players debuting in this event.
+#'
+#' @examples
+#' get_league_starting_elo("Indian Premier League")
+#' get_league_starting_elo("Big Bash League")
+#'
 #' @export
 get_league_starting_elo <- function(event_name, match_type = NULL) {
   # Handle NULL/NA
@@ -1245,7 +1276,7 @@ get_match_phase <- function(over, format = "t20") {
 #' @return Logical. TRUE if high chase situation.
 #' @keywords internal
 is_high_chase_situation <- function(innings, runs_required, balls_remaining) {
-  if (innings != 2) return(FALSE)
+  if (!innings %in% c(2, 4)) return(FALSE)
   if (is.na(runs_required) || is.na(balls_remaining)) return(FALSE)
   if (balls_remaining <= 0) return(FALSE)
 
@@ -1396,7 +1427,7 @@ store_3way_elo_params <- function(params, last_delivery_id, last_match_date,
     params = list(params$format))
 
   # Insert new params
-  DBI::dbExecute(conn, sprintf("
+  DBI::dbExecute(conn, "
     INSERT INTO three_way_elo_params (
       format, k_run_max, k_run_min, k_run_halflife,
       k_wicket_max, k_wicket_min, k_wicket_halflife,
@@ -1406,15 +1437,15 @@ store_3way_elo_params <- function(params, last_delivery_id, last_match_date,
       runs_per_100_elo, inactivity_halflife, replacement_level,
       last_delivery_id, last_match_date, total_deliveries, calculated_at
     ) VALUES (
-      '%s', %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f,
-      %f, %f, %f, %f,
-      %f, %f, %f,
-      '%s', '%s', %d, CURRENT_TIMESTAMP
+      ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, ?,
+      ?, ?, ?,
+      ?, ?, ?, CURRENT_TIMESTAMP
     )
-  ",
+  ", params = list(
     params$format,
     params$k_run_max, params$k_run_min, params$k_run_halflife,
     params$k_wicket_max, params$k_wicket_min, params$k_wicket_halflife,
@@ -1447,13 +1478,13 @@ log_3way_drift_metrics <- function(format, dimension, entity_type,
   # Ensure table exists
   ensure_3way_drift_table(conn)
 
-  DBI::dbExecute(conn, sprintf("
+  DBI::dbExecute(conn, "
     INSERT OR REPLACE INTO three_way_elo_drift_metrics (
       metric_date, format, dimension, entity_type, mean_elo, std_elo
     ) VALUES (
-      CURRENT_DATE, '%s', '%s', '%s', %f, %f
+      CURRENT_DATE, ?, ?, ?, ?, ?
     )
-  ", format, dimension, entity_type, mean_elo, std_elo))
+  ", params = list(format, dimension, entity_type, mean_elo, std_elo))
 
   invisible(TRUE)
 }

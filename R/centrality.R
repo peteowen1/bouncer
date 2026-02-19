@@ -16,9 +16,11 @@ build_matchup_matrices <- function(deliveries,
                                     format = "all",
                                     min_deliveries = CENTRALITY_MIN_DELIVERIES) {
 
-  # Convert to data.table for fast aggregation
+  # Convert to data.table for fast aggregation (copy to avoid mutating caller's data)
   if (!is.data.table(deliveries)) {
-    setDT(deliveries)
+    deliveries <- data.table::as.data.table(deliveries)
+  } else {
+    deliveries <- data.table::copy(deliveries)
   }
 
   # Filter by format if specified
@@ -479,13 +481,13 @@ classify_centrality_tiers <- function(centrality_scores, n_players = NULL) {
   ranks <- rank(centrality_scores, ties.method = "average")
   percentiles <- ranks / n_players * 100
 
-  # Assign tiers based on percentiles (using data.table::fcase for performance)
+  # Assign tiers based on percentiles (thresholds from constants_skill.R)
   quality_tier <- data.table::fcase(
-    percentiles >= 95, "Elite",
-    percentiles >= 80, "Very Good",
-    percentiles >= 60, "Above Average",
-    percentiles >= 40, "Average",
-    percentiles >= 20, "Below Average",
+    percentiles >= QUALITY_TIER_ELITE, "Elite",
+    percentiles >= QUALITY_TIER_VERY_GOOD, "Very Good",
+    percentiles >= QUALITY_TIER_ABOVE_AVERAGE, "Above Average",
+    percentiles >= QUALITY_TIER_AVERAGE, "Average",
+    percentiles >= QUALITY_TIER_BELOW_AVERAGE, "Below Average",
     default = "Weak"
   )
 
@@ -615,8 +617,8 @@ compute_cricket_pagerank <- function(matchup_matrix,
 
     # Performance bonus: small multiplier (0.5 to 1.5) based on runs scored
     # performance_matrix is 0-1, so (0.5 + performance) gives 0.5-1.5 range
-    perf_bonus_matrix <- 0.5 + performance_matrix
-    performance_weighted <- (matchup_matrix * perf_bonus_matrix) %*% bowler_pr
+    # Avoid creating dense matrix from 0.5 + sparse: distribute multiplication
+    performance_weighted <- (matchup_matrix * 0.5 + matchup_matrix * performance_matrix) %*% bowler_pr
 
     # Combine: 70% from opponent quality, 30% from performance bonus
     weighted_bowler <- 0.7 * base_authority + 0.3 * performance_weighted
@@ -750,13 +752,13 @@ classify_pagerank_tiers <- function(pagerank_scores,
   ranks <- rank(pagerank_scores, ties.method = "average")
   percentiles <- ranks / n_players * 100
 
-  # Assign tiers based on percentiles
+  # Assign tiers based on percentiles (thresholds from constants_skill.R)
   quality_tier <- dplyr::case_when(
-    percentiles >= 95 ~ "Elite",
-    percentiles >= 80 ~ "Very Good",
-    percentiles >= 60 ~ "Above Average",
-    percentiles >= 40 ~ "Average",
-    percentiles >= 20 ~ "Below Average",
+    percentiles >= QUALITY_TIER_ELITE ~ "Elite",
+    percentiles >= QUALITY_TIER_VERY_GOOD ~ "Very Good",
+    percentiles >= QUALITY_TIER_ABOVE_AVERAGE ~ "Above Average",
+    percentiles >= QUALITY_TIER_AVERAGE ~ "Average",
+    percentiles >= QUALITY_TIER_BELOW_AVERAGE ~ "Below Average",
     TRUE ~ "Weak"
   )
 
@@ -804,8 +806,9 @@ get_cold_start_percentile <- function(event_tier) {
 #' get_centrality_k_multiplier(50)  # ~1.0 for average opponent
 #' get_centrality_k_multiplier(10)  # ~0.5 for weak opponent
 get_centrality_k_multiplier <- function(opponent_percentile) {
-  # Handle NA/NULL
-  if (is.null(opponent_percentile) || is.na(opponent_percentile)) {
+  # Handle NA/NULL (scalar function)
+  if (is.null(opponent_percentile) || length(opponent_percentile) == 0 ||
+      is.na(opponent_percentile)) {
     return(1.0)  # Neutral multiplier
   }
 
@@ -974,7 +977,7 @@ build_event_centrality_lookup <- function(conn, format, gender, min_players = 10
 
   # Determine match types for this format
   match_types <- get_match_types_for_format(format)
-  match_types_sql <- paste0("'", match_types, "'", collapse = ", ")
+  match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
 
   # Get average centrality by event
   query <- sprintf("

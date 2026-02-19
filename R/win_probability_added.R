@@ -353,17 +353,27 @@ prepare_stage2_features <- function(data, feature_cols) {
 #' @keywords internal
 assign_wpa_credit <- function(deliveries, wpa) {
 
-  # Identify extras
-  is_wide <- !is.na(deliveries$wides) & deliveries$wides > 0
-  is_noball <- !is.na(deliveries$noballs) & deliveries$noballs > 0
-  is_bye <- !is.na(deliveries$byes) & deliveries$byes > 0
-  is_legbye <- !is.na(deliveries$legbyes) & deliveries$legbyes > 0
-
-  # Handle potential missing columns
-  if (!"wides" %in% names(deliveries)) is_wide <- rep(FALSE, nrow(deliveries))
-  if (!"noballs" %in% names(deliveries)) is_noball <- rep(FALSE, nrow(deliveries))
-  if (!"byes" %in% names(deliveries)) is_bye <- rep(FALSE, nrow(deliveries))
-  if (!"legbyes" %in% names(deliveries)) is_legbye <- rep(FALSE, nrow(deliveries))
+  # Identify extras (check column existence BEFORE access to avoid logical(0))
+  is_wide <- if ("wides" %in% names(deliveries)) {
+    !is.na(deliveries$wides) & deliveries$wides > 0
+  } else {
+    rep(FALSE, nrow(deliveries))
+  }
+  is_noball <- if ("noballs" %in% names(deliveries)) {
+    !is.na(deliveries$noballs) & deliveries$noballs > 0
+  } else {
+    rep(FALSE, nrow(deliveries))
+  }
+  is_bye <- if ("byes" %in% names(deliveries)) {
+    !is.na(deliveries$byes) & deliveries$byes > 0
+  } else {
+    rep(FALSE, nrow(deliveries))
+  }
+  is_legbye <- if ("legbyes" %in% names(deliveries)) {
+    !is.na(deliveries$legbyes) & deliveries$legbyes > 0
+  } else {
+    rep(FALSE, nrow(deliveries))
+  }
 
   is_bowler_extra <- is_wide | is_noball
   is_neutral_extra <- is_bye | is_legbye

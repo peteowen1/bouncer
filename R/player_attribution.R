@@ -42,7 +42,7 @@ calculate_player_attribution <- function(model, delivery_data, format = c("t20",
                      "bowler_economy_index", "bowler_strike_rate")
   missing <- setdiff(required_cols, names(delivery_data))
   if (length(missing) > 0) {
-    stop("Missing required columns: ", paste(missing, collapse = ", "))
+    cli::cli_abort("Missing required columns: {paste(missing, collapse = ', ')}")
   }
 
   n <- nrow(delivery_data)
@@ -256,7 +256,7 @@ summarize_player_contributions <- function(attribution_df) {
 compare_expected_vs_actual <- function(attribution_df) {
 
   if (!"runs_batter" %in% names(attribution_df)) {
-    stop("Need 'runs_batter' column for comparison")
+    cli::cli_abort("Need 'runs_batter' column for comparison")
   }
 
   # Overall summary
@@ -318,7 +318,7 @@ get_match_attribution <- function(model, match_id, format = "t20", conn) {
   deliveries <- DBI::dbGetQuery(conn, query, params = list(match_id))
 
   if (nrow(deliveries) == 0) {
-    stop("No deliveries found for match: ", match_id)
+    cli::cli_abort("No deliveries found for match: {match_id}")
   }
 
   # Add skill indices
