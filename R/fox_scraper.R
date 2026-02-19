@@ -20,7 +20,14 @@ FOX_FORMATS <- list(
   WBBL = list(prefix = "WBBL", max_innings = 2, max_series = 10, max_matches = 70),
   WNCL = list(prefix = "WNCL", max_innings = 2, max_series = 10, max_matches = 30),
   WPL = list(prefix = "WPL", max_innings = 2, max_series = 5, max_matches = 30),
-  IPL = list(prefix = "IPL", max_innings = 2, max_series = 5, max_matches = 80)
+  IPL = list(prefix = "IPL", max_innings = 2, max_series = 5, max_matches = 80),
+  # Australian domestic formats
+  SHEF = list(prefix = "SHEF", max_innings = 4, max_series = 5, max_matches = 40),
+  # ICC tournament formats (separate prefixes from bilateral series)
+  T20WC = list(prefix = "T20WC", max_innings = 2, max_series = 3, max_matches = 60),
+  WT20WC = list(prefix = "WT20WC", max_innings = 2, max_series = 3, max_matches = 35),
+  CT = list(prefix = "CT", max_innings = 2, max_series = 3, max_matches = 20),
+  ODIWC = list(prefix = "ODIWC", max_innings = 2, max_series = 3, max_matches = 55)
 )
 
 #' Get Stored Fox Browser Session
@@ -581,6 +588,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
 
   for (year in years) {
     year_found <- 0
+    year_new <- 0
 
     for (series in 1:max_series) {
       series_found_any <- FALSE
@@ -612,6 +620,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
             series_found_any <- TRUE
             match_found <- TRUE
             new_discoveries <- new_discoveries + 1
+            year_new <- year_new + 1
             if (verbose) cli::cli_alert_success("  NEW: {match_id}")
             break
           }
@@ -622,9 +631,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
     }
 
     if (verbose) {
-      if (year_found > 0 || new_discoveries > 0) {
-        cli::cli_alert("Year {year}: {year_found} cached, {new_discoveries} new")
-      }
+      cli::cli_alert("Year {year}: {year_found} cached, {year_new} new")
     }
   }
 
