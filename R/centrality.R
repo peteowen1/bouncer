@@ -617,7 +617,8 @@ compute_cricket_pagerank <- function(matchup_matrix,
 
     # Performance bonus: small multiplier (0.5 to 1.5) based on runs scored
     # performance_matrix is 0-1, so (0.5 + performance) gives 0.5-1.5 range
-    # Avoid creating dense matrix from 0.5 + sparse: distribute multiplication
+    # Algebraic identity: (0.5 + perf) * matchups = matchups*0.5 + matchups*perf
+    # Distributed form avoids 0.5 + sparse_matrix which would densify the matrix
     performance_weighted <- (matchup_matrix * 0.5 + matchup_matrix * performance_matrix) %*% bowler_pr
 
     # Combine: 70% from opponent quality, 30% from performance bonus
@@ -977,7 +978,7 @@ build_event_centrality_lookup <- function(conn, format, gender, min_players = 10
 
   # Determine match types for this format
   match_types <- get_match_types_for_format(format)
-  match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
+  match_types_sql <- paste0("'", escape_sql_quotes(match_types), "'", collapse = ", ")
 
   # Get average centrality by event
   query <- sprintf("

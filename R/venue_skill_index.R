@@ -161,7 +161,7 @@ normalize_venues <- function(venues, conn) {
 
   # Escape single quotes using helper for IN clause
   # (parameterized queries don't easily support variable-length IN clauses)
-  escaped_venues <- escape_sql_strings(unique_venues)
+  escaped_venues <- escape_sql_quotes(unique_venues)
 
   # Query all aliases at once
   aliases <- DBI::dbGetQuery(conn, sprintf("
@@ -232,7 +232,7 @@ build_default_venue_aliases <- function(conn) {
     country_sql <- if (is.na(country) || country == "") {
       "NULL"
     } else {
-      sprintf("'%s'", escape_sql_strings(country))
+      sprintf("'%s'", escape_sql_quotes(country))
     }
 
     # Insert (skip if already exists)
@@ -241,8 +241,8 @@ build_default_venue_aliases <- function(conn) {
         INSERT INTO venue_aliases (alias, canonical_venue, country)
         VALUES ('%s', '%s', %s)
         ON CONFLICT (alias) DO NOTHING
-      ", escape_sql_strings(alias),
-         escape_sql_strings(canonical),
+      ", escape_sql_quotes(alias),
+         escape_sql_quotes(canonical),
          country_sql))
       n_inserted <- n_inserted + 1
     }, error = function(e) {
@@ -608,7 +608,7 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
       batch_ids <- delivery_ids[start_idx:end_idx]
 
       # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-      batch_ids_escaped <- escape_sql_strings(batch_ids)
+      batch_ids_escaped <- escape_sql_quotes(batch_ids)
 
       batch_skills <- DBI::dbGetQuery(conn, sprintf("
         SELECT delivery_id, %s
@@ -628,7 +628,7 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
     skill_data <- all_skills
   } else {
     # Escape single quotes in delivery IDs
-    delivery_ids_escaped <- escape_sql_strings(delivery_ids)
+    delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
 
     skill_data <- DBI::dbGetQuery(conn, sprintf("
       SELECT delivery_id, %s

@@ -292,9 +292,10 @@ has_required_columns <- function(df, required_cols) {
 # SQL VALUE ESCAPING
 # ============================================================================
 
-#' Escape SQL String Values
+#' Escape SQL Single Quotes
 #'
-#' Escapes single quotes in strings for safe SQL value interpolation.
+#' Doubles single quotes in strings for safe SQL value interpolation in DuckDB.
+#' DuckDB-specific: does not handle backslash escapes or null bytes.
 #' Use this when parameterized queries (DBI ? placeholders) aren't feasible,
 #' such as variable-length IN clauses.
 #'
@@ -302,6 +303,6 @@ has_required_columns <- function(df, required_cols) {
 #'
 #' @return Character vector with single quotes doubled.
 #' @keywords internal
-escape_sql_strings <- function(x) {
+escape_sql_quotes <- function(x) {
   gsub("'", "''", x)
 }

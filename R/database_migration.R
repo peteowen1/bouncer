@@ -423,3 +423,50 @@ add_margin_columns <- function(conn = NULL, path = NULL) {
   cli::cli_alert_warning("add_margin_columns() is deprecated - use ensure_match_metrics_table()")
   ensure_match_metrics_table(conn = conn, path = path)
 }
+
+
+#' Add Cricinfo Tables to Existing Database
+#'
+#' Adds the Cricinfo rich data tables (balls, matches, innings, fixtures)
+#' to an existing database. Non-destructive: preserves all existing data.
+#'
+#' @param path Character. Database file path. If NULL, uses default.
+#'
+#' @return Invisibly returns TRUE on success
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' add_cricinfo_tables()
+#' }
+add_cricinfo_tables <- function(path = NULL) {
+  if (is.null(path)) {
+    path <- get_default_db_path()
+  }
+
+  if (!file.exists(path)) {
+    cli::cli_alert_danger("Database not found at {.file {path}}")
+    return(invisible(FALSE))
+  }
+
+  check_duckdb_available()
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  existing_tables <- DBI::dbListTables(conn)
+
+  cricinfo_tables <- c("cricinfo_balls", "cricinfo_matches",
+                        "cricinfo_innings", "cricinfo_fixtures")
+  needed <- setdiff(cricinfo_tables, existing_tables)
+
+  if (length(needed) == 0) {
+    cli::cli_alert_info("All Cricinfo tables already exist")
+    return(invisible(TRUE))
+  }
+
+  cli::cli_h2("Adding Cricinfo tables to database")
+  create_cricinfo_tables(conn, verbose = TRUE)
+  cli::cli_alert_success("Migration complete! Added {length(needed)} Cricinfo table{?s}")
+
+  invisible(TRUE)
+}

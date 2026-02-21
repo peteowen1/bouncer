@@ -754,7 +754,9 @@ has_simd_json <- function() {
 #' @return Parsed JSON as nested list
 #' @keywords internal
 read_json_fast <- function(file_path) {
- if (has_simd_json()) {
+ # Allow workflows to force jsonlite via env var (avoids fragile assignInNamespace)
+ force_jsonlite <- nzchar(Sys.getenv("BOUNCER_FORCE_JSONLITE"))
+ if (!force_jsonlite && has_simd_json()) {
    # simplify_to=0 prevents array-to-vector simplification, keeping structure
    # consistent with jsonlite's simplifyVector=FALSE behavior
    RcppSimdJson::fload(file_path, simplify_to = 0)

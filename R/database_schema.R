@@ -846,6 +846,9 @@ create_schema <- function(conn, verbose = TRUE) {
   # Create centrality/PageRank history tables (per format)
   create_centrality_schema_tables(conn, verbose)
 
+  # Create Cricinfo tables (rich ball-by-ball, matches, innings, fixtures)
+  create_cricinfo_tables(conn, verbose)
+
   n_tables <- length(DBI::dbListTables(conn))
   cli::cli_alert_success("Schema created successfully ({n_tables} tables)")
   invisible(TRUE)
@@ -896,6 +899,218 @@ create_centrality_schema_tables <- function(conn, verbose = TRUE) {
       ", table_name, table_name))
     }
   }
+
+  invisible(TRUE)
+}
+
+
+#' Create Cricinfo Tables
+#'
+#' Creates tables for Cricinfo rich ball-by-ball data, match metadata,
+#' batting scorecards, and fixtures index. These are separate from the
+#' Cricsheet-based tables because Cricinfo data includes Hawkeye fields
+#' (wagon wheel, pitch map, shot type) not available in Cricsheet.
+#'
+#' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress. Default TRUE.
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_cricinfo_tables <- function(conn, verbose = TRUE) {
+  log_table <- function(name) {
+    if (verbose) cli::cli_alert_info("Creating {name} table...")
+  }
+
+  # Ball-by-ball with Hawkeye rich fields
+
+  log_table("cricinfo_balls")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS cricinfo_balls (
+      id VARCHAR,
+      match_id VARCHAR,
+      innings_number INTEGER,
+      over_number DOUBLE,
+      ball_number INTEGER,
+      overs_actual DOUBLE,
+      overs_unique DOUBLE,
+
+      -- Runs/outcome
+      total_runs INTEGER,
+      batsman_runs INTEGER,
+      is_four BOOLEAN,
+      is_six BOOLEAN,
+      is_wicket BOOLEAN,
+      dismissal_type VARCHAR,
+      dismissal_text VARCHAR,
+
+      -- Extras
+      wides INTEGER,
+      noballs INTEGER,
+      byes INTEGER,
+      legbyes INTEGER,
+      penalties INTEGER,
+
+      -- Hawkeye rich fields
+      wagon_x DOUBLE,
+      wagon_y DOUBLE,
+      wagon_zone VARCHAR,
+      pitch_line VARCHAR,
+      pitch_length VARCHAR,
+      shot_type VARCHAR,
+      shot_control VARCHAR,
+
+      -- Players
+      batsman_player_id VARCHAR,
+      bowler_player_id VARCHAR,
+      non_striker_player_id VARCHAR,
+      out_player_id VARCHAR,
+
+      -- Running totals
+      total_innings_runs INTEGER,
+      total_innings_wickets INTEGER,
+
+      -- Win probability (T20I/ODI only)
+      predicted_score INTEGER,
+      win_probability DOUBLE,
+
+      -- DRS / events
+      event_type VARCHAR,
+      drs_successful BOOLEAN,
+
+      -- Commentary
+      title VARCHAR,
+      timestamp VARCHAR,
+
+      PRIMARY KEY (match_id, id)
+    )
+  ")
+
+  # Match metadata
+  log_table("cricinfo_matches")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS cricinfo_matches (
+      match_id VARCHAR PRIMARY KEY,
+      title VARCHAR,
+      series_id VARCHAR,
+      series_name VARCHAR,
+      format VARCHAR,
+      international_class_id INTEGER,
+      gender VARCHAR,
+      start_date VARCHAR,
+      end_date VARCHAR,
+      start_time VARCHAR,
+      status VARCHAR,
+      status_text VARCHAR,
+      slug VARCHAR,
+
+      -- Venue
+      ground_id VARCHAR,
+      ground_name VARCHAR,
+      ground_long_name VARCHAR,
+      country_name VARCHAR,
+      city_name VARCHAR,
+
+      -- Toss/result
+      toss_winner_team_id VARCHAR,
+      toss_winner_choice VARCHAR,
+      winner_team_id VARCHAR,
+      scheduled_overs INTEGER,
+      hawkeye_source VARCHAR,
+      ball_by_ball_source VARCHAR,
+
+      -- Teams
+      team1_id VARCHAR,
+      team1_name VARCHAR,
+      team1_abbreviation VARCHAR,
+      team1_captain_id VARCHAR,
+      team1_is_home BOOLEAN,
+      team2_id VARCHAR,
+      team2_name VARCHAR,
+      team2_abbreviation VARCHAR,
+      team2_captain_id VARCHAR,
+      team2_is_home BOOLEAN,
+
+      -- Officials
+      umpire1_id VARCHAR, umpire1_name VARCHAR,
+      umpire2_id VARCHAR, umpire2_name VARCHAR,
+      tv_umpire_id VARCHAR, tv_umpire_name VARCHAR,
+      match_referee_id VARCHAR, match_referee_name VARCHAR,
+
+      -- Awards
+      potm_player_id VARCHAR,
+      potm_player_name VARCHAR
+    )
+  ")
+
+  # Batting scorecards (one row per batsman per innings)
+  log_table("cricinfo_innings")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS cricinfo_innings (
+      match_id VARCHAR,
+      innings_number INTEGER,
+      team_id VARCHAR,
+      team_name VARCHAR,
+      total_runs INTEGER,
+      total_wickets INTEGER,
+      total_overs DOUBLE,
+
+      -- Per-batsman
+      player_id VARCHAR,
+      player_name VARCHAR,
+      player_dob VARCHAR,
+      batting_style VARCHAR,
+      bowling_style VARCHAR,
+      playing_role VARCHAR,
+      runs INTEGER,
+      balls_faced INTEGER,
+      fours INTEGER,
+      sixes INTEGER,
+      strike_rate DOUBLE,
+      is_not_out BOOLEAN,
+      batting_position INTEGER,
+
+      PRIMARY KEY (match_id, innings_number, player_id)
+    )
+  ")
+
+  # Fixtures index (schedule + results for all discovered matches)
+  log_table("cricinfo_fixtures")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS cricinfo_fixtures (
+      match_id VARCHAR PRIMARY KEY,
+      series_id VARCHAR,
+      series_name VARCHAR,
+      format VARCHAR,
+      gender VARCHAR,
+      status VARCHAR,
+      start_date VARCHAR,
+      start_time VARCHAR,
+      title VARCHAR,
+      team1 VARCHAR,
+      team1_abbrev VARCHAR,
+      team2 VARCHAR,
+      team2_abbrev VARCHAR,
+      venue VARCHAR,
+      country VARCHAR,
+      status_text VARCHAR,
+      winner_team_id VARCHAR,
+      has_ball_by_ball BOOLEAN
+    )
+  ")
+
+  # Indexes for common query patterns
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_balls_match
+    ON cricinfo_balls(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_balls_innings
+    ON cricinfo_balls(match_id, innings_number)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_matches_format
+    ON cricinfo_matches(format, gender)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_innings_match
+    ON cricinfo_innings(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_format
+    ON cricinfo_fixtures(format, gender)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_status
+    ON cricinfo_fixtures(status)")
 
   invisible(TRUE)
 }
@@ -1340,7 +1555,7 @@ delete_3way_elo_matches <- function(match_ids, format, conn, verbose = TRUE) {
     return(invisible(0))
   }
 
-  match_ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+  match_ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
   sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
 
   n_deleted <- tryCatch({
@@ -1644,7 +1859,7 @@ delete_3way_skill_matches <- function(match_ids, format, conn, verbose = TRUE) {
     return(invisible(0))
   }
 
-  match_ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+  match_ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
   sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
 
   n_deleted <- tryCatch({
