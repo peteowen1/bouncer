@@ -10,6 +10,6 @@ get_cricinfo_release()
 List with release info (tag_name, assets, etc.).
 }
 \description{
-Gets the cricinfo-rich release info, with session-level caching.
+Gets the cricinfo release info, with session-level caching.
 }
 \keyword{internal}

@@ -17,6 +17,6 @@ load_cricinfo_balls_remote(match_ids, format, gender)
 Data frame.
 }
 \description{
-Downloads per-match ball parquets from cricinfo-rich release.
+Downloads per-match ball parquets from cricinfo release.
 }
 \keyword{internal}

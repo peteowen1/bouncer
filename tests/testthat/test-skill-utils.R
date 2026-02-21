@@ -39,19 +39,19 @@ test_that("get_skill_table_name generates correct table names", {
   expect_equal(get_skill_table_name("MDM", "venue_skill"), "test_venue_skill")
 })
 
-test_that("escape_sql_strings escapes single quotes", {
-  expect_equal(escape_sql_strings("test"), "test")
-  expect_equal(escape_sql_strings("it's"), "it''s")
-  expect_equal(escape_sql_strings("Durban's Super Giants"), "Durban''s Super Giants")
+test_that("escape_sql_quotes escapes single quotes", {
+  expect_equal(escape_sql_quotes("test"), "test")
+  expect_equal(escape_sql_quotes("it's"), "it''s")
+  expect_equal(escape_sql_quotes("Durban's Super Giants"), "Durban''s Super Giants")
 
   # Multiple quotes
-  expect_equal(escape_sql_strings("'quoted'"), "''quoted''")
+  expect_equal(escape_sql_quotes("'quoted'"), "''quoted''")
 })
 
-test_that("escape_sql_strings handles vectors", {
+test_that("escape_sql_quotes handles vectors", {
   input <- c("plain", "it's", "no'quote")
   expected <- c("plain", "it''s", "no''quote")
-  expect_equal(escape_sql_strings(input), expected)
+  expect_equal(escape_sql_quotes(input), expected)
 })
 
 test_that("batch_skill_query processes small batches directly", {

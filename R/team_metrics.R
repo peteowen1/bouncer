@@ -128,10 +128,10 @@ team_batting_stats_remote <- function(team = NULL, match_type = NULL,
   # Build WHERE clause
   where_clauses <- character()
   if (!is.null(team)) {
-    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", escape_sql_strings(team)))
+    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", escape_sql_quotes(team)))
   }
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_strings(season)))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_quotes(season)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -314,10 +314,10 @@ team_bowling_stats_remote <- function(team = NULL, match_type = NULL,
 
   where_clauses <- character()
   if (!is.null(team)) {
-    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", escape_sql_strings(team)))
+    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", escape_sql_quotes(team)))
   }
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_strings(season)))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_quotes(season)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -469,12 +469,12 @@ head_to_head_remote <- function(team1, team2, match_type = NULL) {
   # Build WHERE clause - matches uses unified matches.parquet
   where_clauses <- sprintf(
     "((team1 = '%s' AND team2 = '%s') OR (team1 = '%s' AND team2 = '%s'))",
-    escape_sql_strings(team1), escape_sql_strings(team2),
-    escape_sql_strings(team2), escape_sql_strings(team1)
+    escape_sql_quotes(team1), escape_sql_quotes(team2),
+    escape_sql_quotes(team2), escape_sql_quotes(team1)
   )
 
   if (!is.null(match_type)) {
-    where_clauses <- paste(where_clauses, "AND", sprintf("UPPER(match_type) = '%s'", toupper(escape_sql_strings(match_type))))
+    where_clauses <- paste(where_clauses, "AND", sprintf("UPPER(match_type) = '%s'", toupper(escape_sql_quotes(match_type))))
   }
 
   sql_template <- sprintf("
@@ -695,7 +695,7 @@ venue_stats_remote <- function(venue = NULL, match_type = NULL, min_matches = 5)
   # Build WHERE clause
   where_clauses <- character()
   if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", escape_sql_strings(venue)))
+    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", escape_sql_quotes(venue)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {

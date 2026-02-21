@@ -20,7 +20,7 @@ load_cricinfo_fixtures(
 (completed), "PRE" (upcoming), "LIVE".}
 
 \item{source}{Character. "local" (default) queries DuckDB. "remote"
-downloads fixtures.parquet from the cricinfo-rich GitHub release.}
+downloads fixtures.parquet from the cricinfo GitHub release.}
 }
 \value{
 Data frame of fixtures.

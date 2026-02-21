@@ -113,10 +113,10 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
 
         # Backfill gender from directory name (match parquets don't include it)
         loaded_ids <- sub("_match\\.parquet$", "", basename(match_files))
-        ids_sql <- paste0("'", escape_sql_strings(loaded_ids), "'", collapse = ", ")
+        ids_sql <- paste0("'", escape_sql_quotes(loaded_ids), "'", collapse = ", ")
         DBI::dbExecute(conn, sprintf(
           "UPDATE cricinfo_matches SET gender = '%s' WHERE match_id IN (%s) AND gender IS NULL",
-          escape_sql_strings(gnd), ids_sql
+          escape_sql_quotes(gnd), ids_sql
         ))
       }
 
@@ -246,7 +246,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
           \"title\" AS title,
           \"timestamp\" AS timestamp
         FROM read_parquet('%s')
-      ", escape_sql_strings(mid), fp))
+      ", escape_sql_quotes(mid), fp))
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load balls for match {mid}: {e$message}")
@@ -280,7 +280,7 @@ ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
         INSERT OR IGNORE INTO cricinfo_innings
         SELECT '%s' AS match_id, *
         FROM read_parquet('%s')
-      ", escape_sql_strings(mid), fp))
+      ", escape_sql_quotes(mid), fp))
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load innings for match {mid}: {e$message}")
@@ -341,7 +341,7 @@ cricinfo_format_sql <- function(column, format) {
   } else if (fmt_upper == "TEST") {
     sprintf("UPPER(%s) IN ('TEST', 'MDM')", column)
   } else {
-    sprintf("UPPER(%s) = '%s'", column, escape_sql_strings(fmt_upper))
+    sprintf("UPPER(%s) = '%s'", column, escape_sql_quotes(fmt_upper))
   }
 }
 
@@ -384,15 +384,15 @@ load_cricinfo_fixtures <- function(format = "all", gender = "all",
   where_clauses <- character()
   if (format != "all") {
     where_clauses <- c(where_clauses,
-      sprintf("format = '%s'", escape_sql_strings(tolower(format))))
+      sprintf("format = '%s'", escape_sql_quotes(tolower(format))))
   }
   if (gender != "all") {
     where_clauses <- c(where_clauses,
-      sprintf("gender = '%s'", escape_sql_strings(tolower(gender))))
+      sprintf("gender = '%s'", escape_sql_quotes(tolower(gender))))
   }
   if (status != "all") {
     where_clauses <- c(where_clauses,
-      sprintf("status = '%s'", escape_sql_strings(toupper(status))))
+      sprintf("status = '%s'", escape_sql_quotes(toupper(status))))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -563,7 +563,7 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
   where_clauses <- character()
 
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("b.match_id IN (%s)", ids_sql))
   }
   if (!is.null(format)) {
@@ -571,7 +571,7 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
   }
   if (!is.null(gender)) {
     where_clauses <- c(where_clauses,
-      sprintf("LOWER(m.gender) = '%s'", escape_sql_strings(tolower(gender))))
+      sprintf("LOWER(m.gender) = '%s'", escape_sql_quotes(tolower(gender))))
   }
 
   # If filtering by format/gender, need to join with cricinfo_matches
@@ -633,7 +633,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
 
   where_clauses <- character()
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
   if (!is.null(format)) {
@@ -641,7 +641,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
   }
   if (!is.null(gender)) {
     where_clauses <- c(where_clauses,
-      sprintf("LOWER(gender) = '%s'", escape_sql_strings(tolower(gender))))
+      sprintf("LOWER(gender) = '%s'", escape_sql_quotes(tolower(gender))))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -693,7 +693,7 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
   where_clauses <- character()
 
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("i.match_id IN (%s)", ids_sql))
   }
   if (!is.null(format)) {
@@ -701,7 +701,7 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
   }
   if (!is.null(gender)) {
     where_clauses <- c(where_clauses,
-      sprintf("LOWER(m.gender) = '%s'", escape_sql_strings(tolower(gender))))
+      sprintf("LOWER(m.gender) = '%s'", escape_sql_quotes(tolower(gender))))
   }
 
   if (!is.null(format) || !is.null(gender)) {

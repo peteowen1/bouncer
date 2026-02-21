@@ -190,7 +190,7 @@ batch_get_metric_for_match <- function(player_ids, match_date, metric, format, c
     ))
   }
 
-  player_list <- paste(sprintf("'%s'", escape_sql_strings(player_ids)), collapse = ", ")
+  player_list <- paste(sprintf("'%s'", escape_sql_quotes(player_ids)), collapse = ", ")
 
   query <- sprintf("
     WITH ranked AS (

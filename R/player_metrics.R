@@ -251,7 +251,7 @@ analyze_batter_vs_bowler_remote <- function(batter_id, bowler_id, match_type) {
       AVG(runs_batter) as avg_runs_per_ball
     FROM {table}
     WHERE batter_id = '%s' AND bowler_id = '%s'
-  ", escape_sql_strings(batter_id), escape_sql_strings(bowler_id))
+  ", escape_sql_quotes(batter_id), escape_sql_quotes(bowler_id))
 
   historical <- tryCatch({
     query_remote_parquet(table_name, sql_template)
@@ -400,10 +400,10 @@ aggregate_batting_stats_remote <- function(player_id = NULL,
   where_clauses <- character()
 
   if (!is.null(player_id)) {
-    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", escape_sql_strings(player_id)))
+    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", escape_sql_quotes(player_id)))
   }
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_strings(season)))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_quotes(season)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -572,10 +572,10 @@ aggregate_bowling_stats_remote <- function(player_id = NULL,
   where_clauses <- character()
 
   if (!is.null(player_id)) {
-    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", escape_sql_strings(player_id)))
+    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", escape_sql_quotes(player_id)))
   }
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_strings(season)))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_quotes(season)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {

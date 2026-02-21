@@ -157,7 +157,7 @@ get_player_remote <- function(name_or_id, format = NULL) {
 
   cli::cli_alert_info("Looking up player from remote...")
 
-  name_escaped <- escape_sql_strings(name_or_id)
+  name_escaped <- escape_sql_quotes(name_or_id)
 
   # Query players table
   sql_exact <- sprintf(
@@ -199,7 +199,7 @@ get_player_remote <- function(name_or_id, format = NULL) {
     }, error = function(e) character(0))
 
     if (skill_table %in% available) {
-      player_id_escaped <- escape_sql_strings(player$player_id)
+      player_id_escaped <- escape_sql_quotes(player$player_id)
       skill_sql <- sprintf(
         "SELECT batter_scoring_index, batter_survival_rate, bowler_economy_index, bowler_strike_rate, delivery_id
          FROM {table}

@@ -15,8 +15,8 @@ query_remote_cricinfo_parquet(table_name, sql_template)
 Data frame with query results.
 }
 \description{
-Downloads a parquet file from the cricinfo-rich GitHub release to a temp
+Downloads a parquet file from the cricinfo GitHub release to a temp
 file, then runs a SQL query on it. Same pattern as query_remote_parquet()
-but for the cricinfo-rich release tag.
+but for the cricinfo release tag.
 }
 \keyword{internal}
