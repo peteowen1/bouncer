@@ -733,7 +733,7 @@ get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
   pattern <- if (type == "cricsheet") {
     "^cricsheet$"
   } else if (type == "cricinfo") {
-    "^cricinfo-rich$"
+    "^cricinfo$"
   } else if (type == "weekly") {
     "-weekly$"
   } else {

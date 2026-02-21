@@ -360,7 +360,7 @@ cricinfo_format_sql <- function(column, format) {
 #' @param status Character. Match status filter: "all" (default), "POST"
 #'   (completed), "PRE" (upcoming), "LIVE".
 #' @param source Character. "local" (default) queries DuckDB. "remote"
-#'   downloads fixtures.parquet from the cricinfo-rich GitHub release.
+#'   downloads fixtures.parquet from the cricinfo GitHub release.
 #'
 #' @return Data frame of fixtures.
 #' @export
@@ -734,7 +734,7 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
 
 
 # ============================================================================
-# REMOTE LOADERS (download from cricinfo-rich release)
+# REMOTE LOADERS (download from cricinfo release)
 # ============================================================================
 
 # Session-level cache for cricinfo remote release info
@@ -743,9 +743,9 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
 
 #' Query Remote Cricinfo Parquet
 #'
-#' Downloads a parquet file from the cricinfo-rich GitHub release to a temp
+#' Downloads a parquet file from the cricinfo GitHub release to a temp
 #' file, then runs a SQL query on it. Same pattern as query_remote_parquet()
-#' but for the cricinfo-rich release tag.
+#' but for the cricinfo release tag.
 #'
 #' @param table_name Character. Name of the parquet file (without .parquet).
 #' @param sql_template Character. SQL query with \code{\{table\}} placeholder.
@@ -780,7 +780,7 @@ query_remote_cricinfo_parquet <- function(table_name, sql_template) {
 
 #' Get Cricinfo Release Info
 #'
-#' Gets the cricinfo-rich release info, with session-level caching.
+#' Gets the cricinfo release info, with session-level caching.
 #'
 #' @return List with release info (tag_name, assets, etc.).
 #' @keywords internal
@@ -789,7 +789,7 @@ get_cricinfo_release <- function() {
     return(get("release_info", envir = .cricinfo_remote_cache))
   }
 
-  cli::cli_alert_info("Finding cricinfo-rich release...")
+  cli::cli_alert_info("Finding cricinfo release...")
   release <- get_latest_release(type = "cricinfo")
   assign("release_info", release, envir = .cricinfo_remote_cache)
   release
@@ -798,7 +798,7 @@ get_cricinfo_release <- function() {
 
 #' Load Cricinfo Balls from Remote
 #'
-#' Downloads per-match ball parquets from cricinfo-rich release.
+#' Downloads per-match ball parquets from cricinfo release.
 #'
 #' @param match_ids Character vector of match IDs (required for remote).
 #' @param format Character. Format filter.
