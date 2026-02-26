@@ -170,11 +170,14 @@ ingest_cricinfo_matches <- function(conn, match_files) {
 
   for (f in match_files) {
     fp <- normalizePath(f, winslash = "/", mustWork = TRUE)
+    # Extract match_id from filename to backfill when parquet has NULL match_id
+    file_match_id <- sub("_match\\.parquet$", "", basename(f))
     tryCatch({
       DBI::dbExecute(conn, sprintf("
         INSERT OR IGNORE INTO cricinfo_matches
-        SELECT * FROM read_parquet('%s')
-      ", fp))
+        SELECT * REPLACE (COALESCE(CAST(match_id AS VARCHAR), '%s') AS match_id)
+        FROM read_parquet('%s')
+      ", file_match_id, fp))
       n_inserted <- n_inserted + 1L
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load match {basename(f)}: {e$message}")
