@@ -9,7 +9,7 @@
 # Session-level cache for remote connection setup
 .bouncer_remote_cache <- new.env(parent = emptyenv())
 
-# escape_sql_value() consolidated into escape_sql_strings() in validation_helpers.R
+# escape_sql_value() consolidated into escape_sql_quotes() in validation_helpers.R
 
 
 #' Fast Remote Parquet Query
@@ -239,15 +239,15 @@ load_matches <- function(match_type = "all", gender = "all", team_type = "all",
   where_clauses <- character()
 
   if (!identical(match_type, "all")) {
-    types_escaped <- escape_sql_strings(match_type)
+    types_escaped <- escape_sql_quotes(match_type)
     types_sql <- paste0("'", types_escaped, "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_type IN (%s)", types_sql))
   }
   if (gender != "all") {
-    where_clauses <- c(where_clauses, sprintf("gender = '%s'", escape_sql_strings(gender)))
+    where_clauses <- c(where_clauses, sprintf("gender = '%s'", escape_sql_quotes(gender)))
   }
   if (team_type != "all") {
-    where_clauses <- c(where_clauses, sprintf("team_type = '%s'", escape_sql_strings(team_type)))
+    where_clauses <- c(where_clauses, sprintf("team_type = '%s'", escape_sql_quotes(team_type)))
   }
 
   where_sql <- if (length(where_clauses) > 0) {
@@ -335,7 +335,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
     # Build WHERE clause for direct query (no joins needed - deliveries has match_type)
     where_clauses <- character()
     if (!is.null(match_ids)) {
-      ids_escaped <- escape_sql_strings(match_ids)
+      ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
     }
@@ -363,7 +363,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
     if (!is.null(match_ids) && identical(match_type, "all") &&
         gender == "all" && team_type == "all") {
       # Direct query with match_id filter (escape to prevent SQL injection)
-      ids_escaped <- escape_sql_strings(match_ids)
+      ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       sql <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", ids_sql)
     } else {
@@ -372,18 +372,18 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
 
       if (!identical(match_type, "all")) {
         # match_type is validated input, but escape for safety
-        types_escaped <- escape_sql_strings(match_type)
+        types_escaped <- escape_sql_quotes(match_type)
         types_sql <- paste0("'", types_escaped, "'", collapse = ", ")
         where_clauses <- c(where_clauses, sprintf("m.match_type IN (%s)", types_sql))
       }
       if (gender != "all") {
-        where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", escape_sql_strings(gender)))
+        where_clauses <- c(where_clauses, sprintf("m.gender = '%s'", escape_sql_quotes(gender)))
       }
       if (team_type != "all") {
-        where_clauses <- c(where_clauses, sprintf("m.team_type = '%s'", escape_sql_strings(team_type)))
+        where_clauses <- c(where_clauses, sprintf("m.team_type = '%s'", escape_sql_quotes(team_type)))
       }
       if (!is.null(match_ids)) {
-        ids_escaped <- escape_sql_strings(match_ids)
+        ids_escaped <- escape_sql_quotes(match_ids)
         ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
         where_clauses <- c(where_clauses, sprintf("d.match_id IN (%s)", ids_sql))
       }
@@ -480,7 +480,7 @@ load_innings <- function(match_type = "all", gender = "all",
   # Build WHERE clause
   where_clauses <- character()
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
@@ -523,15 +523,15 @@ load_innings <- function(match_type = "all", gender = "all",
 
     join_where <- character()
     if (!identical(match_type, "all")) {
-      types_escaped <- escape_sql_strings(match_type)
+      types_escaped <- escape_sql_quotes(match_type)
       types_sql <- paste0("'", types_escaped, "'", collapse = ", ")
       join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
     }
     if (gender != "all") {
-      join_where <- c(join_where, sprintf("m.gender = '%s'", escape_sql_strings(gender)))
+      join_where <- c(join_where, sprintf("m.gender = '%s'", escape_sql_quotes(gender)))
     }
     if (!is.null(match_ids)) {
-      ids_escaped <- escape_sql_strings(match_ids)
+      ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       join_where <- c(join_where, sprintf("i.match_id IN (%s)", ids_sql))
     }
@@ -585,7 +585,7 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
   # Build WHERE clause for match_ids
   where_clauses <- character()
   if (!is.null(match_ids)) {
-    ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
 
@@ -628,11 +628,11 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
 
     join_where <- character()
     if (!identical(match_type, "all")) {
-      types_sql <- paste0("'", escape_sql_strings(match_type), "'", collapse = ", ")
+      types_sql <- paste0("'", escape_sql_quotes(match_type), "'", collapse = ", ")
       join_where <- c(join_where, sprintf("m.match_type IN (%s)", types_sql))
     }
     if (!is.null(match_ids)) {
-      ids_sql <- paste0("'", escape_sql_strings(match_ids), "'", collapse = ", ")
+      ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
       join_where <- c(join_where, sprintf("p.match_id IN (%s)", ids_sql))
     }
 

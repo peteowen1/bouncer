@@ -84,7 +84,7 @@ get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
     batch_ids <- delivery_ids[start_idx:end_idx]
 
     # Quote and escape IDs (prevent SQL injection)
-    ids_sql <- paste(sprintf("'%s'", escape_sql_strings(batch_ids)), collapse = ", ")
+    ids_sql <- paste(sprintf("'%s'", escape_sql_quotes(batch_ids)), collapse = ", ")
 
     query <- sprintf("
       SELECT delivery_id, agnostic_expected_runs, agnostic_expected_wicket
@@ -1075,8 +1075,8 @@ build_league_running_averages <- function(conn, format, gender) {
 
   # Determine match types for this format using central helper
   match_types <- get_match_types_for_format(format)
-  match_types_sql <- paste0("'", escape_sql_strings(match_types), "'", collapse = ", ")
-  gender_escaped <- escape_sql_strings(gender)
+  match_types_sql <- paste0("'", escape_sql_quotes(match_types), "'", collapse = ", ")
+  gender_escaped <- escape_sql_quotes(gender)
 
   query <- sprintf("
     WITH match_totals AS (

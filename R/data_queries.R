@@ -138,20 +138,20 @@ build_remote_where_clause <- function(match_type = NULL, season = NULL, team = N
 
   if (!is.null(match_type)) {
     mt <- normalize_match_type(match_type)
-    where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", escape_sql_strings(mt)))
+    where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", escape_sql_quotes(mt)))
   }
 
   if (!is.null(season)) {
-    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_strings(as.character(season))))
+    where_clauses <- c(where_clauses, sprintf("season = '%s'", escape_sql_quotes(as.character(season))))
   }
 
   if (!is.null(team)) {
     where_clauses <- c(where_clauses, sprintf("(team1 = '%s' OR team2 = '%s')",
-                                               escape_sql_strings(team), escape_sql_strings(team)))
+                                               escape_sql_quotes(team), escape_sql_quotes(team)))
   }
 
   if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", escape_sql_strings(venue)))
+    where_clauses <- c(where_clauses, sprintf("LOWER(venue) LIKE LOWER('%%%s%%')", escape_sql_quotes(venue)))
   }
 
   if (!is.null(date_range) && length(date_range) == 2) {
@@ -160,32 +160,32 @@ build_remote_where_clause <- function(match_type = NULL, season = NULL, team = N
   }
 
   if (!is.null(match_id)) {
-    where_clauses <- c(where_clauses, sprintf("match_id = '%s'", escape_sql_strings(match_id)))
+    where_clauses <- c(where_clauses, sprintf("match_id = '%s'", escape_sql_quotes(match_id)))
   }
 
   if (!is.null(player_id)) {
     where_clauses <- c(where_clauses, sprintf("(batter_id = '%s' OR bowler_id = '%s')",
-                                               escape_sql_strings(player_id), escape_sql_strings(player_id)))
+                                               escape_sql_quotes(player_id), escape_sql_quotes(player_id)))
   }
 
   if (!is.null(batter_id)) {
-    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", escape_sql_strings(batter_id)))
+    where_clauses <- c(where_clauses, sprintf("batter_id = '%s'", escape_sql_quotes(batter_id)))
   }
 
   if (!is.null(bowler_id)) {
-    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", escape_sql_strings(bowler_id)))
+    where_clauses <- c(where_clauses, sprintf("bowler_id = '%s'", escape_sql_quotes(bowler_id)))
   }
 
   if (!is.null(batting_team)) {
-    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", escape_sql_strings(batting_team)))
+    where_clauses <- c(where_clauses, sprintf("batting_team = '%s'", escape_sql_quotes(batting_team)))
   }
 
   if (!is.null(bowling_team)) {
-    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", escape_sql_strings(bowling_team)))
+    where_clauses <- c(where_clauses, sprintf("bowling_team = '%s'", escape_sql_quotes(bowling_team)))
   }
 
   if (!is.null(city)) {
-    where_clauses <- c(where_clauses, sprintf("LOWER(city) LIKE LOWER('%%%s%%')", escape_sql_strings(city)))
+    where_clauses <- c(where_clauses, sprintf("LOWER(city) LIKE LOWER('%%%s%%')", escape_sql_quotes(city)))
   }
 
   if (length(where_clauses) > 0) {

@@ -358,15 +358,15 @@ test_that("get_skill_table_name normalizes format", {
   expect_equal(get_skill_table_name("Test", "venue_skill"), "test_venue_skill")
 })
 
-test_that("escape_sql_strings escapes single quotes", {
-  expect_equal(escape_sql_strings("O'Brien"), "O''Brien")
-  expect_equal(escape_sql_strings("no quotes"), "no quotes")
-  expect_equal(escape_sql_strings("it's a 'test'"), "it''s a ''test''")
+test_that("escape_sql_quotes escapes single quotes", {
+  expect_equal(escape_sql_quotes("O'Brien"), "O''Brien")
+  expect_equal(escape_sql_quotes("no quotes"), "no quotes")
+  expect_equal(escape_sql_quotes("it's a 'test'"), "it''s a ''test''")
 })
 
-test_that("escape_sql_strings handles vectors", {
+test_that("escape_sql_quotes handles vectors", {
   input <- c("Smith", "O'Brien", "D'Arcy")
-  result <- escape_sql_strings(input)
+  result <- escape_sql_quotes(input)
   expect_length(result, 3)
   expect_equal(result[2], "O''Brien")
   expect_equal(result[3], "D''Arcy")

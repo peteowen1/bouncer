@@ -407,7 +407,7 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
       batch_ids <- delivery_ids[start_idx:end_idx]
 
       # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-      batch_ids_escaped <- escape_sql_strings(batch_ids)
+      batch_ids_escaped <- escape_sql_quotes(batch_ids)
 
       batch_skills <- DBI::dbGetQuery(conn, sprintf("
         SELECT delivery_id, %s
@@ -427,7 +427,7 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
     skill_data <- all_skills
   } else {
     # Escape single quotes in delivery IDs
-    delivery_ids_escaped <- escape_sql_strings(delivery_ids)
+    delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
 
     skill_data <- DBI::dbGetQuery(conn, sprintf("
       SELECT delivery_id, %s
@@ -473,7 +473,7 @@ get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
   }
 
   # Escape player_id to prevent SQL injection
-  player_id_escaped <- escape_sql_strings(player_id)
+  player_id_escaped <- escape_sql_quotes(player_id)
 
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
@@ -531,7 +531,7 @@ get_players_skills <- function(player_ids, role = "batter", format = "t20", conn
   }
 
   # Escape player_ids to prevent SQL injection
-  player_ids_escaped <- escape_sql_strings(player_ids)
+  player_ids_escaped <- escape_sql_quotes(player_ids)
 
   if (role == "batter") {
     result <- DBI::dbGetQuery(conn, sprintf("
@@ -700,4 +700,4 @@ batch_skill_query <- function(delivery_ids, query_fn, batch_size = 10000, verbos
 }
 
 
-# escape_sql_strings() moved to validation_helpers.R (single canonical location)
+# escape_sql_quotes() moved to validation_helpers.R (single canonical location)

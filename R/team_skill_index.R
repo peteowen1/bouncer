@@ -392,7 +392,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
       WHERE batting_team_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, escape_sql_strings(team_id)))
+    ", table_name, escape_sql_quotes(team_id)))
   } else {
     result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
@@ -405,7 +405,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
       WHERE bowling_team_id = '%s'
       ORDER BY match_date DESC, delivery_id DESC
       LIMIT 1
-    ", table_name, escape_sql_strings(team_id)))
+    ", table_name, escape_sql_quotes(team_id)))
   }
 
   if (nrow(result) == 0) {
@@ -452,7 +452,7 @@ join_team_skill_indices <- function(deliveries_df, format = "t20", conn,
   delivery_ids <- unique(deliveries_df$delivery_id)
 
   # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-  delivery_ids_escaped <- escape_sql_strings(delivery_ids)
+  delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
 
   skill_data <- DBI::dbGetQuery(conn, sprintf("
     SELECT delivery_id, %s
