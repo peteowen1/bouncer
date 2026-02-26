@@ -538,6 +538,9 @@ get_3way_venue_session_k <- function(balls_in_match, format = "t20", gender = "m
   # Get format-gender-specific venue K parameters
   params <- get_venue_k_factors(format, gender)
 
+  # Formula: max * exp(-x/halflife), not standard (max-min)*exp(-x/halflife) + min
+  # This is intentional — re-optimizing would change all historical ratings.
+  # The min floor via max() provides the same bounding effect.
   k <- params$session_max * exp(-balls_in_match / params$session_halflife)
   max(params$session_min, k)
 }
@@ -1071,7 +1074,7 @@ calculate_league_baseline <- function(league_avg_runs,
 #'
 #' @keywords internal
 build_league_running_averages <- function(conn, format, gender) {
-  format <- tolower(format)
+  format <- normalize_format(format)
 
   # Determine match types for this format using central helper
   match_types <- get_match_types_for_format(format)

@@ -273,7 +273,7 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_ind
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = FALSE))  # Don't shutdown - allows subsequent connections
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Create schema (from database_schema.R)
   create_schema(conn, verbose = verbose)

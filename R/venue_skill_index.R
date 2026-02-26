@@ -599,8 +599,8 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
   if (length(delivery_ids) > batch_size) {
     cli::cli_alert_info("Fetching venue skill indices in batches...")
 
-    all_skills <- NULL
     n_batches <- ceiling(length(delivery_ids) / batch_size)
+    batch_results <- vector("list", n_batches)
 
     for (i in seq_len(n_batches)) {
       start_idx <- (i - 1) * batch_size + 1
@@ -610,7 +610,7 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
       # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
       batch_ids_escaped <- escape_sql_quotes(batch_ids)
 
-      batch_skills <- DBI::dbGetQuery(conn, sprintf("
+      batch_results[[i]] <- DBI::dbGetQuery(conn, sprintf("
         SELECT delivery_id, %s
         FROM %s
         WHERE delivery_id IN ('%s')
@@ -618,14 +618,12 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
          table_name,
          paste(batch_ids_escaped, collapse = "','")))
 
-      all_skills <- rbind(all_skills, batch_skills)
-
       if (i %% 10 == 0) {
         cli::cli_alert_info("Fetched {i}/{n_batches} batches...")
       }
     }
 
-    skill_data <- all_skills
+    skill_data <- fast_rbind(batch_results)
   } else {
     # Escape single quotes in delivery IDs
     delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
@@ -681,6 +679,13 @@ add_venue_skill_features <- function(deliveries_df, format = "t20", conn,
     start_vals <- get_venue_start_values(format)
     min_balls <- get_venue_min_balls(format)
 
+    # Count NAs BEFORE coalesce fill
+    n_filled <- if ("venue_run_rate" %in% names(result)) {
+      sum(is.na(result$venue_run_rate))
+    } else {
+      nrow(result)
+    }
+
     result <- result %>%
       dplyr::mutate(
         venue_run_rate = dplyr::coalesce(venue_run_rate, start_vals$run_rate),
@@ -691,8 +696,6 @@ add_venue_skill_features <- function(deliveries_df, format = "t20", conn,
         venue_reliable = as.integer(venue_balls >= min_balls)
       )
 
-    n_filled <- sum(is.na(deliveries_df$venue_run_rate) |
-                    !("venue_run_rate" %in% names(deliveries_df)))
     if (n_filled > 0) {
       cli::cli_alert_info("Filled {n_filled} missing venue skill values with starting defaults")
     }

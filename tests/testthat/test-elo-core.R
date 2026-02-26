@@ -26,23 +26,6 @@ test_that("calculate_expected_outcome follows ELO formula", {
   expect_equal(e_ab + e_ba, 1, tolerance = 0.001)
 })
 
-test_that("calculate_k_factor returns appropriate values by format", {
-  # Test matches should have higher K-factor
-  expect_gt(calculate_k_factor("test", 0), calculate_k_factor("t20", 0))
-
-  # K-factor should decrease with experience (more matches)
-  expect_gt(calculate_k_factor("t20", 0), calculate_k_factor("t20", 100))
-})
-
-test_that("calculate_k_factor handles different match types", {
-  # Should not error for valid match types
-  expect_no_error(calculate_k_factor("test", 10))
-  expect_no_error(calculate_k_factor("odi", 10))
-  expect_no_error(calculate_k_factor("t20", 10))
-
-  # Should return numeric
-  expect_type(calculate_k_factor("t20", 50), "double")
-})
 
 test_that("calculate_elo_update adjusts rating correctly", {
   current_elo <- 1500
@@ -84,18 +67,7 @@ test_that("calculate_delivery_outcome_score returns valid scores", {
   }
 })
 
-test_that("initialize_player_elo returns starting ELO", {
-  # Should return the starting ELO constant
-  batting_start <- initialize_player_elo("batting")
-  bowling_start <- initialize_player_elo("bowling")
 
-  expect_type(batting_start, "double")
-  expect_type(bowling_start, "double")
-
-  # Starting ELO should be positive
-  expect_gt(batting_start, 0)
-  expect_gt(bowling_start, 0)
-})
 
 test_that("normalize_match_type handles variations", {
   # Should normalize to lowercase

@@ -29,11 +29,11 @@
 load_projection_training_data <- function(conn, format, gender, team_type,
                                           sample_frac = 1.0) {
 
-  format_lower <- tolower(format)
-  gender_lower <- tolower(gender)
+  format_lower <- normalize_format(format)
+  gender_lower <- escape_sql_quotes(tolower(gender))
 
   # Match types lowercase for LOWER() comparison
-  match_types <- tolower(get_match_types_for_format(format))
+  match_types <- tolower(get_match_types_for_format(format_lower))
 
   # Team type filter (handle NULL for club matches)
   if (team_type == "international") {
@@ -42,7 +42,7 @@ load_projection_training_data <- function(conn, format, gender, team_type,
     team_type_filter <- "(m.team_type IS NULL OR m.team_type != 'international')"
   }
 
-  match_types_sql <- paste0("'", match_types, "'", collapse = ", ")
+  match_types_sql <- paste0("'", escape_sql_quotes(match_types), "'", collapse = ", ")
 
   # Get max balls for format using central helper
   max_balls <- get_max_balls(format)
@@ -254,7 +254,7 @@ calculate_actual_eis <- function(conn, format, gender, team_type) {
     team_type_filter <- "(m.team_type IS NULL OR m.team_type != 'international')"
   }
 
-  match_types_sql <- paste0("'", match_types, "'", collapse = ", ")
+  match_types_sql <- paste0("'", escape_sql_quotes(match_types), "'", collapse = ", ")
 
   query <- sprintf("
     SELECT AVG(mi.total_runs) as avg_score
@@ -494,11 +494,11 @@ calculate_all_delivery_projections <- function(conn, format,
                                                batch_size = 50000,
                                                params_dir = "../bouncerdata/models") {
 
-  format_lower <- tolower(format)
+  format_lower <- normalize_format(format)
 
   # Match types for this format (lowercase for SQL LOWER() comparison)
-  match_types <- tolower(get_match_types_for_format(format))
-  match_types_sql <- paste0("'", match_types, "'", collapse = ", ")
+  match_types <- tolower(get_match_types_for_format(format_lower))
+  match_types_sql <- paste0("'", escape_sql_quotes(match_types), "'", collapse = ", ")
 
   # Get max balls using central helper
   max_balls <- get_max_balls(format)

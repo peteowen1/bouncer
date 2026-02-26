@@ -166,7 +166,7 @@ create_remote_connection <- function() {
                         table_name, parquet_url)
     tryCatch(
       DBI::dbExecute(conn, view_sql),
-      error = function(e) NULL
+      error = function(e) cli::cli_alert_warning("Failed to create remote view for {table_name}: {conditionMessage(e)}")
     )
   }
 

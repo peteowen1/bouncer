@@ -30,9 +30,7 @@ calculate_roster_elo <- function(player_ids,
   }
 
   # Connect to database
-  check_duckdb_available()
-  if (is.null(db_path)) db_path <- get_default_db_path()
-  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Determine 3-way ELO table for this format
@@ -411,29 +409,24 @@ simulate_match <- function(team1_players,
     20
   )
 
-  # Run simulations
-  team1_scores <- numeric(n_simulations)
-  team2_scores <- numeric(n_simulations)
+  # Calculate expected outcomes once (constant across simulations)
+  p1_bat <- calculate_expected_outcome(
+    team1_batting$team_batting_elo,
+    team2_bowling$team_bowling_elo
+  )
+  adj1 <- (p1_bat - 0.5) * 0.4
+  mean1 <- base_rpo * total_overs * (1 + adj1)
 
-  for (i in seq_len(n_simulations)) {
-    # Team 1 batting vs Team 2 bowling
-    p1_bat <- calculate_expected_outcome(
-      team1_batting$team_batting_elo,
-      team2_bowling$team_bowling_elo
-    )
-    adj1 <- (p1_bat - 0.5) * 0.4
-    mean1 <- base_rpo * total_overs * (1 + adj1)
-    team1_scores[i] <- round(stats::rnorm(1, mean = mean1, sd = base_sd))
+  p2_bat <- calculate_expected_outcome(
+    team2_batting$team_batting_elo,
+    team1_bowling$team_bowling_elo
+  )
+  adj2 <- (p2_bat - 0.5) * 0.4
+  mean2 <- base_rpo * total_overs * (1 + adj2)
 
-    # Team 2 batting vs Team 1 bowling
-    p2_bat <- calculate_expected_outcome(
-      team2_batting$team_batting_elo,
-      team1_bowling$team_bowling_elo
-    )
-    adj2 <- (p2_bat - 0.5) * 0.4
-    mean2 <- base_rpo * total_overs * (1 + adj2)
-    team2_scores[i] <- round(stats::rnorm(1, mean = mean2, sd = base_sd))
-  }
+  # Vectorized simulation
+  team1_scores <- round(stats::rnorm(n_simulations, mean = mean1, sd = base_sd))
+  team2_scores <- round(stats::rnorm(n_simulations, mean = mean2, sd = base_sd))
 
   # Ensure non-negative scores
 

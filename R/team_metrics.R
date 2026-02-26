@@ -114,14 +114,15 @@ team_batting_stats <- function(team = NULL,
 
 #' @keywords internal
 team_batting_stats_remote <- function(team = NULL, match_type = NULL,
-                                       season = NULL, min_matches = 10) {
+                                       season = NULL, min_matches = 10,
+                                       gender = "male") {
 
   # Determine parquet file
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 
@@ -302,13 +303,14 @@ team_bowling_stats <- function(team = NULL,
 
 #' @keywords internal
 team_bowling_stats_remote <- function(team = NULL, match_type = NULL,
-                                       season = NULL, min_matches = 10) {
+                                       season = NULL, min_matches = 10,
+                                       gender = "male") {
 
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 
@@ -681,14 +683,15 @@ venue_stats <- function(venue = NULL,
 
 
 #' @keywords internal
-venue_stats_remote <- function(venue = NULL, match_type = NULL, min_matches = 5) {
+venue_stats_remote <- function(venue = NULL, match_type = NULL, min_matches = 5,
+                                gender = "male") {
 
   # Determine parquet file
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 

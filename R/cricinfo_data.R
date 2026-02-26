@@ -121,18 +121,22 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       }
 
       # --- Ingest balls (camelCase → snake_case mapping) ---
-      ball_files_new <- file.path(data_dir, paste0(new_ids, "_balls.parquet"))
-      ball_files_new <- ball_files_new[file.exists(ball_files_new)]
+      ball_paths <- file.path(data_dir, paste0(new_ids, "_balls.parquet"))
+      ball_exists <- file.exists(ball_paths)
+      ball_files_new <- ball_paths[ball_exists]
+      ball_ids_new <- new_ids[ball_exists]
       if (length(ball_files_new) > 0) {
-        n_balls <- ingest_cricinfo_balls(conn, ball_files_new, new_ids)
+        n_balls <- ingest_cricinfo_balls(conn, ball_files_new, ball_ids_new)
         total_balls <- total_balls + n_balls
       }
 
       # --- Ingest innings (snake_case already) ---
-      innings_files <- file.path(data_dir, paste0(new_ids, "_innings.parquet"))
-      innings_files <- innings_files[file.exists(innings_files)]
-      if (length(innings_files) > 0) {
-        n_innings <- ingest_cricinfo_innings(conn, innings_files, new_ids)
+      innings_paths <- file.path(data_dir, paste0(new_ids, "_innings.parquet"))
+      innings_exists <- file.exists(innings_paths)
+      innings_files_new <- innings_paths[innings_exists]
+      innings_ids_new <- new_ids[innings_exists]
+      if (length(innings_files_new) > 0) {
+        n_innings <- ingest_cricinfo_innings(conn, innings_files_new, innings_ids_new)
         total_innings <- total_innings + n_innings
       }
     }

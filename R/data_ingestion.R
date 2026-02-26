@@ -47,6 +47,11 @@ fast_rbind <- function(df_list) {
 bulk_write_arrow <- function(conn, table_name, df) {
   if (is.null(df) || nrow(df) == 0) return(invisible(0))
 
+  # Validate table_name exists to prevent SQL injection via crafted table names
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    cli::cli_abort("Table {.val {table_name}} does not exist in database")
+  }
+
   if (has_arrow_support()) {
     # Convert to Arrow table and use DuckDB's native Arrow support
     arrow_tbl <- arrow::as_arrow_table(df)
@@ -500,7 +505,6 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
- on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = TRUE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM matches")
  DBI::dbDisconnect(conn_check, shutdown = TRUE)
  existing_ids <- existing_matches$match_id

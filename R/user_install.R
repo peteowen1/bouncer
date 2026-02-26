@@ -1077,7 +1077,10 @@ update_bouncerdata <- function(repo = "peteowen1/bouncerdata",
 
   cli::cli_alert_info("Remote version: {remote_version}")
 
-  if (remote_version <= local_version) {
+  # Parse as dates for robust comparison (handles date-based tags like "2026-02-26")
+  local_date <- tryCatch(as.Date(local_version), error = function(e) as.Date("1970-01-01"))
+  remote_date <- tryCatch(as.Date(remote_version), error = function(e) as.Date("1970-01-01"))
+  if (remote_date <= local_date) {
     cli::cli_alert_success("Already up to date!")
     return(invisible(FALSE))
   }

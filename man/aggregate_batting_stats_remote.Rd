@@ -8,7 +8,8 @@ aggregate_batting_stats_remote(
   player_id = NULL,
   match_type = NULL,
   season = NULL,
-  min_balls = 100
+  min_balls = 100,
+  gender = "male"
 )
 }
 \arguments{

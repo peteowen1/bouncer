@@ -236,9 +236,10 @@ analyze_batter_vs_bowler <- function(batter_id,
 
 
 #' @keywords internal
-analyze_batter_vs_bowler_remote <- function(batter_id, bowler_id, match_type) {
+analyze_batter_vs_bowler_remote <- function(batter_id, bowler_id, match_type,
+                                             gender = "male") {
 
-  table_name <- sprintf("deliveries_%s_male", match_type)
+  table_name <- sprintf("deliveries_%s_%s", match_type, gender)
   cli::cli_alert_info("Analyzing matchup from {table_name}...")
 
   sql_template <- sprintf("
@@ -324,30 +325,31 @@ build_matchup_result <- function(batter_id, bowler_id, match_type, historical) {
 #' top_t20_bowlers <- rank_players("bowling", match_type = "t20", top_n = 20)
 #' }
 rank_players <- function(rating_type = "batting",
-                         match_type = "all",
+                         match_type = "t20",
                          top_n = 10,
                          db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  # Determine ELO column
-  if (match_type == "all") {
-    elo_col <- if (rating_type == "batting") "elo_batting" else "elo_bowling"
-  } else {
-    match_type <- normalize_match_type(match_type)
-    elo_col <- sprintf("elo_%s_%s", rating_type, match_type)
+  format <- normalize_format(match_type)
+  table_name <- paste0(format, "_3way_player_elo")
+
+  if (!table_name %in% DBI::dbListTables(conn)) {
+    cli::cli_abort("Table {.val {table_name}} not found in database")
   }
 
-  # Get latest ELO for each player
+  elo_col <- if (rating_type == "batting") "batter_run_elo" else "bowler_run_elo"
+  id_col <- if (rating_type == "batting") "batter_id" else "bowler_id"
+
   query <- sprintf("
     WITH latest_elos AS (
       SELECT
-        player_id,
+        %s as player_id,
         %s as elo_rating,
         match_date,
-        ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY match_date DESC) as rn
-      FROM player_elo_history
+        ROW_NUMBER() OVER (PARTITION BY %s ORDER BY match_date DESC) as rn
+      FROM %s
       WHERE %s IS NOT NULL
     )
     SELECT
@@ -358,7 +360,7 @@ rank_players <- function(rating_type = "batting",
     WHERE rn = 1
     ORDER BY elo_rating DESC
     LIMIT ?
-  ", elo_col, elo_col)
+  ", id_col, elo_col, id_col, table_name, elo_col)
 
   result <- DBI::dbGetQuery(conn, query, params = list(top_n))
 
@@ -385,14 +387,15 @@ rank_players <- function(rating_type = "batting",
 aggregate_batting_stats_remote <- function(player_id = NULL,
                                             match_type = NULL,
                                             season = NULL,
-                                            min_balls = 100) {
+                                            min_balls = 100,
+                                            gender = "male") {
 
   # Determine which parquet file(s) to query
   if (is.null(match_type) || match_type == "all") {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male deliveries (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} deliveries (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 
@@ -553,18 +556,16 @@ aggregate_batting_stats_remote_legacy <- function(player_id = NULL,
 aggregate_bowling_stats_remote <- function(player_id = NULL,
                                             match_type = NULL,
                                             season = NULL,
-                                            min_balls = 100) {
+                                            min_balls = 100,
+                                            gender = "male") {
 
   # Determine which parquet file(s) to query
   # File naming: deliveries_{match_type}_{gender}.parquet
   if (is.null(match_type) || match_type == "all") {
-    # For "all", use T20 male as default (largest dataset)
-    # Could be expanded to query multiple files
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male deliveries (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} deliveries (specify match_type for other formats)...")
   } else {
-    # Map match_type to file name (assume male for now)
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 

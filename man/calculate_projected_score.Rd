@@ -14,7 +14,8 @@ calculate_projected_score(
   gender = "male",
   team_type = "international",
   min_resource_used = NULL,
-  apply_bounds = TRUE
+  apply_bounds = TRUE,
+  max_balls = NULL
 )
 }
 \arguments{
@@ -40,6 +41,8 @@ If NULL, loads default parameters.}
 \item{min_resource_used}{Numeric. Minimum resource_used to prevent division issues.}
 
 \item{apply_bounds}{Logical. Whether to apply min/max bounds on projection.}
+
+\item{max_balls}{Integer. Override max balls for format (used by Test match innings projection).}
 }
 \value{
 Numeric. Projected final score.

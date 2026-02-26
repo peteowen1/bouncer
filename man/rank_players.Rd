@@ -6,7 +6,7 @@
 \usage{
 rank_players(
   rating_type = "batting",
-  match_type = "all",
+  match_type = "t20",
   top_n = 10,
   db_path = NULL
 )

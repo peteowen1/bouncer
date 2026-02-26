@@ -17,7 +17,8 @@ simulate_innings(
   mode = "categorical",
   gender = "male",
   is_knockout = 0,
-  event_tier = 2
+  event_tier = 2,
+  max_overs_override = NULL
 )
 }
 \arguments{
@@ -46,6 +47,8 @@ simulate_innings(
 \item{is_knockout}{Integer. 0 or 1}
 
 \item{event_tier}{Integer. 1, 2, or 3}
+
+\item{max_overs_override}{Integer. Override max overs (used for super overs).}
 }
 \value{
 List with innings summary:

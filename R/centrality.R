@@ -178,12 +178,16 @@ find_bipartite_components <- function(matchup_matrix) {
   # Union-find parent array
   parent <- seq_len(n_batters + n_bowlers)
 
-  # Find with path compression
+  # Iterative find with path compression (avoids stack overflow on deep trees)
   find_root <- function(i) {
-    if (parent[i] != i) {
-      parent[i] <<- find_root(parent[i])
+    root <- i
+    while (parent[root] != root) root <- parent[root]
+    while (parent[i] != root) {
+      next_i <- parent[i]
+      parent[i] <<- root
+      i <- next_i
     }
-    parent[i]
+    root
   }
 
   # Union operation
@@ -298,11 +302,11 @@ calculate_unique_opponent_counts <- function(matchup_matrix) {
   bowler_ids <- colnames(matchup_matrix)
 
   # For each batter: count unique bowlers faced
-  batter_unique_opps <- rowSums(matchup_matrix > 0)
+  batter_unique_opps <- Matrix::rowSums(matchup_matrix > 0)
   names(batter_unique_opps) <- batter_ids
 
   # For each bowler: count unique batters faced
-  bowler_unique_opps <- colSums(matchup_matrix > 0)
+  bowler_unique_opps <- Matrix::colSums(matchup_matrix > 0)
   names(bowler_unique_opps) <- bowler_ids
 
   list(
@@ -576,12 +580,15 @@ compute_cricket_pagerank <- function(matchup_matrix,
   names(bowler_pr) <- bowler_ids
 
   # Pre-compute row/column sums for normalization
-  row_sums <- rowSums(matchup_matrix)
-  col_sums <- colSums(matchup_matrix)
+  row_sums <- Matrix::rowSums(matchup_matrix)
+  col_sums <- Matrix::colSums(matchup_matrix)
 
   # Handle dangling nodes (players with no matchups after filtering)
   row_sums[row_sums == 0] <- 1
   col_sums[col_sums == 0] <- 1
+
+  # Pre-compute transpose (reused every iteration)
+  t_matchup <- Matrix::t(matchup_matrix)
 
   # Base score (for damping teleportation)
   base_batter <- (1 - damping) / n_batters
@@ -589,6 +596,13 @@ compute_cricket_pagerank <- function(matchup_matrix,
 
   converged <- FALSE
   iter <- 0
+
+  # Pre-compute economy-weighted matchup matrix (constant across iterations)
+  econ_weighted_matchups <- matchup_matrix * 1.5 - matchup_matrix * performance_matrix
+  if (!is.null(wicket_matrix)) {
+    econ_weighted_matchups <- econ_weighted_matchups + wicket_weight * (matchup_matrix * wicket_matrix)
+  }
+  t_econ_weighted <- Matrix::t(econ_weighted_matchups)
 
   if (verbose) {
     cli::cli_progress_bar("Computing Cricket PageRank", total = max_iter)
@@ -636,19 +650,10 @@ compute_cricket_pagerank <- function(matchup_matrix,
     # Formula: bowler_PR = base + damping * sum (batter_PR * matchups * (1 + econ_bonus))
 
     # Base authority from facing quality batters
-    base_bowler_authority <- t(matchup_matrix) %*% batter_pr
+    base_bowler_authority <- t_matchup %*% batter_pr
 
-    # Economy bonus: reward for restricting batters
-    # (1 - performance) is 0-1, so (0.5 + (1-perf)) gives 0.5-1.5 range
-    econ_bonus_matrix <- 0.5 + (1 - performance_matrix)
-
-    # Add wicket component if available
-    if (!is.null(wicket_matrix)) {
-      # Bowlers get extra credit for taking wickets
-      econ_bonus_matrix <- econ_bonus_matrix + wicket_weight * wicket_matrix
-    }
-
-    economy_weighted <- t(matchup_matrix * econ_bonus_matrix) %*% batter_pr
+    # Economy-weighted matchup (pre-computed outside loop)
+    economy_weighted <- t_econ_weighted %*% batter_pr
 
     # Combine: 70% from opponent quality, 30% from economy bonus
     weighted_batter <- 0.7 * base_bowler_authority + 0.3 * economy_weighted

@@ -392,7 +392,8 @@ query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
                                      venue = NULL, city = NULL,
                                      date_range = NULL, batting_team = NULL,
                                      bowling_team = NULL, limit = NULL,
-                                     country = NULL, event = NULL) {
+                                     country = NULL, event = NULL,
+                                     gender = "male") {
 
   # Remote requires match_type (deliveries are partitioned)
   if (is.null(match_type)) {
@@ -408,7 +409,7 @@ query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
   }
 
   # Determine parquet file
-  table_name <- sprintf("deliveries_%s_male", match_type)
+  table_name <- sprintf("deliveries_%s_%s", match_type, gender)
   cli::cli_alert_info("Querying {table_name} from remote...")
 
   # Build WHERE clause using safe helper (escapes single quotes)

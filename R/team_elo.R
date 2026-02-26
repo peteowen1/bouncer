@@ -19,18 +19,7 @@ TEAM_K_FACTOR <- 32
 #' @return Character. Standardized format: "t20", "odi", or "test"
 #' @keywords internal
 normalize_match_format <- function(match_type) {
-  format <- tolower(match_type %||% "t20")
-
-  if (format %in% c("t20", "it20", "t20i")) {
-    return("t20")
-  } else if (format %in% c("odi", "odm", "oda")) {
-    return("odi")
-  } else if (format %in% c("test", "mdm")) {
-    return("test")
-  } else {
-    # Default to t20 for unknown formats
-    return("t20")
-  }
+  normalize_format(match_type %||% "t20")
 }
 
 
