@@ -1,7 +1,21 @@
 # Database Schema Functions
 #
 # Functions for creating the database schema (table definitions).
-# Split from database_setup.R for better maintainability.
+
+#' Create DuckDB Schemas
+#'
+#' Creates the cricsheet and cricinfo schemas for namespace isolation.
+#'
+#' @param conn A DuckDB connection object
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_schemas <- function(conn) {
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricsheet")
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricinfo")
+  invisible(TRUE)
+}
+
 
 #' Create Database Schema
 #'
@@ -15,15 +29,18 @@
 create_schema <- function(conn, verbose = TRUE) {
   if (verbose) cli::cli_h2("Creating database schema")
 
+  # Create schemas for namespacing
+  create_schemas(conn)
+
   # Helper to log table creation
   log_table <- function(name) {
     if (verbose) cli::cli_alert_info("Creating {name} table...")
   }
 
   # Create matches table
-  log_table("matches")
+  log_table("cricsheet.matches")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS matches (
+    CREATE TABLE IF NOT EXISTS cricsheet.matches (
       match_id VARCHAR PRIMARY KEY,
       season VARCHAR,
       match_type VARCHAR,
@@ -79,9 +96,9 @@ create_schema <- function(conn, verbose = TRUE) {
   ")
 
   # Create deliveries table
-  log_table("deliveries")
+  log_table("cricsheet.deliveries")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS deliveries (
+    CREATE TABLE IF NOT EXISTS cricsheet.deliveries (
       -- Primary Keys
       delivery_id VARCHAR PRIMARY KEY,
       match_id VARCHAR,
@@ -154,9 +171,9 @@ create_schema <- function(conn, verbose = TRUE) {
   ")
 
   # Create players table
-  log_table("players")
+  log_table("cricsheet.players")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS players (
+    CREATE TABLE IF NOT EXISTS cricsheet.players (
       player_id VARCHAR PRIMARY KEY,
       player_name VARCHAR,
       country VARCHAR,
@@ -167,9 +184,9 @@ create_schema <- function(conn, verbose = TRUE) {
   ")
 
   # Create match_innings table
-  log_table("match_innings")
+  log_table("cricsheet.match_innings")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS match_innings (
+    CREATE TABLE IF NOT EXISTS cricsheet.match_innings (
       match_id VARCHAR,
       innings INTEGER,
       batting_team VARCHAR,
@@ -188,9 +205,9 @@ create_schema <- function(conn, verbose = TRUE) {
   ")
 
   # Create innings_powerplays table
-  log_table("innings_powerplays")
+  log_table("cricsheet.innings_powerplays")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS innings_powerplays (
+    CREATE TABLE IF NOT EXISTS cricsheet.innings_powerplays (
       powerplay_id VARCHAR PRIMARY KEY,  -- {match_id}_{innings}_{seq}
       match_id VARCHAR NOT NULL,
       innings INTEGER NOT NULL,
@@ -917,15 +934,18 @@ create_centrality_schema_tables <- function(conn, verbose = TRUE) {
 #' @return Invisibly returns TRUE
 #' @keywords internal
 create_cricinfo_tables <- function(conn, verbose = TRUE) {
+  # Ensure cricinfo schema exists (idempotent)
+  create_schemas(conn)
+
   log_table <- function(name) {
     if (verbose) cli::cli_alert_info("Creating {name} table...")
   }
 
   # Ball-by-ball with Hawkeye rich fields
 
-  log_table("cricinfo_balls")
+  log_table("cricinfo.balls")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS cricinfo_balls (
+    CREATE TABLE IF NOT EXISTS cricinfo.balls (
       id VARCHAR,
       match_id VARCHAR,
       innings_number INTEGER,
@@ -986,9 +1006,9 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
   ")
 
   # Match metadata
-  log_table("cricinfo_matches")
+  log_table("cricinfo.matches")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS cricinfo_matches (
+    CREATE TABLE IF NOT EXISTS cricinfo.matches (
       match_id VARCHAR PRIMARY KEY,
       title VARCHAR,
       series_id VARCHAR,
@@ -1043,9 +1063,9 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
   ")
 
   # Batting scorecards (one row per batsman per innings)
-  log_table("cricinfo_innings")
+  log_table("cricinfo.innings")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS cricinfo_innings (
+    CREATE TABLE IF NOT EXISTS cricinfo.innings (
       match_id VARCHAR,
       innings_number INTEGER,
       team_id VARCHAR,
@@ -1074,9 +1094,9 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
   ")
 
   # Fixtures index (schedule + results for all discovered matches)
-  log_table("cricinfo_fixtures")
+  log_table("cricinfo.fixtures")
   DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS cricinfo_fixtures (
+    CREATE TABLE IF NOT EXISTS cricinfo.fixtures (
       match_id VARCHAR PRIMARY KEY,
       series_id VARCHAR,
       series_name VARCHAR,
@@ -1100,17 +1120,17 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
 
   # Indexes for common query patterns
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_balls_match
-    ON cricinfo_balls(match_id)")
+    ON cricinfo.balls(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_balls_innings
-    ON cricinfo_balls(match_id, innings_number)")
+    ON cricinfo.balls(match_id, innings_number)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_matches_format
-    ON cricinfo_matches(format, gender)")
+    ON cricinfo.matches(format, gender)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_innings_match
-    ON cricinfo_innings(match_id)")
+    ON cricinfo.innings(match_id)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_format
-    ON cricinfo_fixtures(format, gender)")
+    ON cricinfo.fixtures(format, gender)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_status
-    ON cricinfo_fixtures(status)")
+    ON cricinfo.fixtures(status)")
 
   invisible(TRUE)
 }

@@ -72,7 +72,7 @@ matches_query <- "
     event_name,
     event_match_number,
     event_group
-  FROM matches
+  FROM cricsheet.matches
   WHERE event_name LIKE ?
     AND LOWER(match_type) = ?
   ORDER BY match_date, match_id
@@ -115,9 +115,9 @@ innings_query <- "
     total_runs as innings_total,
     total_wickets as innings_wickets,
     total_overs as innings_overs
-  FROM match_innings
+  FROM cricsheet.match_innings
   WHERE match_id IN (
-    SELECT match_id FROM matches
+    SELECT match_id FROM cricsheet.matches
     WHERE event_name LIKE ?
       AND LOWER(match_type) = ?
   )
@@ -173,9 +173,9 @@ deliveries_query <- "
     (d.wickets_fallen - CAST(d.is_wicket AS INT)) AS wickets_fallen,
     d.batter_elo_before,
     d.bowler_elo_before
-  FROM deliveries d
+  FROM cricsheet.deliveries d
   WHERE d.match_id IN (
-    SELECT match_id FROM matches
+    SELECT match_id FROM cricsheet.matches
     WHERE event_name LIKE ?
       AND LOWER(match_type) = ?
   )

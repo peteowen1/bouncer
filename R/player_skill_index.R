@@ -398,8 +398,8 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
   if (length(delivery_ids) > batch_size) {
     cli::cli_alert_info("Fetching skill indices in batches...")
 
-    all_skills <- NULL
     n_batches <- ceiling(length(delivery_ids) / batch_size)
+    batch_results <- vector("list", n_batches)
 
     for (i in seq_len(n_batches)) {
       start_idx <- (i - 1) * batch_size + 1
@@ -409,7 +409,7 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
       # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
       batch_ids_escaped <- escape_sql_quotes(batch_ids)
 
-      batch_skills <- DBI::dbGetQuery(conn, sprintf("
+      batch_results[[i]] <- DBI::dbGetQuery(conn, sprintf("
         SELECT delivery_id, %s
         FROM %s
         WHERE delivery_id IN ('%s')
@@ -417,14 +417,12 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
          table_name,
          paste(batch_ids_escaped, collapse = "','")))
 
-      all_skills <- rbind(all_skills, batch_skills)
-
       if (i %% 10 == 0) {
         cli::cli_alert_info("Fetched {i}/{n_batches} batches...")
       }
     }
 
-    skill_data <- all_skills
+    skill_data <- fast_rbind(batch_results)
   } else {
     # Escape single quotes in delivery IDs
     delivery_ids_escaped <- escape_sql_quotes(delivery_ids)

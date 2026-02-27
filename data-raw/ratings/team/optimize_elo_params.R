@@ -104,7 +104,7 @@ query <- "
     outcome_by_runs,
     outcome_by_wickets,
     overs_per_innings
-  FROM matches
+  FROM cricsheet.matches
   WHERE outcome_winner IS NOT NULL
     AND outcome_winner != ''
     AND team_type IS NOT NULL

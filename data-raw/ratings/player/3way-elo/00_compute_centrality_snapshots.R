@@ -125,8 +125,8 @@ cli::cli_h2("Determining snapshot dates")
 # Get all unique match dates in chronological order
 match_dates_query <- sprintf("
   SELECT DISTINCT m.match_date, COUNT(*) as delivery_count
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = '%s'
     AND d.batter_id IS NOT NULL
@@ -194,8 +194,8 @@ all_deliveries_query <- sprintf("
     d.runs_batter,
     CASE WHEN d.player_out_id IS NOT NULL AND d.player_out_id != '' THEN 1 ELSE 0 END as is_wicket,
     m.match_date
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = '%s'
     AND d.batter_id IS NOT NULL

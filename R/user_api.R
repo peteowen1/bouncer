@@ -13,20 +13,14 @@ format_number <- function(x) {
   }
 }
 
-# Internal helper: validate format parameter
+# Internal helper: validate format parameter (delegates to normalize_format)
 validate_format <- function(format, allow_null = TRUE) {
-  if (is.null(format) && allow_null) {
-    return(NULL)
-  }
-  if (is.null(format) && !allow_null) {
-    cli::cli_abort("format parameter is required")
-  }
-  format <- tolower(format)
-  valid_formats <- c("t20", "odi", "test")
-  if (!format %in% valid_formats) {
-    cli::cli_abort("format must be one of: {paste(valid_formats, collapse = ', ')}")
-  }
-  return(format)
+  if (is.null(format) && allow_null) return(NULL)
+  if (is.null(format) && !allow_null) cli::cli_abort("format parameter is required")
+  tryCatch(
+    normalize_format(format),
+    warning = function(w) cli::cli_abort("Invalid format: {format}")
+  )
 }
 
 
@@ -104,7 +98,7 @@ get_player <- function(name_or_id, format = NULL,
 
   # Try exact match first, then fuzzy match
   player <- DBI::dbGetQuery(conn, "
-    SELECT * FROM players
+    SELECT * FROM cricsheet.players
     WHERE player_id = ? OR LOWER(player_name) = LOWER(?)
     LIMIT 1
   ", params = list(name_or_id, name_or_id))
@@ -112,7 +106,7 @@ get_player <- function(name_or_id, format = NULL,
   # If no exact match, try partial match
   if (nrow(player) == 0) {
     player <- DBI::dbGetQuery(conn, "
-      SELECT * FROM players
+      SELECT * FROM cricsheet.players
       WHERE LOWER(player_name) LIKE LOWER(?)
       ORDER BY player_name
       LIMIT 1
@@ -655,9 +649,10 @@ compare_teams <- function(team1, team2, format = "t20", neutral_venue = TRUE, db
     return(NULL)
   }
 
-  # Calculate win probability from ELO difference
+  # Calculate win probability from ELO difference (with home advantage for team1)
   elo_diff <- t1$elo_result - t2$elo_result
-  win_prob_t1 <- 1 / (1 + 10^(-elo_diff / 400))
+  effective_elo_diff <- elo_diff + if (!neutral_venue) HOME_ADVANTAGE_ELO else 0
+  win_prob_t1 <- 1 / (1 + 10^(-effective_elo_diff / 400))
 
   result <- list(
     team1 = t1,
@@ -741,7 +736,7 @@ analyze_match <- function(match_id, db_path = NULL) {
 
   # Get match info
   match <- DBI::dbGetQuery(conn, "
-    SELECT * FROM matches WHERE match_id = ?
+    SELECT * FROM cricsheet.matches WHERE match_id = ?
   ", params = list(match_id))
 
   if (nrow(match) == 0) {
@@ -751,7 +746,7 @@ analyze_match <- function(match_id, db_path = NULL) {
 
   # Get innings summaries
   innings <- DBI::dbGetQuery(conn, "
-    SELECT * FROM match_innings
+    SELECT * FROM cricsheet.match_innings
     WHERE match_id = ?
     ORDER BY innings
   ", params = list(match_id))
@@ -764,7 +759,7 @@ analyze_match <- function(match_id, db_path = NULL) {
       COUNT(*) as balls,
       SUM(CASE WHEN is_four THEN 1 ELSE 0 END) as fours,
       SUM(CASE WHEN is_six THEN 1 ELSE 0 END) as sixes
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE match_id = ?
     GROUP BY batter_id
     ORDER BY runs DESC
@@ -778,7 +773,7 @@ analyze_match <- function(match_id, db_path = NULL) {
       COUNT(*) as balls,
       SUM(runs_total) as runs,
       SUM(CASE WHEN is_wicket THEN 1 ELSE 0 END) as wickets
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE match_id = ?
     GROUP BY bowler_id
     ORDER BY wickets DESC, runs ASC
@@ -1021,7 +1016,7 @@ search_players <- function(pattern, limit = 10, db_path = NULL) {
 
   result <- DBI::dbGetQuery(conn, "
     SELECT player_id, player_name, country, batting_style, bowling_style
-    FROM players
+    FROM cricsheet.players
     WHERE LOWER(player_name) LIKE LOWER(?)
     ORDER BY player_name
     LIMIT ?
@@ -1061,31 +1056,36 @@ search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
+  # Subquery gets most recent ELO per team (not all-time peak)
+  elo_subquery <- "(SELECT t2.elo_result FROM team_elo t2
+     WHERE t2.team_id = team_elo.team_id
+     ORDER BY t2.match_date DESC LIMIT 1)"
+
   if (is.null(pattern)) {
-    result <- DBI::dbGetQuery(conn, "
+    result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
         team_id as team,
         COUNT(*) as matches,
         MAX(match_date) as last_match,
-        ROUND(MAX(elo_result), 0) as current_elo
+        ROUND(%s, 0) as current_elo
       FROM team_elo
       GROUP BY team_id
       ORDER BY matches DESC
       LIMIT ?
-    ", params = list(limit))
+    ", elo_subquery), params = list(limit))
   } else {
-    result <- DBI::dbGetQuery(conn, "
+    result <- DBI::dbGetQuery(conn, sprintf("
       SELECT
         team_id as team,
         COUNT(*) as matches,
         MAX(match_date) as last_match,
-        ROUND(MAX(elo_result), 0) as current_elo
+        ROUND(%s, 0) as current_elo
       FROM team_elo
       WHERE LOWER(team_id) LIKE LOWER(?)
       GROUP BY team_id
       ORDER BY matches DESC
       LIMIT ?
-    ", params = list(paste0("%", pattern, "%"), limit))
+    ", elo_subquery), params = list(paste0("%", pattern, "%"), limit))
   }
 
   return(result)

@@ -862,21 +862,15 @@ build_venue_country_lookup <- function(all_matches) {
 
   venue_country_map <- get_venue_country_map()
 
-  # Create case-insensitive lookup function
-
-  get_venue_country <- function(venue) {
-    venue_lower <- tolower(venue)
-
-    for (venue_name in names(venue_country_map)) {
-      if (tolower(venue_name) == venue_lower) {
-        return(venue_country_map[[venue_name]])
-      }
-    }
-    return(NA_character_)
-  }
+  # Pre-lowercase map keys for O(1) lookup instead of O(n) scan
+  lower_map <- stats::setNames(
+    as.character(venue_country_map),
+    tolower(names(venue_country_map))
+  )
 
   # Build lookup from hard-coded map
-  countries <- sapply(unique_venues, get_venue_country)
+  countries <- lower_map[tolower(unique_venues)]
+  names(countries) <- unique_venues
   venue_country_lookup <- countries[!is.na(countries)]
 
   # Fallback: for unmatched venues, use mode-based approach (team that plays there most)

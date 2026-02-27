@@ -9,14 +9,16 @@ load_cricinfo_balls_remote(match_ids, format, gender)
 \arguments{
 \item{match_ids}{Character vector of match IDs (required for remote).}
 
-\item{format}{Character. Format filter.}
+\item{format}{Character. Format filter (e.g., "t20i"). If NULL, searches all formats.}
 
-\item{gender}{Character. Gender filter.}
+\item{gender}{Character. Gender filter (e.g., "male"). If NULL, searches all genders.}
 }
 \value{
 Data frame.
 }
 \description{
-Downloads per-match ball parquets from cricinfo release.
+Downloads combined ball parquets from cricinfo release and filters
+by match_id. The release contains format-level combined files
+(e.g., cricinfo_balls_t20i_male.parquet), not per-match files.
 }
 \keyword{internal}

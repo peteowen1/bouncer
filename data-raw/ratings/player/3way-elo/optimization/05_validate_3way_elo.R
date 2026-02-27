@@ -77,7 +77,7 @@ query <- sprintf("
    -- Match info
    m.event_name
  FROM %s_3way_elo e
- JOIN matches m ON e.match_id = m.match_id
+ JOIN cricsheet.matches m ON e.match_id = m.match_id
  WHERE m.event_name IN (%s)
    AND EXTRACT(YEAR FROM e.match_date) IN (%s)
  ORDER BY e.match_date, e.match_id, e.delivery_id

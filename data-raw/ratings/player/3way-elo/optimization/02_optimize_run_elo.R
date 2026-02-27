@@ -125,8 +125,8 @@ query <- sprintf("
     -- Join agnostic predictions (pre-computed per-delivery baselines)
     COALESCE(ap.agnostic_expected_runs, %f) AS baseline_runs,
     COALESCE(ap.agnostic_expected_wicket, %f) AS baseline_wicket
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   LEFT JOIN %s ap ON d.delivery_id = ap.delivery_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = '%s'

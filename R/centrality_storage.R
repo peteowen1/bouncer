@@ -79,13 +79,13 @@ build_format_gender_filters <- function(format, gender) {
   format_filter <- if (format == "all") {
     "1=1"
   } else {
-    glue::glue("LOWER(m.match_type) IN ('{format}', 'i{format}')")
+    sprintf("LOWER(m.match_type) IN ('%s', 'i%s')", escape_sql_quotes(format), escape_sql_quotes(format))
   }
 
   gender_filter <- if (gender == "all") {
     "1=1"
   } else {
-    glue::glue("m.gender = '{gender}'")
+    sprintf("m.gender = '%s'", escape_sql_quotes(gender))
   }
 
   list(format_filter = format_filter, gender_filter = gender_filter)
@@ -515,8 +515,8 @@ calculate_player_pagerank <- function(conn,
       d.runs_batter,
       CASE WHEN d.player_out_id IS NOT NULL AND d.player_out_id != '' THEN 1 ELSE 0 END as is_wicket,
       m.match_type
-    FROM deliveries d
-    JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE {filters$format_filter}
       AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL
@@ -790,8 +790,8 @@ calculate_player_centrality <- function(conn,
       d.runs_batter,
       CASE WHEN d.player_out_id IS NOT NULL AND d.player_out_id != '' THEN 1 ELSE 0 END as is_wicket,
       m.match_type
-    FROM deliveries d
-    JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE {filters$format_filter}
       AND {filters$gender_filter}
       AND d.batter_id IS NOT NULL

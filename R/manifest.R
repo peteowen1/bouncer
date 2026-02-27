@@ -168,12 +168,12 @@ generate_manifest <- function(parquet_dir = NULL, conn = NULL, output_path = NUL
 
   if (!is.null(conn)) {
     # Generate from database
-    match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches ORDER BY match_id")$match_id
+    match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches ORDER BY match_id")$match_id
 
     # Get partition stats
     partition_stats <- DBI::dbGetQuery(conn, "
       SELECT match_type, gender, COUNT(DISTINCT match_id) as match_count
-      FROM matches
+      FROM cricsheet.matches
       GROUP BY match_type, gender
     ")
 

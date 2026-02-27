@@ -39,7 +39,7 @@ team_elo <- DBI::dbGetQuery(conn, "
 matches <- DBI::dbGetQuery(conn, "
   SELECT
   *
-  FROM matches
+  FROM cricsheet.matches
   ORDER BY match_date, match_id
 ")
 

@@ -53,7 +53,7 @@ conn <- connect_to_bouncer()
 # Run SQL queries
 recent_matches <- DBI::dbGetQuery(conn, "
   SELECT match_id, team1, team2, match_date, match_type
-  FROM matches
+  FROM cricsheet.matches
   WHERE match_type = 'T20'
   ORDER BY match_date DESC
   LIMIT 20
@@ -112,10 +112,10 @@ get_data_info()
 
 | Table | Description |
 |-------|-------------|
-| `matches` | Match metadata (teams, venue, date, result) |
-| `players` | Player registry |
-| `deliveries_long_form` | Ball-by-ball data for Tests, First-class |
-| `deliveries_short_form` | Ball-by-ball data for T20s, ODIs |
+| `cricsheet.matches` | Match metadata (teams, venue, date, result) |
+| `cricsheet.players` | Player registry |
+| `cricsheet.deliveries_long_form` | Ball-by-ball data for Tests, First-class |
+| `cricsheet.deliveries_short_form` | Ball-by-ball data for T20s, ODIs |
 | `t20_player_skill` | T20 player skill indices |
 | `odi_player_skill` | ODI player skill indices |
 | `test_player_skill` | Test player skill indices |
@@ -350,7 +350,7 @@ conn <- connect_to_bouncer()
 # Run any SQL query
 ipl_matches <- DBI::dbGetQuery(conn, "
   SELECT match_id, team1, team2, match_date, venue
-  FROM matches
+  FROM cricsheet.matches
   WHERE event_name LIKE '%Indian Premier League%'
   ORDER BY match_date DESC
   LIMIT 50
@@ -359,7 +359,7 @@ ipl_matches <- DBI::dbGetQuery(conn, "
 # Get ball-by-ball data for a specific match
 deliveries <- DBI::dbGetQuery(conn, "
   SELECT *
-  FROM deliveries
+  FROM cricsheet.deliveries
   WHERE match_id = '1234567'
   ORDER BY innings, over, ball
 ")
@@ -371,7 +371,7 @@ top_scorers <- DBI::dbGetQuery(conn, "
     SUM(runs_batter) as total_runs,
     COUNT(*) as balls_faced,
     ROUND(SUM(runs_batter) * 100.0 / COUNT(*), 2) as strike_rate
-  FROM deliveries
+  FROM cricsheet.deliveries
   WHERE match_type = 'T20'
   GROUP BY batter_id
   HAVING COUNT(*) > 500

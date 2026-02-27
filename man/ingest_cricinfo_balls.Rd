@@ -17,7 +17,7 @@ ingest_cricinfo_balls(conn, ball_files, match_ids)
 Number of rows inserted.
 }
 \description{
-Loads ball-by-ball parquets into cricinfo_balls table with
+Loads ball-by-ball parquets into cricinfo.balls table with
 camelCase to snake_case column mapping.
 }
 \keyword{internal}

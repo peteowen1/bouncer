@@ -380,8 +380,12 @@ fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_inn
     safe_innings_url <- gsub("'", "\\\\'", innings_url)
     js_fetch <- sprintf("
       (async () => {
-        const response = await fetch('%s');
-        return await response.json();
+        try {
+          const response = await fetch('%s');
+          return await response.json();
+        } catch(e) {
+          return {error: e.message};
+        }
       })();
     ", safe_innings_url)
 

@@ -193,7 +193,10 @@ load_projection_params <- function(format = "t20",
 
     result <- tryCatch(
       DBI::dbGetQuery(conn, query, params = list(segment_id)),
-      error = function(e) NULL
+      error = function(e) {
+        cli::cli_alert_warning("Could not load projection params from DB, using defaults: {e$message}")
+        NULL
+      }
     )
 
     if (!is.null(result) && nrow(result) > 0) {
@@ -239,6 +242,7 @@ load_projection_params <- function(format = "t20",
 #' @param team_type Character. "international" or "club" (used for defaults).
 #' @param min_resource_used Numeric. Minimum resource_used to prevent division issues.
 #' @param apply_bounds Logical. Whether to apply min/max bounds on projection.
+#' @param max_balls Integer. Override max balls for format (used by Test match innings projection).
 #'
 #' @return Numeric. Projected final score.
 #' @export
@@ -266,7 +270,8 @@ calculate_projected_score <- function(current_score,
                                       gender = "male",
                                       team_type = "international",
                                       min_resource_used = NULL,
-                                      apply_bounds = TRUE) {
+                                      apply_bounds = TRUE,
+                                      max_balls = NULL) {
 
   format_lower <- tolower(format)
 
@@ -285,8 +290,8 @@ calculate_projected_score <- function(current_score,
   # Convert wickets fallen to wickets remaining
   wickets_remaining <- 10 - wickets
 
-  # Get max balls for format using central helper
-  max_balls_format <- get_max_balls(format)
+  # Get max balls for format (override allows Test match innings-specific limits)
+  max_balls_format <- if (!is.null(max_balls)) max_balls else get_max_balls(format)
 
   # Convert overs bowled (cricket notation) to balls remaining
   balls_bowled <- overs_to_balls(overs)
@@ -505,6 +510,9 @@ calculate_projected_scores_vectorized <- function(current_score,
                                                   y,
                                                   max_balls,
                                                   min_resource_used = 0.01) {
+
+  # Ensure expected_initial_score matches vector length
+  expected_initial_score <- rep_len(expected_initial_score, length(current_score))
 
   # Ensure valid inputs
   balls_remaining <- pmax(0, balls_remaining)

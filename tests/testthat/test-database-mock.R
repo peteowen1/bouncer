@@ -13,9 +13,12 @@
 create_mock_db <- function() {
   conn <- DBI::dbConnect(duckdb::duckdb(), ":memory:")
 
+  # Create schema
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricsheet")
+
   # Create matches table
   DBI::dbExecute(conn, "
-    CREATE TABLE matches (
+    CREATE TABLE cricsheet.matches (
       match_id VARCHAR PRIMARY KEY,
       match_type VARCHAR,
       match_date DATE,
@@ -33,7 +36,7 @@ create_mock_db <- function() {
 
   # Create players table
   DBI::dbExecute(conn, "
-    CREATE TABLE players (
+    CREATE TABLE cricsheet.players (
       player_id VARCHAR PRIMARY KEY,
       player_name VARCHAR,
       gender VARCHAR
@@ -42,7 +45,7 @@ create_mock_db <- function() {
 
   # Create deliveries table
   DBI::dbExecute(conn, "
-    CREATE TABLE deliveries (
+    CREATE TABLE cricsheet.deliveries (
       delivery_id VARCHAR PRIMARY KEY,
       match_id VARCHAR,
       innings INTEGER,
@@ -64,7 +67,7 @@ create_mock_db <- function() {
 
   # Insert sample matches
   DBI::dbExecute(conn, "
-    INSERT INTO matches VALUES
+    INSERT INTO cricsheet.matches VALUES
     ('M001', 'T20', '2024-01-15', 'India', 'Australia', 'MCG', 'Melbourne', 'India', 'India', 'bat', 'P001', 'International'),
     ('M002', 'ODI', '2024-01-20', 'England', 'South Africa', 'Lords', 'London', 'England', 'South Africa', 'field', 'P003', 'International'),
     ('M003', 'Test', '2024-02-01', 'India', 'England', 'Wankhede', 'Mumbai', NULL, 'India', 'bat', NULL, 'International')
@@ -72,7 +75,7 @@ create_mock_db <- function() {
 
   # Insert sample players
   DBI::dbExecute(conn, "
-    INSERT INTO players VALUES
+    INSERT INTO cricsheet.players VALUES
     ('P001', 'Virat Kohli', 'male'),
     ('P002', 'Rohit Sharma', 'male'),
     ('P003', 'Joe Root', 'male'),
@@ -83,7 +86,7 @@ create_mock_db <- function() {
 
   # Insert sample deliveries
   DBI::dbExecute(conn, "
-    INSERT INTO deliveries VALUES
+    INSERT INTO cricsheet.deliveries VALUES
     ('M001_India_1_001_01', 'M001', 1, 1, 1, 'India', 'Australia', 'P002', 'P004', 'P001', 4, 0, 4, NULL, NULL, 0),
     ('M001_India_1_001_02', 'M001', 1, 1, 2, 'India', 'Australia', 'P002', 'P004', 'P001', 0, 0, 0, NULL, NULL, 0),
     ('M001_India_1_001_03', 'M001', 1, 1, 3, 'India', 'Australia', 'P002', 'P004', 'P001', 1, 0, 1, NULL, NULL, 0),
@@ -103,7 +106,10 @@ test_that("mock database has correct table structure", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  tables <- DBI::dbListTables(conn)
+  tables <- DBI::dbGetQuery(conn, "
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'cricsheet'
+  ")$table_name
 
   expect_true("matches" %in% tables)
   expect_true("players" %in% tables)
@@ -114,7 +120,7 @@ test_that("mock database has sample matches", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  matches <- DBI::dbGetQuery(conn, "SELECT * FROM matches")
+  matches <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.matches")
 
   expect_equal(nrow(matches), 3)
   expect_true("M001" %in% matches$match_id)
@@ -127,7 +133,7 @@ test_that("mock database has sample players", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  players <- DBI::dbGetQuery(conn, "SELECT * FROM players")
+  players <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.players")
 
   expect_equal(nrow(players), 6)
   expect_true("Virat Kohli" %in% players$player_name)
@@ -138,7 +144,7 @@ test_that("mock database has sample deliveries", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  deliveries <- DBI::dbGetQuery(conn, "SELECT * FROM deliveries")
+  deliveries <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.deliveries")
 
   expect_equal(nrow(deliveries), 6)
   expect_true("M001_India_1_001_01" %in% deliveries$delivery_id)
@@ -153,7 +159,7 @@ test_that("can query matches by format using mock db", {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   t20_matches <- DBI::dbGetQuery(conn, "
-    SELECT * FROM matches WHERE match_type = 'T20'
+    SELECT * FROM cricsheet.matches WHERE match_type = 'T20'
   ")
 
   expect_equal(nrow(t20_matches), 1)
@@ -167,7 +173,7 @@ test_that("can query players by name using mock db", {
 
   # Parameterized query pattern
   player <- DBI::dbGetQuery(conn, "
-    SELECT * FROM players WHERE LOWER(player_name) LIKE LOWER(?)
+    SELECT * FROM cricsheet.players WHERE LOWER(player_name) LIKE LOWER(?)
   ", params = list("%Kohli%"))
 
   expect_equal(nrow(player), 1)
@@ -184,7 +190,7 @@ test_that("can aggregate delivery statistics using mock db", {
       COUNT(*) as balls_faced,
       SUM(runs_batter) as total_runs,
       SUM(is_wicket) as dismissals
-    FROM deliveries
+    FROM cricsheet.deliveries
     GROUP BY batter_id
   ")
 
@@ -201,8 +207,8 @@ test_that("can join tables using mock db", {
     SELECT
       p.player_name,
       COUNT(d.delivery_id) as deliveries
-    FROM players p
-    LEFT JOIN deliveries d ON p.player_id = d.batter_id
+    FROM cricsheet.players p
+    LEFT JOIN cricsheet.deliveries d ON p.player_id = d.batter_id
     GROUP BY p.player_id, p.player_name
   ")
 
@@ -223,7 +229,7 @@ test_that("parameterized queries prevent SQL injection", {
   malicious_input <- "'; DROP TABLE players; --"
 
   result <- DBI::dbGetQuery(conn, "
-    SELECT * FROM players WHERE player_name = ?
+    SELECT * FROM cricsheet.players WHERE player_name = ?
   ", params = list(malicious_input))
 
   # Should return empty result, not execute DROP TABLE
@@ -231,11 +237,14 @@ test_that("parameterized queries prevent SQL injection", {
   expect_equal(nrow(result), 0)
 
   # Verify players table still exists
-  tables <- DBI::dbListTables(conn)
+  tables <- DBI::dbGetQuery(conn, "
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'cricsheet'
+  ")$table_name
   expect_true("players" %in% tables)
 
   # Verify players still have data
-  remaining <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")
+  remaining <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")
   expect_equal(remaining$n, 6)
 })
 
@@ -247,7 +256,7 @@ test_that("LIKE queries with parameterization are safe", {
   malicious_input <- "%' OR '1'='1"
 
   result <- DBI::dbGetQuery(conn, "
-    SELECT * FROM players WHERE player_name LIKE ?
+    SELECT * FROM cricsheet.players WHERE player_name LIKE ?
   ", params = list(malicious_input))
 
   # Should return 0 rows (literal match), not all rows
@@ -263,7 +272,7 @@ test_that("empty result handling", {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   result <- DBI::dbGetQuery(conn, "
-    SELECT * FROM matches WHERE match_type = 'NONEXISTENT'
+    SELECT * FROM cricsheet.matches WHERE match_type = 'NONEXISTENT'
   ")
 
   expect_equal(nrow(result), 0)
@@ -275,7 +284,7 @@ test_that("NULL value handling", {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   result <- DBI::dbGetQuery(conn, "
-    SELECT * FROM matches WHERE winner IS NULL
+    SELECT * FROM cricsheet.matches WHERE winner IS NULL
   ")
 
   # Test match (M003) has NULL winner (ongoing)
@@ -292,7 +301,7 @@ test_that("aggregate with empty groups", {
       match_type,
       COUNT(*) as match_count,
       AVG(CASE WHEN winner IS NOT NULL THEN 1 ELSE 0 END) as completion_rate
-    FROM matches
+    FROM cricsheet.matches
     GROUP BY match_type
   ")
 
@@ -308,7 +317,7 @@ test_that("date columns are properly typed", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  result <- DBI::dbGetQuery(conn, "SELECT match_date FROM matches")
+  result <- DBI::dbGetQuery(conn, "SELECT match_date FROM cricsheet.matches")
 
   # DuckDB returns dates as Date class
   expect_true(inherits(result$match_date, "Date"))
@@ -318,7 +327,7 @@ test_that("integer columns are properly typed", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  result <- DBI::dbGetQuery(conn, "SELECT runs_batter FROM deliveries")
+  result <- DBI::dbGetQuery(conn, "SELECT runs_batter FROM cricsheet.deliveries")
 
   expect_type(result$runs_batter, "integer")
 })
@@ -327,7 +336,7 @@ test_that("character columns are properly typed", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  result <- DBI::dbGetQuery(conn, "SELECT player_name FROM players")
+  result <- DBI::dbGetQuery(conn, "SELECT player_name FROM cricsheet.players")
 
   expect_type(result$player_name, "character")
 })
@@ -340,7 +349,7 @@ test_that("delivery IDs follow expected format", {
   conn <- create_mock_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  deliveries <- DBI::dbGetQuery(conn, "SELECT delivery_id FROM deliveries")
+  deliveries <- DBI::dbGetQuery(conn, "SELECT delivery_id FROM cricsheet.deliveries")
 
   # Format: {match_id}_{batting_team}_{innings}_{over}_{ball}
   pattern <- "^[A-Z0-9]+_[A-Za-z]+_\\d+_\\d{3}_\\d{2}$"
@@ -388,7 +397,7 @@ test_that("multiple read connections work", {
   })
 
   # Both connections should work independently
-  result1 <- DBI::dbGetQuery(conn1, "SELECT COUNT(*) as n FROM matches")
+  result1 <- DBI::dbGetQuery(conn1, "SELECT COUNT(*) as n FROM cricsheet.matches")
   result2 <- DBI::dbGetQuery(conn2, "SELECT 1 as test")
 
   expect_equal(result1$n, 3)
@@ -405,16 +414,16 @@ test_that("transaction rollback works", {
 
   DBI::dbBegin(conn)
 
-  DBI::dbExecute(conn, "DELETE FROM players WHERE player_id = 'P001'")
+  DBI::dbExecute(conn, "DELETE FROM cricsheet.players WHERE player_id = 'P001'")
 
   # Before rollback, player should be gone
-  during <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")
+  during <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")
   expect_equal(during$n, 5)
 
   DBI::dbRollback(conn)
 
   # After rollback, player should be back
-  after <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")
+  after <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")
   expect_equal(after$n, 6)
 })
 
@@ -425,13 +434,13 @@ test_that("transaction commit persists changes", {
   DBI::dbBegin(conn)
 
   DBI::dbExecute(conn, "
-    INSERT INTO players VALUES ('P007', 'Test Player', 'male')
+    INSERT INTO cricsheet.players VALUES ('P007', 'Test Player', 'male')
   ")
 
   DBI::dbCommit(conn)
 
   # After commit, player should exist
-  result <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")
+  result <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")
   expect_equal(result$n, 7)
 })
 
@@ -452,7 +461,7 @@ test_that("batting statistics can be calculated", {
       SUM(CASE WHEN runs_batter = 6 THEN 1 ELSE 0 END) as sixes,
       SUM(CASE WHEN runs_batter = 0 AND is_wicket = 0 THEN 1 ELSE 0 END) as dots,
       SUM(is_wicket) as dismissals
-    FROM deliveries
+    FROM cricsheet.deliveries
     GROUP BY batter_id
   ")
 
@@ -480,7 +489,7 @@ test_that("bowling statistics can be calculated", {
       COUNT(*) as balls_bowled,
       SUM(runs_total) as runs_conceded,
       SUM(is_wicket) as wickets
-    FROM deliveries
+    FROM cricsheet.deliveries
     GROUP BY bowler_id
   ")
 
@@ -507,7 +516,7 @@ test_that("strike rate calculation", {
       SUM(runs_batter) as runs,
       COUNT(*) as balls,
       CAST(SUM(runs_batter) AS DOUBLE) / COUNT(*) * 100 as strike_rate
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE batter_id = 'P001'
     GROUP BY batter_id
   ")
@@ -529,7 +538,7 @@ test_that("economy rate calculation", {
       SUM(runs_total) as runs,
       COUNT(*) as balls,
       CAST(SUM(runs_total) AS DOUBLE) / COUNT(*) * 6 as economy
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE bowler_id = 'P004'
     GROUP BY bowler_id
   ")
@@ -550,7 +559,7 @@ test_that("wicket types are properly tracked", {
 
   wickets <- DBI::dbGetQuery(conn, "
     SELECT wicket_type, player_dismissed_id
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE is_wicket = 1
   ")
 
@@ -565,7 +574,7 @@ test_that("non-wicket deliveries have NULL wicket fields", {
 
   non_wickets <- DBI::dbGetQuery(conn, "
     SELECT wicket_type, player_dismissed_id
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE is_wicket = 0
   ")
 

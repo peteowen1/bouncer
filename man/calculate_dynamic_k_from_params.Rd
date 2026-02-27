@@ -16,7 +16,7 @@ Numeric. The calculated K-factor.
 }
 \description{
 Convenience wrapper that extracts k_max, k_min, and halflife from a
-named list (as used in three_way_elo.R and player_elo_dynamic.R).
+named list (as used in three_way_elo.R).
 }
 \examples{
 \dontrun{

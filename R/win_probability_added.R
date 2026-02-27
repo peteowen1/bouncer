@@ -201,6 +201,11 @@ simulate_after_state <- function(deliveries) {
   after <- deliveries
 
   # Update cumulative totals
+  # NOTE: total_runs from database is post-delivery cumulative (includes this delivery).
+  # This addition simulates the "next state" by adding runs_total again,
+  # effectively making it the state AFTER the next hypothetical delivery.
+  # This is correct for WPA because we compare "before" (current state) vs
+  # "after" (state if this delivery had a specific outcome).
   after$total_runs <- after$total_runs + after$runs_total
   after$wickets_fallen <- after$wickets_fallen + as.integer(after$is_wicket)
 

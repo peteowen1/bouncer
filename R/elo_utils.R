@@ -2,7 +2,6 @@
 #
 # Core ELO primitives: expected outcome, K-factor, update formula,
 # dynamic K-factor decay, delivery outcome scoring, and format helpers.
-# Consolidates functions from the former player_elo_core.R and elo_utils.R.
 
 # ============================================================================
 # DYNAMIC K-FACTOR CALCULATION
@@ -17,7 +16,7 @@
 #' Formula: K = k_min + (k_max - k_min) * exp(-experience / halflife)
 #'
 #' This function consolidates the K-factor decay pattern that was repeated
-#' in player_elo_dynamic.R, team_elo_optimization.R, and three_way_elo.R.
+#' in team_elo_optimization.R and three_way_elo.R.
 #'
 #' @param experience Numeric. Player/entity experience count (deliveries, matches, etc.)
 #' @param k_max Numeric. Maximum K-factor for new players.
@@ -47,6 +46,9 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
   # Ensure experience is non-negative
   experience <- max(0, experience)
 
+  # Guard against division by zero in exponential decay
+  if (halflife <= 0) return(k_min)
+
   # Exponential decay formula
   k_min + (k_max - k_min) * exp(-experience / halflife)
 }
@@ -55,7 +57,7 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
 #' Calculate Dynamic K-Factor from Parameters List
 #'
 #' Convenience wrapper that extracts k_max, k_min, and halflife from a
-#' named list (as used in three_way_elo.R and player_elo_dynamic.R).
+#' named list (as used in three_way_elo.R).
 #'
 #' @param experience Numeric. Experience count.
 #' @param params Named list. Must contain: k_max, k_min, halflife
@@ -88,30 +90,6 @@ calculate_dynamic_k_from_params <- function(experience, params) {
 # ELO EXPECTED SCORE
 # ============================================================================
 
-#' Calculate Expected ELO Score
-#'
-#' Computes the expected score (probability of winning) given two ELO ratings.
-#' Uses the standard ELO formula: E = 1 / (1 + 10^((opponent_elo - player_elo) / 400))
-#'
-#' @param player_elo Numeric. Player's current ELO rating.
-#' @param opponent_elo Numeric. Opponent's current ELO rating.
-#' @param scale Numeric. ELO scale factor. Default 400 (standard).
-#'
-#' @return Numeric. Expected score (0 to 1).
-#'
-#' @examples
-#' \dontrun{
-#' calculate_elo_expected(1500, 1500)  # 0.5 (equal ratings)
-#' calculate_elo_expected(1600, 1400)  # 0.76 (100 points advantage)
-#' calculate_elo_expected(1400, 1600)  # 0.24 (100 points disadvantage)
-#' }
-#'
-#' @keywords internal
-calculate_elo_expected <- function(player_elo, opponent_elo, scale = 400) {
-  1 / (1 + 10^((opponent_elo - player_elo) / scale))
-}
-
-
 #' Calculate ELO Update
 #'
 #' Computes the new ELO rating after a match result.
@@ -139,7 +117,7 @@ calculate_elo_update <- function(current_elo, expected, actual, k) {
 
 
 # ============================================================================
-# CORE ELO FUNCTIONS (from player_elo_core.R)
+# CORE ELO FUNCTIONS
 # ============================================================================
 
 #' Calculate Expected Outcome
@@ -164,61 +142,10 @@ calculate_expected_outcome <- function(player_elo, opponent_elo, divisor = ELO_D
 }
 
 
-#' Calculate K-Factor
-#'
-#' Calculates the K-factor (learning rate) for ELO updates based on match type
-#' and player experience.
-#'
-#' @param match_type Character. Type of match ("test", "odi", "t20", etc.)
-#' @param player_matches Numeric. Number of matches player has played
-#'
-#' @return Numeric K-factor value
-#' @keywords internal
-calculate_k_factor <- function(match_type, player_matches = 0) {
-  # Input validation
-  if (is.null(match_type) || is.na(match_type) || !is.character(match_type)) {
-    match_type <- "t20"  # Default to T20
-  }
-  if (is.na(player_matches) || is.nan(player_matches) || is.infinite(player_matches) || player_matches < 0) {
-    player_matches <- 0
-  }
-
-  # Base K-factor by match type
-  match_type <- tolower(match_type)
-
-  base_k <- if (match_type %in% c("test", "tests")) {
-    K_FACTOR_TEST
-  } else if (match_type %in% c("odi", "odis", "mdm")) {
-    K_FACTOR_ODI
-  } else if (match_type %in% c("t20", "t20i", "it20", "t20s")) {
-    K_FACTOR_T20
-  } else {
-    K_FACTOR_DOMESTIC
-  }
-
-  # Adjust for player experience (newer players have higher K)
-  # Formula: K * (0.5 + 0.5 / log10(matches + 2))
-  # This gradually reduces K as player gains experience
-  if (player_matches > 0) {
-    experience_factor <- 0.5 + 0.5 / log10(player_matches + 2)
-    base_k <- base_k * experience_factor
-  }
-
-  return(base_k)
-}
 
 
-#' Initialize Player ELO
-#'
-#' Returns the starting ELO rating for a new player.
-#'
-#' @param rating_type Character. Type of rating ("batting" or "bowling")
-#'
-#' @return Numeric. Starting ELO rating (default 1500)
-#' @keywords internal
-initialize_player_elo <- function(rating_type = "batting") {
-  ELO_START_RATING
-}
+
+
 
 
 #' Calculate Actual Outcome Score from Delivery
@@ -261,59 +188,11 @@ calculate_delivery_outcome_score <- function(runs_batter, is_wicket, is_boundary
 }
 
 
-#' Normalize Match Type
-#'
-#' Normalizes match type strings to standard format.
-#' This is an alias for \code{normalize_format()} for backward compatibility.
-#'
-#' @param match_type Character. Raw match type string
-#'
-#' @return Character. Normalized match type ("test", "odi", or "t20")
-#' @keywords internal
-normalize_match_type <- function(match_type) {
-  # Delegate to normalize_format() for consistency
-  normalize_format(match_type)
-}
 
 
-#' Get Average Runs Per Ball
-#'
-#' Returns the average runs per ball for a given match format.
-#'
-#' @param match_type Character. Match type
-#'
-#' @return Numeric. Average runs per ball
-#' @keywords internal
-get_avg_runs_per_ball <- function(match_type) {
-  match_type <- normalize_match_type(match_type)
-
-  if (match_type == "test") {
-    return(AVG_RUNS_PER_BALL_TEST)
-  } else if (match_type == "odi") {
-    return(AVG_RUNS_PER_BALL_ODI)
-  } else {
-    return(AVG_RUNS_PER_BALL_T20)
-  }
-}
 
 
-#' Get Base Wicket Probability
-#'
-#' Returns the base probability of wicket per delivery for a given format.
-#'
-#' @param match_type Character. Match type
-#'
-#' @return Numeric. Base wicket probability
-#' @keywords internal
-get_base_wicket_prob <- function(match_type) {
-  match_type <- normalize_match_type(match_type)
 
-  if (match_type == "test") {
-    return(BASE_WICKET_PROB_TEST)
-  } else if (match_type == "odi") {
-    return(BASE_WICKET_PROB_ODI)
-  } else {
-    return(BASE_WICKET_PROB_T20)
-  }
-}
+
+
 

@@ -91,7 +91,7 @@ team_batting_stats <- function(team = NULL,
       SUM(CASE WHEN d.is_wicket THEN 1 ELSE 0 END) as wickets_lost,
       SUM(CASE WHEN d.is_four THEN 1 ELSE 0 END) as fours,
       SUM(CASE WHEN d.is_six THEN 1 ELSE 0 END) as sixes
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     %s
     GROUP BY d.batting_team
     HAVING COUNT(DISTINCT d.match_id) >= ?
@@ -114,14 +114,15 @@ team_batting_stats <- function(team = NULL,
 
 #' @keywords internal
 team_batting_stats_remote <- function(team = NULL, match_type = NULL,
-                                       season = NULL, min_matches = 10) {
+                                       season = NULL, min_matches = 10,
+                                       gender = "male") {
 
   # Determine parquet file
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 
@@ -279,7 +280,7 @@ team_bowling_stats <- function(team = NULL,
       SUM(d.runs_total) as runs_conceded,
       SUM(CASE WHEN d.is_wicket THEN 1 ELSE 0 END) as wickets_taken,
       SUM(CASE WHEN d.runs_batter = 0 AND d.wides = 0 AND d.noballs = 0 THEN 1 ELSE 0 END) as dots
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     %s
     GROUP BY d.bowling_team
     HAVING COUNT(DISTINCT d.match_id) >= ?
@@ -302,13 +303,14 @@ team_bowling_stats <- function(team = NULL,
 
 #' @keywords internal
 team_bowling_stats_remote <- function(team = NULL, match_type = NULL,
-                                       season = NULL, min_matches = 10) {
+                                       season = NULL, min_matches = 10,
+                                       gender = "male") {
 
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 
@@ -450,7 +452,7 @@ head_to_head <- function(team1, team2, match_type = NULL,
       m.outcome_by_runs,
       m.outcome_by_wickets,
       m.venue
-    FROM matches m
+    FROM cricsheet.matches m
     %s
     ORDER BY m.match_date DESC
   ", where_sql)
@@ -637,7 +639,7 @@ venue_stats <- function(venue = NULL,
       SUM(CASE WHEN d.is_wicket THEN 1 ELSE 0 END) as total_wickets,
       SUM(CASE WHEN d.is_four THEN 1 ELSE 0 END) as total_fours,
       SUM(CASE WHEN d.is_six THEN 1 ELSE 0 END) as total_sixes
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     %s
     GROUP BY d.venue
     HAVING COUNT(DISTINCT d.match_id) >= ?
@@ -666,7 +668,7 @@ venue_stats <- function(venue = NULL,
         match_id,
         innings,
         SUM(runs_total) as innings_total
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       %s
       GROUP BY venue, match_id, innings
     )
@@ -681,14 +683,15 @@ venue_stats <- function(venue = NULL,
 
 
 #' @keywords internal
-venue_stats_remote <- function(venue = NULL, match_type = NULL, min_matches = 5) {
+venue_stats_remote <- function(venue = NULL, match_type = NULL, min_matches = 5,
+                                gender = "male") {
 
   # Determine parquet file
   if (is.null(match_type)) {
-    table_name <- "deliveries_T20_male"
-    cli::cli_alert_info("Querying T20 male (specify match_type for other formats)...")
+    table_name <- paste0("deliveries_T20_", gender)
+    cli::cli_alert_info("Querying T20 {gender} (specify match_type for other formats)...")
   } else {
-    table_name <- paste0("deliveries_", match_type, "_male")
+    table_name <- paste0("deliveries_", match_type, "_", gender)
     cli::cli_alert_info("Querying {table_name}...")
   }
 

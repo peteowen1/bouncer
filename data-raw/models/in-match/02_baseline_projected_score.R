@@ -47,7 +47,7 @@ matches_query <- "
     m.outcome_winner,
     m.event_match_number,
     m.event_group
-  FROM matches m
+  FROM cricsheet.matches m
   WHERE m.event_name LIKE ?
     AND LOWER(m.match_type) = ?
     AND m.outcome_winner IS NOT NULL
@@ -73,9 +73,9 @@ innings_query <- "
     mi.total_runs,
     mi.total_wickets,
     mi.total_overs
-  FROM match_innings mi
+  FROM cricsheet.match_innings mi
   WHERE mi.match_id IN (
-    SELECT match_id FROM matches
+    SELECT match_id FROM cricsheet.matches
     WHERE event_name LIKE ?
       AND LOWER(match_type) = ?
   )

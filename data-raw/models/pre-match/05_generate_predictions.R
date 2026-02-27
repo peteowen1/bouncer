@@ -75,7 +75,7 @@ if (!is.null(TARGET_MATCH_IDS)) {
   placeholders <- paste(rep("?", length(TARGET_MATCH_IDS)), collapse = ", ")
   query <- sprintf("
     SELECT match_id, match_date, team1, team2, event_name, outcome_winner
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_id IN (%s)
     ORDER BY match_date
   ", placeholders)
@@ -87,7 +87,7 @@ if (!is.null(TARGET_MATCH_IDS)) {
 
   query <- sprintf("
     SELECT m.match_id, m.match_date, m.team1, m.team2, m.event_name, m.outcome_winner
-    FROM matches m
+    FROM cricsheet.matches m
     WHERE LOWER(m.match_type) IN (%s)
       AND NOT EXISTS (
         SELECT 1 FROM pre_match_predictions p
@@ -190,7 +190,7 @@ recent_preds <- DBI::dbGetQuery(conn, "
     p.actual_winner,
     p.prediction_correct
   FROM pre_match_predictions p
-  JOIN matches m ON p.match_id = m.match_id
+  JOIN cricsheet.matches m ON p.match_id = m.match_id
   WHERE p.model_version = ?
   ORDER BY m.match_date DESC
   LIMIT 20

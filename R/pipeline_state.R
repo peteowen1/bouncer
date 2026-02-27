@@ -38,9 +38,9 @@ create_pipeline_state_table <- function(conn) {
 get_data_stats <- function(conn) {
   stats <- DBI::dbGetQuery(conn, "
     SELECT
-      (SELECT COUNT(*) FROM matches) as match_count,
-      (SELECT COUNT(*) FROM deliveries) as delivery_count,
-      (SELECT MAX(match_date) FROM matches) as last_match_date
+      (SELECT COUNT(*) FROM cricsheet.matches) as match_count,
+      (SELECT COUNT(*) FROM cricsheet.deliveries) as delivery_count,
+      (SELECT MAX(match_date) FROM cricsheet.matches) as last_match_date
   ")
 
   list(

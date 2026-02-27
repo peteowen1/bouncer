@@ -139,7 +139,7 @@ ensure_db_exists <- function(path = NULL) {
 #' conn <- connect_to_bouncer()
 #'
 #' # Query data
-#' matches <- DBI::dbGetQuery(conn, "SELECT * FROM matches LIMIT 10")
+#' matches <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.matches LIMIT 10")
 #'
 #' # Always disconnect when done
 #' disconnect_bouncer(conn)
@@ -241,7 +241,7 @@ force_close_duckdb <- function() {
 
 
 # ============================================================================
-# DATABASE SETUP (from database_setup.R)
+# DATABASE SETUP
 # ============================================================================
 
 initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_indexes = FALSE, verbose = FALSE) {
@@ -273,9 +273,9 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_ind
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = FALSE))  # Don't shutdown - allows subsequent connections
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  # Create schema (from database_schema.R)
+  # Create schema
   create_schema(conn, verbose = verbose)
 
   # Create indexes (skip if bulk loading - they'll be created after data load)

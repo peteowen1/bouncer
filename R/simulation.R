@@ -47,7 +47,8 @@
 #' @return List with outcome details:
 #'   - runs: runs scored (0-6, or fractional if mode = "expected")
 #'   - is_wicket: TRUE if wicket fell
-#'   - probs: 7-class probability vector (if categorical mode)
+#'   - probs: 7-class probability vector
+#'   - exp_wicket: numeric wicket probability (expected mode only)
 #'
 #' @seealso
 #' \code{\link{simulate_innings}} to simulate a full innings,
@@ -163,11 +164,13 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 #' @param gender Character. "male" or "female"
 #' @param is_knockout Integer. 0 or 1
 #' @param event_tier Integer. 1, 2, or 3
+#' @param max_overs_override Integer. Override max overs (used for super overs).
 #'
 #' @return List with innings summary:
 #'   - total_runs: final score
 #'   - wickets_lost: wickets that fell
-#'   - overs_faced: overs used
+#'   - balls_faced: total balls faced
+#'   - overs_faced: overs used (decimal format)
 #'   - ball_by_ball: data frame of each delivery
 #'   - result: "completed", "all_out", or "target_reached"
 #'
@@ -195,10 +198,11 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
                               batting_team_skills, bowling_team_skills, venue_skills,
                               batters, bowlers, mode = "categorical",
-                              gender = "male", is_knockout = 0, event_tier = 2) {
+                              gender = "male", is_knockout = 0, event_tier = 2,
+                              max_overs_override = NULL) {
 
-  # Determine max overs (use centralized lookup)
-  max_overs <- get_max_overs(format)
+  # Determine max overs (override for super overs, otherwise use format lookup)
+  max_overs <- if (!is.null(max_overs_override)) max_overs_override else get_max_overs(format)
   max_balls <- if (!is.null(max_overs)) max_overs * 6 else 999999L  # Test effectively unlimited
 
   # OPTIMIZED: Pre-allocate vectors for max possible deliveries
@@ -416,6 +420,18 @@ simulate_match_ballbyball <- function(model, format = "t20",
     winner <- "team1"
     runs_diff <- innings1$total_runs - innings2$total_runs
     margin <- paste(runs_diff, "runs")
+  } else if (is_knockout == 1) {
+    # Super over tiebreaker for knockout matches
+    so_result <- simulate_super_over(
+      model = model, format = format,
+      team1_skills = team1_skills, team2_skills = team2_skills,
+      venue_skills = venue_skills,
+      team1_batters = team1_batters, team1_bowlers = team1_bowlers,
+      team2_batters = team2_batters, team2_bowlers = team2_bowlers,
+      mode = mode, gender = gender, event_tier = event_tier
+    )
+    winner <- so_result$winner
+    margin <- "super over"
   } else {
     winner <- "tie"
     margin <- "tie"
@@ -432,6 +448,71 @@ simulate_match_ballbyball <- function(model, format = "t20",
     margin = margin,
     innings1 = innings1,
     innings2 = innings2
+  )
+}
+
+
+#' Simulate Super Over Tiebreaker
+#'
+#' Resolves a tied knockout match with a super over (1 over per side).
+#' If still tied after one super over, resolves by coin flip.
+#'
+#' @param model Model object for predictions
+#' @param format Character. Match format
+#' @param team1_skills,team2_skills Team skill lists
+#' @param venue_skills Venue skill list
+#' @param team1_batters,team1_bowlers,team2_batters,team2_bowlers Player vectors
+#' @param mode Character. Simulation mode
+#' @param gender Character. Gender
+#' @param event_tier Integer. Event tier
+#' @return List with winner ("team1" or "team2") and scores
+#' @keywords internal
+simulate_super_over <- function(model, format,
+                                team1_skills, team2_skills, venue_skills,
+                                team1_batters, team1_bowlers,
+                                team2_batters, team2_bowlers,
+                                mode, gender, event_tier) {
+
+  # Team1 bats first in super over — 1 over max
+  so_inn1 <- simulate_innings(
+    model = model, format = format, innings = 1, target = NULL,
+    batting_team_skills = team1_skills,
+    bowling_team_skills = team2_skills,
+    venue_skills = venue_skills,
+    batters = team1_batters,
+    bowlers = team2_bowlers,
+    mode = mode, gender = gender,
+    is_knockout = 1, event_tier = event_tier,
+    max_overs_override = 1
+  )
+
+  # Team2 chases super over target — 1 over max
+  so_target <- so_inn1$total_runs + 1
+  so_inn2 <- simulate_innings(
+    model = model, format = format, innings = 2, target = so_target,
+    batting_team_skills = team2_skills,
+    bowling_team_skills = team1_skills,
+    venue_skills = venue_skills,
+    batters = team2_batters,
+    bowlers = team1_bowlers,
+    mode = mode, gender = gender,
+    is_knockout = 1, event_tier = event_tier,
+    max_overs_override = 1
+  )
+
+  if (so_inn2$total_runs >= so_target) {
+    winner <- "team2"
+  } else if (so_inn2$total_runs < so_inn1$total_runs) {
+    winner <- "team1"
+  } else {
+    # Still tied after super over — coin flip (boundary count rules are complex)
+    winner <- sample(c("team1", "team2"), 1)
+  }
+
+  list(
+    winner = winner,
+    so_team1_score = so_inn1$total_runs,
+    so_team2_score = so_inn2$total_runs
   )
 }
 
@@ -937,7 +1018,7 @@ get_season_fixtures <- function(event_name, season, conn) {
       m.event_match_number,
       t1.elo_result AS team1_elo,
       t2.elo_result AS team2_elo
-    FROM matches m
+    FROM cricsheet.matches m
     LEFT JOIN team_elo t1 ON m.match_id = t1.match_id AND m.team1 = t1.team_id
     LEFT JOIN team_elo t2 ON m.match_id = t2.match_id AND m.team2 = t2.team_id
     WHERE m.event_name LIKE ?
@@ -986,7 +1067,7 @@ get_available_seasons <- function(event_name = NULL, conn) {
       COUNT(*) as n_matches,
       MIN(match_date) as start_date,
       MAX(match_date) as end_date
-    FROM matches
+    FROM cricsheet.matches
     WHERE outcome_winner IS NOT NULL
   "
 

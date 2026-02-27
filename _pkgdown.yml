@@ -55,6 +55,7 @@ reference:
     - get_db_path
     - find_bouncerdata_dir
     - force_close_duckdb
+    - migrate_to_schemas
 
   - title: Data Loading
     desc: Load data from the database into R

@@ -105,7 +105,7 @@ for (format in FORMATS_TO_TRAIN) {
         innings,
         batting_team,
         MAX(total_runs) AS innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE %s
       GROUP BY match_id, innings, batting_team
     ),
@@ -121,7 +121,7 @@ for (format in FORMATS_TO_TRAIN) {
              AND it.innings < d.innings),
           0
         ) AS bowling_score
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       WHERE %s
     ),
     match_context AS (
@@ -145,7 +145,7 @@ for (format in FORMATS_TO_TRAIN) {
           WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
           ELSE 3
         END AS event_tier
-      FROM matches m
+      FROM cricsheet.matches m
     ),
     -- League running averages: compute avg runs/wicket rate for each league
     -- as of each match date (to prevent data leakage, we use LAG approach)
@@ -156,8 +156,8 @@ for (format in FORMATS_TO_TRAIN) {
         m.match_date,
         AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
         AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
-      FROM matches m
-      JOIN deliveries d ON m.match_id = d.match_id
+      FROM cricsheet.matches m
+      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
       WHERE %s
         AND m.event_name IS NOT NULL
       GROUP BY m.event_name, m.match_id, m.match_date

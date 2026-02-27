@@ -153,7 +153,7 @@ if (should_run(1)) {
   db_path <- get_default_db_path()
   if (file.exists(db_path)) {
     conn <- get_db_connection(read_only = TRUE)
-    n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM matches")$n
+    n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.matches")$n
     DBI::dbDisconnect(conn, shutdown = TRUE)  # Must shutdown to avoid lock conflicts
 
     if (n_matches > 0) {
@@ -189,7 +189,7 @@ if (should_run(1)) {
       SELECT
         COUNT(*) as total,
         SUM(CASE WHEN unified_margin IS NOT NULL THEN 1 ELSE 0 END) as with_margin
-      FROM matches
+      FROM cricsheet.matches
       WHERE outcome_type IS NOT NULL
     ")
     # Must use shutdown = TRUE here because the backfill script needs a write connection

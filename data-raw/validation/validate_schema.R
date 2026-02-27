@@ -57,7 +57,7 @@ validate_primary_keys <- function(conn) {
 
   # matches.match_id
   null_match_pk <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) as n FROM matches WHERE match_id IS NULL
+    SELECT COUNT(*) as n FROM cricsheet.matches WHERE match_id IS NULL
   ")$n
   if (null_match_pk > 0) {
     cli::cli_alert_danger("matches: {null_match_pk} NULL primary keys")
@@ -66,7 +66,7 @@ validate_primary_keys <- function(conn) {
 
   # deliveries.delivery_id
   null_delivery_pk <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) as n FROM deliveries WHERE delivery_id IS NULL
+    SELECT COUNT(*) as n FROM cricsheet.deliveries WHERE delivery_id IS NULL
   ")$n
   if (null_delivery_pk > 0) {
     cli::cli_alert_danger("deliveries: {null_delivery_pk} NULL primary keys")
@@ -75,7 +75,7 @@ validate_primary_keys <- function(conn) {
 
   # players.player_id
   null_player_pk <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) as n FROM players WHERE player_id IS NULL
+    SELECT COUNT(*) as n FROM cricsheet.players WHERE player_id IS NULL
   ")$n
   if (null_player_pk > 0) {
     cli::cli_alert_danger("players: {null_player_pk} NULL primary keys")
@@ -107,8 +107,8 @@ validate_foreign_keys <- function(conn) {
   # deliveries.match_id -> matches.match_id
   orphan_deliveries <- DBI::dbGetQuery(conn, "
     SELECT COUNT(*) as n
-    FROM deliveries d
-    LEFT JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    LEFT JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE m.match_id IS NULL
   ")$n
 
@@ -120,8 +120,8 @@ validate_foreign_keys <- function(conn) {
   # deliveries.batter_id -> players.player_id
   orphan_batters <- DBI::dbGetQuery(conn, "
     SELECT COUNT(DISTINCT d.batter_id) as n
-    FROM deliveries d
-    LEFT JOIN players p ON d.batter_id = p.player_id
+    FROM cricsheet.deliveries d
+    LEFT JOIN cricsheet.players p ON d.batter_id = p.player_id
     WHERE p.player_id IS NULL AND d.batter_id IS NOT NULL
   ")$n
 

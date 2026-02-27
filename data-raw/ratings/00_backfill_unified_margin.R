@@ -48,11 +48,11 @@ cli::cli_h2("Checking database schema")
 
 # Add unified_margin column to matches table if it doesn't exist
 # (Inlined from add_margin_columns to avoid connection-passing issues)
-matches_cols <- DBI::dbGetQuery(conn, "SELECT column_name FROM information_schema.columns WHERE table_name = 'matches'")$column_name
+matches_cols <- DBI::dbGetQuery(conn, "SELECT column_name FROM information_schema.columns WHERE table_schema = 'cricsheet' AND table_name = 'matches'")$column_name
 
 if (!"unified_margin" %in% matches_cols) {
   cli::cli_alert_info("Adding unified_margin column to matches table...")
-  DBI::dbExecute(conn, "ALTER TABLE matches ADD COLUMN unified_margin DOUBLE")
+  DBI::dbExecute(conn, "ALTER TABLE cricsheet.matches ADD COLUMN unified_margin DOUBLE")
   cli::cli_alert_success("Added unified_margin column to matches")
 } else {
   cli::cli_alert_info("unified_margin column already exists in matches")
@@ -89,10 +89,10 @@ query <- "
     inn1.total_overs AS team1_overs,
     inn2.total_runs AS team2_score,
     inn2.total_overs AS team2_overs
-  FROM matches m
-  LEFT JOIN match_innings inn1
+  FROM cricsheet.matches m
+  LEFT JOIN cricsheet.match_innings inn1
     ON m.match_id = inn1.match_id AND inn1.innings = 1
-  LEFT JOIN match_innings inn2
+  LEFT JOIN cricsheet.match_innings inn2
     ON m.match_id = inn2.match_id AND inn2.innings = 2
   WHERE m.outcome_type IS NOT NULL
   ORDER BY m.match_date
@@ -230,11 +230,11 @@ if (nrow(to_update) > 0) {
     DBI::dbWriteTable(conn, "temp_margins", batch, temporary = TRUE, overwrite = TRUE)
 
     DBI::dbExecute(conn, "
-      UPDATE matches
+      UPDATE cricsheet.matches
       SET unified_margin = (
         SELECT calculated_margin
         FROM temp_margins
-        WHERE temp_margins.match_id = matches.match_id
+        WHERE temp_margins.match_id = cricsheet.matches.match_id
       )
       WHERE match_id IN (SELECT match_id FROM temp_margins)
     ")
@@ -260,7 +260,7 @@ verify_query <- "
     COUNT(*) as total,
     COUNT(unified_margin) as with_margin,
     ROUND(AVG(ABS(unified_margin)), 1) as mean_abs_margin
-  FROM matches
+  FROM cricsheet.matches
   GROUP BY match_type
   ORDER BY total DESC
 "

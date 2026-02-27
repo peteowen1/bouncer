@@ -200,7 +200,7 @@ update_prediction_outcome <- function(match_id, conn) {
 
   # Get actual outcome
   outcome <- DBI::dbGetQuery(conn, "
-    SELECT outcome_winner FROM matches WHERE match_id = ?
+    SELECT outcome_winner FROM cricsheet.matches WHERE match_id = ?
   ", params = list(match_id))
 
   if (nrow(outcome) == 0 || is.na(outcome$outcome_winner[1]) ||
@@ -236,16 +236,16 @@ batch_update_prediction_outcomes <- function(conn) {
   n_updated <- DBI::dbExecute(conn, "
     UPDATE pre_match_predictions p
     SET actual_winner = (
-      SELECT outcome_winner FROM matches m WHERE m.match_id = p.match_id
+      SELECT outcome_winner FROM cricsheet.matches m WHERE m.match_id = p.match_id
     ),
     prediction_correct = (
       p.predicted_winner = (
-        SELECT outcome_winner FROM matches m WHERE m.match_id = p.match_id
+        SELECT outcome_winner FROM cricsheet.matches m WHERE m.match_id = p.match_id
       )
     )
     WHERE p.actual_winner IS NULL
       AND EXISTS (
-        SELECT 1 FROM matches m
+        SELECT 1 FROM cricsheet.matches m
         WHERE m.match_id = p.match_id
           AND m.outcome_winner IS NOT NULL
           AND m.outcome_winner != ''

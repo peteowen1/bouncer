@@ -23,7 +23,7 @@ match_info <- DBI::dbGetQuery(conn, "
     SELECT match_id, match_date, match_type, event_name, venue,
            team1, team2, toss_winner, toss_decision,
            event_match_number, event_group, team_type, gender
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_id = ?
   ", params = list(match_id))
 
@@ -48,7 +48,7 @@ match_info <- DBI::dbGetQuery(conn, "
 
   if (is.null(home_lookups)) {
     all_matches <- DBI::dbGetQuery(conn,
-      "SELECT team1, team2, venue, team_type, gender, match_type FROM matches")
+      "SELECT team1, team2, venue, team_type, gender, match_type FROM cricsheet.matches")
     home_lookups <- build_home_lookups(all_matches)
   }
   home_result <- detect_home_team(team1, team2, team1_id, team2_id, venue,
@@ -204,8 +204,8 @@ calculate_venue_features <- function(venue, match_type, conn,
       mi.innings,
       mi.total_runs,
       mi.batting_team
-    FROM matches m
-    JOIN match_innings mi ON m.match_id = mi.match_id
+    FROM cricsheet.matches m
+    JOIN cricsheet.match_innings mi ON m.match_id = mi.match_id
     WHERE m.venue = ?
       AND LOWER(m.match_type) = LOWER(?)
       AND m.outcome_winner IS NOT NULL
@@ -307,6 +307,10 @@ batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
     return(data.frame())
   }
 
+  # Build home lookups once (avoids rebuilding per match)
+  all_matches <- DBI::dbGetQuery(conn, "SELECT team1, team2, venue, team_type, gender, match_type FROM cricsheet.matches")
+  home_lookups <- build_home_lookups(all_matches)
+
   if (progress) {
     cli::cli_progress_bar("Calculating features", total = n_matches)
   }
@@ -315,7 +319,7 @@ batch_calculate_features <- function(match_ids, conn, progress = TRUE) {
 
   for (i in seq_along(match_ids)) {
     results[[i]] <- tryCatch({
-      calculate_pre_match_features(match_ids[i], conn)
+      calculate_pre_match_features(match_ids[i], conn, home_lookups = home_lookups)
     }, error = function(e) {
       cli::cli_alert_warning("Error for match {match_ids[i]}: {e$message}")
       NULL

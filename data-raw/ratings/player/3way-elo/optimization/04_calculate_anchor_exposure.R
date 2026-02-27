@@ -88,7 +88,7 @@ WITH batter_balls AS (
     COUNT(*) AS total_balls,
     SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS anchor_balls
   FROM %s e
-  JOIN matches m ON e.match_id = m.match_id
+  JOIN cricsheet.matches m ON e.match_id = m.match_id
   GROUP BY e.batter_id
 ),
 bowler_balls AS (
@@ -97,7 +97,7 @@ bowler_balls AS (
     COUNT(*) AS total_balls,
     SUM(CASE WHEN %s THEN 1 ELSE 0 END) AS anchor_balls
   FROM %s e
-  JOIN matches m ON e.match_id = m.match_id
+  JOIN cricsheet.matches m ON e.match_id = m.match_id
   GROUP BY e.bowler_id
 ),
 combined AS (
@@ -232,7 +232,7 @@ calibration[, calibration_score := pmin(100,
 )]
 
 # Get player names for debugging
-player_names <- DBI::dbGetQuery(conn, "SELECT player_id, player_name FROM players")
+player_names <- DBI::dbGetQuery(conn, "SELECT player_id, player_name FROM cricsheet.players")
 setDT(player_names)
 calibration <- merge(calibration, player_names, by = "player_id", all.x = TRUE)
 

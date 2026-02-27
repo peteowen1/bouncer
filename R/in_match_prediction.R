@@ -242,11 +242,10 @@ predict_win_probability <- function(current_score,
 
   # Calculate win probability
   if (innings == 1) {
-    # For 1st innings, we estimate based on projected score vs venue average
-    # The model gives projected final score, compare to expected chase success
+    # TODO: Known approximation — linear heuristic based on runs above/below venue par.
+    # A proper 1st-innings win probability model would require training on historical
+    # 1st-innings score → match outcome data. Current formula is a placeholder.
     above_par <- projected_score - feature_data$venue_avg_first_innings
-    # Simple logistic transform based on runs above/below par
-    # Each ~5 runs above par increases win prob by ~5%
     win_prob <- 0.5 + (above_par / 100)
     win_prob <- pmax(0.05, pmin(0.95, win_prob))  # Bound between 5-95%
 
@@ -508,6 +507,8 @@ add_win_probability <- function(deliveries,
   }
 
   # Calculate win probability for each delivery
+  # TODO: Vectorize this loop. Currently sequential because each state depends on
+  # the previous delivery's context (innings boundaries, cumulative score tracking).
   n <- nrow(deliveries)
   win_prob_before <- numeric(n)
   win_prob_after <- numeric(n)

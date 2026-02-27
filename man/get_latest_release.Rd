@@ -11,7 +11,7 @@ get_latest_release(repo = "peteowen1/bouncerdata", type = "any")
 Default is "peteowen1/bouncerdata".}
 
 \item{type}{Character. Release type to find: "cricsheet" (parquet data),
-"cricinfo" (rich ball-by-ball from Cricinfo scraper),
+"cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).}
 }
 \value{

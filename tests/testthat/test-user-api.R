@@ -251,7 +251,7 @@ test_that("analyze_match returns analysis for valid match_id", {
 
   # Get a valid match_id from the database
   conn <- get_db_connection(read_only = TRUE)
-  match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches LIMIT 1")
+  match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches LIMIT 1")
   DBI::dbDisconnect(conn, shutdown = TRUE)
 
   skip_if(nrow(match_ids) == 0, "No matches in database")

@@ -35,7 +35,7 @@ conn <- connect_to_bouncer(read_only = TRUE)
 DBI::dbListTables(conn)
 
 # Query example
-result <- DBI::dbGetQuery(conn, "SELECT COUNT(*) FROM matches")
+result <- DBI::dbGetQuery(conn, "SELECT COUNT(*) FROM cricsheet.matches")
 
 # Always disconnect when done
 disconnect_bouncer(conn)
@@ -45,7 +45,7 @@ disconnect_bouncer(conn)
 
 | Category | Tables | Purpose |
 |----------|--------|---------|
-| **Core** | matches, deliveries, players, match_innings, innings_powerplays | Raw cricket data |
+| **Core** | cricsheet.matches, cricsheet.deliveries, cricsheet.players, cricsheet.match_innings, cricsheet.innings_powerplays | Raw cricket data |
 | **Ratings** | team_elo, player_elo_history | Game-level ELO ratings |
 | **Player Skills** | t20/odi/test_player_skill | Ball-by-ball player indices |
 | **Team Skills** | t20/odi/test_team_skill | Ball-by-ball team indices |
@@ -56,9 +56,9 @@ disconnect_bouncer(conn)
 
 ---
 
-## Core Tables
+## Core Tables (cricsheet schema)
 
-### matches
+### cricsheet.matches
 
 Match metadata including teams, venue, outcome, and officials.
 
@@ -101,7 +101,7 @@ Match metadata including teams, venue, outcome, and officials.
 # Get all IPL 2024 matches
 ipl_2024 <- DBI::dbGetQuery(conn, "
   SELECT match_id, match_date, team1, team2, outcome_winner
-  FROM matches
+  FROM cricsheet.matches
   WHERE event_name = 'Indian Premier League' AND season = '2024'
   ORDER BY match_date
 ")
@@ -109,14 +109,14 @@ ipl_2024 <- DBI::dbGetQuery(conn, "
 
 ---
 
-### deliveries
+### cricsheet.deliveries
 
 Ball-by-ball data - the heart of cricket analytics.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `delivery_id` | VARCHAR | **Primary Key** - Format: `{match_id}_{team}_{inn}_{over}_{ball}` |
-| `match_id` | VARCHAR | Foreign key to matches |
+| `match_id` | VARCHAR | Foreign key to cricsheet.matches |
 | `season` | VARCHAR | Season/year |
 | `match_type` | VARCHAR | Format code |
 | `match_date` | DATE | Match date |
@@ -170,8 +170,8 @@ Example: "64012_India_1_005_03" = Match 64012, India batting, 1st innings, over 
 # Get Kohli's boundaries in IPL 2024
 kohli_boundaries <- DBI::dbGetQuery(conn, "
   SELECT d.match_date, d.runs_batter, d.is_four, d.is_six, d.bowler_id
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE d.batter_id = 'V Kohli'
     AND d.is_boundary = TRUE
     AND m.event_name = 'Indian Premier League'
@@ -181,7 +181,7 @@ kohli_boundaries <- DBI::dbGetQuery(conn, "
 
 ---
 
-### players
+### cricsheet.players
 
 Player registry with demographic information.
 
@@ -196,7 +196,7 @@ Player registry with demographic information.
 
 ---
 
-### match_innings
+### cricsheet.match_innings
 
 Innings-level summaries.
 
@@ -218,7 +218,7 @@ Innings-level summaries.
 
 ---
 
-### innings_powerplays
+### cricsheet.innings_powerplays
 
 Powerplay periods for limited-overs matches.
 
@@ -490,7 +490,7 @@ Optimized parameters for score projection by segment.
 The bouncer package provides functions to load these tables into R without writing SQL:
 
 ```{r}
-# Load core tables
+# Load core tables (from cricsheet schema)
 matches <- load_matches(format = "t20", season = "2024")
 deliveries <- load_deliveries(match_ids = "1234567")
 players <- load_players()
@@ -514,8 +514,9 @@ library(bouncer)
 conn <- connect_to_bouncer(read_only = TRUE)
 
 # Table row counts
-tables <- c("matches", "deliveries", "players", "match_innings",
-            "team_elo", "t20_player_skill", "t20_team_skill", "t20_venue_skill")
+tables <- c("cricsheet.matches", "cricsheet.deliveries", "cricsheet.players",
+            "cricsheet.match_innings", "team_elo", "t20_player_skill",
+            "t20_team_skill", "t20_venue_skill")
 
 for (tbl in tables) {
   count <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) as n FROM %s", tbl))

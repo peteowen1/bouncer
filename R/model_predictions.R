@@ -74,7 +74,7 @@ add_predictions_to_deliveries <- function(model_path,
 
     # Try to add column (ignore if exists)
     tryCatch({
-      DBI::dbExecute(conn, sprintf("ALTER TABLE deliveries ADD COLUMN %s DOUBLE", col_name))
+      DBI::dbExecute(conn, sprintf("ALTER TABLE cricsheet.deliveries ADD COLUMN %s DOUBLE", col_name))
       cli::cli_alert_success("Added column: {.field {col_name}}")
     }, error = function(e) {
       if (grepl("already exists", e$message, ignore.case = TRUE)) {
@@ -102,7 +102,7 @@ add_predictions_to_deliveries <- function(model_path,
         innings,
         batting_team,
         MAX(total_runs) AS innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE %s
       GROUP BY match_id, innings, batting_team
     ),
@@ -118,7 +118,7 @@ add_predictions_to_deliveries <- function(model_path,
              AND it.innings < d.innings),
           0
         ) AS bowling_score
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       WHERE %s
     )
     SELECT
@@ -283,7 +283,7 @@ add_predictions_to_deliveries <- function(model_path,
     )
 
     update_sql <- sprintf(
-      "UPDATE deliveries SET %s FROM %s WHERE deliveries.delivery_id = %s.delivery_id",
+      "UPDATE cricsheet.deliveries SET %s FROM %s WHERE cricsheet.deliveries.delivery_id = %s.delivery_id",
       update_cols, temp_table, temp_table
     )
 

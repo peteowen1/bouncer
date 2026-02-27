@@ -92,7 +92,7 @@ for (format in FORMATS_TO_TRAIN) {
         innings,
         batting_team,
         MAX(total_runs) AS innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE %s
       GROUP BY match_id, innings, batting_team
     ),
@@ -108,7 +108,7 @@ for (format in FORMATS_TO_TRAIN) {
              AND it.innings < d.innings),
           0
         ) AS bowling_score
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       WHERE %s
     ),
     match_context AS (
@@ -131,7 +131,7 @@ for (format in FORMATS_TO_TRAIN) {
           WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
           ELSE 3
         END AS event_tier
-      FROM matches m
+      FROM cricsheet.matches m
     )
     SELECT
       cs.delivery_id,

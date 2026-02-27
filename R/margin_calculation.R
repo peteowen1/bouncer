@@ -28,6 +28,10 @@
 overs_to_balls <- function(overs) {
   complete_overs <- floor(overs)
   partial_balls <- round((overs - complete_overs) * 10)  # .4 -> 4 balls
+  if (any(partial_balls > 6, na.rm = TRUE)) {
+    cli::cli_warn("Invalid cricket notation detected (ball > 6), clamping")
+    partial_balls <- pmin(partial_balls, 6)
+  }
   total_balls <- complete_overs * 6 + partial_balls
   return(as.integer(total_balls))
 }

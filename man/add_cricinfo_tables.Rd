@@ -13,7 +13,7 @@ add_cricinfo_tables(path = NULL)
 Invisibly returns TRUE on success
 }
 \description{
-Adds the Cricinfo rich data tables (balls, matches, innings, fixtures)
+Adds the Cricinfo Hawkeye data tables (balls, matches, innings, fixtures)
 to an existing database. Non-destructive: preserves all existing data.
 }
 \examples{

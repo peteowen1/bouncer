@@ -165,8 +165,8 @@ calculate_elos_for_optimization <- function(matches, k_max, k_min, k_halflife, c
 
     # Calculate MOV multiplier (G-factor)
     margin <- m_margin[i]
-    if (!is.na(margin)) {
-      # Determine winner/loser for MOV calculation
+    if (!is.na(margin) && margin != 0) {
+      # Determine winner/loser for MOV calculation (skip draws — margin == 0)
       if (actual1 == 1) {
         winner_elo <- t1_elo
         loser_elo <- t2_elo
@@ -182,7 +182,7 @@ calculate_elos_for_optimization <- function(matches, k_max, k_min, k_halflife, c
       denominator <- max(mov_denom_base + mov_elo_factor * elo_diff, 1)
       G <- max(mov_min, min(mov_max, numerator / denominator))
     } else {
-      G <- 1.0  # No margin data, use neutral multiplier
+      G <- 1.0  # No margin data or draw, use neutral multiplier
     }
     mov_multiplier[i] <- G
 

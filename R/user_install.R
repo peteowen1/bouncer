@@ -172,14 +172,14 @@ get_data_info <- function(path = NULL) {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Get counts
-  n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM matches")$n
-  n_deliveries <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM deliveries")$n
-  n_players <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")$n
+  n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.matches")$n
+  n_deliveries <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.deliveries")$n
+  n_players <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")$n
 
   # Get match type breakdown
   match_types <- DBI::dbGetQuery(conn, "
     SELECT match_type, COUNT(*) as n
-    FROM matches
+    FROM cricsheet.matches
     GROUP BY match_type
     ORDER BY n DESC
   ")
@@ -187,7 +187,7 @@ get_data_info <- function(path = NULL) {
   # Get date range
   date_range <- DBI::dbGetQuery(conn, "
     SELECT MIN(match_date) as earliest, MAX(match_date) as latest
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_date IS NOT NULL
   ")
 
@@ -253,7 +253,7 @@ list_available_formats <- function(path = NULL) {
       COUNT(*) as n_matches,
       MIN(match_date) as earliest_match,
       MAX(match_date) as latest_match
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_type IS NOT NULL
     GROUP BY match_type, gender
     ORDER BY n_matches DESC
@@ -525,7 +525,7 @@ load_filtered_matches <- function(file_paths,
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Get existing match IDs
-  existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches")
+  existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches")
   existing_ids <- existing_matches$match_id
 
   # Filter to new files only
@@ -628,19 +628,19 @@ load_filtered_matches <- function(file_paths,
         DBI::dbBegin(conn)
 
         if (!is.null(all_matches) && nrow(all_matches) > 0) {
-          DBI::dbAppendTable(conn, "matches", all_matches)
+          DBI::dbAppendTable(conn, "cricsheet.matches", all_matches)
         }
         if (!is.null(all_deliveries) && nrow(all_deliveries) > 0) {
-          DBI::dbAppendTable(conn, "deliveries", all_deliveries)
+          DBI::dbAppendTable(conn, "cricsheet.deliveries", all_deliveries)
         }
         if (!is.null(all_innings) && nrow(all_innings) > 0) {
-          DBI::dbAppendTable(conn, "match_innings", all_innings)
+          DBI::dbAppendTable(conn, "cricsheet.match_innings", all_innings)
         }
         if (!is.null(all_players) && nrow(all_players) > 0) {
           insert_players_batch(conn, all_players)
         }
         if (!is.null(all_powerplays) && nrow(all_powerplays) > 0) {
-          DBI::dbAppendTable(conn, "innings_powerplays", all_powerplays)
+          DBI::dbAppendTable(conn, "cricsheet.innings_powerplays", all_powerplays)
         }
 
         DBI::dbCommit(conn)
@@ -689,7 +689,7 @@ load_filtered_matches <- function(file_paths,
 #' @param repo Character. GitHub repository in "owner/repo" format.
 #'   Default is "peteowen1/bouncerdata".
 #' @param type Character. Release type to find: "cricsheet" (parquet data),
-#'   "cricinfo" (rich ball-by-ball from Cricinfo scraper),
+#'   "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 #'   "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).
 #'
 #' @return List with release information including tag_name, published_at,
@@ -1077,7 +1077,10 @@ update_bouncerdata <- function(repo = "peteowen1/bouncerdata",
 
   cli::cli_alert_info("Remote version: {remote_version}")
 
-  if (remote_version <= local_version) {
+  # Parse as dates for robust comparison (handles date-based tags like "2026-02-26")
+  local_date <- tryCatch(as.Date(local_version), error = function(e) as.Date("1970-01-01"))
+  remote_date <- tryCatch(as.Date(remote_version), error = function(e) as.Date("1970-01-01"))
+  if (remote_date <= local_date) {
     cli::cli_alert_success("Already up to date!")
     return(invisible(FALSE))
   }

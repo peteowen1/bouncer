@@ -288,8 +288,7 @@ calculate_test_projected_score <- function(current_score,
   # Convert wickets remaining to wickets fallen for new interface
   wickets_fallen <- 10 - wickets_remaining
 
-  # Use general projection function with new interface
-  # overs_bowled is the innings progress (already provided as input)
+  # Use general projection function with innings-specific overs limit
   calculate_projected_score(
     current_score = current_score,
     wickets = wickets_fallen,
@@ -298,6 +297,7 @@ calculate_test_projected_score <- function(current_score,
     format = "test",
     params = params,
     gender = gender,
-    team_type = team_type
+    team_type = team_type,
+    max_balls = overs_to_balls(overs_bowled + innings_overs_remaining)
   )
 }

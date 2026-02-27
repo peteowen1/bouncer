@@ -52,7 +52,7 @@ identify_dls_matches <- function(conn, event_filter = NULL, match_type = "t20") 
         WHEN LOWER(outcome_method) LIKE '%%duckworth%%' THEN 1
         ELSE 0
       END as is_dls_match
-    FROM matches
+    FROM cricsheet.matches
     %s
       AND (
         LOWER(outcome_method) LIKE '%%d/l%%'
@@ -109,7 +109,7 @@ identify_tied_matches <- function(conn, event_filter = NULL, match_type = "t20",
         WHEN LOWER(outcome_method) LIKE '%%super over%%' THEN 1
         ELSE 0
       END as has_super_over
-    FROM matches
+    FROM cricsheet.matches
     %s
       AND (
         LOWER(outcome_type) = 'tie'
@@ -168,7 +168,7 @@ identify_super_over_matches <- function(conn, event_filter = NULL, match_type = 
       outcome_winner,
       outcome_by_runs,
       outcome_by_wickets
-    FROM matches
+    FROM cricsheet.matches
     %s
       AND LOWER(outcome_method) LIKE '%%super over%%'
     ORDER BY match_date
@@ -348,7 +348,7 @@ get_outcome_summary <- function(conn, event_filter = NULL, match_type = "t20") {
       SUM(CASE WHEN LOWER(outcome_method) LIKE '%%super over%%' THEN 1 ELSE 0 END) as super_over_matches,
       SUM(CASE WHEN LOWER(outcome_type) = 'tie' AND LOWER(outcome_method) NOT LIKE '%%super over%%' THEN 1 ELSE 0 END) as pure_ties,
       SUM(CASE WHEN LOWER(outcome_type) = 'no result' OR outcome_winner IS NULL THEN 1 ELSE 0 END) as no_results
-    FROM matches
+    FROM cricsheet.matches
     %s
   ", where_clauses)
 

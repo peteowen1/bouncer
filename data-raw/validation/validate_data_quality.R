@@ -22,10 +22,10 @@ validate_data_quality <- function() {
 
   # Check for NULL values in required columns
   null_checks <- list(
-    match_id = "SELECT COUNT(*) AS n FROM deliveries WHERE match_id IS NULL",
-    innings = "SELECT COUNT(*) AS n FROM deliveries WHERE innings IS NULL",
-    over_number = "SELECT COUNT(*) AS n FROM deliveries WHERE over_number IS NULL",
-    batter_id = "SELECT COUNT(*) AS n FROM deliveries WHERE batter_id IS NULL"
+    match_id = "SELECT COUNT(*) AS n FROM cricsheet.deliveries WHERE match_id IS NULL",
+    innings = "SELECT COUNT(*) AS n FROM cricsheet.deliveries WHERE innings IS NULL",
+    over_number = "SELECT COUNT(*) AS n FROM cricsheet.deliveries WHERE over_number IS NULL",
+    batter_id = "SELECT COUNT(*) AS n FROM cricsheet.deliveries WHERE batter_id IS NULL"
   )
 
   for (col in names(null_checks)) {
@@ -41,7 +41,7 @@ validate_data_quality <- function() {
 
   # Check ball values in range 1-6
   invalid_balls <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) AS n FROM deliveries
+    SELECT COUNT(*) AS n FROM cricsheet.deliveries
     WHERE ball_number < 1 OR ball_number > 6
   ")$n
   if (invalid_balls == 0) {
@@ -52,7 +52,7 @@ validate_data_quality <- function() {
 
   # Check wickets in range 0-10
   invalid_wickets <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) AS n FROM deliveries
+    SELECT COUNT(*) AS n FROM cricsheet.deliveries
     WHERE is_wicket < 0 OR is_wicket > 1
   ")$n
   if (invalid_wickets == 0) {
@@ -69,7 +69,7 @@ validate_data_quality <- function() {
 
   # Check for future dates (data quality issue)
   future_matches <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) AS n FROM matches
+    SELECT COUNT(*) AS n FROM cricsheet.matches
     WHERE match_date > CURRENT_DATE
   ")$n
   if (future_matches == 0) {
@@ -80,7 +80,7 @@ validate_data_quality <- function() {
 
   # Check match_type values
   match_types <- DBI::dbGetQuery(conn, "
-    SELECT DISTINCT match_type FROM matches ORDER BY match_type
+    SELECT DISTINCT match_type FROM cricsheet.matches ORDER BY match_type
   ")$match_type
   valid_types <- c("T20", "IT20", "ODI", "ODM", "Test", "MDM")
   invalid_types <- setdiff(match_types, valid_types)
@@ -97,7 +97,7 @@ validate_data_quality <- function() {
 
   # Duplicate delivery_ids
   dup_deliveries <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) - COUNT(DISTINCT delivery_id) AS n FROM deliveries
+    SELECT COUNT(*) - COUNT(DISTINCT delivery_id) AS n FROM cricsheet.deliveries
   ")$n
   if (dup_deliveries == 0) {
     cli::cli_alert_success("No duplicate delivery_ids")
@@ -108,7 +108,7 @@ validate_data_quality <- function() {
 
   # Duplicate match_ids
   dup_matches <- DBI::dbGetQuery(conn, "
-    SELECT COUNT(*) - COUNT(DISTINCT match_id) AS n FROM matches
+    SELECT COUNT(*) - COUNT(DISTINCT match_id) AS n FROM cricsheet.matches
   ")$n
   if (dup_matches == 0) {
     cli::cli_alert_success("No duplicate match_ids")

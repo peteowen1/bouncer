@@ -66,7 +66,7 @@ on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
 ## Export matches ----
 cli_alert_info("Exporting matches...")
-matches <- dbGetQuery(conn, "SELECT * FROM matches")
+matches <- dbGetQuery(conn, "SELECT * FROM cricsheet.matches")
 write_parquet(matches, file.path(PARQUET_DIR, "matches.parquet"), compression = "zstd")
 cli_alert_success("  matches.parquet: {nrow(matches)} rows")
 rm(matches)
@@ -74,7 +74,7 @@ gc()
 
 ## Export players ----
 cli_alert_info("Exporting players...")
-players <- dbGetQuery(conn, "SELECT * FROM players")
+players <- dbGetQuery(conn, "SELECT * FROM cricsheet.players")
 write_parquet(players, file.path(PARQUET_DIR, "players.parquet"), compression = "zstd")
 cli_alert_success("  players.parquet: {nrow(players)} rows")
 rm(players)
@@ -86,7 +86,7 @@ cli_alert_info("Exporting deliveries by partition...")
 # Get match metadata for partitioning
 match_lookup <- dbGetQuery(conn, "
   SELECT match_id, match_type, gender, team_type
-  FROM matches
+  FROM cricsheet.matches
 ")
 
 # Process each partition
@@ -109,7 +109,7 @@ for (mt in MATCH_TYPES) {
       # Query deliveries for these matches
       # Use parameterized query for safety
       placeholders <- paste(rep("?", length(match_ids)), collapse = ", ")
-      query <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", placeholders)
+      query <- sprintf("SELECT * FROM cricsheet.deliveries WHERE match_id IN (%s)", placeholders)
 
       deliveries <- dbGetQuery(conn, query, params = as.list(match_ids))
 
