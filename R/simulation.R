@@ -47,7 +47,8 @@
 #' @return List with outcome details:
 #'   - runs: runs scored (0-6, or fractional if mode = "expected")
 #'   - is_wicket: TRUE if wicket fell
-#'   - probs: 7-class probability vector (if categorical mode)
+#'   - probs: 7-class probability vector
+#'   - exp_wicket: numeric wicket probability (expected mode only)
 #'
 #' @seealso
 #' \code{\link{simulate_innings}} to simulate a full innings,
@@ -168,7 +169,8 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 #' @return List with innings summary:
 #'   - total_runs: final score
 #'   - wickets_lost: wickets that fell
-#'   - overs_faced: overs used
+#'   - balls_faced: total balls faced
+#'   - overs_faced: overs used (decimal format)
 #'   - ball_by_ball: data frame of each delivery
 #'   - result: "completed", "all_out", or "target_reached"
 #'

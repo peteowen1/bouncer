@@ -94,7 +94,12 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       existing <- tryCatch(
         DBI::dbGetQuery(conn,
           "SELECT DISTINCT match_id FROM cricinfo.matches")$match_id,
-        error = function(e) character(0)
+        error = function(e) {
+          if (!grepl("does not exist|not found|no such table", e$message, ignore.case = TRUE)) {
+            cli::cli_alert_warning("Failed to check existing matches: {e$message}")
+          }
+          character(0)
+        }
       )
 
       new_ids <- setdiff(all_ids, existing)

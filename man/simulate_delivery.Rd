@@ -54,7 +54,8 @@ List with outcome details:
 \itemize{
 \item runs: runs scored (0-6, or fractional if mode = "expected")
 \item is_wicket: TRUE if wicket fell
-\item probs: 7-class probability vector (if categorical mode)
+\item probs: 7-class probability vector
+\item exp_wicket: numeric wicket probability (expected mode only)
 }
 }
 \description{

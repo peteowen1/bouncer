@@ -55,7 +55,8 @@ List with innings summary:
 \itemize{
 \item total_runs: final score
 \item wickets_lost: wickets that fell
-\item overs_faced: overs used
+\item balls_faced: total balls faced
+\item overs_faced: overs used (decimal format)
 \item ball_by_ball: data frame of each delivery
 \item result: "completed", "all_out", or "target_reached"
 }

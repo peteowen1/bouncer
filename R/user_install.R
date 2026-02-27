@@ -689,7 +689,7 @@ load_filtered_matches <- function(file_paths,
 #' @param repo Character. GitHub repository in "owner/repo" format.
 #'   Default is "peteowen1/bouncerdata".
 #' @param type Character. Release type to find: "cricsheet" (parquet data),
-#'   "cricinfo" (rich ball-by-ball from Cricinfo scraper),
+#'   "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 #'   "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).
 #'
 #' @return List with release information including tag_name, published_at,

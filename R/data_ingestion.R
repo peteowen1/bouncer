@@ -53,7 +53,7 @@ bulk_write_arrow <- function(conn, table_name, df) {
     parts <- strsplit(table_name, "\\.")[[1]]
     exists <- nrow(DBI::dbGetQuery(conn, sprintf(
       "SELECT 1 FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'",
-      parts[1], parts[2]
+      escape_sql_quotes(parts[1]), escape_sql_quotes(parts[2])
     ))) > 0
   } else {
     exists <- table_name %in% DBI::dbListTables(conn)
@@ -67,7 +67,7 @@ bulk_write_arrow <- function(conn, table_name, df) {
     arrow_tbl <- arrow::as_arrow_table(df)
 
     # Register Arrow table as a temporary view
-    temp_name <- paste0("temp_arrow_", table_name, "_", as.integer(Sys.time()))
+    temp_name <- paste0("temp_arrow_", gsub("\\.", "_", table_name), "_", as.integer(Sys.time()))
     duckdb::duckdb_register_arrow(conn, temp_name, arrow_tbl)
 
     # Build explicit column list to handle schema differences
@@ -515,6 +515,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
+ on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = TRUE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
  DBI::dbDisconnect(conn_check, shutdown = TRUE)
  existing_ids <- existing_matches$match_id

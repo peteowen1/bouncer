@@ -427,7 +427,7 @@ add_margin_columns <- function(conn = NULL, path = NULL) {
 
 #' Add Cricinfo Tables to Existing Database
 #'
-#' Adds the Cricinfo rich data tables (balls, matches, innings, fixtures)
+#' Adds the Cricinfo Hawkeye data tables (balls, matches, innings, fixtures)
 #' to an existing database. Non-destructive: preserves all existing data.
 #'
 #' @param path Character. Database file path. If NULL, uses default.
@@ -562,23 +562,46 @@ migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
     row_count <- DBI::dbGetQuery(conn, sprintf(
       "SELECT COUNT(*) as n FROM %s", old_name))$n
 
-    DBI::dbExecute(conn, sprintf(
-      "CREATE TABLE %s AS SELECT * FROM %s", new_name, old_name))
-    DBI::dbExecute(conn, sprintf("DROP TABLE %s", old_name))
+    # Wrap CREATE + DROP in a transaction for atomicity
+    DBI::dbBegin(conn)
+    tryCatch({
+      DBI::dbExecute(conn, sprintf(
+        "CREATE TABLE %s AS SELECT * FROM %s", new_name, old_name))
+
+      # Verify row count before dropping source table
+      new_count <- DBI::dbGetQuery(conn, sprintf(
+        "SELECT COUNT(*) as n FROM %s", new_name))$n
+      if (new_count != row_count) {
+        DBI::dbRollback(conn)
+        cli::cli_abort("Row count mismatch migrating {old_name}: expected {row_count}, got {new_count}. Source table preserved.")
+      }
+
+      DBI::dbExecute(conn, sprintf("DROP TABLE %s", old_name))
+      DBI::dbCommit(conn)
+    }, error = function(e) {
+      tryCatch(DBI::dbRollback(conn), error = function(e2) NULL)
+      cli::cli_abort("Migration failed for {old_name}: {e$message}")
+    })
 
     if (verbose) cli::cli_alert_success("Migrated {old_name} -> {new_name} ({format(row_count, big.mark=',')} rows)")
     migrated <- migrated + 1L
   }
 
+  # Verify no mapped tables remain in main schema
+  if (migrated > 0) {
+    current_main <- DBI::dbGetQuery(conn,
+      "SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'main'")$table_name
+    remaining <- intersect(current_main, names(all_map))
+    if (length(remaining) > 0) {
+      cli::cli_alert_warning("{length(remaining)} table{?s} still in main schema: {paste(remaining, collapse = ', ')}")
+    }
+  }
+
   # Rebuild indexes on migrated tables
   if (migrated > 0) {
     if (verbose) cli::cli_alert_info("Rebuilding indexes...")
-    tryCatch(
-      create_indexes(conn, verbose = verbose),
-      error = function(e) {
-        cli::cli_alert_warning("Some indexes failed to create: {e$message}")
-      }
-    )
+    create_indexes(conn, verbose = verbose)
   }
 
   if (verbose) {
