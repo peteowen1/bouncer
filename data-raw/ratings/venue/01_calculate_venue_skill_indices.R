@@ -93,7 +93,7 @@ tryCatch({
 conn <- get_db_connection(read_only = FALSE)
 
 # Verify we have data
-n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM matches")$n
+n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.matches")$n
 if (n_matches == 0) {
   cli::cli_abort("Database is empty. Run install_all_bouncer_data() first.")
 }
@@ -217,7 +217,7 @@ base_query <- sprintf("
       innings,
       batting_team,
       MAX(total_runs) AS innings_total
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE LOWER(match_type) IN (%s)
     GROUP BY match_id, innings, batting_team
   ),
@@ -233,7 +233,7 @@ base_query <- sprintf("
            AND it.innings < d.innings),
         0
       ) AS bowling_score
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     WHERE LOWER(d.match_type) IN (%s)
   ),
   match_context AS (
@@ -256,7 +256,7 @@ base_query <- sprintf("
         WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
         ELSE 3
       END AS event_tier
-    FROM matches m
+    FROM cricsheet.matches m
   )
   SELECT
     cs.delivery_id,
@@ -294,7 +294,7 @@ if (mode == "incremental" && !is.null(last_processed)) {
 if (!is.null(MATCH_LIMIT)) {
   base_query <- paste0(base_query, sprintf("
     AND cs.match_id IN (
-      SELECT DISTINCT match_id FROM deliveries
+      SELECT DISTINCT match_id FROM cricsheet.deliveries
       WHERE LOWER(match_type) IN (%s)
       ORDER BY match_date
       LIMIT %d

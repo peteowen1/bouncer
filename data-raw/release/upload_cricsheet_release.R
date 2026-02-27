@@ -92,7 +92,7 @@ generate_manifest <- function(conn, parquet_dir) {
   cli::cli_alert_info("Generating manifest.json...")
 
   # Get all match_ids
-  match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches ORDER BY match_id")$match_id
+  match_ids <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches ORDER BY match_id")$match_id
 
   # Get partition metadata
   partition_query <- "
@@ -100,7 +100,7 @@ generate_manifest <- function(conn, parquet_dir) {
       m.match_type,
       m.gender,
       COUNT(DISTINCT m.match_id) as match_count
-    FROM matches m
+    FROM cricsheet.matches m
     GROUP BY m.match_type, m.gender
   "
   partition_stats <- DBI::dbGetQuery(conn, partition_query)
@@ -171,7 +171,7 @@ exported_files <- character()
 
 cli::cli_h2("Exporting core tables")
 
-matches <- dbGetQuery(conn, "SELECT * FROM matches")
+matches <- dbGetQuery(conn, "SELECT * FROM cricsheet.matches")
 matches_file <- file.path(temp_dir, "matches.parquet")
 export_parquet(matches, matches_file)
 exported_files <- c(exported_files, matches_file)
@@ -182,7 +182,7 @@ gc()
 # Step 4: Export players table (unified)
 # -----------------------------------------------------------------------------
 
-players <- dbGetQuery(conn, "SELECT * FROM players")
+players <- dbGetQuery(conn, "SELECT * FROM cricsheet.players")
 players_file <- file.path(temp_dir, "players.parquet")
 export_parquet(players, players_file)
 exported_files <- c(exported_files, players_file)
@@ -193,7 +193,7 @@ gc()
 # Step 5: Export match_innings table (unified)
 # -----------------------------------------------------------------------------
 
-match_innings <- dbGetQuery(conn, "SELECT * FROM match_innings")
+match_innings <- dbGetQuery(conn, "SELECT * FROM cricsheet.match_innings")
 match_innings_file <- file.path(temp_dir, "match_innings.parquet")
 export_parquet(match_innings, match_innings_file)
 exported_files <- c(exported_files, match_innings_file)
@@ -204,7 +204,7 @@ gc()
 # Step 6: Export innings_powerplays table (unified)
 # -----------------------------------------------------------------------------
 
-innings_powerplays <- dbGetQuery(conn, "SELECT * FROM innings_powerplays")
+innings_powerplays <- dbGetQuery(conn, "SELECT * FROM cricsheet.innings_powerplays")
 powerplays_file <- file.path(temp_dir, "innings_powerplays.parquet")
 export_parquet(innings_powerplays, powerplays_file)
 exported_files <- c(exported_files, powerplays_file)
@@ -225,8 +225,8 @@ for (match_type in MATCH_TYPES) {
     # Query for this partition (no team_type filter)
     query <- sprintf("
       SELECT d.*
-      FROM deliveries d
-      JOIN matches m ON d.match_id = m.match_id
+      FROM cricsheet.deliveries d
+      JOIN cricsheet.matches m ON d.match_id = m.match_id
       WHERE m.match_type = '%s'
         AND m.gender = '%s'
     ", match_type, gender)

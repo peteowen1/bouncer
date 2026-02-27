@@ -186,7 +186,7 @@ player_final <- DBI::dbGetQuery(conn, sprintf("
 ", skill_table, skill_table))
 
 # Join with player names
-players <- DBI::dbGetQuery(conn, "SELECT player_id, player_name FROM players")
+players <- DBI::dbGetQuery(conn, "SELECT player_id, player_name FROM cricsheet.players")
 player_final <- player_final %>%
   left_join(players, by = "player_id")
 

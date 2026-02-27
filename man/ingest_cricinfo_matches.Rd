@@ -15,7 +15,7 @@ ingest_cricinfo_matches(conn, match_files)
 Number of rows inserted.
 }
 \description{
-Loads match metadata parquets into cricinfo_matches table.
+Loads match metadata parquets into cricinfo.matches table.
 Match parquets already use snake_case columns.
 }
 \keyword{internal}

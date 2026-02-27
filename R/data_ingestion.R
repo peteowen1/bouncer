@@ -48,7 +48,17 @@ bulk_write_arrow <- function(conn, table_name, df) {
   if (is.null(df) || nrow(df) == 0) return(invisible(0))
 
   # Validate table_name exists to prevent SQL injection via crafted table names
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  # Schema-qualified names (e.g., "cricsheet.matches") need information_schema
+  if (grepl("\\.", table_name)) {
+    parts <- strsplit(table_name, "\\.")[[1]]
+    exists <- nrow(DBI::dbGetQuery(conn, sprintf(
+      "SELECT 1 FROM information_schema.tables WHERE table_schema = '%s' AND table_name = '%s'",
+      parts[1], parts[2]
+    ))) > 0
+  } else {
+    exists <- table_name %in% DBI::dbListTables(conn)
+  }
+  if (!exists) {
     cli::cli_abort("Table {.val {table_name}} does not exist in database")
   }
 
@@ -415,16 +425,16 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
 
  # Load each table (regex_pattern for list.files, glob_pattern for DuckDB)
  cli::cli_alert_info("Loading matches...")
- load_table("matches", "^matches_.*\\.parquet$", "matches_*.parquet")
+ load_table("cricsheet.matches", "^matches_.*\\.parquet$", "matches_*.parquet")
 
  cli::cli_alert_info("Loading deliveries...")
- load_table("deliveries", "^deliveries_.*\\.parquet$", "deliveries_*.parquet")
+ load_table("cricsheet.deliveries", "^deliveries_.*\\.parquet$", "deliveries_*.parquet")
 
  cli::cli_alert_info("Loading innings...")
- load_table("match_innings", "^innings_.*\\.parquet$", "innings_*.parquet")
+ load_table("cricsheet.match_innings", "^innings_.*\\.parquet$", "innings_*.parquet")
 
  cli::cli_alert_info("Loading powerplays...")
- load_table("innings_powerplays", "^powerplays_.*\\.parquet$", "powerplays_*.parquet")
+ load_table("cricsheet.innings_powerplays", "^powerplays_.*\\.parquet$", "powerplays_*.parquet")
 
  # Players need special handling for duplicates across parquet files
  # A player can appear in multiple batches (plays for multiple teams/matches)
@@ -437,7 +447,7 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
    # Use ROW_NUMBER() to pick one row per player_id, avoiding duplicates
    # This handles cases where same player appears with slightly different data
    sql <- sprintf("
-     INSERT INTO players
+     INSERT INTO cricsheet.players
      SELECT player_id, player_name, country, dob, batting_style, bowling_style
      FROM (
        SELECT *,
@@ -445,13 +455,13 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
        FROM read_parquet('%s')
      ) deduped
      WHERE rn = 1
-       AND player_id NOT IN (SELECT player_id FROM players)
+       AND player_id NOT IN (SELECT player_id FROM cricsheet.players)
    ", full_glob)
    DBI::dbExecute(conn, sql)
  }
 
  # Get count of loaded matches
- n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM matches")$n
+ n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n
  invisible(n_matches)
 }
 
@@ -505,7 +515,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
- existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM matches")
+ existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
  DBI::dbDisconnect(conn_check, shutdown = TRUE)
  existing_ids <- existing_matches$match_id
 
@@ -626,7 +636,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  timing$total <- timing$parse + timing$load
 
  # Get final count
- final_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM matches")$n
+ final_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n
  new_loaded <- final_count - length(existing_ids)
 
  cli::cli_alert_success("Loaded to DuckDB ({round(timing$load, 1)}s)")
@@ -683,7 +693,7 @@ insert_players_batch <- function(conn, players_df) {
   existing_ids <- DBI::dbGetQuery(
     conn,
     sprintf(
-      "SELECT player_id FROM players WHERE player_id IN (%s)",
+      "SELECT player_id FROM cricsheet.players WHERE player_id IN (%s)",
       paste(sprintf("'%s'", escaped_ids), collapse = ", ")
     )
   )$player_id
@@ -696,7 +706,7 @@ insert_players_batch <- function(conn, players_df) {
   }
 
   # Bulk insert using Arrow (10-20x faster than row-by-row)
-  bulk_write_arrow(conn, "players", new_players)
+  bulk_write_arrow(conn, "cricsheet.players", new_players)
 
   invisible(nrow(new_players))
 }
@@ -720,7 +730,7 @@ load_match_data <- function(parsed_data, path = NULL) {
   match_id <- parsed_data$match_info$match_id[1]
   existing <- DBI::dbGetQuery(
     conn,
-    "SELECT match_id FROM matches WHERE match_id = ?",
+    "SELECT match_id FROM cricsheet.matches WHERE match_id = ?",
     params = list(match_id)
   )
 
@@ -735,17 +745,17 @@ load_match_data <- function(parsed_data, path = NULL) {
   tryCatch({
     # Load matches
     if (nrow(parsed_data$match_info) > 0) {
-      DBI::dbAppendTable(conn, "matches", parsed_data$match_info)
+      DBI::dbAppendTable(conn, "cricsheet.matches", parsed_data$match_info)
     }
 
     # Load deliveries
     if (nrow(parsed_data$deliveries) > 0) {
-      DBI::dbAppendTable(conn, "deliveries", parsed_data$deliveries)
+      DBI::dbAppendTable(conn, "cricsheet.deliveries", parsed_data$deliveries)
     }
 
     # Load innings
     if (nrow(parsed_data$innings) > 0) {
-      DBI::dbAppendTable(conn, "match_innings", parsed_data$innings)
+      DBI::dbAppendTable(conn, "cricsheet.match_innings", parsed_data$innings)
     }
 
     # Load players
@@ -755,7 +765,7 @@ load_match_data <- function(parsed_data, path = NULL) {
 
     # Load powerplays
     if (!is.null(parsed_data$powerplays) && nrow(parsed_data$powerplays) > 0) {
-      DBI::dbAppendTable(conn, "innings_powerplays", parsed_data$powerplays)
+      DBI::dbAppendTable(conn, "cricsheet.innings_powerplays", parsed_data$powerplays)
     }
 
     DBI::dbCommit(conn)

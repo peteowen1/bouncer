@@ -75,8 +75,8 @@ query <- sprintf("
     d.is_boundary,
     m.event_name,
     m.outcome_type
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = 'male'
     AND d.batter_id IS NOT NULL

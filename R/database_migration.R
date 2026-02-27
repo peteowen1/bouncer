@@ -453,11 +453,15 @@ add_cricinfo_tables <- function(path = NULL) {
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  existing_tables <- DBI::dbListTables(conn)
+  # Check for schema-qualified Cricinfo tables
+  existing <- DBI::dbGetQuery(conn,
+    "SELECT table_schema || '.' || table_name AS qualified_name
+     FROM information_schema.tables
+     WHERE table_schema = 'cricinfo'")$qualified_name
 
-  cricinfo_tables <- c("cricinfo_balls", "cricinfo_matches",
-                        "cricinfo_innings", "cricinfo_fixtures")
-  needed <- setdiff(cricinfo_tables, existing_tables)
+  cricinfo_tables <- c("cricinfo.balls", "cricinfo.matches",
+                        "cricinfo.innings", "cricinfo.fixtures")
+  needed <- setdiff(cricinfo_tables, existing)
 
   if (length(needed) == 0) {
     cli::cli_alert_info("All Cricinfo tables already exist")
@@ -467,6 +471,119 @@ add_cricinfo_tables <- function(path = NULL) {
   cli::cli_h2("Adding Cricinfo tables to database")
   create_cricinfo_tables(conn, verbose = TRUE)
   cli::cli_alert_success("Migration complete! Added {length(needed)} Cricinfo table{?s}")
+
+  invisible(TRUE)
+}
+
+
+#' Migrate Existing Database to Schema Namespaces
+#'
+#' Moves Cricsheet tables from the default `main` schema to the `cricsheet`
+#' schema, and Cricinfo tables from `main` to the `cricinfo` schema.
+#' This is a one-time migration for existing databases.
+#'
+#' Uses CREATE TABLE AS SELECT + DROP since DuckDB doesn't support
+#' ALTER TABLE SET SCHEMA.
+#'
+#' @param path Character. Database file path. If NULL, uses default.
+#' @param verbose Logical. Print progress messages. Default TRUE.
+#'
+#' @return Invisibly returns TRUE on success.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' migrate_to_schemas()
+#' }
+migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
+  if (is.null(path)) {
+    path <- get_default_db_path()
+  }
+
+  if (!file.exists(path)) {
+    cli::cli_abort("Database not found at {.file {path}}")
+  }
+
+  check_duckdb_available()
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  # Create schemas
+  create_schemas(conn)
+
+  # Get existing tables in main schema
+  main_tables <- DBI::dbGetQuery(conn,
+    "SELECT table_name FROM information_schema.tables
+     WHERE table_schema = 'main'")$table_name
+
+  # Cricsheet tables to migrate
+  cricsheet_map <- c(
+    "matches" = "cricsheet.matches",
+    "deliveries" = "cricsheet.deliveries",
+    "players" = "cricsheet.players",
+    "match_innings" = "cricsheet.match_innings",
+    "innings_powerplays" = "cricsheet.innings_powerplays"
+  )
+
+  # Cricinfo tables to migrate
+  cricinfo_map <- c(
+    "cricinfo_balls" = "cricinfo.balls",
+    "cricinfo_matches" = "cricinfo.matches",
+    "cricinfo_innings" = "cricinfo.innings",
+    "cricinfo_fixtures" = "cricinfo.fixtures"
+  )
+
+  all_map <- c(cricsheet_map, cricinfo_map)
+  migrated <- 0L
+
+  cli::cli_h2("Migrating tables to schemas")
+
+  for (old_name in names(all_map)) {
+    new_name <- all_map[[old_name]]
+
+    if (!old_name %in% main_tables) {
+      if (verbose) cli::cli_alert_info("Skipping {old_name} (not in main schema)")
+      next
+    }
+
+    # Check if target already exists
+    target_exists <- nrow(DBI::dbGetQuery(conn, sprintf(
+      "SELECT 1 FROM information_schema.tables
+       WHERE table_schema || '.' || table_name = '%s'", new_name
+    ))) > 0
+
+    if (target_exists) {
+      if (verbose) cli::cli_alert_info("Skipping {old_name} ({new_name} already exists)")
+      next
+    }
+
+    if (verbose) cli::cli_alert_info("Migrating {old_name} -> {new_name}...")
+
+    row_count <- DBI::dbGetQuery(conn, sprintf(
+      "SELECT COUNT(*) as n FROM %s", old_name))$n
+
+    DBI::dbExecute(conn, sprintf(
+      "CREATE TABLE %s AS SELECT * FROM %s", new_name, old_name))
+    DBI::dbExecute(conn, sprintf("DROP TABLE %s", old_name))
+
+    if (verbose) cli::cli_alert_success("Migrated {old_name} -> {new_name} ({format(row_count, big.mark=',')} rows)")
+    migrated <- migrated + 1L
+  }
+
+  # Rebuild indexes on migrated tables
+  if (migrated > 0) {
+    if (verbose) cli::cli_alert_info("Rebuilding indexes...")
+    tryCatch(
+      create_indexes(conn, verbose = verbose),
+      error = function(e) {
+        cli::cli_alert_warning("Some indexes failed to create: {e$message}")
+      }
+    )
+  }
+
+  if (verbose) {
+    cli::cli_alert_success("Migration complete! Moved {migrated} table{?s} to schemas")
+  }
 
   invisible(TRUE)
 }

@@ -43,8 +43,8 @@ cli::cli_alert_success("Calibration: mean_runs={round(calibration$mean_runs, 3)}
 cli::cli_h2("Loading deliveries")
 match_ids <- DBI::dbGetQuery(conn, sprintf("
   SELECT DISTINCT d.match_id
-  FROM deliveries d
-  JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN ('t20', 'it20')
     AND m.gender = 'male'
   ORDER BY d.match_date
@@ -64,7 +64,7 @@ query <- sprintf("
     d.over,
     d.runs_batter,
     d.is_wicket
-  FROM deliveries d
+  FROM cricsheet.deliveries d
   WHERE d.match_id IN (%s)
     AND d.batter_id IS NOT NULL
     AND d.bowler_id IS NOT NULL

@@ -1089,8 +1089,8 @@ build_league_running_averages <- function(conn, format, gender) {
         m.match_id,
         SUM(d.runs_batter + d.runs_extras) as match_runs,
         COUNT(*) as match_deliveries
-      FROM deliveries d
-      JOIN matches m ON d.match_id = m.match_id
+      FROM cricsheet.deliveries d
+      JOIN cricsheet.matches m ON d.match_id = m.match_id
       WHERE m.match_type IN (%s)
         AND m.gender = '%s'
         AND m.event_name IS NOT NULL

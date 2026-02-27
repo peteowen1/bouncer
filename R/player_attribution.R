@@ -311,7 +311,7 @@ get_match_attribution <- function(model, match_id, format = "t20", conn) {
   # Load delivery data for match
   query <- sprintf("
     SELECT d.*
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     WHERE d.match_id = ?
     ORDER BY d.innings, d.over, d.ball
   ")

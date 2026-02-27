@@ -90,7 +90,7 @@ if (is.null(FORMAT_FILTER)) {
       team1, team2, outcome_winner, toss_winner, toss_decision,
       event_match_number, event_group,
       unified_margin
-    FROM matches
+    FROM cricsheet.matches
     WHERE gender IS NOT NULL
     ORDER BY match_date, match_id
   "
@@ -104,7 +104,7 @@ if (is.null(FORMAT_FILTER)) {
       team1, team2, outcome_winner, toss_winner, toss_decision,
       event_match_number, event_group,
       unified_margin
-    FROM matches
+    FROM cricsheet.matches
     WHERE LOWER(match_type) IN (%s)
       AND gender IS NOT NULL
     ORDER BY match_date, match_id
@@ -130,7 +130,7 @@ cli::cli_alert_info("Loading player participation data...")
 player_participation_dt <- as.data.table(DBI::dbGetQuery(conn, "
   SELECT DISTINCT
     match_id, match_date, match_type, batting_team, bowling_team, batter_id, bowler_id
-  FROM deliveries
+  FROM cricsheet.deliveries
 "))
 player_participation_dt[, match_date := as.Date(match_date)]
 cli::cli_alert_success("Loaded player participation data")
@@ -146,8 +146,8 @@ venue_stats_dt <- as.data.table(DBI::dbGetQuery(conn, "
     mi.innings,
     mi.total_runs,
     mi.batting_team
-  FROM matches m
-  JOIN match_innings mi ON m.match_id = mi.match_id
+  FROM cricsheet.matches m
+  JOIN cricsheet.match_innings mi ON m.match_id = mi.match_id
   WHERE m.outcome_winner IS NOT NULL
     AND m.outcome_winner != ''
 "))

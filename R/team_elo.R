@@ -63,7 +63,7 @@ get_likely_playing_xi <- function(team, as_of_date, conn,
   # Build query to find recent matches for this team
   match_query <- "
     SELECT DISTINCT match_id, match_date
-    FROM matches
+    FROM cricsheet.matches
     WHERE (team1 = ? OR team2 = ?)
       AND match_date < CAST(? AS DATE)
   "
@@ -99,14 +99,14 @@ get_likely_playing_xi <- function(team, as_of_date, conn,
     SELECT player_id, COUNT(DISTINCT match_id) as appearance_count
     FROM (
       SELECT batter_id as player_id, match_id
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE match_id IN (%s)
         AND batting_team = ?
 
       UNION ALL
 
       SELECT bowler_id as player_id, match_id
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE match_id IN (%s)
         AND bowling_team = ?
     )
@@ -353,7 +353,7 @@ calculate_team_form <- function(team, as_of_date, n_matches = 5, conn,
 
   query <- "
     SELECT outcome_winner
-    FROM matches
+    FROM cricsheet.matches
     WHERE (team1 = ? OR team2 = ?)
       AND match_date < CAST(? AS DATE)
       AND outcome_winner IS NOT NULL
@@ -411,7 +411,7 @@ calculate_h2h_record <- function(team1, team2, as_of_date, conn,
 
   query <- "
     SELECT outcome_winner
-    FROM matches
+    FROM cricsheet.matches
     WHERE ((team1 = ? AND team2 = ?) OR (team1 = ? AND team2 = ?))
       AND match_date < CAST(? AS DATE)
       AND outcome_winner IS NOT NULL

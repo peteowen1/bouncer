@@ -54,7 +54,7 @@ matches <- DBI::dbGetQuery(conn, "
     --m.gender,
     --m.outcome_winner,
     --m.event_name
-  FROM matches m
+  FROM cricsheet.matches m
   WHERE 1=1
   --AND (m.team1 = ? OR m.team2 = ?)
   AND LOWER(m.match_type) IN ('t20', 'it20')

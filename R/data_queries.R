@@ -98,7 +98,7 @@ query_matches <- function(match_type = NULL,
     conn <- get_db_connection(path = db_path, read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-    query <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
+    query <- sprintf("SELECT * FROM cricsheet.matches %s ORDER BY match_date DESC", where_sql)
     result <- DBI::dbGetQuery(conn, query, params = params)
   }
 
@@ -366,9 +366,9 @@ query_deliveries <- function(match_id = NULL,
 
   # Build query with optional JOIN
  if (needs_match_join) {
-    query <- "SELECT d.* FROM deliveries d JOIN matches m ON d.match_id = m.match_id"
+    query <- "SELECT d.* FROM cricsheet.deliveries d JOIN cricsheet.matches m ON d.match_id = m.match_id"
   } else {
-    query <- "SELECT d.* FROM deliveries d"
+    query <- "SELECT d.* FROM cricsheet.deliveries d"
   }
 
   if (length(where_clauses) > 0) {
@@ -680,9 +680,9 @@ query_batter_stats <- function(batter_id = NULL,
 
   # Build FROM clause (always join players table for names)
   if (needs_match_join) {
-    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id LEFT JOIN players p ON d.batter_id = p.player_id"
+    from_clause <- "FROM cricsheet.deliveries d JOIN cricsheet.matches m ON d.match_id = m.match_id LEFT JOIN cricsheet.players p ON d.batter_id = p.player_id"
   } else {
-    from_clause <- "FROM deliveries d LEFT JOIN players p ON d.batter_id = p.player_id"
+    from_clause <- "FROM cricsheet.deliveries d LEFT JOIN cricsheet.players p ON d.batter_id = p.player_id"
   }
 
   # Build WHERE clause string
@@ -928,9 +928,9 @@ query_bowler_stats <- function(bowler_id = NULL,
 
   # Build FROM clause (always join players table for names)
   if (needs_match_join) {
-    from_clause <- "FROM deliveries d JOIN matches m ON d.match_id = m.match_id LEFT JOIN players p ON d.bowler_id = p.player_id"
+    from_clause <- "FROM cricsheet.deliveries d JOIN cricsheet.matches m ON d.match_id = m.match_id LEFT JOIN cricsheet.players p ON d.bowler_id = p.player_id"
   } else {
-    from_clause <- "FROM deliveries d LEFT JOIN players p ON d.bowler_id = p.player_id"
+    from_clause <- "FROM cricsheet.deliveries d LEFT JOIN cricsheet.players p ON d.bowler_id = p.player_id"
   }
 
   # Build WHERE clause string

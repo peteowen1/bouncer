@@ -139,7 +139,7 @@ ensure_db_exists <- function(path = NULL) {
 #' conn <- connect_to_bouncer()
 #'
 #' # Query data
-#' matches <- DBI::dbGetQuery(conn, "SELECT * FROM matches LIMIT 10")
+#' matches <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.matches LIMIT 10")
 #'
 #' # Always disconnect when done
 #' disconnect_bouncer(conn)

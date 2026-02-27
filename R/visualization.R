@@ -315,7 +315,7 @@ plot_skill_progression <- function(player_name,
       s.bowler_economy_index,
       s.bowler_strike_rate
     FROM %s s
-    JOIN deliveries d ON s.delivery_id = d.delivery_id
+    JOIN cricsheet.deliveries d ON s.delivery_id = d.delivery_id
     WHERE s.batter_id = ? OR s.bowler_id = ?
     ORDER BY d.match_date ASC
   ", skill_table)

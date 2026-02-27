@@ -192,8 +192,8 @@ base_query <- sprintf("
     d.is_wicket,
     d.is_boundary,
     m.event_name
-  FROM deliveries d
-  LEFT JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  LEFT JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = '%s'
     AND d.batter_id IS NOT NULL
@@ -212,8 +212,8 @@ if (!is.null(MATCH_LIMIT)) {
   # Get limited set of match_ids (filtered by gender)
   match_ids <- DBI::dbGetQuery(conn, sprintf("
     SELECT DISTINCT d.match_id
-    FROM deliveries d
-    JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE LOWER(d.match_type) IN (%s)
       AND m.gender = '%s'
     ORDER BY d.match_date
@@ -847,7 +847,7 @@ if (FALSE) {  # OLD CODE - needs refactoring for separated ELOs
   # Query match outcomes from database
   match_outcomes <- DBI::dbGetQuery(conn, sprintf("
     SELECT match_id, team1, team2, outcome_winner
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_id IN (%s)
       AND outcome_winner IS NOT NULL
       AND outcome_winner != ''
@@ -1258,7 +1258,7 @@ if (!is.null(stats)) {
              d.batting_team,
              ROW_NUMBER() OVER (PARTITION BY e.batter_id ORDER BY e.match_date DESC, e.delivery_id DESC) as rn
       FROM %s_player_elo e
-      JOIN deliveries d ON e.delivery_id = d.delivery_id
+      JOIN cricsheet.deliveries d ON e.delivery_id = d.delivery_id
     ),
     avg_opp AS (
       SELECT batter_id,
@@ -1301,7 +1301,7 @@ if (!is.null(stats)) {
              d.bowling_team,
              ROW_NUMBER() OVER (PARTITION BY e.bowler_id ORDER BY e.match_date DESC, e.delivery_id DESC) as rn
       FROM %s_player_elo e
-      JOIN deliveries d ON e.delivery_id = d.delivery_id
+      JOIN cricsheet.deliveries d ON e.delivery_id = d.delivery_id
     ),
     avg_opp AS (
       SELECT bowler_id,
@@ -1432,8 +1432,8 @@ cli::cli_h3("Query Example")
 cat("
 -- Men's T20 player ELO example
 SELECT d.*, e.batter_run_elo_before, e.batter_wicket_elo_before
-FROM deliveries d
-JOIN matches m ON d.match_id = m.match_id
+FROM cricsheet.deliveries d
+JOIN cricsheet.matches m ON d.match_id = m.match_id
 JOIN mens_t20_player_elo e ON d.delivery_id = e.delivery_id
 WHERE LOWER(d.match_type) IN ('t20', 'it20')
   AND m.gender = 'male'
@@ -1441,8 +1441,8 @@ LIMIT 10
 
 -- Women's ODI player ELO example
 SELECT d.*, e.batter_run_elo_before, e.batter_wicket_elo_before
-FROM deliveries d
-JOIN matches m ON d.match_id = m.match_id
+FROM cricsheet.deliveries d
+JOIN cricsheet.matches m ON d.match_id = m.match_id
 JOIN womens_odi_player_elo e ON d.delivery_id = e.delivery_id
 WHERE LOWER(d.match_type) IN ('odi', 'odm')
   AND m.gender = 'female'

@@ -33,12 +33,15 @@ test_that("database has expected tables", {
   conn <- get_db_connection(read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  tables <- DBI::dbListTables(conn)
+  tables <- DBI::dbGetQuery(conn,
+    "SELECT table_schema || '.' || table_name as full_name
+     FROM information_schema.tables
+     WHERE table_schema IN ('cricsheet', 'cricinfo')")$full_name
 
-  # Core tables should exist
-  expect_true("matches" %in% tables)
-  expect_true("deliveries" %in% tables)
-  expect_true("players" %in% tables)
+  # Core tables should exist in cricsheet schema
+  expect_true("cricsheet.matches" %in% tables)
+  expect_true("cricsheet.deliveries" %in% tables)
+  expect_true("cricsheet.players" %in% tables)
 })
 
 test_that("matches table has expected columns", {
@@ -47,7 +50,9 @@ test_that("matches table has expected columns", {
   conn <- get_db_connection(read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  columns <- DBI::dbListFields(conn, "matches")
+  columns <- DBI::dbGetQuery(conn,
+    "SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'cricsheet' AND table_name = 'matches'")$column_name
 
   # Key columns should exist
   expect_true("match_id" %in% columns)
@@ -63,7 +68,9 @@ test_that("deliveries table has expected columns", {
   conn <- get_db_connection(read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  columns <- DBI::dbListFields(conn, "deliveries")
+  columns <- DBI::dbGetQuery(conn,
+    "SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'cricsheet' AND table_name = 'deliveries'")$column_name
 
   # Key columns should exist
   expect_true("delivery_id" %in% columns)
@@ -94,10 +101,13 @@ test_that("initialize_bouncer_database creates tables", {
     conn <- get_db_connection(path = temp_db, read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-    tables <- DBI::dbListTables(conn)
-    expect_true("matches" %in% tables)
-    expect_true("deliveries" %in% tables)
-    expect_true("players" %in% tables)
+    tables <- DBI::dbGetQuery(conn,
+      "SELECT table_schema || '.' || table_name as full_name
+       FROM information_schema.tables
+       WHERE table_schema IN ('cricsheet', 'cricinfo')")$full_name
+    expect_true("cricsheet.matches" %in% tables)
+    expect_true("cricsheet.deliveries" %in% tables)
+    expect_true("cricsheet.players" %in% tables)
   }, finally = {
     # Clean up
     if (file.exists(temp_db)) {

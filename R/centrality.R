@@ -989,15 +989,15 @@ build_event_centrality_lookup <- function(conn, format, gender, min_players = 10
   query <- sprintf("
     WITH event_players AS (
       SELECT DISTINCT m.event_name, d.batter_id as player_id
-      FROM deliveries d
-      JOIN matches m ON d.match_id = m.match_id
+      FROM cricsheet.deliveries d
+      JOIN cricsheet.matches m ON d.match_id = m.match_id
       WHERE m.match_type IN (%s)
         AND m.gender = '%s'
         AND m.event_name IS NOT NULL
       UNION
       SELECT DISTINCT m.event_name, d.bowler_id as player_id
-      FROM deliveries d
-      JOIN matches m ON d.match_id = m.match_id
+      FROM cricsheet.deliveries d
+      JOIN cricsheet.matches m ON d.match_id = m.match_id
       WHERE m.match_type IN (%s)
         AND m.gender = '%s'
         AND m.event_name IS NOT NULL

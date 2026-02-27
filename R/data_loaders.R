@@ -269,7 +269,7 @@ load_matches <- function(match_type = "all", gender = "all", team_type = "all",
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-    sql <- sprintf("SELECT * FROM matches %s ORDER BY match_date DESC", where_sql)
+    sql <- sprintf("SELECT * FROM cricsheet.matches %s ORDER BY match_date DESC", where_sql)
     result <- DBI::dbGetQuery(conn, sql)
   }
 
@@ -365,7 +365,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
       # Direct query with match_id filter (escape to prevent SQL injection)
       ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
-      sql <- sprintf("SELECT * FROM deliveries WHERE match_id IN (%s)", ids_sql)
+      sql <- sprintf("SELECT * FROM cricsheet.deliveries WHERE match_id IN (%s)", ids_sql)
     } else {
       # Need to filter through matches table
       where_clauses <- character()
@@ -391,12 +391,12 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
       if (length(where_clauses) > 0) {
         where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
         sql <- sprintf(
-          "SELECT d.* FROM deliveries d
-           INNER JOIN matches m ON d.match_id = m.match_id
+          "SELECT d.* FROM cricsheet.deliveries d
+           INNER JOIN cricsheet.matches m ON d.match_id = m.match_id
            %s", where_sql
         )
       } else {
-        sql <- "SELECT * FROM deliveries"
+        sql <- "SELECT * FROM cricsheet.deliveries"
       }
     }
 
@@ -442,7 +442,7 @@ load_players <- function(source = c("local", "remote")) {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
-    result <- DBI::dbGetQuery(conn, "SELECT * FROM players")
+    result <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.players")
   }
 
   if (nrow(result) == 0) {
@@ -539,12 +539,12 @@ load_innings <- function(match_type = "all", gender = "all",
     if (length(join_where) > 0) {
       where_sql <- paste("WHERE", paste(join_where, collapse = " AND "))
       sql <- sprintf(
-        "SELECT i.* FROM match_innings i
-         INNER JOIN matches m ON i.match_id = m.match_id
+        "SELECT i.* FROM cricsheet.match_innings i
+         INNER JOIN cricsheet.matches m ON i.match_id = m.match_id
          %s", where_sql
       )
     } else {
-      sql <- "SELECT * FROM match_innings"
+      sql <- "SELECT * FROM cricsheet.match_innings"
     }
 
     result <- DBI::dbGetQuery(conn, sql)
@@ -639,12 +639,12 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
     if (length(join_where) > 0) {
       where_sql <- paste("WHERE", paste(join_where, collapse = " AND "))
       sql <- sprintf(
-        "SELECT p.* FROM innings_powerplays p
-         INNER JOIN matches m ON p.match_id = m.match_id
+        "SELECT p.* FROM cricsheet.innings_powerplays p
+         INNER JOIN cricsheet.matches m ON p.match_id = m.match_id
          %s", where_sql
       )
     } else {
-      sql <- "SELECT * FROM innings_powerplays"
+      sql <- "SELECT * FROM cricsheet.innings_powerplays"
     }
 
     result <- DBI::dbGetQuery(conn, sql)

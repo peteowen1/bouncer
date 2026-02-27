@@ -1016,7 +1016,7 @@ get_season_fixtures <- function(event_name, season, conn) {
       m.event_match_number,
       t1.elo_result AS team1_elo,
       t2.elo_result AS team2_elo
-    FROM matches m
+    FROM cricsheet.matches m
     LEFT JOIN team_elo t1 ON m.match_id = t1.match_id AND m.team1 = t1.team_id
     LEFT JOIN team_elo t2 ON m.match_id = t2.match_id AND m.team2 = t2.team_id
     WHERE m.event_name LIKE ?
@@ -1065,7 +1065,7 @@ get_available_seasons <- function(event_name = NULL, conn) {
       COUNT(*) as n_matches,
       MIN(match_date) as start_date,
       MAX(match_date) as end_date
-    FROM matches
+    FROM cricsheet.matches
     WHERE outcome_winner IS NOT NULL
   "
 

@@ -17,7 +17,7 @@ ingest_cricinfo_innings(conn, innings_files, match_ids)
 Number of rows inserted.
 }
 \description{
-Loads innings/scorecard parquets into cricinfo_innings table.
+Loads innings/scorecard parquets into cricinfo.innings table.
 Innings parquets already use snake_case columns.
 }
 \keyword{internal}

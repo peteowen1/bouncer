@@ -172,14 +172,14 @@ get_data_info <- function(path = NULL) {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Get counts
-  n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM matches")$n
-  n_deliveries <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM deliveries")$n
-  n_players <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM players")$n
+  n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.matches")$n
+  n_deliveries <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.deliveries")$n
+  n_players <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.players")$n
 
   # Get match type breakdown
   match_types <- DBI::dbGetQuery(conn, "
     SELECT match_type, COUNT(*) as n
-    FROM matches
+    FROM cricsheet.matches
     GROUP BY match_type
     ORDER BY n DESC
   ")
@@ -187,7 +187,7 @@ get_data_info <- function(path = NULL) {
   # Get date range
   date_range <- DBI::dbGetQuery(conn, "
     SELECT MIN(match_date) as earliest, MAX(match_date) as latest
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_date IS NOT NULL
   ")
 
@@ -253,7 +253,7 @@ list_available_formats <- function(path = NULL) {
       COUNT(*) as n_matches,
       MIN(match_date) as earliest_match,
       MAX(match_date) as latest_match
-    FROM matches
+    FROM cricsheet.matches
     WHERE match_type IS NOT NULL
     GROUP BY match_type, gender
     ORDER BY n_matches DESC
@@ -525,7 +525,7 @@ load_filtered_matches <- function(file_paths,
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   # Get existing match IDs
-  existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM matches")
+  existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches")
   existing_ids <- existing_matches$match_id
 
   # Filter to new files only

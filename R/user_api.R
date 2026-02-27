@@ -98,7 +98,7 @@ get_player <- function(name_or_id, format = NULL,
 
   # Try exact match first, then fuzzy match
   player <- DBI::dbGetQuery(conn, "
-    SELECT * FROM players
+    SELECT * FROM cricsheet.players
     WHERE player_id = ? OR LOWER(player_name) = LOWER(?)
     LIMIT 1
   ", params = list(name_or_id, name_or_id))
@@ -106,7 +106,7 @@ get_player <- function(name_or_id, format = NULL,
   # If no exact match, try partial match
   if (nrow(player) == 0) {
     player <- DBI::dbGetQuery(conn, "
-      SELECT * FROM players
+      SELECT * FROM cricsheet.players
       WHERE LOWER(player_name) LIKE LOWER(?)
       ORDER BY player_name
       LIMIT 1
@@ -736,7 +736,7 @@ analyze_match <- function(match_id, db_path = NULL) {
 
   # Get match info
   match <- DBI::dbGetQuery(conn, "
-    SELECT * FROM matches WHERE match_id = ?
+    SELECT * FROM cricsheet.matches WHERE match_id = ?
   ", params = list(match_id))
 
   if (nrow(match) == 0) {
@@ -746,7 +746,7 @@ analyze_match <- function(match_id, db_path = NULL) {
 
   # Get innings summaries
   innings <- DBI::dbGetQuery(conn, "
-    SELECT * FROM match_innings
+    SELECT * FROM cricsheet.match_innings
     WHERE match_id = ?
     ORDER BY innings
   ", params = list(match_id))
@@ -759,7 +759,7 @@ analyze_match <- function(match_id, db_path = NULL) {
       COUNT(*) as balls,
       SUM(CASE WHEN is_four THEN 1 ELSE 0 END) as fours,
       SUM(CASE WHEN is_six THEN 1 ELSE 0 END) as sixes
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE match_id = ?
     GROUP BY batter_id
     ORDER BY runs DESC
@@ -773,7 +773,7 @@ analyze_match <- function(match_id, db_path = NULL) {
       COUNT(*) as balls,
       SUM(runs_total) as runs,
       SUM(CASE WHEN is_wicket THEN 1 ELSE 0 END) as wickets
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE match_id = ?
     GROUP BY bowler_id
     ORDER BY wickets DESC, runs ASC
@@ -1016,7 +1016,7 @@ search_players <- function(pattern, limit = 10, db_path = NULL) {
 
   result <- DBI::dbGetQuery(conn, "
     SELECT player_id, player_name, country, batting_style, bowling_style
-    FROM players
+    FROM cricsheet.players
     WHERE LOWER(player_name) LIKE LOWER(?)
     ORDER BY player_name
     LIMIT ?

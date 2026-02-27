@@ -102,10 +102,10 @@ query <- "
     inn1.total_overs AS team1_overs,
     inn2.total_runs AS team2_score,
     inn2.total_overs AS team2_overs
-  FROM matches m
-  LEFT JOIN match_innings inn1
+  FROM cricsheet.matches m
+  LEFT JOIN cricsheet.match_innings inn1
     ON m.match_id = inn1.match_id AND inn1.innings = 1
-  LEFT JOIN match_innings inn2
+  LEFT JOIN cricsheet.match_innings inn2
     ON m.match_id = inn2.match_id AND inn2.innings = 2
   WHERE m.outcome_winner IS NOT NULL
     AND m.outcome_winner != ''
@@ -260,7 +260,7 @@ for (current_format in formats_to_process) {
         bowling_team,
         batter_id,
         bowler_id
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE match_type IN (%s)
     ", placeholders)
 

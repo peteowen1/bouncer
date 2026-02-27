@@ -54,7 +54,7 @@ load_projection_training_data <- function(conn, format, gender, team_type,
         match_id,
         innings,
         MAX(total_runs) as final_innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE LOWER(match_type) IN (%s)
         AND LOWER(gender) = '%s'
       GROUP BY match_id, innings
@@ -67,9 +67,9 @@ load_projection_training_data <- function(conn, format, gender, team_type,
       %d - ((d.over * 6) + d.ball) as balls_remaining,
       (10 - d.wickets_fallen) as wickets_remaining,
       it.final_innings_total
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     JOIN innings_totals it ON d.match_id = it.match_id AND d.innings = it.innings
-    JOIN matches m ON d.match_id = m.match_id
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE LOWER(d.match_type) IN (%s)
       AND LOWER(d.gender) = '%s'
       AND %s
@@ -258,8 +258,8 @@ calculate_actual_eis <- function(conn, format, gender, team_type) {
 
   query <- sprintf("
     SELECT AVG(mi.total_runs) as avg_score
-    FROM match_innings mi
-    JOIN matches m ON mi.match_id = m.match_id
+    FROM cricsheet.match_innings mi
+    JOIN cricsheet.matches m ON mi.match_id = m.match_id
     WHERE mi.innings = 1
       AND LOWER(m.match_type) IN (%s)
       AND LOWER(m.gender) = '%s'
@@ -536,8 +536,8 @@ calculate_all_delivery_projections <- function(conn, format,
   # Count deliveries
   count_query <- sprintf("
     SELECT COUNT(*) as n
-    FROM deliveries d
-    JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE LOWER(d.match_type) IN (%s)
   ", match_types_sql)
 
@@ -588,7 +588,7 @@ calculate_all_delivery_projections <- function(conn, format,
           match_id,
           innings,
           MAX(total_runs) as final_innings_total
-        FROM deliveries
+        FROM cricsheet.deliveries
         WHERE LOWER(match_type) IN (%s)
         GROUP BY match_id, innings
       )
@@ -604,8 +604,8 @@ calculate_all_delivery_projections <- function(conn, format,
         LOWER(m.gender) as gender,
         CASE WHEN m.team_type = 'international' THEN 'international' ELSE 'club' END as team_type,
         it.final_innings_total
-      FROM deliveries d
-      JOIN matches m ON d.match_id = m.match_id
+      FROM cricsheet.deliveries d
+      JOIN cricsheet.matches m ON d.match_id = m.match_id
       JOIN innings_totals it ON d.match_id = it.match_id AND d.innings = it.innings
       WHERE LOWER(d.match_type) IN (%s)
       ORDER BY m.match_date, d.match_id, d.delivery_id

@@ -47,7 +47,7 @@ WITH innings_totals AS (
     innings,
     batting_team,
     MAX(total_runs) AS innings_total
-  FROM deliveries
+  FROM cricsheet.deliveries
   WHERE LOWER(match_type) IN ('t20', 'odi', 'it20', 'odm')
   GROUP BY match_id, innings, batting_team
 ),
@@ -63,7 +63,7 @@ cumulative_scores AS (
          AND it.innings < d.innings),
       0
     ) AS bowling_score
-  FROM deliveries d
+  FROM cricsheet.deliveries d
   WHERE LOWER(d.match_type) IN ('t20', 'odi', 'it20', 'odm')
 )
 SELECT
@@ -90,7 +90,7 @@ WHERE runs_batter NOT IN (5)         -- Remove 5 runs (rare)
 if (!is.null(MATCH_LIMIT)) {
   cli::cli_alert_info("Using MATCH_LIMIT = {MATCH_LIMIT}")
   match_ids <- DBI::dbGetQuery(conn, sprintf("
-    SELECT DISTINCT match_id FROM deliveries
+    SELECT DISTINCT match_id FROM cricsheet.deliveries
     WHERE LOWER(match_type) IN ('t20', 'odi', 'it20', 'odm')
     ORDER BY match_id
     LIMIT %d

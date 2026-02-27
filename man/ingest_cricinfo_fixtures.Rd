@@ -17,7 +17,7 @@ ingest_cricinfo_fixtures(conn, cricinfo_dir, verbose = TRUE)
 Number of fixtures loaded.
 }
 \description{
-Loads the fixtures.parquet index into cricinfo_fixtures table.
+Loads the fixtures.parquet index into cricinfo.fixtures table.
 Uses DELETE + INSERT for idempotent updates.
 }
 \keyword{internal}

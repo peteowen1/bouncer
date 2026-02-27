@@ -184,7 +184,7 @@ if (use_model_for_format) {
         innings,
         batting_team,
         MAX(total_runs) AS innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE LOWER(match_type) IN (%s)
       GROUP BY match_id, innings, batting_team
     ),
@@ -200,7 +200,7 @@ if (use_model_for_format) {
              AND it.innings < d.innings),
           0
         ) AS bowling_score
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       WHERE LOWER(d.match_type) IN (%s)
     ),
     match_context AS (
@@ -223,7 +223,7 @@ if (use_model_for_format) {
           WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
           ELSE 3
         END AS event_tier
-      FROM matches m
+      FROM cricsheet.matches m
     )
     SELECT
       cs.delivery_id,
@@ -261,7 +261,7 @@ if (use_model_for_format) {
       bowler_id,
       runs_batter,
       is_wicket
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE LOWER(match_type) IN (%s)
       AND batter_id IS NOT NULL
       AND bowler_id IS NOT NULL
@@ -277,7 +277,7 @@ if (mode == "incremental" && !is.null(last_processed)) {
 
 if (!is.null(MATCH_LIMIT)) {
   match_ids <- DBI::dbGetQuery(conn, sprintf("
-    SELECT DISTINCT match_id FROM deliveries
+    SELECT DISTINCT match_id FROM cricsheet.deliveries
     WHERE LOWER(match_type) IN (%s)
     ORDER BY match_date
     LIMIT %d
@@ -342,7 +342,7 @@ if (n_deliveries == 0) {
       SELECT DISTINCT s.batter_id, s.batter_scoring_index, s.batter_survival_rate,
              s.batter_balls_faced, s.match_date, s.delivery_id
       FROM %s s
-      JOIN matches m ON s.match_id = m.match_id
+      JOIN cricsheet.matches m ON s.match_id = m.match_id
       WHERE m.gender = 'male'
     ),
     latest AS (
@@ -370,7 +370,7 @@ if (n_deliveries == 0) {
       SELECT DISTINCT s.bowler_id, s.bowler_economy_index, s.bowler_strike_rate,
              s.bowler_balls_bowled, s.match_date, s.delivery_id
       FROM %s s
-      JOIN matches m ON s.match_id = m.match_id
+      JOIN cricsheet.matches m ON s.match_id = m.match_id
       WHERE m.gender = 'male'
     ),
     latest AS (
@@ -751,7 +751,7 @@ top_batters <- DBI::dbGetQuery(conn, sprintf("
     SELECT DISTINCT s.batter_id, s.batter_scoring_index, s.batter_survival_rate,
            s.batter_balls_faced, s.match_date, s.delivery_id
     FROM %s s
-    JOIN matches m ON s.match_id = m.match_id
+    JOIN cricsheet.matches m ON s.match_id = m.match_id
     WHERE m.gender = 'male'
   ),
   latest AS (
@@ -778,7 +778,7 @@ top_bowlers <- DBI::dbGetQuery(conn, sprintf("
     SELECT DISTINCT s.bowler_id, s.bowler_economy_index, s.bowler_strike_rate,
            s.bowler_balls_bowled, s.match_date, s.delivery_id
     FROM %s s
-    JOIN matches m ON s.match_id = m.match_id
+    JOIN cricsheet.matches m ON s.match_id = m.match_id
     WHERE m.gender = 'male'
   ),
   latest AS (
@@ -834,7 +834,7 @@ SELECT d.*, s.batter_scoring_index, s.batter_survival_rate,
        s.bowler_economy_index, s.bowler_strike_rate,
        s.exp_runs, s.actual_runs,
        (s.actual_runs - s.exp_runs) as runs_residual
-FROM deliveries d
+FROM cricsheet.deliveries d
 JOIN t20_player_skill s ON d.delivery_id = s.delivery_id
 WHERE LOWER(d.match_type) IN ('t20', 'it20')
 LIMIT 10

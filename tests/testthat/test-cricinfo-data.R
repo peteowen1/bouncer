@@ -18,7 +18,7 @@ create_mock_cricinfo_db <- function() {
 
   # Insert sample matches
   DBI::dbExecute(conn, "
-    INSERT INTO cricinfo_matches (match_id, title, series_id, series_name,
+    INSERT INTO cricinfo.matches (match_id, title, series_id, series_name,
       format, international_class_id, gender, start_date, status,
       team1_name, team1_abbreviation, team2_name, team2_abbreviation,
       ground_name, country_name)
@@ -35,7 +35,7 @@ create_mock_cricinfo_db <- function() {
 
   # Insert sample balls (minimal columns for query testing)
   DBI::dbExecute(conn, "
-    INSERT INTO cricinfo_balls (id, match_id, innings_number, over_number,
+    INSERT INTO cricinfo.balls (id, match_id, innings_number, over_number,
       ball_number, total_runs, batsman_runs, is_four, is_six, is_wicket,
       batsman_player_id, bowler_player_id)
     VALUES
@@ -49,7 +49,7 @@ create_mock_cricinfo_db <- function() {
 
   # Insert sample innings
   DBI::dbExecute(conn, "
-    INSERT INTO cricinfo_innings (match_id, innings_number, team_id, team_name,
+    INSERT INTO cricinfo.innings (match_id, innings_number, team_id, team_name,
       total_runs, total_wickets, total_overs, player_id, player_name,
       runs, balls_faced, fours, sixes, strike_rate, batting_position)
     VALUES
@@ -63,7 +63,7 @@ create_mock_cricinfo_db <- function() {
 
   # Insert fixtures (mix of statuses for get_upcoming/get_unscraped tests)
   DBI::dbExecute(conn, "
-    INSERT INTO cricinfo_fixtures (match_id, series_id, series_name, format,
+    INSERT INTO cricinfo.fixtures (match_id, series_id, series_name, format,
       gender, status, start_date, title, team1, team2, has_ball_by_ball)
     VALUES
     ('1502145', '1500001', 'Ind vs Aus 2025', 't20i', 'male', 'POST',
@@ -130,11 +130,14 @@ test_that("mock cricinfo database creates all tables", {
   conn <- create_mock_cricinfo_db()
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  tables <- DBI::dbListTables(conn)
-  expect_true("cricinfo_balls" %in% tables)
-  expect_true("cricinfo_matches" %in% tables)
-  expect_true("cricinfo_innings" %in% tables)
-  expect_true("cricinfo_fixtures" %in% tables)
+  tables <- DBI::dbGetQuery(conn, "
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'cricinfo'
+  ")$table_name
+  expect_true("balls" %in% tables)
+  expect_true("matches" %in% tables)
+  expect_true("innings" %in% tables)
+  expect_true("fixtures" %in% tables)
 })
 
 test_that("mock cricinfo database has correct row counts", {
@@ -142,13 +145,13 @@ test_that("mock cricinfo database has correct row counts", {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
   expect_equal(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo_matches")$n, 4)
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo.matches")$n, 4)
   expect_equal(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo_balls")$n, 6)
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo.balls")$n, 6)
   expect_equal(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo_innings")$n, 3)
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo.innings")$n, 3)
   expect_equal(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo_fixtures")$n, 5)
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricinfo.fixtures")$n, 5)
 })
 
 # ============================================================================
@@ -367,8 +370,11 @@ test_that("load_cricinfo_balls handles match_ids with quotes safely", {
     conn <- DBI::dbConnect(duckdb::duckdb(), ":memory:")
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
     create_cricinfo_tables(conn, verbose = FALSE)
-    tables <- DBI::dbListTables(conn)
-    expect_true("cricinfo_balls" %in% tables)
+    tables <- DBI::dbGetQuery(conn, "
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'cricinfo'
+    ")$table_name
+    expect_true("balls" %in% tables)
   })
 })
 

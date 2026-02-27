@@ -225,7 +225,7 @@ analyze_batter_vs_bowler <- function(batter_id,
       SUM(CASE WHEN is_four THEN 1 ELSE 0 END) as fours,
       SUM(CASE WHEN is_six THEN 1 ELSE 0 END) as sixes,
       AVG(runs_batter) as avg_runs_per_ball
-    FROM deliveries
+    FROM cricsheet.deliveries
     WHERE %s
   ", paste(where_clauses, collapse = " AND "))
 

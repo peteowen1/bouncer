@@ -99,7 +99,7 @@ for (format in FORMATS_TO_PROCESS) {
   # Count total deliveries ----
   count_query <- sprintf("
     SELECT COUNT(*) as n
-    FROM deliveries d
+    FROM cricsheet.deliveries d
     WHERE %s
       AND runs_batter NOT IN (5)
       AND runs_batter <= 6
@@ -135,7 +135,7 @@ for (format in FORMATS_TO_PROCESS) {
         innings,
         batting_team,
         MAX(total_runs) AS innings_total
-      FROM deliveries
+      FROM cricsheet.deliveries
       WHERE %s
       GROUP BY match_id, innings, batting_team
     ),
@@ -151,7 +151,7 @@ for (format in FORMATS_TO_PROCESS) {
              AND it.innings < d.innings),
           0
         ) AS bowling_score
-      FROM deliveries d
+      FROM cricsheet.deliveries d
       WHERE %s
     ),
     match_context AS (
@@ -175,7 +175,7 @@ for (format in FORMATS_TO_PROCESS) {
           WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
           ELSE 3
         END AS event_tier
-      FROM matches m
+      FROM cricsheet.matches m
     ),
     league_stats AS (
       SELECT
@@ -184,8 +184,8 @@ for (format in FORMATS_TO_PROCESS) {
         m.match_date,
         AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
         AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
-      FROM matches m
-      JOIN deliveries d ON m.match_id = d.match_id
+      FROM cricsheet.matches m
+      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
       WHERE %s
         AND m.event_name IS NOT NULL
       GROUP BY m.event_name, m.match_id, m.match_date

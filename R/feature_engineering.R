@@ -231,8 +231,8 @@ calculate_venue_statistics <- function(conn, venue_filter = NULL, match_type = "
         WHEN mi.innings = 2 AND m.outcome_winner = mi.batting_team
         THEN 1 ELSE 0 END) * 1.0 /
       NULLIF(COUNT(DISTINCT CASE WHEN mi.innings = 2 THEN mi.match_id END), 0) as chase_success_rate
-    FROM match_innings mi
-    JOIN matches m ON mi.match_id = m.match_id
+    FROM cricsheet.match_innings mi
+    JOIN cricsheet.matches m ON mi.match_id = m.match_id
     WHERE LOWER(m.match_type) = ?
     %s
     GROUP BY m.venue

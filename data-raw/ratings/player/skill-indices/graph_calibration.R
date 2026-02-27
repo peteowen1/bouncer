@@ -56,7 +56,7 @@ WITH player_balls AS (
         OR (m.event_name LIKE '%T20 World Cup%' AND m.event_name NOT LIKE '%Qualifier%')
       THEN 1 ELSE 0 END) as anchor_balls
   FROM t20_3way_elo e
-  JOIN matches m ON e.match_id = m.match_id
+  JOIN cricsheet.matches m ON e.match_id = m.match_id
   GROUP BY e.batter_id
 
   UNION ALL
@@ -78,7 +78,7 @@ WITH player_balls AS (
         OR (m.event_name LIKE '%T20 World Cup%' AND m.event_name NOT LIKE '%Qualifier%')
       THEN 1 ELSE 0 END) as anchor_balls
   FROM t20_3way_elo e
-  JOIN matches m ON e.match_id = m.match_id
+  JOIN cricsheet.matches m ON e.match_id = m.match_id
   GROUP BY e.bowler_id
 )
 SELECT
@@ -214,7 +214,7 @@ GROUP BY player_id
 final <- merge(calibration, current_elos, by = "player_id", all.x = TRUE)
 
 # Add player names
-player_names <- dbGetQuery(conn, "SELECT player_id, player_name FROM players")
+player_names <- dbGetQuery(conn, "SELECT player_id, player_name FROM cricsheet.players")
 final <- merge(final, player_names, by = "player_id", all.x = TRUE)
 
 # Compute adjustment:

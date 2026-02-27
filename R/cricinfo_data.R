@@ -79,17 +79,21 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       data_dir <- file.path(cricinfo_dir, dir_name)
       if (!dir.exists(data_dir)) next
 
-      # Find ball parquet files to determine match IDs
-      ball_files <- list.files(data_dir, pattern = "_balls\\.parquet$",
-                               full.names = TRUE)
-      if (length(ball_files) == 0) next
-
-      all_ids <- sub("_balls\\.parquet$", "", basename(ball_files))
+      # Discover match IDs from both _match and _balls parquets
+      match_parquets <- list.files(data_dir, pattern = "_match\\.parquet$",
+                                    full.names = TRUE)
+      ball_parquets <- list.files(data_dir, pattern = "_balls\\.parquet$",
+                                   full.names = TRUE)
+      all_ids <- unique(c(
+        sub("_match\\.parquet$", "", basename(match_parquets)),
+        sub("_balls\\.parquet$", "", basename(ball_parquets))
+      ))
+      if (length(all_ids) == 0) next
 
       # Get already-loaded match IDs
       existing <- tryCatch(
         DBI::dbGetQuery(conn,
-          "SELECT DISTINCT match_id FROM cricinfo_matches")$match_id,
+          "SELECT DISTINCT match_id FROM cricinfo.matches")$match_id,
         error = function(e) character(0)
       )
 
@@ -115,7 +119,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
         loaded_ids <- sub("_match\\.parquet$", "", basename(match_files))
         ids_sql <- paste0("'", escape_sql_quotes(loaded_ids), "'", collapse = ", ")
         DBI::dbExecute(conn, sprintf(
-          "UPDATE cricinfo_matches SET gender = '%s' WHERE match_id IN (%s) AND gender IS NULL",
+          "UPDATE cricinfo.matches SET gender = '%s' WHERE match_id IN (%s) AND gender IS NULL",
           escape_sql_quotes(gnd), ids_sql
         ))
       }
@@ -161,7 +165,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
 
 #' Ingest Cricinfo Match Parquets
 #'
-#' Loads match metadata parquets into cricinfo_matches table.
+#' Loads match metadata parquets into cricinfo.matches table.
 #' Match parquets already use snake_case columns.
 #'
 #' @param conn DuckDB connection.
@@ -178,7 +182,7 @@ ingest_cricinfo_matches <- function(conn, match_files) {
     file_match_id <- sub("_match\\.parquet$", "", basename(f))
     tryCatch({
       DBI::dbExecute(conn, sprintf("
-        INSERT OR IGNORE INTO cricinfo_matches
+        INSERT OR IGNORE INTO cricinfo.matches
         SELECT * REPLACE (COALESCE(CAST(match_id AS VARCHAR), '%s') AS match_id)
         FROM read_parquet('%s')
       ", file_match_id, fp))
@@ -194,7 +198,7 @@ ingest_cricinfo_matches <- function(conn, match_files) {
 
 #' Ingest Cricinfo Ball Parquets
 #'
-#' Loads ball-by-ball parquets into cricinfo_balls table with
+#' Loads ball-by-ball parquets into cricinfo.balls table with
 #' camelCase to snake_case column mapping.
 #'
 #' @param conn DuckDB connection.
@@ -212,7 +216,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
 
     tryCatch({
       n <- DBI::dbExecute(conn, sprintf("
-        INSERT OR IGNORE INTO cricinfo_balls
+        INSERT OR IGNORE INTO cricinfo.balls
         SELECT
           CAST(\"id\" AS VARCHAR) AS id,
           '%s' AS match_id,
@@ -266,7 +270,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
 
 #' Ingest Cricinfo Innings Parquets
 #'
-#' Loads innings/scorecard parquets into cricinfo_innings table.
+#' Loads innings/scorecard parquets into cricinfo.innings table.
 #' Innings parquets already use snake_case columns.
 #'
 #' @param conn DuckDB connection.
@@ -284,7 +288,7 @@ ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
 
     tryCatch({
       n <- DBI::dbExecute(conn, sprintf("
-        INSERT OR IGNORE INTO cricinfo_innings
+        INSERT OR IGNORE INTO cricinfo.innings
         SELECT '%s' AS match_id, *
         FROM read_parquet('%s')
       ", escape_sql_quotes(mid), fp))
@@ -300,7 +304,7 @@ ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
 
 #' Ingest Cricinfo Fixtures
 #'
-#' Loads the fixtures.parquet index into cricinfo_fixtures table.
+#' Loads the fixtures.parquet index into cricinfo.fixtures table.
 #' Uses DELETE + INSERT for idempotent updates.
 #'
 #' @param conn DuckDB connection.
@@ -319,9 +323,9 @@ ingest_cricinfo_fixtures <- function(conn, cricinfo_dir, verbose = TRUE) {
   fp <- normalizePath(fixtures_path, winslash = "/", mustWork = TRUE)
 
   # Replace all fixtures (idempotent full refresh)
-  DBI::dbExecute(conn, "DELETE FROM cricinfo_fixtures")
+  DBI::dbExecute(conn, "DELETE FROM cricinfo.fixtures")
   n <- DBI::dbExecute(conn, sprintf("
-    INSERT INTO cricinfo_fixtures
+    INSERT INTO cricinfo.fixtures
     SELECT * FROM read_parquet('%s')
   ", fp))
 
@@ -421,7 +425,7 @@ load_cricinfo_fixtures <- function(format = "all", gender = "all",
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-    local_sql <- gsub("\\{table\\}", "cricinfo_fixtures", sql)
+    local_sql <- gsub("\\{table\\}", "cricinfo.fixtures", sql)
     result <- DBI::dbGetQuery(conn, local_sql)
   }
 
@@ -581,22 +585,22 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
       sprintf("LOWER(m.gender) = '%s'", escape_sql_quotes(tolower(gender))))
   }
 
-  # If filtering by format/gender, need to join with cricinfo_matches
+  # If filtering by format/gender, need to join with cricinfo.matches
   if (!is.null(format) || !is.null(gender)) {
     where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
     sql <- sprintf(
-      "SELECT b.* FROM cricinfo_balls b
-       INNER JOIN cricinfo_matches m ON b.match_id = m.match_id
+      "SELECT b.* FROM cricinfo.balls b
+       INNER JOIN cricinfo.matches m ON b.match_id = m.match_id
        %s ORDER BY b.match_id, b.innings_number, b.over_number, b.ball_number",
       where_sql)
   } else if (length(where_clauses) > 0) {
     where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
     sql <- sprintf(
-      "SELECT b.* FROM cricinfo_balls b %s
+      "SELECT b.* FROM cricinfo.balls b %s
        ORDER BY b.match_id, b.innings_number, b.over_number, b.ball_number",
       where_sql)
   } else {
-    sql <- "SELECT * FROM cricinfo_balls ORDER BY match_id, innings_number, over_number, ball_number"
+    sql <- "SELECT * FROM cricinfo.balls ORDER BY match_id, innings_number, over_number, ball_number"
   }
 
   result <- DBI::dbGetQuery(conn, sql)
@@ -657,7 +661,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
     ""
   }
 
-  sql <- sprintf("SELECT * FROM cricinfo_matches %s ORDER BY start_date DESC", where_sql)
+  sql <- sprintf("SELECT * FROM cricinfo.matches %s ORDER BY start_date DESC", where_sql)
   result <- DBI::dbGetQuery(conn, sql)
 
   if (nrow(result) == 0) {
@@ -714,18 +718,18 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
   if (!is.null(format) || !is.null(gender)) {
     where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
     sql <- sprintf(
-      "SELECT i.* FROM cricinfo_innings i
-       INNER JOIN cricinfo_matches m ON i.match_id = m.match_id
+      "SELECT i.* FROM cricinfo.innings i
+       INNER JOIN cricinfo.matches m ON i.match_id = m.match_id
        %s ORDER BY i.match_id, i.innings_number, i.batting_position",
       where_sql)
   } else if (length(where_clauses) > 0) {
     where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
     sql <- sprintf(
-      "SELECT i.* FROM cricinfo_innings i %s
+      "SELECT i.* FROM cricinfo.innings i %s
        ORDER BY i.match_id, i.innings_number, i.batting_position",
       where_sql)
   } else {
-    sql <- "SELECT * FROM cricinfo_innings ORDER BY match_id, innings_number, batting_position"
+    sql <- "SELECT * FROM cricinfo.innings ORDER BY match_id, innings_number, batting_position"
   }
 
   result <- DBI::dbGetQuery(conn, sql)

@@ -21,24 +21,38 @@ verify_database <- function(path = NULL, detailed = FALSE) {
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
-  # Get list of tables
-  tables <- DBI::dbListTables(conn)
-  expected_tables <- c("matches", "deliveries", "players", "match_innings", "innings_powerplays",
-                       "match_metrics", "player_elo_history", "team_elo", "pre_match_features",
-                       "pre_match_predictions", "simulation_results", "t20_player_elo",
-                       "elo_calibration_metrics", "elo_normalization_log", "elo_calculation_params",
-                       "t20_player_skill", "skill_calculation_params",
-                       "venue_aliases", "t20_venue_skill", "odi_venue_skill", "test_venue_skill",
-                       "venue_skill_calculation_params", "t20_team_skill", "odi_team_skill",
-                       "test_team_skill", "team_skill_calculation_params",
-                       "projection_params", "t20_score_projection", "odi_score_projection",
-                       "test_score_projection",
-                       "t20_3way_elo", "odi_3way_elo", "test_3way_elo",
-                       "three_way_elo_params", "three_way_elo_drift_metrics")
+  # Get all tables across all schemas via information_schema
+  all_tables <- DBI::dbGetQuery(conn,
+    "SELECT table_schema, table_name,
+            CASE WHEN table_schema = 'main' THEN table_name
+                 ELSE table_schema || '.' || table_name END AS qualified_name
+     FROM information_schema.tables
+     WHERE table_schema NOT IN ('information_schema', 'pg_catalog')")
+  all_qualified <- all_tables$qualified_name
+
+  expected_tables <- c(
+    # Cricsheet schema
+    "cricsheet.matches", "cricsheet.deliveries", "cricsheet.players",
+    "cricsheet.match_innings", "cricsheet.innings_powerplays",
+    # Main schema (ratings, skills, predictions)
+    "match_metrics", "player_elo_history", "team_elo", "pre_match_features",
+    "pre_match_predictions", "simulation_results", "t20_player_elo",
+    "elo_calibration_metrics", "elo_normalization_log", "elo_calculation_params",
+    "t20_player_skill", "skill_calculation_params",
+    "venue_aliases", "t20_venue_skill", "odi_venue_skill", "test_venue_skill",
+    "venue_skill_calculation_params", "t20_team_skill", "odi_team_skill",
+    "test_team_skill", "team_skill_calculation_params",
+    "projection_params", "t20_score_projection", "odi_score_projection",
+    "test_score_projection",
+    "t20_3way_elo", "odi_3way_elo", "test_3way_elo",
+    "three_way_elo_params", "three_way_elo_drift_metrics",
+    # Cricinfo schema
+    "cricinfo.matches", "cricinfo.balls", "cricinfo.innings", "cricinfo.fixtures"
+  )
 
   cli::cli_h2("Tables")
   for (tbl in expected_tables) {
-    if (tbl %in% tables) {
+    if (tbl %in% all_qualified) {
       if (detailed) {
         row_count <- DBI::dbGetQuery(conn, paste0("SELECT COUNT(*) as n FROM ", tbl))$n
         cli::cli_alert_success("{tbl}: {row_count} rows")
@@ -52,13 +66,13 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 
   info <- list(
     path = path,
-    tables = tables,
-    valid = all(expected_tables %in% tables)
+    tables = all_qualified,
+    valid = all(expected_tables %in% all_qualified)
   )
 
   if (detailed) {
     info$row_counts <- lapply(setNames(expected_tables, expected_tables), function(tbl) {
-      if (tbl %in% tables) {
+      if (tbl %in% all_qualified) {
         DBI::dbGetQuery(conn, paste0("SELECT COUNT(*) as n FROM ", tbl))$n
       } else {
         0
@@ -102,9 +116,9 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
 
   # Tables to delete from, in order (to handle foreign keys if any)
   tables_with_match_id <- c(
-    # Core tables
-    "deliveries",
-    "match_innings",
+    # Core tables (cricsheet schema)
+    "cricsheet.deliveries",
+    "cricsheet.match_innings",
     "match_metrics",
     # Skill index tables
     "t20_player_skill",
@@ -123,11 +137,15 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
     "pre_match_features",
     "pre_match_predictions",
     # Main matches table (last)
-    "matches"
+    "cricsheet.matches"
   )
 
-  # Get list of existing tables
-  existing_tables <- DBI::dbListTables(conn)
+  # Get list of existing tables (schema-aware)
+  existing_tables <- DBI::dbGetQuery(conn,
+    "SELECT CASE WHEN table_schema = 'main' THEN table_name
+                 ELSE table_schema || '.' || table_name END AS qualified_name
+     FROM information_schema.tables
+     WHERE table_schema NOT IN ('information_schema', 'pg_catalog')")$qualified_name
 
   total_deleted <- 0
 
@@ -265,30 +283,30 @@ create_indexes <- function(conn, core_only = FALSE, verbose = TRUE) {
     if (verbose) cli::cli_alert_info("Creating {name} indexes...")
   }
 
-  # Matches indexes
-  log_index("matches")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_date ON matches(match_date)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_venue ON matches(venue)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_type ON matches(match_type)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_season ON matches(season)")
+  # Matches indexes (cricsheet schema)
+  log_index("cricsheet.matches")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_date ON cricsheet.matches(match_date)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_venue ON cricsheet.matches(venue)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_type ON cricsheet.matches(match_type)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_matches_season ON cricsheet.matches(season)")
 
-  # Deliveries indexes
-  log_index("deliveries")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_match ON deliveries(match_id)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_batter ON deliveries(batter_id)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_bowler ON deliveries(bowler_id)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_type ON deliveries(match_type)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_date ON deliveries(match_date)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_venue ON deliveries(venue)")
+  # Deliveries indexes (cricsheet schema)
+  log_index("cricsheet.deliveries")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_match ON cricsheet.deliveries(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_batter ON cricsheet.deliveries(batter_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_bowler ON cricsheet.deliveries(bowler_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_type ON cricsheet.deliveries(match_type)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_date ON cricsheet.deliveries(match_date)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_deliveries_venue ON cricsheet.deliveries(venue)")
 
-  # Players indexes
-  log_index("players")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_players_name ON players(player_name)")
+  # Players indexes (cricsheet schema)
+  log_index("cricsheet.players")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_players_name ON cricsheet.players(player_name)")
 
-  # Innings powerplays indexes
-  log_index("innings_powerplays")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_match ON innings_powerplays(match_id)")
-  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_innings ON innings_powerplays(match_id, innings)")
+  # Innings powerplays indexes (cricsheet schema)
+  log_index("cricsheet.innings_powerplays")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_match ON cricsheet.innings_powerplays(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_powerplays_innings ON cricsheet.innings_powerplays(match_id, innings)")
 
   # Player ELO indexes
   log_index("player_elo_history")

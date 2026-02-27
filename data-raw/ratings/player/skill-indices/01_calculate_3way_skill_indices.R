@@ -184,8 +184,8 @@ base_query <- sprintf("
     d.is_boundary,
     m.event_name,
     m.outcome_type
-  FROM deliveries d
-  LEFT JOIN matches m ON d.match_id = m.match_id
+  FROM cricsheet.deliveries d
+  LEFT JOIN cricsheet.matches m ON d.match_id = m.match_id
   WHERE LOWER(d.match_type) IN (%s)
     AND m.gender = '%s'
     AND d.batter_id IS NOT NULL
@@ -196,8 +196,8 @@ base_query <- sprintf("
 if (!is.null(MATCH_LIMIT)) {
   match_ids <- DBI::dbGetQuery(conn, sprintf("
     SELECT DISTINCT d.match_id
-    FROM deliveries d
-    JOIN matches m ON d.match_id = m.match_id
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON d.match_id = m.match_id
     WHERE LOWER(d.match_type) IN (%s)
       AND m.gender = '%s'
     ORDER BY d.match_date
@@ -234,7 +234,7 @@ player_last_match <- DBI::dbGetQuery(conn, sprintf("
     batter_id as player_id,
     match_id,
     MAX(match_date) as last_match_date
-  FROM deliveries
+  FROM cricsheet.deliveries
   WHERE LOWER(match_type) IN (%s)
   GROUP BY batter_id, match_id
 
@@ -244,7 +244,7 @@ player_last_match <- DBI::dbGetQuery(conn, sprintf("
     bowler_id as player_id,
     match_id,
     MAX(match_date) as last_match_date
-  FROM deliveries
+  FROM cricsheet.deliveries
   WHERE LOWER(match_type) IN (%s)
   GROUP BY bowler_id, match_id
 ", match_type_filter, match_type_filter))
@@ -768,7 +768,7 @@ SELECT
   s.venue_session_run_skill_before,
   s.exp_runs,
   s.exp_wicket
-FROM deliveries d
+FROM cricsheet.deliveries d
 JOIN mens_t20_3way_skill s ON d.delivery_id = s.delivery_id
 LIMIT 10
 ")
