@@ -27,7 +27,7 @@ have lower K (more stable ratings).
 Formula: K = k_min + (k_max - k_min) * exp(-experience / halflife)
 
 This function consolidates the K-factor decay pattern that was repeated
-in player_elo_dynamic.R, team_elo_optimization.R, and three_way_elo.R.
+in team_elo_optimization.R and three_way_elo.R.
 }
 \examples{
 \dontrun{

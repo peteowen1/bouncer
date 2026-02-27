@@ -6,7 +6,6 @@
 # - data.table::rbindlist for combining data frames (~8x faster than do.call(rbind))
 # - Arrow-based bulk inserts (10x faster than dbAppendTable)
 # - Pre-parse duplicate check (skip already-loaded files)
-# - Index management (drop before load, recreate after)
 
 #' Check for Arrow Support
 #'
@@ -117,7 +116,10 @@ parse_files_parallel <- function(file_paths, n_workers = NULL, progress = TRUE) 
      results <- furrr::future_map(file_paths, function(f) {
        result <- tryCatch(
          parse_cricsheet_json(f),
-         error = function(e) NULL
+         error = function(e) {
+           cli::cli_alert_warning("Failed to parse {basename(f)}: {e$message}")
+           NULL
+         }
        )
        p()
        result
@@ -126,7 +128,13 @@ parse_files_parallel <- function(file_paths, n_workers = NULL, progress = TRUE) 
    })
  } else {
    furrr::future_map(file_paths, function(f) {
-     tryCatch(parse_cricsheet_json(f), error = function(e) NULL)
+     tryCatch(
+       parse_cricsheet_json(f),
+       error = function(e) {
+         cli::cli_alert_warning("Failed to parse {basename(f)}: {e$message}")
+         NULL
+       }
+     )
    }, .options = furrr::furrr_options(seed = TRUE))
  }
 }
@@ -182,8 +190,7 @@ parse_batch_to_parquet <- function(file_paths, output_dir, batch_id) {
  }
 
  # Combine and write to Parquet
- # Using fast_rbind() which leverages data.table::rbindlist when available
- # (benchmarked at ~8x faster than do.call(rbind, ...) for large datasets)
+ # Using fast_rbind() via data.table::rbindlist (~8x faster than do.call(rbind))
  n_matches <- 0
 
  if (length(matches_list) > 0) {

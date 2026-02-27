@@ -23,10 +23,11 @@ Used for incremental updates when match data has changed (e.g., Test match updat
 \details{
 This function removes data from all related tables:
 \itemize{
-\item Core: cricsheet.matches, cricsheet.deliveries, cricsheet.match_innings, match_metrics
+\item Core: cricsheet.deliveries, cricsheet.match_innings, cricsheet.innings_powerplays, match_metrics
 \item Skill indices: t20/odi/test_player_skill, t20/odi/test_team_skill, t20/odi/test_venue_skill
 \item Ratings: team_elo, t20_player_elo
 \item Predictions: pre_match_features, pre_match_predictions
+\item Main: cricsheet.matches (last)
 }
 }
 \keyword{internal}

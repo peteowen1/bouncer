@@ -2,7 +2,6 @@
 #
 # Core ELO primitives: expected outcome, K-factor, update formula,
 # dynamic K-factor decay, delivery outcome scoring, and format helpers.
-# Consolidates functions from the former player_elo_core.R and elo_utils.R.
 
 # ============================================================================
 # DYNAMIC K-FACTOR CALCULATION
@@ -17,7 +16,7 @@
 #' Formula: K = k_min + (k_max - k_min) * exp(-experience / halflife)
 #'
 #' This function consolidates the K-factor decay pattern that was repeated
-#' in player_elo_dynamic.R, team_elo_optimization.R, and three_way_elo.R.
+#' in team_elo_optimization.R and three_way_elo.R.
 #'
 #' @param experience Numeric. Player/entity experience count (deliveries, matches, etc.)
 #' @param k_max Numeric. Maximum K-factor for new players.
@@ -58,7 +57,7 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
 #' Calculate Dynamic K-Factor from Parameters List
 #'
 #' Convenience wrapper that extracts k_max, k_min, and halflife from a
-#' named list (as used in three_way_elo.R and player_elo_dynamic.R).
+#' named list (as used in three_way_elo.R).
 #'
 #' @param experience Numeric. Experience count.
 #' @param params Named list. Must contain: k_max, k_min, halflife
@@ -118,7 +117,7 @@ calculate_elo_update <- function(current_elo, expected, actual, k) {
 
 
 # ============================================================================
-# CORE ELO FUNCTIONS (from player_elo_core.R)
+# CORE ELO FUNCTIONS
 # ============================================================================
 
 #' Calculate Expected Outcome

@@ -1,6 +1,6 @@
 # Cricinfo Data Functions
 #
-# Ingestion, loaders, and fixtures API for Cricinfo rich ball-by-ball data.
+# Ingestion, loaders, and fixtures API for Cricinfo Hawkeye ball-by-ball data.
 # Cricinfo data includes Hawkeye fields (wagon wheel, pitch map, shot type)
 # not available in Cricsheet.
 #
@@ -72,6 +72,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
   total_matches <- 0L
   total_balls <- 0L
   total_innings <- 0L
+  total_failed <- 0L
 
   for (fmt in formats) {
     for (gnd in genders) {
@@ -119,6 +120,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       if (length(match_files) > 0) {
         n_matches <- ingest_cricinfo_matches(conn, match_files)
         total_matches <- total_matches + n_matches
+        total_failed <- total_failed + (attr(n_matches, "n_failed") %||% 0L)
 
         # Backfill gender from directory name (match parquets don't include it)
         loaded_ids <- sub("_match\\.parquet$", "", basename(match_files))
@@ -137,6 +139,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       if (length(ball_files_new) > 0) {
         n_balls <- ingest_cricinfo_balls(conn, ball_files_new, ball_ids_new)
         total_balls <- total_balls + n_balls
+        total_failed <- total_failed + (attr(n_balls, "n_failed") %||% 0L)
       }
 
       # --- Ingest innings (snake_case already) ---
@@ -147,6 +150,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
       if (length(innings_files_new) > 0) {
         n_innings <- ingest_cricinfo_innings(conn, innings_files_new, innings_ids_new)
         total_innings <- total_innings + n_innings
+        total_failed <- total_failed + (attr(n_innings, "n_failed") %||% 0L)
       }
     }
   }
@@ -157,13 +161,17 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
   if (verbose) {
     cli::cli_h3("Cricinfo ingestion complete")
     cli::cli_alert_success("{total_matches} matches, {format(total_balls, big.mark=',')} balls, {format(total_innings, big.mark=',')} innings rows, {format(n_fixtures, big.mark=',')} fixtures")
+    if (total_failed > 0) {
+      cli::cli_alert_warning("{total_failed} file{?s} failed to load (see warnings above)")
+    }
   }
 
   invisible(list(
     matches = total_matches,
     balls = total_balls,
     innings = total_innings,
-    fixtures = n_fixtures
+    fixtures = n_fixtures,
+    failed = total_failed
   ))
 }
 
@@ -180,23 +188,26 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
 #' @keywords internal
 ingest_cricinfo_matches <- function(conn, match_files) {
   n_inserted <- 0L
+  n_failed <- 0L
 
   for (f in match_files) {
     fp <- normalizePath(f, winslash = "/", mustWork = TRUE)
     # Extract match_id from filename to backfill when parquet has NULL match_id
     file_match_id <- sub("_match\\.parquet$", "", basename(f))
     tryCatch({
-      DBI::dbExecute(conn, sprintf("
+      n <- DBI::dbExecute(conn, sprintf("
         INSERT OR IGNORE INTO cricinfo.matches
         SELECT * REPLACE (COALESCE(CAST(match_id AS VARCHAR), '%s') AS match_id)
         FROM read_parquet('%s')
-      ", file_match_id, fp))
-      n_inserted <- n_inserted + 1L
+      ", escape_sql_quotes(file_match_id), fp))
+      n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load match {basename(f)}: {e$message}")
+      n_failed <<- n_failed + 1L
     })
   }
 
+  attr(n_inserted, "n_failed") <- n_failed
   n_inserted
 }
 
@@ -214,6 +225,7 @@ ingest_cricinfo_matches <- function(conn, match_files) {
 #' @keywords internal
 ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
   n_inserted <- 0L
+  n_failed <- 0L
 
   for (i in seq_along(ball_files)) {
     fp <- normalizePath(ball_files[i], winslash = "/", mustWork = TRUE)
@@ -266,9 +278,11 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load balls for match {mid}: {e$message}")
+      n_failed <<- n_failed + 1L
     })
   }
 
+  attr(n_inserted, "n_failed") <- n_failed
   n_inserted
 }
 
@@ -286,6 +300,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
 #' @keywords internal
 ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
   n_inserted <- 0L
+  n_failed <- 0L
 
   for (i in seq_along(innings_files)) {
     fp <- normalizePath(innings_files[i], winslash = "/", mustWork = TRUE)
@@ -300,9 +315,11 @@ ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load innings for match {mid}: {e$message}")
+      n_failed <<- n_failed + 1L
     })
   }
 
+  attr(n_inserted, "n_failed") <- n_failed
   n_inserted
 }
 
@@ -541,7 +558,7 @@ get_unscraped_matches <- function(format = "all", gender = "all",
 
 #' Load Cricinfo Ball-by-Ball Data
 #'
-#' Load rich ball-by-ball data with Hawkeye fields (wagon wheel, pitch map,
+#' Load ball-by-ball data with Hawkeye fields (wagon wheel, pitch map,
 #' shot type, win probability) from local DuckDB or remote GitHub release.
 #'
 #' @param match_ids Character vector. Filter for specific match IDs.
@@ -814,11 +831,13 @@ get_cricinfo_release <- function() {
 
 #' Load Cricinfo Balls from Remote
 #'
-#' Downloads per-match ball parquets from cricinfo release.
+#' Downloads combined ball parquets from cricinfo release and filters
+#' by match_id. The release contains format-level combined files
+#' (e.g., cricinfo_balls_t20i_male.parquet), not per-match files.
 #'
 #' @param match_ids Character vector of match IDs (required for remote).
-#' @param format Character. Format filter.
-#' @param gender Character. Gender filter.
+#' @param format Character. Format filter (e.g., "t20i"). If NULL, searches all formats.
+#' @param gender Character. Gender filter (e.g., "male"). If NULL, searches all genders.
 #'
 #' @return Data frame.
 #' @keywords internal
@@ -830,32 +849,34 @@ load_cricinfo_balls_remote <- function(match_ids, format, gender) {
   release <- get_cricinfo_release()
   assets <- sapply(release$assets, function(a) a$name)
 
-  cli::cli_alert_info("Downloading {length(match_ids)} match ball file{?s} from remote...")
+  # Find combined ball parquet assets (format: cricinfo_balls_{format}_{gender}.parquet)
+  ball_assets <- assets[grepl("^cricinfo_balls_.*\\.parquet$", assets)]
+  if (!is.null(format)) ball_assets <- ball_assets[grepl(format, ball_assets)]
+  if (!is.null(gender)) ball_assets <- ball_assets[grepl(gender, ball_assets)]
 
-  dfs <- lapply(match_ids, function(mid) {
-    # Try to find the asset — could be in any format_gender
-    pattern <- sprintf("_%s_balls\\.parquet$", mid)
-    matching <- assets[grepl(pattern, assets)]
+  if (length(ball_assets) == 0) {
+    cli::cli_warn("No remote ball data assets found")
+    return(data.frame())
+  }
 
-    if (length(matching) == 0) {
-      cli::cli_alert_warning("No remote ball data for match {mid}")
-      return(NULL)
-    }
+  ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
+  sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
 
-    asset_name <- matching[1]
+  cli::cli_alert_info("Searching {length(ball_assets)} remote ball file{?s} for {length(match_ids)} match{?es}...")
+
+  dfs <- lapply(ball_assets, function(asset_name) {
     table_name <- tools::file_path_sans_ext(asset_name)
-
     tryCatch({
-      query_remote_cricinfo_parquet(table_name, "SELECT * FROM {table}")
+      query_remote_cricinfo_parquet(table_name, sql_template)
     }, error = function(e) {
-      cli::cli_alert_warning("Failed to download balls for {mid}: {e$message}")
+      cli::cli_alert_warning("Failed to download {asset_name}: {e$message}")
       NULL
     })
   })
 
-  valid_dfs <- Filter(Negate(is.null), dfs)
+  valid_dfs <- Filter(function(x) !is.null(x) && nrow(x) > 0, dfs)
   if (length(valid_dfs) == 0) {
-    cli::cli_warn("No remote ball data found")
+    cli::cli_warn("No remote ball data found for requested match IDs")
     return(data.frame())
   }
 
@@ -877,21 +898,31 @@ load_cricinfo_match_remote <- function(match_ids, format, gender) {
   release <- get_cricinfo_release()
   assets <- sapply(release$assets, function(a) a$name)
 
-  dfs <- lapply(match_ids, function(mid) {
-    pattern <- sprintf("_%s_match\\.parquet$", mid)
-    matching <- assets[grepl(pattern, assets)]
+  match_assets <- assets[grepl("^cricinfo_match_.*\\.parquet$", assets)]
+  if (!is.null(format)) match_assets <- match_assets[grepl(format, match_assets)]
+  if (!is.null(gender)) match_assets <- match_assets[grepl(gender, match_assets)]
 
-    if (length(matching) == 0) return(NULL)
+  if (length(match_assets) == 0) {
+    cli::cli_warn("No remote match data assets found")
+    return(data.frame())
+  }
 
-    table_name <- tools::file_path_sans_ext(matching[1])
+  ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
+  sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
+
+  dfs <- lapply(match_assets, function(asset_name) {
+    table_name <- tools::file_path_sans_ext(asset_name)
     tryCatch({
-      query_remote_cricinfo_parquet(table_name, "SELECT * FROM {table}")
-    }, error = function(e) NULL)
+      query_remote_cricinfo_parquet(table_name, sql_template)
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to download {asset_name}: {e$message}")
+      NULL
+    })
   })
 
-  valid_dfs <- Filter(Negate(is.null), dfs)
+  valid_dfs <- Filter(function(x) !is.null(x) && nrow(x) > 0, dfs)
   if (length(valid_dfs) == 0) {
-    cli::cli_warn("No remote match data found")
+    cli::cli_warn("No remote match data found for requested match IDs")
     return(data.frame())
   }
 
@@ -913,21 +944,31 @@ load_cricinfo_innings_remote <- function(match_ids, format, gender) {
   release <- get_cricinfo_release()
   assets <- sapply(release$assets, function(a) a$name)
 
-  dfs <- lapply(match_ids, function(mid) {
-    pattern <- sprintf("_%s_innings\\.parquet$", mid)
-    matching <- assets[grepl(pattern, assets)]
+  innings_assets <- assets[grepl("^cricinfo_innings_.*\\.parquet$", assets)]
+  if (!is.null(format)) innings_assets <- innings_assets[grepl(format, innings_assets)]
+  if (!is.null(gender)) innings_assets <- innings_assets[grepl(gender, innings_assets)]
 
-    if (length(matching) == 0) return(NULL)
+  if (length(innings_assets) == 0) {
+    cli::cli_warn("No remote innings data assets found")
+    return(data.frame())
+  }
 
-    table_name <- tools::file_path_sans_ext(matching[1])
+  ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
+  sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
+
+  dfs <- lapply(innings_assets, function(asset_name) {
+    table_name <- tools::file_path_sans_ext(asset_name)
     tryCatch({
-      query_remote_cricinfo_parquet(table_name, "SELECT * FROM {table}")
-    }, error = function(e) NULL)
+      query_remote_cricinfo_parquet(table_name, sql_template)
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to download {asset_name}: {e$message}")
+      NULL
+    })
   })
 
-  valid_dfs <- Filter(Negate(is.null), dfs)
+  valid_dfs <- Filter(function(x) !is.null(x) && nrow(x) > 0, dfs)
   if (length(valid_dfs) == 0) {
-    cli::cli_warn("No remote innings data found")
+    cli::cli_warn("No remote innings data found for requested match IDs")
     return(data.frame())
   }
 

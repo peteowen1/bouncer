@@ -1,7 +1,6 @@
 # Database Migration Functions
 #
 # Functions for migrating existing databases to new schemas.
-# Split from database_setup.R for better maintainability.
 
 #' Add Prediction Tables to Database
 #'

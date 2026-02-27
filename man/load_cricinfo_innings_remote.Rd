@@ -9,9 +9,9 @@ load_cricinfo_innings_remote(match_ids, format, gender)
 \arguments{
 \item{match_ids}{Character vector of match IDs (required for remote).}
 
-\item{format}{Character. Format filter.}
+\item{format}{Character. Format filter (e.g., "t20i"). If NULL, searches all formats.}
 
-\item{gender}{Character. Gender filter.}
+\item{gender}{Character. Gender filter (e.g., "male"). If NULL, searches all genders.}
 }
 \value{
 Data frame.

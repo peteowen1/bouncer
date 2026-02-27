@@ -1,7 +1,6 @@
 # Database Schema Functions
 #
 # Functions for creating the database schema (table definitions).
-# Split from database_setup.R for better maintainability.
 
 #' Create DuckDB Schemas
 #'

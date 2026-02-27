@@ -628,19 +628,19 @@ load_filtered_matches <- function(file_paths,
         DBI::dbBegin(conn)
 
         if (!is.null(all_matches) && nrow(all_matches) > 0) {
-          DBI::dbAppendTable(conn, "matches", all_matches)
+          DBI::dbAppendTable(conn, "cricsheet.matches", all_matches)
         }
         if (!is.null(all_deliveries) && nrow(all_deliveries) > 0) {
-          DBI::dbAppendTable(conn, "deliveries", all_deliveries)
+          DBI::dbAppendTable(conn, "cricsheet.deliveries", all_deliveries)
         }
         if (!is.null(all_innings) && nrow(all_innings) > 0) {
-          DBI::dbAppendTable(conn, "match_innings", all_innings)
+          DBI::dbAppendTable(conn, "cricsheet.match_innings", all_innings)
         }
         if (!is.null(all_players) && nrow(all_players) > 0) {
           insert_players_batch(conn, all_players)
         }
         if (!is.null(all_powerplays) && nrow(all_powerplays) > 0) {
-          DBI::dbAppendTable(conn, "innings_powerplays", all_powerplays)
+          DBI::dbAppendTable(conn, "cricsheet.innings_powerplays", all_powerplays)
         }
 
         DBI::dbCommit(conn)

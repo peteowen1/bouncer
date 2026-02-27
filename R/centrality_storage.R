@@ -79,13 +79,13 @@ build_format_gender_filters <- function(format, gender) {
   format_filter <- if (format == "all") {
     "1=1"
   } else {
-    glue::glue("LOWER(m.match_type) IN ('{format}', 'i{format}')")
+    sprintf("LOWER(m.match_type) IN ('%s', 'i%s')", escape_sql_quotes(format), escape_sql_quotes(format))
   }
 
   gender_filter <- if (gender == "all") {
     "1=1"
   } else {
-    glue::glue("m.gender = '{gender}'")
+    sprintf("m.gender = '%s'", escape_sql_quotes(gender))
   }
 
   list(format_filter = format_filter, gender_filter = gender_filter)

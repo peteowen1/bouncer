@@ -1,8 +1,6 @@
 # Database Maintenance Functions
 #
 # Utilities for database verification, index management, and maintenance.
-#
-# Consolidated from database_utils.R and database_indexes.R
 
 verify_database <- function(path = NULL, detailed = FALSE) {
   if (is.null(path)) {
@@ -90,10 +88,11 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 #' Used for incremental updates when match data has changed (e.g., Test match updates).
 #'
 #' This function removes data from all related tables:
-#' - Core: cricsheet.matches, cricsheet.deliveries, cricsheet.match_innings, match_metrics
+#' - Core: cricsheet.deliveries, cricsheet.match_innings, cricsheet.innings_powerplays, match_metrics
 #' - Skill indices: t20/odi/test_player_skill, t20/odi/test_team_skill, t20/odi/test_venue_skill
 #' - Ratings: team_elo, t20_player_elo
 #' - Predictions: pre_match_features, pre_match_predictions
+#' - Main: cricsheet.matches (last)
 #'
 #' @param match_ids Character vector of match IDs to delete
 #' @param conn DuckDB connection (must have write access)
@@ -118,6 +117,7 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
     # Core tables (cricsheet schema)
     "cricsheet.deliveries",
     "cricsheet.match_innings",
+    "cricsheet.innings_powerplays",
     "match_metrics",
     # Skill index tables
     "t20_player_skill",
@@ -147,6 +147,7 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
      WHERE table_schema NOT IN ('information_schema', 'pg_catalog')")$qualified_name
 
   total_deleted <- 0
+  failed_tables <- character(0)
 
   for (tbl in tables_with_match_id) {
     if (!tbl %in% existing_tables) {
@@ -158,6 +159,7 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
       DBI::dbExecute(conn, sql)
     }, error = function(e) {
       if (verbose) cli::cli_alert_warning("Could not delete from {tbl}: {e$message}")
+      failed_tables[[length(failed_tables) + 1L]] <<- tbl
       0
     })
 
@@ -167,8 +169,16 @@ delete_matches_from_db <- function(match_ids, conn, verbose = TRUE) {
     total_deleted <- total_deleted + n_deleted
   }
 
+  if (length(failed_tables) > 0) {
+    if (verbose) cli::cli_alert_warning("Failed to delete from {length(failed_tables)} table{?s}: {paste(failed_tables, collapse = ', ')}")
+  }
+
   if (verbose) {
-    cli::cli_alert_success("Deleted {n_matches} matches ({total_deleted} total rows)")
+    if (length(failed_tables) == 0) {
+      cli::cli_alert_success("Deleted {n_matches} matches ({total_deleted} total rows)")
+    } else {
+      cli::cli_alert_warning("Partially deleted {n_matches} matches ({total_deleted} rows, {length(failed_tables)} table{?s} failed)")
+    }
   }
 
   invisible(n_matches)
@@ -223,7 +233,7 @@ get_database_size <- function(path = NULL) {
 
 
 # ============================================================================
-# INDEX MANAGEMENT (from database_indexes.R)
+# INDEX MANAGEMENT
 # ============================================================================
 
 drop_bulk_load_indexes <- function(conn, verbose = TRUE) {
@@ -233,6 +243,7 @@ drop_bulk_load_indexes <- function(conn, verbose = TRUE) {
   indexes <- tryCatch({
     DBI::dbGetQuery(conn, "SELECT index_name FROM duckdb_indexes()")
   }, error = function(e) {
+    if (verbose) cli::cli_alert_warning("Could not query indexes: {e$message}")
     data.frame(index_name = character(0))
   })
 
@@ -452,10 +463,12 @@ create_indexes <- function(conn, core_only = FALSE, verbose = TRUE) {
   if (length(failed_indexes) > 0) {
     cli::cli_alert_warning("{length(failed_indexes)} index{?es} failed to create")
     if (verbose) {
-      for (msg in failed_indexes) cli::cli_alert_warning("  {msg}")
+      for (msg in unique(failed_indexes)) cli::cli_alert_warning("  {msg}")
     }
+    cli::cli_alert_info("Indexes partially created ({length(failed_indexes)} failures)")
+    invisible(FALSE)
+  } else {
+    cli::cli_alert_success("Indexes created successfully")
+    invisible(TRUE)
   }
-
-  cli::cli_alert_success("Indexes created successfully")
-  invisible(TRUE)
 }

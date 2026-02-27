@@ -25,7 +25,7 @@ If NULL, loads all.}
 Data frame of ball-by-ball data with Hawkeye columns.
 }
 \description{
-Load rich ball-by-ball data with Hawkeye fields (wagon wheel, pitch map,
+Load ball-by-ball data with Hawkeye fields (wagon wheel, pitch map,
 shot type, win probability) from local DuckDB or remote GitHub release.
 }
 \examples{

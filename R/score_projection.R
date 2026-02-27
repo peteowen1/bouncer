@@ -193,7 +193,10 @@ load_projection_params <- function(format = "t20",
 
     result <- tryCatch(
       DBI::dbGetQuery(conn, query, params = list(segment_id)),
-      error = function(e) NULL
+      error = function(e) {
+        cli::cli_alert_warning("Could not load projection params from DB, using defaults: {e$message}")
+        NULL
+      }
     )
 
     if (!is.null(result) && nrow(result) > 0) {

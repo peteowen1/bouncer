@@ -2,7 +2,8 @@
 #
 # User-facing functions for loading bouncer data from local DuckDB or remote
 # GitHub releases. Uses DuckDB for both - local queries the database file,
-# remote uses httpfs to query parquet files directly from GitHub.
+# remote downloads parquet files from GitHub releases to temp files,
+# then queries locally with DuckDB.
 #
 # All functions use source = "local" (default) or "remote".
 
@@ -177,7 +178,7 @@ create_remote_connection <- function() {
     union_sql <- paste0("SELECT * FROM ", match_views, collapse = " UNION ALL ")
     tryCatch(
       DBI::dbExecute(conn, sprintf("CREATE VIEW matches AS %s", union_sql)),
-      error = function(e) NULL
+      error = function(e) cli::cli_alert_warning("Failed to create unified matches view: {conditionMessage(e)}")
     )
   }
 
@@ -188,7 +189,7 @@ create_remote_connection <- function() {
     union_sql <- paste0("SELECT * FROM ", delivery_views, collapse = " UNION ALL ")
     tryCatch(
       DBI::dbExecute(conn, sprintf("CREATE VIEW deliveries AS %s", union_sql)),
-      error = function(e) NULL
+      error = function(e) cli::cli_alert_warning("Failed to create unified deliveries view: {conditionMessage(e)}")
     )
   }
 
@@ -497,7 +498,9 @@ load_innings <- function(match_type = "all", gender = "all",
     # Check if match_innings parquet exists
     available <- tryCatch({
       get_remote_tables()
-    }, error = function(e) character(0))
+    }, error = function(e) {
+      cli::cli_abort("Failed to check remote tables: {e$message}. Check your internet connection.")
+    })
 
     if (!"match_innings" %in% available) {
       cli::cli_abort("match_innings not available in remote release. Use source='local'.")
@@ -602,7 +605,9 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
     # Check if innings_powerplays parquet exists
     available <- tryCatch({
       get_remote_tables()
-    }, error = function(e) character(0))
+    }, error = function(e) {
+      cli::cli_abort("Failed to check remote tables: {e$message}. Check your internet connection.")
+    })
 
     if (!"innings_powerplays" %in% available) {
       cli::cli_abort("innings_powerplays not available in remote release. Use source='local'.")
@@ -688,7 +693,10 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
     cli::cli_alert_info("Loading player skills from remote...")
     available <- tryCatch({
       get_remote_tables()
-    }, error = function(e) character(0))
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to check remote tables: {e$message}")
+      character(0)
+    })
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_player_skill")
@@ -699,7 +707,10 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
       sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
       tryCatch({
         query_remote_parquet(table_name, sql_template)
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to load {fmt} player skills: {e$message}")
+        NULL
+      })
     })
   } else {
     # Local DuckDB
@@ -716,7 +727,10 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
       sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
       tryCatch(
         DBI::dbGetQuery(conn, sql),
-        error = function(e) NULL
+        error = function(e) {
+          cli::cli_alert_warning("Failed to load {fmt} player skills: {e$message}")
+          NULL
+        }
       )
     })
   }
@@ -729,7 +743,7 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
   }
 
   result <- dplyr::bind_rows(valid_dfs)
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} player skill records")
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} player skill records ({length(valid_dfs)}/{length(formats)} formats)")
   result
 }
 
@@ -762,7 +776,10 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
     cli::cli_alert_info("Loading team skills from remote...")
     available <- tryCatch({
       get_remote_tables()
-    }, error = function(e) character(0))
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to check remote tables: {e$message}")
+      character(0)
+    })
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_team_skill")
@@ -773,7 +790,10 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
       sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
       tryCatch({
         query_remote_parquet(table_name, sql_template)
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to load {fmt} team skills: {e$message}")
+        NULL
+      })
     })
   } else {
     # Local DuckDB
@@ -790,7 +810,10 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
       sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
       tryCatch(
         DBI::dbGetQuery(conn, sql),
-        error = function(e) NULL
+        error = function(e) {
+          cli::cli_alert_warning("Failed to load {fmt} team skills: {e$message}")
+          NULL
+        }
       )
     })
   }
@@ -803,7 +826,7 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
   }
 
   result <- dplyr::bind_rows(valid_dfs)
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} team skill records")
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} team skill records ({length(valid_dfs)}/{length(formats)} formats)")
   result
 }
 
@@ -836,7 +859,10 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
     cli::cli_alert_info("Loading venue skills from remote...")
     available <- tryCatch({
       get_remote_tables()
-    }, error = function(e) character(0))
+    }, error = function(e) {
+      cli::cli_alert_warning("Failed to check remote tables: {e$message}")
+      character(0)
+    })
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_venue_skill")
@@ -847,7 +873,10 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
       sql_template <- sprintf("SELECT *, '%s' AS format FROM {table}", fmt)
       tryCatch({
         query_remote_parquet(table_name, sql_template)
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to load {fmt} venue skills: {e$message}")
+        NULL
+      })
     })
   } else {
     # Local DuckDB
@@ -864,7 +893,10 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
       sql <- sprintf("SELECT *, '%s' AS format FROM %s", fmt, table_name)
       tryCatch(
         DBI::dbGetQuery(conn, sql),
-        error = function(e) NULL
+        error = function(e) {
+          cli::cli_alert_warning("Failed to load {fmt} venue skills: {e$message}")
+          NULL
+        }
       )
     })
   }
@@ -877,7 +909,7 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
   }
 
   result <- dplyr::bind_rows(valid_dfs)
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} venue skill records")
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} venue skill records ({length(valid_dfs)}/{length(formats)} formats)")
   result
 }
 
