@@ -24,8 +24,10 @@ library(data.table)
 if (!("bouncer" %in% loadedNamespaces())) devtools::load_all()
 
 # Check for optional parallel support
-USE_PARALLEL <- requireNamespace("furrr", quietly = TRUE) &&
-                requireNamespace("future", quietly = TRUE)
+# NOTE: Parallel disabled because calc_match_features() is internal (not exported).
+# Workers that load bouncer via library() can't see internal functions.
+# To re-enable: export calc_match_features + helper functions, or use plan(callr).
+USE_PARALLEL <- FALSE
 if (USE_PARALLEL) {
   library(furrr)
   library(future)
@@ -47,8 +49,8 @@ BURNIN_YEARS <- 2005:2007
 TEST_YEARS <- 2024:2025
 N_WORKERS <- parallel::detectCores() - 2  # For parallel processing
 
-# Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+# Output directory (use package helper to find the correct bouncerdata path)
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
@@ -118,7 +120,10 @@ cli::cli_alert_success("Loaded {nrow(all_matches_dt)} {format_msg} matches")
 # Load all team_elo data ----
 cli::cli_alert_info("Loading team ELO data...")
 team_elo_dt <- as.data.table(DBI::dbGetQuery(conn, "
-  SELECT team_id, match_id, match_date, match_type, elo_result, elo_roster_combined
+  SELECT team_id, match_id, match_date,
+    format AS match_type,
+    elo_before AS elo_result,
+    elo_before AS elo_roster_combined
   FROM team_elo
 "))
 team_elo_dt[, match_date := as.Date(match_date)]

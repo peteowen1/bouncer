@@ -63,8 +63,8 @@ conn <- get_db_connection(read_only = TRUE)
 # Connection will be closed explicitly at the end of the script
 cli::cli_alert_success("Connected")
 
-# Create output directory
-models_dir <- file.path("..", "bouncerdata", "models")
+# Create output directory (use package helper to find the correct bouncerdata path)
+models_dir <- file.path(find_bouncerdata_dir(), "models")
 if (!dir.exists(models_dir)) {
   dir.create(models_dir, recursive = TRUE)
   cli::cli_alert_info("Created models directory: {.file {models_dir}}")
@@ -406,7 +406,7 @@ for (format in FORMATS_TO_TRAIN) {
     objective = "multi:softprob",
     num_class = 7,
     max_depth = 6,
-    eta = 0.1,
+    eta = 0.15,
     subsample = 0.8,
     colsample_bytree = 0.8,
     eval_metric = "mlogloss"

@@ -51,8 +51,8 @@ FORMAT_GROUPS <- list(
   test = c("Test", "MDM")
 )
 
-params_dir <- file.path("..", "bouncerdata", "models")
-output_dir <- file.path("..", "bouncerdata", "models")
+params_dir <- file.path(find_bouncerdata_dir(), "models")
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

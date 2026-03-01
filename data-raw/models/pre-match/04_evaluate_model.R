@@ -23,7 +23,7 @@ library(xgboost)
 FORMAT <- "t20"  # Options: "t20", "odi", "test"
 
 # Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 
 cat("\n")
 cli::cli_h1("{toupper(FORMAT)} Match Prediction Model Evaluation")

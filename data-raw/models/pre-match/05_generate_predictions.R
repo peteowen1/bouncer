@@ -42,7 +42,7 @@ MIN_DATE <- NULL  # e.g., as.Date("2024-01-01")
 TARGET_EVENT <- NULL  # e.g., "Indian Premier League"
 
 # Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 
 cat("\n")
 cli::cli_h1("Generate {toupper(FORMAT)} Match Predictions")

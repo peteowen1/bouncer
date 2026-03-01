@@ -72,8 +72,8 @@ N_ROUNDS <- 500            # More rounds (with early stopping)
 EARLY_STOPPING <- 30       # Increased patience
 N_FOLDS <- 5               # CV folds for margin stacking
 
-# Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+# Output directory (use package helper to find the correct bouncerdata path)
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

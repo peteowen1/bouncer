@@ -18,9 +18,9 @@ devtools::load_all()
 FORMAT <- "t20"  # Options: "t20", "odi", "test"
 SAVE_PLOTS <- FALSE  # Set to TRUE to save plots as PNG files
 
-# Output directories
-output_dir <- file.path("..", "bouncerdata", "models")
-figure_dir <- file.path("..", "bouncerdata", "figures")
+# Output directories (use package helper to find the correct bouncerdata path)
+output_dir <- file.path(find_bouncerdata_dir(), "models")
+figure_dir <- file.path(find_bouncerdata_dir(), "figures")
 if (!dir.exists(figure_dir)) {
   dir.create(figure_dir, recursive = TRUE)
 }
