@@ -4,10 +4,7 @@
 \alias{fox_generate_manifest}
 \title{Generate Fox Sports manifest from combined parquet files}
 \usage{
-fox_generate_manifest(
-  output_dir = "../bouncerdata/fox_cricket",
-  formats = NULL
-)
+fox_generate_manifest(output_dir = NULL, formats = NULL)
 }
 \arguments{
 \item{output_dir}{Base directory containing format subdirectories (default: bouncerdata/fox_cricket)}

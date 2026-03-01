@@ -255,15 +255,15 @@ simulate_before_state <- function(deliveries) {
         before$balls_remaining / before$runs_needed,
         Inf
       )
-      after$balls_per_wicket_available <- ifelse(
-        after$wickets_in_hand > 0,
-        after$balls_remaining / after$wickets_in_hand,
+      before$balls_per_wicket_available <- ifelse(
+        before$wickets_in_hand > 0,
+        before$balls_remaining / before$wickets_in_hand,
         0
       )
     }
   }
 
-  return(after)
+  return(before)
 }
 
 

@@ -18,10 +18,10 @@ apply_centrality_correction(
 Use get_centrality_as_of() or get_cold_start_percentile() to obtain.}
 
 \item{regression_strength}{Numeric. Pull strength per delivery.
-Default uses CENTRALITY_REGRESSION_STRENGTH constant (0.002).}
+Default uses CENTRALITY_REGRESSION_STRENGTH constant (0.005).}
 
 \item{elo_per_percentile}{Numeric. ELO points per percentile point.
-Default uses CENTRALITY_ELO_PER_PERCENTILE constant (4).}
+Default uses CENTRALITY_ELO_PER_PERCENTILE constant (6).}
 }
 \value{
 Numeric. The corrected ELO rating.
@@ -40,22 +40,22 @@ implied_elo = ELO_START + (centrality_percentile - 50) * ELO_PER_PERCENTILE
 correction = REGRESSION_STRENGTH * (implied_elo - raw_elo)
 corrected_elo = raw_elo + correction
 
-Effect examples (with REGRESSION_STRENGTH = 0.002):
+Effect examples (with REGRESSION_STRENGTH = 0.005):
 \itemize{
-\item Player at 2400 ELO with 5\% centrality (implied = 1220):
-correction = 0.002 * (1220 - 2400) = -2.36 per delivery
-Over 300 balls: ~700 point regression toward implied level
-\item Player at 1800 ELO with 90\% centrality (implied = 1560):
-correction = 0.002 * (1560 - 1800) = -0.48 per delivery
+\item Player at 2400 ELO with 5\% centrality (implied = 1130):
+correction = 0.005 * (1130 - 2400) = -6.35 per delivery
+Over 300 balls: ~1900 point regression toward implied level
+\item Player at 1800 ELO with 90\% centrality (implied = 1640):
+correction = 0.005 * (1640 - 1800) = -0.80 per delivery
 (Much smaller since high centrality justifies higher ELO)
 }
 }
 \examples{
 # Low centrality player with inflated ELO
-apply_centrality_correction(2400, 5)   # 2397.64 (-2.36 per delivery)
+apply_centrality_correction(2400, 5)   # 2393.65 (pulls toward ~1130 implied)
 
 # Elite player with high ELO (justified by centrality)
-apply_centrality_correction(2000, 95)  # 1999.28 (small correction)
+apply_centrality_correction(2000, 95)  # 1998.35 (small correction)
 
 # Average player at average ELO
 apply_centrality_correction(1400, 50)  # 1400 (no correction needed)

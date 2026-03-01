@@ -6,7 +6,7 @@
 \usage{
 fox_combine_matches(
   format = "TEST",
-  output_dir = "../bouncerdata/fox_cricket",
+  output_dir = NULL,
   use_parquet = TRUE,
   include_players = TRUE,
   include_details = TRUE

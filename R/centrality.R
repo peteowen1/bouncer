@@ -903,7 +903,7 @@ calculate_league_starting_elo <- function(league_avg_centrality,
 #'   If NULL or NA, no regression is applied.
 #' @param elo_start Numeric. Base ELO (default THREE_WAY_ELO_START = 1400).
 #' @param elo_per_percentile Numeric. ELO points per percentile point (default 6).
-#' @param regression_strength Numeric. Pull strength per delivery (default 0.002).
+#' @param regression_strength Numeric. Pull strength per delivery (default 0.005).
 #'
 #' @return Numeric. The ELO correction to ADD to current_elo (can be negative).
 #'

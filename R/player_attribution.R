@@ -324,27 +324,35 @@ get_match_attribution <- function(model, match_id, format = "t20", conn) {
   # Add skill indices
   deliveries <- add_skill_features(deliveries, format, conn, fill_missing = TRUE)
 
-  # Add team skills (if available) — set defaults first, then overwrite on success
-  deliveries$batting_team_runs_skill <- 0
-  deliveries$batting_team_wicket_skill <- 0
-  deliveries$bowling_team_runs_skill <- 0
-  deliveries$bowling_team_wicket_skill <- 0
-  tryCatch({
+  # Add team skills (if available) — join first, fall back to defaults on error
+  team_ok <- tryCatch({
     deliveries <- join_team_skill_indices(deliveries, format, conn)
+    TRUE
   }, error = function(e) {
-    cli::cli_alert_warning("Could not load team skills: {e$message}")
+    cli::cli_warn("Could not load team skills: {e$message}")
+    FALSE
   })
+  if (!team_ok) {
+    deliveries$batting_team_runs_skill <- 0
+    deliveries$batting_team_wicket_skill <- 0
+    deliveries$bowling_team_runs_skill <- 0
+    deliveries$bowling_team_wicket_skill <- 0
+  }
 
-  # Add venue skills (if available) — set defaults first, then overwrite on success
-  deliveries$venue_run_rate <- 0
-  deliveries$venue_wicket_rate <- 0
-  deliveries$venue_boundary_rate <- 0.15
-  deliveries$venue_dot_rate <- 0.35
-  tryCatch({
+  # Add venue skills (if available) — join first, fall back to defaults on error
+  venue_ok <- tryCatch({
     deliveries <- join_venue_skill_indices(deliveries, format, conn)
+    TRUE
   }, error = function(e) {
-    cli::cli_alert_warning("Could not load venue skills: {e$message}")
+    cli::cli_warn("Could not load venue skills: {e$message}")
+    FALSE
   })
+  if (!venue_ok) {
+    deliveries$venue_run_rate <- 0
+    deliveries$venue_wicket_rate <- 0
+    deliveries$venue_boundary_rate <- 0.15
+    deliveries$venue_dot_rate <- 0.35
+  }
 
   # Calculate attribution
   attribution <- calculate_player_attribution(model, deliveries, format)

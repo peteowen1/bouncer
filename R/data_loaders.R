@@ -72,7 +72,6 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
   # Replace {table} placeholder with actual file path
   # SAFETY: sql_template callers must pre-escape any user-derived values
   # (e.g., via escape_sql_quotes). The {table} token is replaced with a
-
   # tempfile() path which is system-generated and safe.
   sql <- gsub("\\{table\\}", sprintf("'%s'", temp_file_normalized), sql_template)
 

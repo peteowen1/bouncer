@@ -47,11 +47,16 @@ A \code{bouncer_win_prob} object containing:
 \item overs - Input overs bowled
 \item innings - Input innings number
 \item format - Match format
+\item method - "model" (2nd innings) or "heuristic" (1st innings)
 }
 }
 \description{
 Calculate win probability for the batting-first team given the current
 match state. Uses scoreboard-friendly inputs.
+}
+\note{
+First-innings win probability uses a linear heuristic based on
+projected score vs venue par. Second-innings uses the full Stage 2 model.
 }
 \examples{
 \dontrun{

@@ -20,9 +20,9 @@ If NULL or NA, no regression is applied.}
 
 \item{elo_start}{Numeric. Base ELO (default THREE_WAY_ELO_START = 1400).}
 
-\item{elo_per_percentile}{Numeric. ELO points per percentile point (default 4).}
+\item{elo_per_percentile}{Numeric. ELO points per percentile point (default 6).}
 
-\item{regression_strength}{Numeric. Pull strength per delivery (default 0.002).}
+\item{regression_strength}{Numeric. Pull strength per delivery (default 0.005).}
 }
 \value{
 Numeric. The ELO correction to ADD to current_elo (can be negative).
@@ -46,10 +46,10 @@ are "justified" by their network position
 }
 \examples{
 # Low centrality player with inflated ELO
-calculate_centrality_regression(2400, 5)   # ~ -2.36 (strong pull down)
+calculate_centrality_regression(2400, 5)   # -6.35 (strong pull down)
 
 # Elite player with high ELO
-calculate_centrality_regression(2000, 95)  # ~ -0.72 (small pull down, justified)
+calculate_centrality_regression(2000, 95)  # -1.65 (small pull down, justified)
 
 # Average player at average ELO
 calculate_centrality_regression(1400, 50)  # 0 (no correction needed)

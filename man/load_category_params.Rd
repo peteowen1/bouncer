@@ -4,11 +4,7 @@
 \alias{load_category_params}
 \title{Load Category-Specific ELO Parameters}
 \usage{
-load_category_params(
-  category_name,
-  params_dir = file.path("..", "bouncerdata", "models"),
-  format = "t20"
-)
+load_category_params(category_name, params_dir = NULL, format = "t20")
 }
 \arguments{
 \item{category_name}{One of: "mens_club", "mens_international",
