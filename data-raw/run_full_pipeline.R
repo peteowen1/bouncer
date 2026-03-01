@@ -52,6 +52,13 @@ if (!dir.exists(DATA_RAW_DIR)) {
 cli::cli_alert_info("Data-raw directory: {DATA_RAW_DIR}")
 cli::cli_alert_info("Working directory: {getwd()}")
 
+# Validate bouncerdata sibling exists (pipeline scripts must not fall back to AppData)
+BOUNCERDATA_DIR <- find_bouncerdata_dir(create = FALSE)
+if (is.null(BOUNCERDATA_DIR)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+cli::cli_alert_info("Bouncerdata directory: {BOUNCERDATA_DIR}")
+
 ## Main Configuration ----
 
 # Which steps to run?
@@ -62,7 +69,7 @@ STEPS_TO_RUN <- NULL
 # Fresh start mode - CLEARS ALL DATA and recalculates from scratch
 # - TRUE = delete all skill/elo tables and recalculate everything (takes hours)
 # - FALSE = incremental mode, only process new data since last run (fast)
-FRESH_START <- FALSE # TRUE
+FRESH_START <- FALSE
 
 # Per-step fresh start (allows fresh start for specific steps only)
 # - NULL = use global FRESH_START for all steps
@@ -184,25 +191,41 @@ if (should_run(1)) {
   if (file.exists(db_path)) {
     conn <- get_db_connection(read_only = TRUE)
 
-    # Check how many matches need margin
-    margin_check <- DBI::dbGetQuery(conn, "
-      SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN unified_margin IS NOT NULL THEN 1 ELSE 0 END) as with_margin
-      FROM cricsheet.matches
-      WHERE outcome_type IS NOT NULL
-    ")
+    # Check if unified_margin column exists yet
+    margin_check <- NULL
+    has_col <- "unified_margin" %in% DBI::dbGetQuery(
+      conn,
+      "SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'cricsheet' AND table_name = 'matches'"
+    )$column_name
+
+    if (has_col) {
+      margin_check <- DBI::dbGetQuery(conn, "
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN unified_margin IS NOT NULL THEN 1 ELSE 0 END) as with_margin
+        FROM cricsheet.matches
+        WHERE outcome_type IS NOT NULL
+      ")
+      n_need_margin <- margin_check$total - margin_check$with_margin
+    } else {
+      n_need_margin <- 1L  # Column missing — need to run backfill to create it
+    }
     # Must use shutdown = TRUE here because the backfill script needs a write connection
     # and DuckDB on Windows has file locking issues with lingering driver instances
     DBI::dbDisconnect(conn, shutdown = TRUE)
 
-    n_need_margin <- margin_check$total - margin_check$with_margin
-
-    if (n_need_margin == 0) {
+    if (has_col && n_need_margin == 0 && !FRESH_START) {
       cli::cli_alert_success("All {format(margin_check$total, big.mark = ',')} matches have unified_margin")
       cli::cli_alert_info("Skipping margin backfill")
     } else {
-      cli::cli_alert_warning("{format(n_need_margin, big.mark = ',')} matches need margin calculation")
+      if (FRESH_START && has_col && n_need_margin == 0) {
+        cli::cli_alert_warning("FRESH_START: re-running margin backfill despite all margins being present")
+      } else if (!has_col) {
+        cli::cli_alert_warning("unified_margin column missing — running backfill to create it")
+      } else {
+        cli::cli_alert_warning("{format(n_need_margin, big.mark = ',')} matches need margin calculation")
+      }
       step_start <- Sys.time()
 
       # Force shutdown any lingering DuckDB driver instances to avoid lock conflicts
@@ -210,7 +233,9 @@ if (should_run(1)) {
       # when switching between read-only and write connections
       tryCatch({
         duckdb::duckdb_shutdown(duckdb::duckdb())
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("DuckDB shutdown warning (non-fatal): {conditionMessage(e)}")
+      })
 
       # Source the backfill script
       source(file.path(DATA_RAW_DIR, "ratings/00_backfill_unified_margin.R"), local = TRUE)
@@ -571,7 +596,7 @@ if (should_run(10)) {
   cli::cli_h1("Step 10: Optimize Projection Parameters")
 
   # Check if projection params already exist
-  params_file <- file.path(dirname(DATA_RAW_DIR), "bouncerdata/models/projection_params_t20.rds")
+  params_file <- file.path(BOUNCERDATA_DIR, "models/projection_params_t20.rds")
 
   if (file.exists(params_file) && !FRESH_START) {
     cli::cli_alert_info("Projection parameters already exist at {params_file}")

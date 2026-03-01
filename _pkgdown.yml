@@ -82,6 +82,15 @@ reference:
     - get_unscraped_matches
     - add_cricinfo_tables
 
+  - title: Fox Sports Data
+    desc: Load ball-by-ball data from Fox Sports
+    contents:
+    - ingest_fox_sports_data
+    - load_fox_balls
+    - load_fox_details
+    - load_fox_players
+    - add_foxsports_tables
+
   - title: Player Analysis
     desc: Look up and analyze player performance
     contents:

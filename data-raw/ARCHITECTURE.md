@@ -1,8 +1,27 @@
 # Bouncer Analytics Architecture
 
-This document explains the complete data flow from raw Cricsheet data through the 5-component prediction and simulation pipeline.
+This document explains the complete data flow from raw data acquisition through the 5-component prediction and simulation pipeline to distribution.
 
 ## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  DATA ACQUISITION (GHA daily, bouncerdata repo)                        │
+│                                                                         │
+│  Cricsheet ──→ cricsheet release    (21K+ matches, ball-by-ball JSON)  │
+│  Fox Sports ─→ foxsports release    (BBL/T20I/ODI/Test via Chrome)     │
+│  Cricinfo ──→ cricinfo release      (Hawkeye tracking data)            │
+└──────────────────────────────┬──────────────────────────────────────────┘
+                               │ download from releases
+                               ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  DuckDB (bouncerdata/bouncer.duckdb ~17GB)                             │
+│                                                                         │
+│  cricsheet.* (5) │ cricinfo.* (4) │ foxsports.* (3) │ main.* (~50)       │
+└──────────────────────────────┬──────────────────────────────────────────┘
+                               │ local analytics pipeline (~1hr)
+                               ▼
+```
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -45,6 +64,45 @@ STEP 6: Team ELO (game-level, unchanged) ───────────┤
                                     │
                     Ready for Simulations & Predictions
 ```
+
+---
+
+## Data Acquisition
+
+Three data sources feed the pipeline, all scraped via GitHub Actions workflows in the `bouncerdata` repo.
+
+### Cricsheet (Primary — Ball-by-Ball)
+
+The backbone of the pipeline. Open-source ball-by-ball JSON data for international and domestic cricket.
+
+- **Workflow**: `cricsheet-daily.yml` (7 AM UTC)
+- **Method**: Downloads `recently_added_7_json.zip`, parses new matches, merges with existing parquets
+- **Release tag**: `cricsheet` — partitioned deliveries (`deliveries_{match_type}_{gender}.parquet`), matches, players, manifest
+- **DuckDB tables**: `cricsheet.matches`, `cricsheet.deliveries`, `cricsheet.players`, `cricsheet.match_innings`, `cricsheet.innings_powerplays`
+- **Scale**: ~21K matches, ~10.9M deliveries across T20/IT20/ODI/ODM/Test/MDM × male/female
+- **Used by**: All 11 pipeline steps. This is the only data source the analytics pipeline consumes directly.
+
+### Fox Sports (Supplementary — Australian Domestic)
+
+Australian-specific match data, especially BBL/WBBL with richer stats.
+
+- **Workflow**: `foxsports-daily.yml` (10 AM UTC)
+- **Method**: `chromote` headless Chrome → intercepts Fox Sports API userkey → scrapes match data
+- **Release tag**: `foxsports` — combined parquets per format (BBL, WBBL, TEST, T20I, WT20I, ODI, WODI)
+- **DuckDB**: Schema exists (`foxsports.*`) but not populated by the analytics pipeline; data lives as standalone parquets
+
+### Cricinfo (Supplementary — Hawkeye Tracking)
+
+ESPN Cricinfo ball-by-ball data with Hawkeye tracking fields (wagon wheel coordinates, pitch maps, shot types).
+
+- **Workflow**: `cricinfo-daily.yml` (12 PM UTC)
+- **Method**: Playwright + stealth (non-headless Chrome via Xvfb) → intercepts Hawkeye API responses during scroll
+- **Release tag**: `cricinfo` — per-match `{match_id}_{balls|match|innings}.parquet`
+- **DuckDB tables**: `cricinfo.matches`, `cricinfo.balls`, `cricinfo.innings`, `cricinfo.fixtures`
+- **Scale**: ~44K matches metadata, ~3.7K with ball-by-ball Hawkeye data
+- **Unique fields**: wagonX/Y/Zone, pitchLine/Length, shotType, shotControl, win probability
+
+See `bouncerdata/CLAUDE.md` for workflow manual triggers and troubleshooting.
 
 ---
 
@@ -107,7 +165,7 @@ Positive = performs better than context-expected, Negative = worse.
 
 ---
 
-### Team Skill Index (NEW)
+### Team Skill Index
 
 **Location:** `data-raw/ratings/team/02_calculate_team_skill_indices.R`
 
@@ -138,6 +196,49 @@ Positive = performs better than context-expected, Negative = worse.
 | `venue_dot_rate` | Raw EMA | Dot ball probability (no baseline) |
 
 **Alpha:** Lower than players (venues change even slower)
+
+---
+
+### 3-Way ELO (Per-Delivery)
+
+**Location:** `R/three_way_elo.R`, `R/elo_utils.R`
+
+The primary per-delivery rating system. Decomposes each delivery outcome into batter, bowler, and venue contributions using dual session/permanent ratings.
+
+**Output Tables:** `{format}_3way_elo` (e.g., `t20_3way_elo`)
+
+**Formula:**
+```r
+expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) * runs_per_100_elo)
+```
+
+**Attribution Weights** (Men's T20 run ELO shown; varies by format, gender, and dimension):
+| Component | Men's T20 | Description |
+|-----------|-----------|-------------|
+| `W_BATTER` | 0.612 | Batter contribution |
+| `W_BOWLER` | 0.311 | Bowler contribution |
+| `W_VENUE_SESSION` | 0.062 | Short-term venue (pitch prep, dew) |
+| `W_VENUE_PERM` | 0.015 | Long-term venue (ground size, typical pitch) |
+
+Weights are format-gender-specific and differ between run and wicket dimensions. See `get_run_elo_weights()` / `get_wicket_elo_weights()` in `R/constants_3way.R`.
+
+**Key constants (per format, Men's shown):**
+| Constant | T20 | ODI | Test |
+|----------|-----|-----|------|
+| `ELO_START` | 1400 | 1400 | 1400 |
+| `RUNS_PER_100_ELO` | 0.0745 | 0.0826 | 0.0932 |
+
+**Relationship to skill indices:** 3-Way ELO provides base ratings; skill indices capture residual deviation from the agnostic model baseline. Both feed into the Full Model.
+
+---
+
+### PageRank/Centrality (Network Quality Adjustment)
+
+**Location:** `R/centrality.R`, `R/centrality_storage.R`
+
+Network-based quality adjustment that detects isolated cluster inflation. Builds a match network graph and uses PageRank to assess opponent quality — a player with a high ELO from only playing weak opponents will have low centrality.
+
+Works together with 3-Way ELO: ELO provides base ratings, PageRank/centrality adjusts for opponent network quality.
 
 ---
 
@@ -181,7 +282,7 @@ Positive = performs better than context-expected, Negative = worse.
 
 ## Component 4: Simulations
 
-**Location:** `R/delivery_simulation.R`
+**Location:** `R/simulation.R`
 
 ### Ball-by-Ball Match Simulation
 
@@ -302,8 +403,8 @@ calculate_unified_margin(
 | Team ELO | team1_elo_result, team2_elo_result, elo_diff |
 | Roster ELO | team1_roster_elo, team2_roster_elo |
 | Player Skills | Aggregated batting/bowling indices per team |
-| Team Skills (NEW) | team_runs_skill_diff, team_wicket_skill_diff |
-| Venue Skills (NEW) | venue_run_skill, venue_wicket_skill, venue_boundary, venue_dot |
+| Team Skills | team_runs_skill_diff, team_wicket_skill_diff |
+| Venue Skills | venue_run_skill, venue_wicket_skill, venue_boundary, venue_dot |
 | Form | Last 5 match results |
 | Head-to-Head | Historical win rate |
 | Toss | Winner, decision (bat/bowl) |
@@ -314,25 +415,24 @@ calculate_unified_margin(
 
 ## Database Tables
 
-### Core Tables
-- `matches` - Match metadata
-- `deliveries` - Ball-by-ball data
-- `players` - Player registry
-- `match_innings` - Innings summaries
+Uses DuckDB schemas: `cricsheet.*`, `cricinfo.*`, `main.*`
 
-### Rating Tables
+### Core Tables (`cricsheet` schema)
+- `cricsheet.matches` - Match metadata
+- `cricsheet.deliveries` - Ball-by-ball data
+- `cricsheet.players` - Player registry
+- `cricsheet.match_innings` - Innings summaries
+- `cricsheet.innings_powerplays` - Powerplay periods
+
+### Rating Tables (`main` schema, per format: t20/odi/test)
 | Table | Description |
 |-------|-------------|
-| `t20_player_skill` | Player skill indices (residual-based) |
-| `t20_team_skill` | Team skill indices (residual-based) |
-| `t20_venue_skill` | Venue skill indices |
-| `t20_score_projection` | Per-delivery score projections |
-| `team_elo` | Game-level team ELO |
-
-### Model Output Tables
-- `pre_match_features` - Features for prediction
-- `pre_match_predictions` - Model predictions
-- `simulation_results` - Monte Carlo outputs
+| `main.{format}_player_skill` | Player skill indices (residual-based) |
+| `main.{format}_3way_elo` | 3-way ELO ratings (batter, bowler, venue) |
+| `main.{format}_team_skill` | Team skill indices (residual-based) |
+| `main.{format}_venue_skill` | Venue skill indices |
+| `main.{format}_score_projection` | Per-delivery score projections |
+| `main.team_elo` | Game-level team ELO |
 
 ---
 
@@ -341,15 +441,14 @@ calculate_unified_margin(
 ### Model Outputs
 ```
 bouncerdata/models/
-├── agnostic_outcome_t20.ubj           # Agnostic baseline (T20)
-├── agnostic_outcome_odi.ubj           # Agnostic baseline (ODI)
-├── agnostic_outcome_test.ubj          # Agnostic baseline (Test)
-├── full_outcome_t20.ubj               # Full model (T20)
-├── full_outcome_odi.ubj               # Full model (ODI)
-├── full_outcome_test.ubj              # Full model (Test)
-├── t20_prediction_model.ubj           # Pre-match model
-├── projection_params_t20_*.rds        # Projection parameters
-└── *_prediction_features.rds          # Feature data
+├── agnostic_outcome_{format}.ubj      # Agnostic baseline (t20/odi/test)
+├── full_outcome_{format}.ubj          # Full model (t20/odi/test)
+├── {format}_prediction_model.ubj      # Pre-match prediction model
+├── {format}_margin_model.ubj          # Margin prediction model
+├── {format}_prediction_features.rds   # Pre-match feature data
+├── {format}_prediction_training.rds   # Training data
+├── projection_params_{format}_{gender}_{team_type}.rds  # Projection parameters
+└── team_elo_params_{format}_{gender}_{team_type}.rds    # Team ELO parameters
 ```
 
 ---
@@ -445,6 +544,58 @@ calculate_unified_margin(
 | Projection | - | - | - | - | - |
 | Simulation | Full Model | REQUIRED | REQUIRED | REQUIRED | - |
 | Attribution | Full Model | REQUIRED | Optional | Optional | - |
+
+---
+
+## Distribution
+
+After the pipeline completes, skill tables are distributed through two channels:
+
+### GitHub Releases (peteowen1/bouncerdata)
+
+Pipeline outputs are exported from DuckDB to parquet and uploaded via `piggyback`:
+
+| Release Tag | Content | Files |
+|-------------|---------|-------|
+| `player_rating` | Per-delivery player skill indices | `{format}_player_skill.parquet` × 3 (~530MB) |
+| `team_rating` | Per-delivery team skill indices | `{format}_team_skill.parquet` × 3 (~530MB) |
+| `venue_rating` | Per-delivery venue skill indices | `{format}_venue_skill.parquet` × 3 (~350MB) |
+
+**Scripts:** `bouncerdata/scripts/export_parquets.R`, `upload_to_release.R`
+
+### Cloudflare R2 (inthegame-data bucket)
+
+The `build-blog-data.yml` workflow aggregates skill data into compact leaderboard parquets for the blog/website:
+
+```
+GitHub Releases (player/team/venue skill parquets)
+    │ download
+    ▼
+build_blog_data.R (aggregate: latest rating per entity, min-ball filters)
+    │ produces 12 files: {batting,bowling,teams,venues} × {t20,odi,test}
+    ▼
+wrangler r2 object put → inthegame-data bucket
+```
+
+**Trigger:** `gh workflow run build-blog-data.yml --repo peteowen1/bouncerdata --ref dev`
+
+**Secrets required:** `CLOUDFLARE_R2_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+
+---
+
+## Pipeline Dependencies
+
+```
+Cricsheet data ─→ Step 2 (Agnostic Model)
+                      │
+                      ├──→ Steps 3,4,5 (Skill Indices) ──→ Step 7 (Full Model)
+                      │                                          │
+                      └──→ Step 6 (Team ELO) ─────────→ Step 8 (Pre-Match Features)
+                                                              │
+                                                         Steps 9-11 (Predictions + Projections)
+```
+
+Steps 3, 4, 5 can conceptually run in parallel (all depend on Step 2's agnostic baseline). Steps 8+ require all prior steps.
 
 ---
 

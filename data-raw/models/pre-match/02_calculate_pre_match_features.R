@@ -23,13 +23,10 @@ library(dplyr)
 library(data.table)
 if (!("bouncer" %in% loadedNamespaces())) devtools::load_all()
 
-# Check for optional parallel support
-USE_PARALLEL <- requireNamespace("furrr", quietly = TRUE) &&
-                requireNamespace("future", quietly = TRUE)
-if (USE_PARALLEL) {
-  library(furrr)
-  library(future)
-}
+# NOTE: Parallel disabled because calc_match_features() is internal (not exported).
+# Workers can't access unexported functions via library(bouncer) or devtools::load_all().
+# To re-enable: export calc_match_features + helper functions from the package.
+USE_PARALLEL <- FALSE
 
 
 # 2. Configuration ----
@@ -45,10 +42,13 @@ FORMAT_GROUPS <- list(
 
 BURNIN_YEARS <- 2005:2007
 TEST_YEARS <- 2024:2025
-N_WORKERS <- parallel::detectCores() - 2  # For parallel processing
 
-# Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+# Output directory (use package helper to find the correct bouncerdata path)
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+output_dir <- file.path(bouncerdata_root, "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

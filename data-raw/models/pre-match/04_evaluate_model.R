@@ -23,7 +23,11 @@ library(xgboost)
 FORMAT <- "t20"  # Options: "t20", "odi", "test"
 
 # Output directory
-output_dir <- file.path("..", "bouncerdata", "models")
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+output_dir <- file.path(bouncerdata_root, "models")
 
 cat("\n")
 cli::cli_h1("{toupper(FORMAT)} Match Prediction Model Evaluation")

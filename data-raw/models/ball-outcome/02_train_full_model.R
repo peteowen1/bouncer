@@ -55,8 +55,12 @@ cli::cli_h2("Connecting to database")
 conn <- get_db_connection(read_only = TRUE)
 cli::cli_alert_success("Connected")
 
-# Create output directory
-models_dir <- file.path("..", "bouncerdata", "models")
+# Create output directory (use package helper to find the correct bouncerdata path)
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+models_dir <- file.path(bouncerdata_root, "models")
 if (!dir.exists(models_dir)) {
   dir.create(models_dir, recursive = TRUE)
   cli::cli_alert_info("Created models directory: {.file {models_dir}}")
@@ -435,7 +439,7 @@ for (format in FORMATS_TO_TRAIN) {
     objective = "multi:softprob",
     num_class = 7,
     max_depth = 6,
-    eta = 0.1,
+    eta = 0.15,
     subsample = 0.8,
     colsample_bytree = 0.8,
     eval_metric = "mlogloss"

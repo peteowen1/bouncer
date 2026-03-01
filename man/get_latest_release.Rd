@@ -12,6 +12,7 @@ Default is "peteowen1/bouncerdata".}
 
 \item{type}{Character. Release type to find: "cricsheet" (parquet data),
 "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
+"foxsports" (Fox Sports ball-by-ball data),
 "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).}
 }
 \value{
