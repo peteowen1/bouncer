@@ -113,6 +113,7 @@ normalize_format <- function(format) {
 #'
 #' @keywords internal
 normalize_match_type <- function(match_type) {
+  .Deprecated("normalize_format")
   normalize_format(match_type)
 }
 

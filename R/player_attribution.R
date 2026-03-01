@@ -324,24 +324,26 @@ get_match_attribution <- function(model, match_id, format = "t20", conn) {
   # Add skill indices
   deliveries <- add_skill_features(deliveries, format, conn, fill_missing = TRUE)
 
-  # Add team skills (if available)
+  # Add team skills (if available) — set defaults first, then overwrite on success
+  deliveries$batting_team_runs_skill <- 0
+  deliveries$batting_team_wicket_skill <- 0
+  deliveries$bowling_team_runs_skill <- 0
+  deliveries$bowling_team_wicket_skill <- 0
   tryCatch({
     deliveries <- join_team_skill_indices(deliveries, format, conn)
   }, error = function(e) {
-    deliveries$batting_team_runs_skill <- 0
-    deliveries$batting_team_wicket_skill <- 0
-    deliveries$bowling_team_runs_skill <- 0
-    deliveries$bowling_team_wicket_skill <- 0
+    cli::cli_alert_warning("Could not load team skills: {e$message}")
   })
 
-  # Add venue skills (if available)
+  # Add venue skills (if available) — set defaults first, then overwrite on success
+  deliveries$venue_run_rate <- 0
+  deliveries$venue_wicket_rate <- 0
+  deliveries$venue_boundary_rate <- 0.15
+  deliveries$venue_dot_rate <- 0.35
   tryCatch({
     deliveries <- join_venue_skill_indices(deliveries, format, conn)
   }, error = function(e) {
-    deliveries$venue_run_rate <- 0
-    deliveries$venue_wicket_rate <- 0
-    deliveries$venue_boundary_rate <- 0.15
-    deliveries$venue_dot_rate <- 0.35
+    cli::cli_alert_warning("Could not load venue skills: {e$message}")
   })
 
   # Calculate attribution

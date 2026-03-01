@@ -518,9 +518,13 @@ generate_match_id_variants <- function(year, series, match, format = "TEST") {
 #' @keywords internal
 fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024:2025,
                                   max_series = NULL, max_matches = NULL,
-                                  output_dir = "../bouncerdata/fox_cricket",
+                                  output_dir = NULL,
                                   cache_file = NULL, verbose = TRUE,
                                   scan_for_new = TRUE) {
+
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "fox_cricket")
+  }
 
   # Validate format
   if (!format %in% names(FOX_FORMATS)) {
@@ -672,11 +676,15 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
 #' @return Combined data.frame of all ball-by-ball data, or NULL
 #' @keywords internal
 fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
-                               output_dir = "../bouncerdata/fox_cricket",
+                               output_dir = NULL,
                                use_parquet = TRUE, include_players = TRUE,
                                include_details = TRUE, skip_existing = TRUE,
                                refresh_key_every = 10, delay_between = 8,
                                max_consecutive_failures = 3) {
+
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "fox_cricket")
+  }
 
   # Validate format
   if (!format %in% names(FOX_FORMATS)) {
@@ -882,9 +890,13 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
 #' @param include_details Also combine details files (default TRUE)
 #' @return Combined data.frame of all ball-by-ball data (players/details saved separately)
 #' @keywords internal
-fox_combine_matches <- function(format = "TEST", output_dir = "../bouncerdata/fox_cricket",
+fox_combine_matches <- function(format = "TEST", output_dir = NULL,
                                  use_parquet = TRUE, include_players = TRUE,
                                  include_details = TRUE) {
+
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "fox_cricket")
+  }
 
   # Validate format
   if (!format %in% names(FOX_FORMATS)) {
@@ -1002,8 +1014,12 @@ fox_list_formats <- function(details = FALSE) {
 #' @param formats Vector of format codes to include (default: all available)
 #' @return List with manifest data (created_at, formats, summary)
 #' @keywords internal
-fox_generate_manifest <- function(output_dir = "../bouncerdata/fox_cricket",
+fox_generate_manifest <- function(output_dir = NULL,
                                    formats = NULL) {
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "fox_cricket")
+  }
+
   if (is.null(formats)) {
     formats <- fox_list_formats()
   }

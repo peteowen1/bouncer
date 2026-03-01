@@ -52,7 +52,7 @@ team_batting_stats <- function(team = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build WHERE clause
   where_clauses <- character()
@@ -64,7 +64,7 @@ team_batting_stats <- function(team = NULL,
   }
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(mt))
   }
@@ -242,7 +242,7 @@ team_bowling_stats <- function(team = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build WHERE clause
   where_clauses <- character()
@@ -254,7 +254,7 @@ team_bowling_stats <- function(team = NULL,
   }
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(mt))
   }
@@ -423,7 +423,7 @@ head_to_head <- function(team1, team2, match_type = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build WHERE clause
   where_clauses <- c(
@@ -432,7 +432,7 @@ head_to_head <- function(team1, team2, match_type = NULL,
   params <- list(team1, team2, team2, team1)
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(m.match_type) = ?")
     params <- c(params, list(mt))
   }
@@ -605,7 +605,7 @@ venue_stats <- function(venue = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build WHERE clause for deliveries
   where_clauses <- character()
@@ -617,7 +617,7 @@ venue_stats <- function(venue = NULL,
   }
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(mt))
   }

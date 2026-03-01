@@ -64,7 +64,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
   }
 
   conn <- get_db_connection(path = path, read_only = FALSE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Ensure tables exist (idempotent)
   create_cricinfo_tables(conn, verbose = FALSE)
@@ -445,7 +445,7 @@ load_cricinfo_fixtures <- function(format = "all", gender = "all",
     })
   } else {
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     local_sql <- gsub("\\{table\\}", "cricinfo.fixtures", sql)
     result <- DBI::dbGetQuery(conn, local_sql)
@@ -591,7 +591,7 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
   }
 
   conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   where_clauses <- character()
 
@@ -662,7 +662,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
   }
 
   conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   where_clauses <- character()
   if (!is.null(match_ids)) {
@@ -721,7 +721,7 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
   }
 
   conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   where_clauses <- character()
 

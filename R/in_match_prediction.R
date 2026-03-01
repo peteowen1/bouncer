@@ -104,7 +104,11 @@ load_in_match_models <- function(format = "t20",
 #'     \item overs - Input overs bowled
 #'     \item innings - Input innings number
 #'     \item format - Match format
+#'     \item method - "model" (2nd innings) or "heuristic" (1st innings)
 #'   }
+#'
+#' @note First-innings win probability uses a linear heuristic based on
+#'   projected score vs venue par. Second-innings uses the full Stage 2 model.
 #'
 #' @export
 #'
@@ -274,6 +278,7 @@ predict_win_probability <- function(current_score,
     innings = innings,
     target = target,
     format = format,
+    method = if (innings == 1) "heuristic" else "model",
     runs_above_par = if (innings == 1) projected_score - feature_data$venue_avg_first_innings else NULL
   )
 

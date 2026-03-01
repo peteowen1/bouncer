@@ -169,7 +169,7 @@ get_data_info <- function(path = NULL) {
   }
 
   conn <- get_db_connection(path = path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get counts
   n_matches <- DBI::dbGetQuery(conn, "SELECT COUNT(*) as n FROM cricsheet.matches")$n
@@ -244,7 +244,7 @@ list_available_formats <- function(path = NULL) {
   }
 
   conn <- get_db_connection(path = path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   formats <- DBI::dbGetQuery(conn, "
     SELECT
@@ -522,7 +522,7 @@ load_filtered_matches <- function(file_paths,
   # Connect to database
 
   conn <- get_db_connection(path = db_path, read_only = FALSE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get existing match IDs
   existing_matches <- DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches")
@@ -665,6 +665,14 @@ load_filtered_matches <- function(file_paths,
   }
   if (error_count > 0) {
     cli::cli_alert_warning("{error_count} matches failed to load")
+  }
+
+  # Warn if all/most files failed — likely a systematic issue
+
+  if (n_new > 0 && success_count == 0) {
+    cli::cli_warn("All {n_new} matches failed to load. Check file format and directory path.")
+  } else if (n_new > 10 && error_count > n_new * 0.5) {
+    cli::cli_warn("More than 50% of matches failed ({error_count}/{n_new}). Check for systematic parsing issues.")
   }
 
   invisible(success_count)

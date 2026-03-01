@@ -70,6 +70,10 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Replace {table} placeholder with actual file path
+  # SAFETY: sql_template callers must pre-escape any user-derived values
+  # (e.g., via escape_sql_quotes). The {table} token is replaced with a
+
+  # tempfile() path which is system-generated and safe.
   sql <- gsub("\\{table\\}", sprintf("'%s'", temp_file_normalized), sql_template)
 
   DBI::dbGetQuery(conn, sql)
@@ -269,7 +273,7 @@ load_matches <- function(match_type = "all", gender = "all", team_type = "all",
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
     sql <- sprintf("SELECT * FROM cricsheet.matches %s ORDER BY match_date DESC", where_sql)
     result <- DBI::dbGetQuery(conn, sql)
   }
@@ -357,7 +361,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     # Build query - need to join with matches for filtering
     # For efficiency, if filtering by match_ids only, query deliveries directly
@@ -442,7 +446,7 @@ load_players <- function(source = c("local", "remote")) {
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
     result <- DBI::dbGetQuery(conn, "SELECT * FROM cricsheet.players")
   }
 
@@ -522,7 +526,7 @@ load_innings <- function(match_type = "all", gender = "all",
   } else {
     # Local DuckDB - can do efficient joins
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     join_where <- character()
     if (!identical(match_type, "all")) {
@@ -629,7 +633,7 @@ load_powerplays <- function(match_type = "all", match_ids = NULL,
   } else {
     # Local DuckDB - can do efficient joins
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     join_where <- character()
     if (!identical(match_type, "all")) {
@@ -715,7 +719,7 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_player_skill")
@@ -798,7 +802,7 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_team_skill")
@@ -881,7 +885,7 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_venue_skill")
@@ -942,7 +946,7 @@ load_team_elo <- function(source = c("local", "remote")) {
   } else {
     # Local DuckDB
     conn <- get_db_connection(read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
     result <- DBI::dbGetQuery(conn, "SELECT * FROM team_elo")
   }
 

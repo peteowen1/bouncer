@@ -175,7 +175,7 @@ load_projection_params <- function(format = "t20",
 
   # Try to load from RDS file
   if (is.null(params_dir)) {
-    params_dir <- "../bouncerdata/models"
+    params_dir <- file.path(find_bouncerdata_dir(), "models")
   }
 
   params_file <- file.path(params_dir, paste0("projection_params_", segment_id, ".rds"))
@@ -606,8 +606,12 @@ save_projection_params <- function(params,
                                    format,
                                    gender,
                                    team_type,
-                                   params_dir = "../bouncerdata/models",
+                                   params_dir = NULL,
                                    metrics = NULL) {
+
+  if (is.null(params_dir)) {
+    params_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
 
   segment_id <- get_projection_segment_id(format, gender, team_type)
 

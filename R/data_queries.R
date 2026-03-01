@@ -48,7 +48,7 @@ query_matches <- function(match_type = NULL,
   params <- list()
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(match_type) = ?")
     params <- c(params, list(mt))
   }
@@ -96,7 +96,7 @@ query_matches <- function(match_type = NULL,
   } else {
     # Local DuckDB: use parameterized queries (safe)
     conn <- get_db_connection(path = db_path, read_only = TRUE)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
     query <- sprintf("SELECT * FROM cricsheet.matches %s ORDER BY match_date DESC", where_sql)
     result <- DBI::dbGetQuery(conn, query, params = params)
@@ -137,7 +137,7 @@ build_remote_where_clause <- function(match_type = NULL, season = NULL, team = N
   where_clauses <- character()
 
   if (!is.null(match_type)) {
-    mt <- normalize_match_type(match_type)
+    mt <- normalize_format(match_type)
     where_clauses <- c(where_clauses, sprintf("LOWER(match_type) = '%s'", escape_sql_quotes(mt)))
   }
 
@@ -280,7 +280,7 @@ query_deliveries <- function(match_id = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Determine if we need to join with matches table (for event filter)
   needs_match_join <- !is.null(event)
@@ -295,7 +295,7 @@ query_deliveries <- function(match_id = NULL,
   }
 
   if (!is.null(match_type)) {
-    match_type <- normalize_match_type(match_type)
+    match_type <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(match_type))
   }
@@ -603,7 +603,7 @@ query_batter_stats <- function(batter_id = NULL,
                                 db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Determine if we need to join with matches table (for event filter)
   needs_match_join <- !is.null(event)
@@ -626,7 +626,7 @@ query_batter_stats <- function(batter_id = NULL,
   }
 
   if (!is.null(match_type)) {
-    match_type <- normalize_match_type(match_type)
+    match_type <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(match_type))
   }
@@ -851,7 +851,7 @@ query_bowler_stats <- function(bowler_id = NULL,
                                 db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Determine if we need to join with matches table (for event filter)
   needs_match_join <- !is.null(event)
@@ -874,7 +874,7 @@ query_bowler_stats <- function(bowler_id = NULL,
   }
 
   if (!is.null(match_type)) {
-    match_type <- normalize_match_type(match_type)
+    match_type <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
     params <- c(params, list(match_type))
   }

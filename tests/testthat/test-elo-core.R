@@ -70,13 +70,12 @@ test_that("calculate_delivery_outcome_score returns valid scores", {
 
 
 test_that("normalize_match_type handles variations", {
-  # Should normalize to lowercase
-  expect_equal(normalize_match_type("T20"), "t20")
-  expect_equal(normalize_match_type("ODI"), "odi")
-  expect_equal(normalize_match_type("TEST"), "test")
-
-  # Should handle lowercase input
-
-  expect_equal(normalize_match_type("t20"), "t20")
-  expect_equal(normalize_match_type("odi"), "odi")
+  # normalize_match_type is a deprecated alias — suppress deprecation warnings
+  suppressWarnings({
+    expect_equal(normalize_match_type("T20"), "t20")
+    expect_equal(normalize_match_type("ODI"), "odi")
+    expect_equal(normalize_match_type("TEST"), "test")
+    expect_equal(normalize_match_type("t20"), "t20")
+    expect_equal(normalize_match_type("odi"), "odi")
+  })
 })

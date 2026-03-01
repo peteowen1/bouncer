@@ -843,20 +843,20 @@ get_centrality_k_multiplier <- function(opponent_percentile) {
 #'   in the debut league (0-100). If NULL or NA, uses default starting ELO.
 #' @param elo_start Numeric. Base starting ELO. Default uses THREE_WAY_ELO_START (1400).
 #' @param elo_per_percentile Numeric. ELO points per percentile point.
-#'   Default uses CENTRALITY_ELO_PER_PERCENTILE (4).
+#'   Default uses CENTRALITY_ELO_PER_PERCENTILE (6).
 #'
 #' @return Numeric. The league-adjusted starting ELO.
 #'
 #' @examples
 #' \dontrun{
 #' # IPL debut (high centrality league ~78%)
-#' calculate_league_starting_elo(78)  # ~1512
+#' calculate_league_starting_elo(78)  # ~1568
 #'
 #' # Central American league debut (low centrality ~4%)
-#' calculate_league_starting_elo(4)   # ~1216
+#' calculate_league_starting_elo(4)   # ~1124
 #'
 #' # International debut (very high centrality ~95%)
-#' calculate_league_starting_elo(95)  # ~1580
+#' calculate_league_starting_elo(95)  # ~1670
 #' }
 #'
 #' @keywords internal
@@ -902,17 +902,17 @@ calculate_league_starting_elo <- function(league_avg_centrality,
 #' @param player_centrality_percentile Numeric. The player's centrality percentile (0-100).
 #'   If NULL or NA, no regression is applied.
 #' @param elo_start Numeric. Base ELO (default THREE_WAY_ELO_START = 1400).
-#' @param elo_per_percentile Numeric. ELO points per percentile point (default 4).
+#' @param elo_per_percentile Numeric. ELO points per percentile point (default 6).
 #' @param regression_strength Numeric. Pull strength per delivery (default 0.002).
 #'
 #' @return Numeric. The ELO correction to ADD to current_elo (can be negative).
 #'
 #' @examples
 #' # Low centrality player with inflated ELO
-#' calculate_centrality_regression(2400, 5)   # ~ -2.36 (strong pull down)
+#' calculate_centrality_regression(2400, 5)   # -6.35 (strong pull down)
 #'
 #' # Elite player with high ELO
-#' calculate_centrality_regression(2000, 95)  # ~ -0.72 (small pull down, justified)
+#' calculate_centrality_regression(2000, 95)  # -1.65 (small pull down, justified)
 #'
 #' # Average player at average ELO
 #' calculate_centrality_regression(1400, 50)  # 0 (no correction needed)

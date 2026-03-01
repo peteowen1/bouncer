@@ -17,7 +17,7 @@ verify_database <- function(path = NULL, detailed = FALSE) {
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get all tables across all schemas via information_schema
   all_tables <- DBI::dbGetQuery(conn,

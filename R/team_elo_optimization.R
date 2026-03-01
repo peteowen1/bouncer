@@ -285,8 +285,12 @@ get_dynamic_k <- function(matches_played, k_max, k_min, k_halflife) {
 #'
 #' @keywords internal
 load_category_params <- function(category_name,
-                                  params_dir = file.path("..", "bouncerdata", "models"),
+                                  params_dir = NULL,
                                   format = "t20") {
+  if (is.null(params_dir)) {
+    params_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
+
   # File name: team_elo_params_{format}_{category}.rds
   params_path <- file.path(params_dir, paste0("team_elo_params_", format, "_", category_name, ".rds"))
 

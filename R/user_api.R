@@ -94,7 +94,7 @@ get_player <- function(name_or_id, format = NULL,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Try exact match first, then fuzzy match
   player <- DBI::dbGetQuery(conn, "
@@ -503,7 +503,7 @@ get_team <- function(name, format = NULL, db_path = NULL) {
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build match type filter
   type_filter <- ""
@@ -732,7 +732,7 @@ analyze_match <- function(match_id, db_path = NULL) {
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get match info
   match <- DBI::dbGetQuery(conn, "
@@ -1012,7 +1012,7 @@ search_players <- function(pattern, limit = 10, db_path = NULL) {
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   result <- DBI::dbGetQuery(conn, "
     SELECT player_id, player_name, country, batting_style, bowling_style
@@ -1054,7 +1054,7 @@ search_players <- function(pattern, limit = 10, db_path = NULL) {
 search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Subquery gets most recent ELO per team (not all-time peak)
   elo_subquery <- "(SELECT t2.elo_result FROM team_elo t2
