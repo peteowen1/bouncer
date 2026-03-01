@@ -17,7 +17,7 @@ This document explains the complete data flow from raw data acquisition through 
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  DuckDB (bouncerdata/bouncer.duckdb ~17GB)                             │
 │                                                                         │
-│  cricsheet.* (5 tables) │ cricinfo.* (4 tables) │ main.* (~50 tables) │
+│  cricsheet.* (5) │ cricinfo.* (4) │ foxsports.* (3) │ main.* (~50)       │
 └──────────────────────────────┬──────────────────────────────────────────┘
                                │ local analytics pipeline (~1hr)
                                ▼

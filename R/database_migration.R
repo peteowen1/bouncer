@@ -482,7 +482,8 @@ add_cricinfo_tables <- function(path = NULL) {
 #'
 #' @param path Character. Database file path. If NULL, uses default.
 #'
-#' @return Invisibly returns TRUE on success
+#' @return Invisibly returns TRUE if tables were created or already existed.
+#'   Returns invisible FALSE if the database file was not found.
 #' @export
 #'
 #' @examples

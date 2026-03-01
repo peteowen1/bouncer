@@ -48,7 +48,7 @@ ingest_fox_sports_data <- function(fox_dir = NULL,
                                     verbose = TRUE) {
   # Auto-detect fox_cricket directory
   if (is.null(fox_dir)) {
-    bd_dir <- find_bouncerdata_dir()
+    bd_dir <- find_bouncerdata_dir(create = FALSE)
     if (is.null(bd_dir)) {
       cli::cli_abort("Cannot find bouncerdata directory. Provide {.arg fox_dir} explicitly.")
     }
@@ -216,8 +216,9 @@ ingest_fox_table <- function(conn, parquet_path, table_name, format,
 
 #' Determine Gender from Fox Sports Format Code
 #'
-#' Maps Fox Sports format codes to gender. Formats starting with "w"
-#' (e.g., wt20i, wodi, wbbl, wpl, wncl, wt20wc) are female.
+#' Maps Fox Sports format codes to gender using an explicit allowlist.
+#' Returns "female" for known women's format codes (wt20i, wodi, wbbl,
+#' wpl, wncl, wt20wc); all other codes return "male".
 #'
 #' @param format Character. Fox Sports format code (case-insensitive).
 #'
@@ -304,7 +305,17 @@ load_fox_balls <- function(match_ids = NULL, format = NULL,
     sql <- "SELECT * FROM foxsports.balls ORDER BY match_id, innings, over, ball"
   }
 
-  result <- DBI::dbGetQuery(conn, sql)
+  result <- tryCatch(
+    DBI::dbGetQuery(conn, sql),
+    error = function(e) {
+      if (grepl("does not exist|not found|no such table", e$message, ignore.case = TRUE)) {
+        cli::cli_abort(c(
+          "Fox Sports tables not found in database.",
+          "i" = "Run {.fn add_foxsports_tables} or {.fn ingest_fox_sports_data} first."))
+      }
+      stop(e)
+    }
+  )
 
   if (nrow(result) == 0) {
     cli::cli_warn("No Fox Sports ball data found for the specified filters")
@@ -321,6 +332,8 @@ load_fox_balls <- function(match_ids = NULL, format = NULL,
 #' Load match-level metadata including venue, teams, toss, and officials.
 #'
 #' @inheritParams load_fox_balls
+#' @param gender Character. "male", "female", or NULL (all genders).
+#'   Filters directly on the \code{gender} column.
 #'
 #' @return Data frame of match details.
 #' @export
@@ -366,7 +379,17 @@ load_fox_details <- function(match_ids = NULL, format = NULL,
   }
 
   sql <- sprintf("SELECT * FROM foxsports.details %s ORDER BY match_id DESC", where_sql)
-  result <- DBI::dbGetQuery(conn, sql)
+  result <- tryCatch(
+    DBI::dbGetQuery(conn, sql),
+    error = function(e) {
+      if (grepl("does not exist|not found|no such table", e$message, ignore.case = TRUE)) {
+        cli::cli_abort(c(
+          "Fox Sports tables not found in database.",
+          "i" = "Run {.fn add_foxsports_tables} or {.fn ingest_fox_sports_data} first."))
+      }
+      stop(e)
+    }
+  )
 
   if (nrow(result) == 0) {
     cli::cli_warn("No Fox Sports match details found for the specified filters")
@@ -438,7 +461,17 @@ load_fox_players <- function(match_ids = NULL, format = NULL,
     sql <- "SELECT * FROM foxsports.players ORDER BY match_id, team_id, position_order"
   }
 
-  result <- DBI::dbGetQuery(conn, sql)
+  result <- tryCatch(
+    DBI::dbGetQuery(conn, sql),
+    error = function(e) {
+      if (grepl("does not exist|not found|no such table", e$message, ignore.case = TRUE)) {
+        cli::cli_abort(c(
+          "Fox Sports tables not found in database.",
+          "i" = "Run {.fn add_foxsports_tables} or {.fn ingest_fox_sports_data} first."))
+      }
+      stop(e)
+    }
+  )
 
   if (nrow(result) == 0) {
     cli::cli_warn("No Fox Sports player data found for the specified filters")
@@ -470,7 +503,15 @@ get_fox_release <- function() {
   }
 
   cli::cli_alert_info("Finding foxsports release...")
-  release <- get_latest_release(type = "foxsports")
+  release <- tryCatch(
+    get_latest_release(type = "foxsports"),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to find foxsports release on GitHub.",
+        "i" = "Check your internet connection, or use {.code source = \"local\"}.",
+        "x" = conditionMessage(e)))
+    }
+  )
   assign("release_info", release, envir = .fox_remote_cache)
   release
 }
@@ -497,11 +538,22 @@ query_remote_fox_parquet <- function(asset_name, sql_template) {
   temp_file <- tempfile(fileext = ".parquet")
   on.exit(unlink(temp_file), add = TRUE)
 
-  httr2::request(parquet_url) |>
-    httr2::req_timeout(300) |>
-    httr2::req_perform(path = temp_file)
+  tryCatch(
+    httr2::request(parquet_url) |>
+      httr2::req_timeout(300) |>
+      httr2::req_perform(path = temp_file),
+    error = function(e) {
+      cli::cli_abort(c(
+        "Failed to download {.val {asset_name}} from foxsports release.",
+        "i" = "Release tag: {release$tag_name}",
+        "x" = conditionMessage(e)))
+    }
+  )
 
-  temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = TRUE)
+  temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = FALSE)
+  if (!file.exists(temp_file_normalized)) {
+    cli::cli_abort("Downloaded file missing: {.file {temp_file}}")
+  }
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb())
@@ -533,7 +585,8 @@ load_fox_remote <- function(table_type, match_ids, format, gender) {
   asset_suffix <- switch(table_type,
     "balls" = "matches",
     "players" = "players",
-    "details" = "details"
+    "details" = "details",
+    cli::cli_abort("Unknown table_type: {.val {table_type}}. Must be 'balls', 'players', or 'details'.")
   )
 
   # Find matching assets
@@ -554,6 +607,11 @@ load_fox_remote <- function(table_type, match_ids, format, gender) {
   if (!is.null(match_ids)) {
     ids_sql <- paste(as.integer(match_ids), collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("CAST(match_id AS INTEGER) IN (%s)", ids_sql))
+  }
+  if (!is.null(gender) && table_type != "details") {
+    cli::cli_warn(c(
+      "Gender filter is not available for {table_type} in remote mode.",
+      "i" = "Use format-specific codes instead (e.g., {.val wbbl} for women's BBL)."))
   }
   if (!is.null(gender) && table_type == "details") {
     # Gender is only derivable from format name for remote, not stored in parquet

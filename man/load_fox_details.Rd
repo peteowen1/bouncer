@@ -19,7 +19,7 @@ If NULL, loads all.}
 loads all formats.}
 
 \item{gender}{Character. "male", "female", or NULL (all genders).
-Only applies when filtering via the details table.}
+Filters directly on the \code{gender} column.}
 
 \item{source}{Character. "local" (default) or "remote".}
 }

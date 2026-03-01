@@ -13,7 +13,8 @@ fox_format_gender(format)
 Character. "female" or "male".
 }
 \description{
-Maps Fox Sports format codes to gender. Formats starting with "w"
-(e.g., wt20i, wodi, wbbl, wpl, wncl, wt20wc) are female.
+Maps Fox Sports format codes to gender using an explicit allowlist.
+Returns "female" for known women's format codes (wt20i, wodi, wbbl,
+wpl, wncl, wt20wc); all other codes return "male".
 }
 \keyword{internal}

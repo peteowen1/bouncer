@@ -219,7 +219,9 @@ if (should_run(1)) {
       cli::cli_alert_success("All {format(margin_check$total, big.mark = ',')} matches have unified_margin")
       cli::cli_alert_info("Skipping margin backfill")
     } else {
-      if (!has_col) {
+      if (FRESH_START && has_col && n_need_margin == 0) {
+        cli::cli_alert_warning("FRESH_START: re-running margin backfill despite all margins being present")
+      } else if (!has_col) {
         cli::cli_alert_warning("unified_margin column missing — running backfill to create it")
       } else {
         cli::cli_alert_warning("{format(n_need_margin, big.mark = ',')} matches need margin calculation")

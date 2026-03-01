@@ -10,7 +10,8 @@ add_foxsports_tables(path = NULL)
 \item{path}{Character. Database file path. If NULL, uses default.}
 }
 \value{
-Invisibly returns TRUE on success
+Invisibly returns TRUE if tables were created or already existed.
+Returns invisible FALSE if the database file was not found.
 }
 \description{
 Adds the Fox Sports data tables (balls, players, details)
