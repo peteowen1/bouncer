@@ -29,7 +29,7 @@ add_prediction_tables <- function(path = NULL) {
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   existing_tables <- DBI::dbListTables(conn)
 
@@ -192,7 +192,7 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
 
   # Only disconnect if we created the connection
   if (own_connection) {
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
   existing_tables <- DBI::dbListTables(conn)
@@ -362,7 +362,7 @@ ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
 
     check_duckdb_available()
     conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
   cli::cli_h2("Ensuring match_metrics table exists")
@@ -450,7 +450,7 @@ add_cricinfo_tables <- function(path = NULL) {
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Check for schema-qualified Cricinfo tables
   existing <- DBI::dbGetQuery(conn,
@@ -505,7 +505,7 @@ migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Create schemas
   create_schemas(conn)

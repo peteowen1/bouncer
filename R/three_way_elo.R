@@ -923,31 +923,31 @@ get_player_tier_k_multiplier <- function(event_tier) {
 #'   correction = REGRESSION_STRENGTH * (implied_elo - raw_elo)
 #'   corrected_elo = raw_elo + correction
 #'
-#' Effect examples (with REGRESSION_STRENGTH = 0.002):
-#'   - Player at 2400 ELO with 5% centrality (implied = 1220):
-#'     correction = 0.002 * (1220 - 2400) = -2.36 per delivery
-#'     Over 300 balls: ~700 point regression toward implied level
+#' Effect examples (with REGRESSION_STRENGTH = 0.005):
+#'   - Player at 2400 ELO with 5% centrality (implied = 1130):
+#'     correction = 0.005 * (1130 - 2400) = -6.35 per delivery
+#'     Over 300 balls: ~1900 point regression toward implied level
 #'
-#'   - Player at 1800 ELO with 90% centrality (implied = 1560):
-#'     correction = 0.002 * (1560 - 1800) = -0.48 per delivery
+#'   - Player at 1800 ELO with 90% centrality (implied = 1640):
+#'     correction = 0.005 * (1640 - 1800) = -0.80 per delivery
 #'     (Much smaller since high centrality justifies higher ELO)
 #'
 #' @param raw_elo Numeric. The player's current ELO after standard update.
 #' @param centrality_percentile Numeric. Player's centrality percentile (0-100).
 #'   Use get_centrality_as_of() or get_cold_start_percentile() to obtain.
 #' @param regression_strength Numeric. Pull strength per delivery.
-#'   Default uses CENTRALITY_REGRESSION_STRENGTH constant (0.002).
+#'   Default uses CENTRALITY_REGRESSION_STRENGTH constant (0.005).
 #' @param elo_per_percentile Numeric. ELO points per percentile point.
-#'   Default uses CENTRALITY_ELO_PER_PERCENTILE constant (4).
+#'   Default uses CENTRALITY_ELO_PER_PERCENTILE constant (6).
 #'
 #' @return Numeric. The corrected ELO rating.
 #'
 #' @examples
 #' # Low centrality player with inflated ELO
-#' apply_centrality_correction(2400, 5)   # 2397.64 (-2.36 per delivery)
+#' apply_centrality_correction(2400, 5)   # 2393.65 (pulls toward ~1130 implied)
 #'
 #' # Elite player with high ELO (justified by centrality)
-#' apply_centrality_correction(2000, 95)  # 1999.28 (small correction)
+#' apply_centrality_correction(2000, 95)  # 1998.35 (small correction)
 #'
 #' # Average player at average ELO
 #' apply_centrality_correction(1400, 50)  # 1400 (no correction needed)
@@ -991,8 +991,8 @@ apply_centrality_correction <- function(raw_elo,
 #' @examples
 #' \dontrun{
 #' get_centrality_implied_elo(50)   # 1400 (50th percentile = start)
-#' get_centrality_implied_elo(100)  # 1600 (100th percentile = +200)
-#' get_centrality_implied_elo(0)    # 1200 (0th percentile = -200)
+#' get_centrality_implied_elo(100)  # 1700 (100th percentile = +300)
+#' get_centrality_implied_elo(0)    # 1100 (0th percentile = -300)
 #' }
 #'
 #' @keywords internal

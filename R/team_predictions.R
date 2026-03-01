@@ -31,7 +31,7 @@ calculate_roster_elo <- function(player_ids,
 
   # Connect to database
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Determine 3-way ELO table for this format
   format <- normalize_format(match_type)

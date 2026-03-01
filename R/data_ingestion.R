@@ -522,9 +522,9 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
  conn_check <- get_db_connection(path = path, read_only = TRUE)
- on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = TRUE), error = function(e) NULL), add = TRUE)
+ on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = FALSE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
- DBI::dbDisconnect(conn_check, shutdown = TRUE)
+ DBI::dbDisconnect(conn_check, shutdown = FALSE)
  existing_ids <- existing_matches$match_id
 
  # Filter to only new files (check BEFORE parsing - saves time!)
@@ -732,7 +732,7 @@ insert_players_batch <- function(conn, players_df) {
 #' @keywords internal
 load_match_data <- function(parsed_data, path = NULL) {
   conn <- get_db_connection(path = path, read_only = FALSE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Check if match already exists
   match_id <- parsed_data$match_info$match_id[1]

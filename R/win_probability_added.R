@@ -87,12 +87,11 @@ calculate_delivery_wpa <- function(deliveries,
 #' @keywords internal
 calculate_innings1_wpa <- function(innings1, stage1_model, feature_cols) {
 
-  # Prepare features for "before" state
-  before_features <- prepare_stage1_features(innings1, feature_cols)
-
-  # Prepare features for "after" state (simulate delivery outcome)
-  after_data <- simulate_after_state(innings1)
-  after_features <- prepare_stage1_features(after_data, feature_cols)
+  # "Before" = pre-delivery state (subtract this delivery's contribution)
+  # "After" = post-delivery state (data as-is from database)
+  before_data <- simulate_before_state(innings1)
+  before_features <- prepare_stage1_features(before_data, feature_cols)
+  after_features <- prepare_stage1_features(innings1, feature_cols)
 
   # Get predictions
   before_matrix <- xgboost::xgb.DMatrix(data = as.matrix(before_features))
@@ -135,31 +134,32 @@ calculate_innings1_wpa <- function(innings1, stage1_model, feature_cols) {
 calculate_innings2_wpa <- function(innings2, stage1_model, stage2_model,
                                    stage1_feature_cols, stage2_feature_cols) {
 
+  # "Before" = pre-delivery state, "After" = post-delivery state (data as-is)
+  before_data <- simulate_before_state(innings2)
+
   # Get Stage 1 predictions for "before" state
-  before_s1_features <- prepare_stage1_features(innings2, stage1_feature_cols)
+  before_s1_features <- prepare_stage1_features(before_data, stage1_feature_cols)
   before_s1_matrix <- xgboost::xgb.DMatrix(data = as.matrix(before_s1_features))
   projected_score_before <- stats::predict(stage1_model, before_s1_matrix)
 
   # Add Stage 1 predictions to data for Stage 2
-  innings2_before <- innings2
-  innings2_before$projected_final_score <- projected_score_before
-  innings2_before$projected_vs_target <- projected_score_before - innings2_before$target_runs
-  innings2_before$projected_win_margin <- projected_score_before - (innings2_before$target_runs - 1)
+  before_data$projected_final_score <- projected_score_before
+  before_data$projected_vs_target <- projected_score_before - before_data$target_runs
+  before_data$projected_win_margin <- projected_score_before - (before_data$target_runs - 1)
 
   # Prepare Stage 2 features for "before" state
-  before_s2_features <- prepare_stage2_features(innings2_before, stage2_feature_cols)
+  before_s2_features <- prepare_stage2_features(before_data, stage2_feature_cols)
   before_s2_matrix <- xgboost::xgb.DMatrix(data = as.matrix(before_s2_features))
   predicted_before <- stats::predict(stage2_model, before_s2_matrix)
 
-  # Simulate "after" state
-  after_data <- simulate_after_state(innings2)
-
+  # "After" state = post-delivery (data as-is from database)
   # Get Stage 1 predictions for "after" state
-  after_s1_features <- prepare_stage1_features(after_data, stage1_feature_cols)
+  after_s1_features <- prepare_stage1_features(innings2, stage1_feature_cols)
   after_s1_matrix <- xgboost::xgb.DMatrix(data = as.matrix(after_s1_features))
   projected_score_after <- stats::predict(stage1_model, after_s1_matrix)
 
   # Add Stage 1 predictions for "after" state
+  after_data <- innings2
   after_data$projected_final_score <- projected_score_after
   after_data$projected_vs_target <- projected_score_after - after_data$target_runs
   after_data$projected_win_margin <- projected_score_after - (after_data$target_runs - 1)
@@ -186,87 +186,84 @@ calculate_innings2_wpa <- function(innings2, stage1_model, stage2_model,
 }
 
 
-#' Simulate After-Delivery State
+#' Simulate Before-Delivery State
 #'
-#' Creates the match state after a delivery is bowled by updating
-#' cumulative totals and derived features.
+#' Creates the match state BEFORE a delivery was bowled by subtracting
+#' this delivery's contribution from the post-delivery cumulative totals.
+#' Database stores post-delivery values (total_runs includes this delivery).
 #'
-#' @param deliveries data.frame of deliveries
+#' @param deliveries data.frame of deliveries (with post-delivery cumulative totals)
 #'
-#' @return data.frame with updated state variables
+#' @return data.frame with pre-delivery state variables
 #'
 #' @keywords internal
-simulate_after_state <- function(deliveries) {
+simulate_before_state <- function(deliveries) {
 
-  after <- deliveries
+  before <- deliveries
 
-  # Update cumulative totals
-  # NOTE: total_runs from database is post-delivery cumulative (includes this delivery).
-  # This addition simulates the "next state" by adding runs_total again,
-  # effectively making it the state AFTER the next hypothetical delivery.
-  # This is correct for WPA because we compare "before" (current state) vs
-  # "after" (state if this delivery had a specific outcome).
-  after$total_runs <- after$total_runs + after$runs_total
-  after$wickets_fallen <- after$wickets_fallen + as.integer(after$is_wicket)
+  # Subtract this delivery's contribution to get pre-delivery state
+  # total_runs in DB is post-delivery cumulative (includes this delivery's runs)
+  before$total_runs <- before$total_runs - before$runs_total
+  before$wickets_fallen <- before$wickets_fallen - as.integer(before$is_wicket)
 
-  # Update ball counts
-  if ("balls_bowled" %in% names(after)) {
-    after$balls_bowled <- after$balls_bowled + 1
+  # Revert ball counts
+  if ("balls_bowled" %in% names(before)) {
+    before$balls_bowled <- pmax(0L, before$balls_bowled - 1L)
   }
 
   # Recalculate overs
-  if ("overs_completed" %in% names(after) && "balls_bowled" %in% names(after)) {
-    after$overs_completed <- after$balls_bowled / 6
+  if ("overs_completed" %in% names(before) && "balls_bowled" %in% names(before)) {
+    before$overs_completed <- before$balls_bowled / 6
   }
 
-  if ("overs_remaining" %in% names(after)) {
-    after$overs_remaining <- pmax(0, after$overs_remaining - (1/6))
+  if ("overs_remaining" %in% names(before)) {
+    before$overs_remaining <- before$overs_remaining + (1/6)
   }
 
-  if ("balls_remaining" %in% names(after)) {
-    after$balls_remaining <- pmax(0, after$balls_remaining - 1)
+  if ("balls_remaining" %in% names(before)) {
+    before$balls_remaining <- before$balls_remaining + 1
   }
 
   # Recalculate run rate
-  if ("current_run_rate" %in% names(after) && "balls_bowled" %in% names(after)) {
-    overs <- after$balls_bowled / 6
-    after$current_run_rate <- ifelse(overs > 0, after$total_runs / overs, 0)
+  if ("current_run_rate" %in% names(before) && "balls_bowled" %in% names(before)) {
+    overs <- before$balls_bowled / 6
+    before$current_run_rate <- ifelse(overs > 0, before$total_runs / overs, 0)
   }
 
   # Update wickets in hand
-  after$wickets_in_hand <- 10 - after$wickets_fallen
+  before$wickets_in_hand <- 10 - before$wickets_fallen
 
   # For 2nd innings: update chase pressure metrics
-  if ("runs_needed" %in% names(after) && "target_runs" %in% names(after)) {
-    after$runs_needed <- pmax(0, after$target_runs - after$total_runs)
+  if ("runs_needed" %in% names(before) && "target_runs" %in% names(before)) {
+    before$runs_needed <- pmax(0, before$target_runs - before$total_runs)
 
-    if ("overs_remaining" %in% names(after)) {
-      after$required_run_rate <- ifelse(
-        after$overs_remaining > 0 & after$runs_needed > 0,
-        after$runs_needed / after$overs_remaining,
-        ifelse(after$runs_needed <= 0, 0, Inf)
+    if ("overs_remaining" %in% names(before)) {
+      before$required_run_rate <- ifelse(
+        before$overs_remaining > 0 & before$runs_needed > 0,
+        before$runs_needed / before$overs_remaining,
+        ifelse(before$runs_needed <= 0, 0, Inf)
       )
 
-      if ("current_run_rate" %in% names(after)) {
-        after$rr_differential <- after$required_run_rate - after$current_run_rate
+      if ("current_run_rate" %in% names(before)) {
+        before$rr_differential <- before$required_run_rate - before$current_run_rate
       }
     }
 
-    if ("balls_remaining" %in% names(after)) {
-      after$balls_per_run_needed <- ifelse(
-        after$runs_needed > 0,
-        after$balls_remaining / after$runs_needed,
+    if ("balls_remaining" %in% names(before)) {
+      before$balls_per_run_needed <- ifelse(
+        before$runs_needed > 0,
+        before$balls_remaining / before$runs_needed,
         Inf
       )
-      after$balls_per_wicket_available <- ifelse(
-        after$wickets_in_hand > 0,
-        after$balls_remaining / after$wickets_in_hand,
+      before$balls_per_wicket_available <- ifelse(
+        before$wickets_in_hand > 0,
+        before$balls_remaining / before$wickets_in_hand,
         0
       )
     }
   }
 
-  return(after)
+  return(before)
 }
 
 
@@ -429,31 +426,29 @@ calculate_delivery_era <- function(deliveries, stage1_model, stage1_feature_cols
 
   # Calculate expected runs using model delta method:
   # Expected = projected_score(after neutral delivery) - projected_score(before)
+  # "Before" = pre-delivery state, "neutral after" = pre-delivery + dot ball
 
-  # Get "before" predictions
-  before_features <- prepare_stage1_features(deliveries, stage1_feature_cols)
+  # Get "before" predictions (pre-delivery state)
+  before_data <- simulate_before_state(deliveries)
+  before_features <- prepare_stage1_features(before_data, stage1_feature_cols)
   before_matrix <- xgboost::xgb.DMatrix(data = as.matrix(before_features))
   projected_before <- stats::predict(stage1_model, before_matrix)
 
-  # Simulate "after" state for neutral delivery (dot ball, no wicket)
+  # Simulate neutral "after" state: pre-delivery + one dot ball (0 runs, no wicket)
+  # This equals the post-delivery state but with runs_total set to 0 and no wicket
   neutral_after <- deliveries
-  neutral_after$total_runs <- neutral_after$total_runs + 0  # Dot ball
-  # Don't add wicket
-  if ("balls_bowled" %in% names(neutral_after)) {
-    neutral_after$balls_bowled <- neutral_after$balls_bowled + 1
-  }
-  if ("overs_remaining" %in% names(neutral_after)) {
-    neutral_after$overs_remaining <- pmax(0, neutral_after$overs_remaining - (1/6))
-  }
-  if ("balls_remaining" %in% names(neutral_after)) {
-    neutral_after$balls_remaining <- pmax(0, neutral_after$balls_remaining - 1)
-  }
+  neutral_after$total_runs <- neutral_after$total_runs - neutral_after$runs_total  # Remove actual runs
+  # total_runs now equals pre-delivery total; don't add runs (dot ball)
+  # wickets: remove actual wicket if any, don't add one
+  neutral_after$wickets_fallen <- neutral_after$wickets_fallen - as.integer(neutral_after$is_wicket)
+  neutral_after$wickets_in_hand <- 10 - neutral_after$wickets_fallen
+  # balls_bowled stays as-is (one ball has been bowled in the neutral scenario)
+  # overs_remaining/balls_remaining stay as-is (one ball consumed in neutral scenario)
   # Update run rate for neutral delivery
   if ("current_run_rate" %in% names(neutral_after) && "balls_bowled" %in% names(neutral_after)) {
     overs <- neutral_after$balls_bowled / 6
     neutral_after$current_run_rate <- ifelse(overs > 0, neutral_after$total_runs / overs, 0)
   }
-  neutral_after$wickets_in_hand <- 10 - neutral_after$wickets_fallen
 
   # Get "after neutral" predictions
   neutral_features <- prepare_stage1_features(neutral_after, stage1_feature_cols)

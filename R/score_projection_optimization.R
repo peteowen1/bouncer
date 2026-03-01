@@ -295,7 +295,11 @@ calculate_actual_eis <- function(conn, format, gender, team_type) {
 optimize_projection_segment <- function(conn, format, gender, team_type,
                                         sample_frac = 0.5,
                                         validation_split = 0.2,
-                                        output_dir = "../bouncerdata/models") {
+                                        output_dir = NULL) {
+
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
 
   segment_id <- get_projection_segment_id(format, gender, team_type)
 
@@ -402,12 +406,19 @@ optimize_projection_segment <- function(conn, format, gender, team_type,
 #'
 #' @return Named list of results for each segment.
 #' @keywords internal
-optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.duckdb",
-                                             output_dir = "../bouncerdata/models",
+optimize_all_projection_segments <- function(db_path = NULL,
+                                             output_dir = NULL,
                                              sample_frac = 0.5,
                                              formats = c("t20", "odi", "test"),
                                              genders = c("male", "female"),
                                              team_types = c("international", "club")) {
+
+  if (is.null(db_path)) {
+    db_path <- get_db_path()
+  }
+  if (is.null(output_dir)) {
+    output_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
 
   # Generate segments
   segments <- expand.grid(
@@ -423,7 +434,7 @@ optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.d
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Ensure output directory exists
   if (!dir.exists(output_dir)) {
@@ -492,7 +503,11 @@ optimize_all_projection_segments <- function(db_path = "../bouncerdata/bouncer.d
 #' @keywords internal
 calculate_all_delivery_projections <- function(conn, format,
                                                batch_size = 50000,
-                                               params_dir = "../bouncerdata/models") {
+                                               params_dir = NULL) {
+
+  if (is.null(params_dir)) {
+    params_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
 
   format_lower <- normalize_format(format)
 
@@ -749,17 +764,24 @@ calculate_all_delivery_projections <- function(conn, format,
 #'
 #' @return Invisible NULL.
 #' @keywords internal
-calculate_all_format_projections <- function(db_path = "../bouncerdata/bouncer.duckdb",
+calculate_all_format_projections <- function(db_path = NULL,
                                              formats = c("t20", "odi", "test"),
                                              batch_size = 50000,
-                                             params_dir = "../bouncerdata/models") {
+                                             params_dir = NULL) {
+
+  if (is.null(db_path)) {
+    db_path <- get_db_path()
+  }
+  if (is.null(params_dir)) {
+    params_dir <- file.path(find_bouncerdata_dir(), "models")
+  }
 
   cli::cli_h1("Score Projection Calculation")
   cli::cli_alert_info("Connecting to database: {.file {db_path}}")
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = db_path, read_only = FALSE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   for (format in formats) {
     calculate_all_delivery_projections(

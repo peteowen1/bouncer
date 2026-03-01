@@ -5,8 +5,8 @@
 \title{Optimize All Projection Segments}
 \usage{
 optimize_all_projection_segments(
-  db_path = "../bouncerdata/bouncer.duckdb",
-  output_dir = "../bouncerdata/models",
+  db_path = NULL,
+  output_dir = NULL,
   sample_frac = 0.5,
   formats = c("t20", "odi", "test"),
   genders = c("male", "female"),

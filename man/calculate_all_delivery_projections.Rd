@@ -8,7 +8,7 @@ calculate_all_delivery_projections(
   conn,
   format,
   batch_size = 50000,
-  params_dir = "../bouncerdata/models"
+  params_dir = NULL
 )
 }
 \arguments{

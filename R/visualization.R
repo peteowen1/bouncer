@@ -292,7 +292,7 @@ plot_skill_progression <- function(player_name,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get skill history
   format_lower <- tolower(format)
@@ -531,7 +531,7 @@ plot_elo_history <- function(team_name,
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Build query
   format_filter <- ""
@@ -614,7 +614,7 @@ plot_team_strength <- function(team_name, format = "t20", db_path = NULL) {
   }
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Get team skill data
   format_lower <- tolower(format)

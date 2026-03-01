@@ -17,7 +17,7 @@ in the debut league (0-100). If NULL or NA, uses default starting ELO.}
 \item{elo_start}{Numeric. Base starting ELO. Default uses THREE_WAY_ELO_START (1400).}
 
 \item{elo_per_percentile}{Numeric. ELO points per percentile point.
-Default uses CENTRALITY_ELO_PER_PERCENTILE (4).}
+Default uses CENTRALITY_ELO_PER_PERCENTILE (6).}
 }
 \value{
 Numeric. The league-adjusted starting ELO.
@@ -33,13 +33,13 @@ Formula: starting_elo = ELO_START + (league_avg_centrality - 50) * elo_per_perce
 \examples{
 \dontrun{
 # IPL debut (high centrality league ~78\%)
-calculate_league_starting_elo(78)  # ~1512
+calculate_league_starting_elo(78)  # ~1568
 
 # Central American league debut (low centrality ~4\%)
-calculate_league_starting_elo(4)   # ~1216
+calculate_league_starting_elo(4)   # ~1124
 
 # International debut (very high centrality ~95\%)
-calculate_league_starting_elo(95)  # ~1580
+calculate_league_starting_elo(95)  # ~1670
 }
 
 }

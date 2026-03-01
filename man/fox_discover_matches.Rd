@@ -11,7 +11,7 @@ fox_discover_matches(
   years = 2024:2025,
   max_series = NULL,
   max_matches = NULL,
-  output_dir = "../bouncerdata/fox_cricket",
+  output_dir = NULL,
   cache_file = NULL,
   verbose = TRUE,
   scan_for_new = TRUE

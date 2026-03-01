@@ -9,7 +9,7 @@ save_projection_params(
   format,
   gender,
   team_type,
-  params_dir = "../bouncerdata/models",
+  params_dir = NULL,
   metrics = NULL
 )
 }

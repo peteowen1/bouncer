@@ -28,8 +28,8 @@ Formula: ELO_START + (percentile - 50) * ELO_PER_PERCENTILE
 \examples{
 \dontrun{
 get_centrality_implied_elo(50)   # 1400 (50th percentile = start)
-get_centrality_implied_elo(100)  # 1600 (100th percentile = +200)
-get_centrality_implied_elo(0)    # 1200 (0th percentile = -200)
+get_centrality_implied_elo(100)  # 1700 (100th percentile = +300)
+get_centrality_implied_elo(0)    # 1100 (0th percentile = -300)
 }
 
 }

@@ -77,21 +77,16 @@ get_db_path <- function(path = NULL) {
     return(normalizePath(path, mustWork = FALSE))
   }
 
-  # Try project paths first (bouncerdata is sibling to bouncer package)
-  # Priority 1: Running from bouncer/ directory
-  project_path_1 <- file.path("..", "bouncerdata", "bouncer.duckdb")
-  if (file.exists(project_path_1) || file.exists(dirname(project_path_1))) {
-    return(normalizePath(project_path_1, mustWork = FALSE))
-  }
-
-  # Priority 2: Running from bouncerverse/ root directory
-  project_path_2 <- file.path("bouncerdata", "bouncer.duckdb")
-  if (file.exists(project_path_2) || file.exists(dirname(project_path_2))) {
-    return(normalizePath(project_path_2, mustWork = FALSE))
+  # Use find_bouncerdata_dir() which reliably walks up the directory tree
+  # This works correctly from any working directory (bouncer/, data-raw/, etc.)
+  bouncerdata_dir <- find_bouncerdata_dir(create = FALSE)
+  if (!is.null(bouncerdata_dir)) {
+    return(file.path(bouncerdata_dir, "bouncer.duckdb"))
   }
 
   # Fallback: R user data directory (for users without project structure)
   data_dir <- tools::R_user_dir("bouncerdata", which = "data")
+  if (!dir.exists(data_dir)) dir.create(data_dir, recursive = TRUE)
   file.path(data_dir, "bouncer.duckdb")
 }
 
@@ -273,7 +268,7 @@ initialize_bouncer_database <- function(path = NULL, overwrite = FALSE, skip_ind
 
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Create schema
   create_schema(conn, verbose = verbose)

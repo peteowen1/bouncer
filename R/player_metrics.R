@@ -206,13 +206,13 @@ analyze_batter_vs_bowler <- function(batter_id,
 
   # Get historical deliveries
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   where_clauses <- c("batter_id = ?", "bowler_id = ?")
   params <- list(batter_id, bowler_id)
 
   if (!is.null(match_type)) {
-    match_type <- normalize_match_type(match_type)
+    match_type <- normalize_format(match_type)
     where_clauses <- c(where_clauses, "LOWER(match_type) = ?")
     params <- c(params, list(match_type))
   }
@@ -330,7 +330,7 @@ rank_players <- function(rating_type = "batting",
                          db_path = NULL) {
 
   conn <- get_db_connection(path = db_path, read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   format <- normalize_format(match_type)
   table_name <- paste0(format, "_3way_player_elo")

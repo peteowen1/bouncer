@@ -5,10 +5,10 @@
 \title{Calculate Projections for All Formats}
 \usage{
 calculate_all_format_projections(
-  db_path = "../bouncerdata/bouncer.duckdb",
+  db_path = NULL,
   formats = c("t20", "odi", "test"),
   batch_size = 50000,
-  params_dir = "../bouncerdata/models"
+  params_dir = NULL
 )
 }
 \arguments{

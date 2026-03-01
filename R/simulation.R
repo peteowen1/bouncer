@@ -319,7 +319,8 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     total_runs = runs,
     wickets_lost = wickets,
     balls_faced = balls,
-    overs_faced = balls %/% 6L + (balls %% 6L) / 10,
+    overs_faced = balls %/% 6L + (balls %% 6L) / 10,  # Cricket display notation (10.3 = 10 overs 3 balls)
+    overs_decimal = balls / 6,  # True decimal overs for arithmetic (e.g., RPO calculations)
     ball_by_ball = ball_by_ball,
     result = result_type
   )
