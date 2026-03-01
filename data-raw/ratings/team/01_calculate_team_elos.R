@@ -51,8 +51,12 @@ FORMAT_GROUPS <- list(
   test = c("Test", "MDM")
 )
 
-params_dir <- file.path(find_bouncerdata_dir(), "models")
-output_dir <- file.path(find_bouncerdata_dir(), "models")
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+params_dir <- file.path(bouncerdata_root, "models")
+output_dir <- file.path(bouncerdata_root, "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

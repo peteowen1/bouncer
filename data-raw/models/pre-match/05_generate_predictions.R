@@ -42,7 +42,11 @@ MIN_DATE <- NULL  # e.g., as.Date("2024-01-01")
 TARGET_EVENT <- NULL  # e.g., "Indian Premier League"
 
 # Output directory
-output_dir <- file.path(find_bouncerdata_dir(), "models")
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+output_dir <- file.path(bouncerdata_root, "models")
 
 cat("\n")
 cli::cli_h1("Generate {toupper(FORMAT)} Match Predictions")

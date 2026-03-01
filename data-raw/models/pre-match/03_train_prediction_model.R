@@ -73,7 +73,11 @@ EARLY_STOPPING <- 30       # Increased patience
 N_FOLDS <- 5               # CV folds for margin stacking
 
 # Output directory (use package helper to find the correct bouncerdata path)
-output_dir <- file.path(find_bouncerdata_dir(), "models")
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+output_dir <- file.path(bouncerdata_root, "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }

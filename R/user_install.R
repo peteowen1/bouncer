@@ -698,6 +698,7 @@ load_filtered_matches <- function(file_paths,
 #'   Default is "peteowen1/bouncerdata".
 #' @param type Character. Release type to find: "cricsheet" (parquet data),
 #'   "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
+#'   "foxsports" (Fox Sports ball-by-ball data),
 #'   "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).
 #'
 #' @return List with release information including tag_name, published_at,
@@ -714,7 +715,7 @@ load_filtered_matches <- function(file_paths,
 #' release <- get_latest_release(type = "daily")
 #' }
 get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
-  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "daily", "weekly"))
+  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "foxsports", "daily", "weekly"))
 
   # Build API URL
   if (type == "any") {
@@ -742,6 +743,8 @@ get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
     "^cricsheet$"
   } else if (type == "cricinfo") {
     "^cricinfo$"
+  } else if (type == "foxsports") {
+    "^foxsports$"
   } else if (type == "weekly") {
     "-weekly$"
   } else {

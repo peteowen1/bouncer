@@ -89,7 +89,7 @@ Australian-specific match data, especially BBL/WBBL with richer stats.
 - **Workflow**: `foxsports-daily.yml` (10 AM UTC)
 - **Method**: `chromote` headless Chrome → intercepts Fox Sports API userkey → scrapes match data
 - **Release tag**: `foxsports` — combined parquets per format (BBL, WBBL, TEST, T20I, WT20I, ODI, WODI)
-- **DuckDB**: Not ingested into DuckDB currently; lives as standalone parquets
+- **DuckDB**: Schema exists (`foxsports.*`) but not populated by the analytics pipeline; data lives as standalone parquets
 
 ### Cricinfo (Supplementary — Hawkeye Tracking)
 
@@ -205,26 +205,28 @@ Positive = performs better than context-expected, Negative = worse.
 
 The primary per-delivery rating system. Decomposes each delivery outcome into batter, bowler, and venue contributions using dual session/permanent ratings.
 
-**Output Tables:** `{format}_3way_player_elo`
+**Output Tables:** `{format}_3way_elo` (e.g., `t20_3way_elo`)
 
 **Formula:**
 ```r
 expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) * runs_per_100_elo)
 ```
 
-**Attribution Weights:**
-| Component | Weight | Description |
-|-----------|--------|-------------|
-| `W_BATTER` | 0.52 | Batter contribution |
-| `W_BOWLER` | 0.22 | Bowler contribution |
-| `W_VENUE_SESSION` | 0.208 | Short-term venue (pitch prep, dew) |
-| `W_VENUE_PERM` | 0.052 | Long-term venue (ground size, typical pitch) |
+**Attribution Weights** (Men's T20 run ELO shown; varies by format, gender, and dimension):
+| Component | Men's T20 | Description |
+|-----------|-----------|-------------|
+| `W_BATTER` | 0.612 | Batter contribution |
+| `W_BOWLER` | 0.311 | Bowler contribution |
+| `W_VENUE_SESSION` | 0.062 | Short-term venue (pitch prep, dew) |
+| `W_VENUE_PERM` | 0.015 | Long-term venue (ground size, typical pitch) |
 
-**Key constants (per format):**
+Weights are format-gender-specific and differ between run and wicket dimensions. See `get_run_elo_weights()` / `get_wicket_elo_weights()` in `R/constants_3way.R`.
+
+**Key constants (per format, Men's shown):**
 | Constant | T20 | ODI | Test |
 |----------|-----|-----|------|
 | `ELO_START` | 1400 | 1400 | 1400 |
-| `RUNS_PER_100_ELO` | 0.12 | 0.12 | 0.10 |
+| `RUNS_PER_100_ELO` | 0.0745 | 0.0826 | 0.0932 |
 
 **Relationship to skill indices:** 3-Way ELO provides base ratings; skill indices capture residual deviation from the agnostic model baseline. Both feed into the Full Model.
 
@@ -426,7 +428,7 @@ Uses DuckDB schemas: `cricsheet.*`, `cricinfo.*`, `main.*`
 | Table | Description |
 |-------|-------------|
 | `main.{format}_player_skill` | Player skill indices (residual-based) |
-| `main.{format}_3way_player_elo` | 3-way ELO ratings (batter, bowler, venue) |
+| `main.{format}_3way_elo` | 3-way ELO ratings (batter, bowler, venue) |
 | `main.{format}_team_skill` | Team skill indices (residual-based) |
 | `main.{format}_venue_skill` | Venue skill indices |
 | `main.{format}_score_projection` | Per-delivery score projections |

@@ -105,7 +105,7 @@ format_match_types <- FORMAT_GROUPS[[current_format]]
 match_type_filter <- paste(sprintf("'%s'", tolower(format_match_types)), collapse = ", ")
 
 # Get format-specific parameters
-ALPHA <- get_skill_alpha_params(current_format)$alpha_max
+ALPHA <- get_skill_alpha_params(current_format, gender = "male")$alpha_max
 START_VALUES <- get_skill_start_values(current_format)
 
 # INDICES start at 0 (neutral deviation from context-expected)

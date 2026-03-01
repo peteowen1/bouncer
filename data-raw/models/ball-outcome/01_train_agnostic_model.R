@@ -64,7 +64,11 @@ conn <- get_db_connection(read_only = TRUE)
 cli::cli_alert_success("Connected")
 
 # Create output directory (use package helper to find the correct bouncerdata path)
-models_dir <- file.path(find_bouncerdata_dir(), "models")
+bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
+if (is.null(bouncerdata_root)) {
+  stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
+}
+models_dir <- file.path(bouncerdata_root, "models")
 if (!dir.exists(models_dir)) {
   dir.create(models_dir, recursive = TRUE)
   cli::cli_alert_info("Created models directory: {.file {models_dir}}")

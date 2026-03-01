@@ -475,6 +475,56 @@ add_cricinfo_tables <- function(path = NULL) {
 }
 
 
+#' Add Fox Sports Tables to Existing Database
+#'
+#' Adds the Fox Sports data tables (balls, players, details)
+#' to an existing database. Non-destructive: preserves all existing data.
+#'
+#' @param path Character. Database file path. If NULL, uses default.
+#'
+#' @return Invisibly returns TRUE on success
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' add_foxsports_tables()
+#' }
+add_foxsports_tables <- function(path = NULL) {
+  if (is.null(path)) {
+    path <- get_default_db_path()
+  }
+
+  if (!file.exists(path)) {
+    cli::cli_alert_danger("Database not found at {.file {path}}")
+    return(invisible(FALSE))
+  }
+
+  check_duckdb_available()
+  conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+  # Check for schema-qualified Fox Sports tables
+  existing <- DBI::dbGetQuery(conn,
+    "SELECT table_schema || '.' || table_name AS qualified_name
+     FROM information_schema.tables
+     WHERE table_schema = 'foxsports'")$qualified_name
+
+  foxsports_tables <- c("foxsports.balls", "foxsports.players", "foxsports.details")
+  needed <- setdiff(foxsports_tables, existing)
+
+  if (length(needed) == 0) {
+    cli::cli_alert_info("All Fox Sports tables already exist")
+    return(invisible(TRUE))
+  }
+
+  cli::cli_h2("Adding Fox Sports tables to database")
+  create_foxsports_tables(conn, verbose = TRUE)
+  cli::cli_alert_success("Migration complete! Added {length(needed)} Fox Sports table{?s}")
+
+  invisible(TRUE)
+}
+
+
 #' Migrate Existing Database to Schema Namespaces
 #'
 #' Moves Cricsheet tables from the default `main` schema to the `cricsheet`

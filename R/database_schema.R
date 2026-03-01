@@ -13,6 +13,7 @@
 create_schemas <- function(conn) {
   DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricsheet")
   DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricinfo")
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS foxsports")
   invisible(TRUE)
 }
 
@@ -1131,6 +1132,147 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
     ON cricinfo.fixtures(format, gender)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_status
     ON cricinfo.fixtures(status)")
+
+  invisible(TRUE)
+}
+
+
+#' Create Fox Sports Schema Tables
+#'
+#' Creates the foxsports schema tables for ball-by-ball, player, and match
+#' detail data scraped from the Fox Sports API.
+#'
+#' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress for each table. Default TRUE.
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_foxsports_tables <- function(conn, verbose = TRUE) {
+  log_table <- function(name) {
+    if (verbose) cli::cli_alert_info("Creating {name} table...")
+  }
+
+  # Ensure foxsports schema exists
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS foxsports")
+
+  # Ball-by-ball data from parse_fox_aggregatestats()
+  log_table("foxsports.balls")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS foxsports.balls (
+      match_id INTEGER,
+      innings INTEGER,
+      over INTEGER,
+      ball INTEGER,
+      legal_ball BOOLEAN,
+      running_over DOUBLE,
+      team_id INTEGER,
+      team_name VARCHAR,
+      team_code VARCHAR,
+      bowling_team VARCHAR,
+      bowler_id INTEGER,
+      bowler_name VARCHAR,
+      bowler_short_name VARCHAR,
+      bowling_arm VARCHAR,
+      striker_id INTEGER,
+      striker_name VARCHAR,
+      striker_short_name VARCHAR,
+      batting_arm VARCHAR,
+      dismissed_id INTEGER,
+      dismissed_name VARCHAR,
+      byes INTEGER,
+      runs INTEGER,
+      wides INTEGER,
+      commentary VARCHAR,
+      leg_byes INTEGER,
+      is_boundary BOOLEAN,
+      is_wicket BOOLEAN,
+      no_ball_runs INTEGER,
+      no_balls INTEGER,
+      shot_x DOUBLE,
+      shot_y DOUBLE,
+      total_runs INTEGER,
+      wide_runs INTEGER,
+      format VARCHAR,
+
+      PRIMARY KEY (match_id, innings, over, ball)
+    )
+  ")
+
+  # Player/squad data from parse_fox_players()
+  log_table("foxsports.players")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS foxsports.players (
+      match_id INTEGER,
+      team_id INTEGER,
+      team_name VARCHAR,
+      team_code VARCHAR,
+      player_id INTEGER,
+      full_name VARCHAR,
+      short_name VARCHAR,
+      surname VARCHAR,
+      other_names VARCHAR,
+      country VARCHAR,
+      country_code VARCHAR,
+      batting_arm VARCHAR,
+      bowling_arm VARCHAR,
+      position_code VARCHAR,
+      position_description VARCHAR,
+      position_order INTEGER,
+      jumper_number INTEGER,
+      is_captain BOOLEAN,
+      is_interchange BOOLEAN,
+      format VARCHAR,
+
+      PRIMARY KEY (match_id, player_id)
+    )
+  ")
+
+  # Match details from parse_fox_details()
+  log_table("foxsports.details")
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS foxsports.details (
+      match_id INTEGER PRIMARY KEY,
+      internal_match_id INTEGER,
+      match_type VARCHAR,
+      match_day INTEGER,
+      match_result VARCHAR,
+      match_note VARCHAR,
+      venue_id INTEGER,
+      venue_name VARCHAR,
+      venue_city VARCHAR,
+      venue_country VARCHAR,
+      venue_state VARCHAR,
+      weather VARCHAR,
+      pitch_state VARCHAR,
+      surface_state VARCHAR,
+      crowd INTEGER,
+      team_a_id INTEGER,
+      team_a_name VARCHAR,
+      team_a_code VARCHAR,
+      team_b_id INTEGER,
+      team_b_name VARCHAR,
+      team_b_code VARCHAR,
+      toss_winner_id INTEGER,
+      toss_elected_bat BOOLEAN,
+      player_of_match_id INTEGER,
+      player_of_match_name VARCHAR,
+      umpires VARCHAR,
+      third_umpire VARCHAR,
+      match_referee VARCHAR,
+      format VARCHAR,
+      gender VARCHAR
+    )
+  ")
+
+  # Indexes for common query patterns
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fox_balls_match
+    ON foxsports.balls(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fox_balls_format
+    ON foxsports.balls(format)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fox_players_match
+    ON foxsports.players(match_id)")
+  DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_fox_details_format
+    ON foxsports.details(format, gender)")
 
   invisible(TRUE)
 }
