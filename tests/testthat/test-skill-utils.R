@@ -22,9 +22,9 @@ test_that("normalize_format handles Test variants", {
   expect_equal(normalize_format("MDM"), "test")
 })
 
-test_that("normalize_format defaults to t20 for unknown formats", {
-  expect_equal(normalize_format("unknown"), "t20")
-  expect_equal(normalize_format(""), "t20")
+test_that("normalize_format errors on unknown formats", {
+  expect_error(normalize_format("unknown"), "Unknown cricket format")
+  expect_error(normalize_format(""), "Unknown cricket format")
 })
 
 test_that("get_skill_table_name generates correct table names", {

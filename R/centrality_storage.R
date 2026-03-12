@@ -23,7 +23,9 @@
 build_metric_table_name <- function(metric, format, gender = NULL) {
   format <- tolower(format)
   prefix <- if (!is.null(gender)) paste0(tolower(gender), "_") else ""
-  paste0(prefix, format, "_player_", metric, "_history")
+  table_name <- paste0(prefix, format, "_player_", metric, "_history")
+  validate_sql_identifier(table_name, context = "build_metric_table_name")
+  table_name
 }
 
 
@@ -32,7 +34,7 @@ build_metric_table_name <- function(metric, format, gender = NULL) {
 ensure_metric_history_table <- function(metric, format, conn, gender = NULL) {
   table_name <- build_metric_table_name(metric, format, gender)
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     # Centrality tables have extra network columns
     extra_cols <- if (metric == "centrality") {
       ",\n        unique_opponents INTEGER,\n        avg_opponent_degree DOUBLE"
@@ -144,7 +146,7 @@ store_metric_snapshot <- function(result, snapshot_date, metric, format, conn,
 get_metric_as_of <- function(player_id, role, match_date, metric, format, conn, gender = NULL) {
   table_name <- build_metric_table_name(metric, format, gender)
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -181,7 +183,7 @@ get_metric_as_of <- function(player_id, role, match_date, metric, format, conn, 
 batch_get_metric_for_match <- function(player_ids, match_date, metric, format, conn, gender = NULL) {
   table_name <- build_metric_table_name(metric, format, gender)
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(data.frame(
       player_id = character(0),
       role = character(0),
@@ -218,7 +220,7 @@ batch_get_metric_for_match <- function(player_ids, match_date, metric, format, c
 get_metric_snapshot_dates <- function(metric, format, conn, gender = NULL) {
   table_name <- build_metric_table_name(metric, format, gender)
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(character(0))
   }
 
@@ -240,7 +242,7 @@ delete_old_metric_snapshots <- function(metric, format,
                                          conn, gender = NULL) {
   table_name <- build_metric_table_name(metric, format, gender)
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(invisible(0L))
   }
 

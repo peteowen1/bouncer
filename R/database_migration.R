@@ -31,12 +31,10 @@ add_prediction_tables <- function(path = NULL) {
   conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  existing_tables <- DBI::dbListTables(conn)
-
   cli::cli_h2("Adding prediction tables to database")
 
   # Add team_elo table
-  if (!"team_elo" %in% existing_tables) {
+  if (!table_exists(conn, "team_elo")) {
     cli::cli_alert_info("Creating team_elo table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS team_elo (
@@ -62,7 +60,7 @@ add_prediction_tables <- function(path = NULL) {
   }
 
   # Add pre_match_features table
-  if (!"pre_match_features" %in% existing_tables) {
+  if (!table_exists(conn, "pre_match_features")) {
     cli::cli_alert_info("Creating pre_match_features table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS pre_match_features (
@@ -99,7 +97,7 @@ add_prediction_tables <- function(path = NULL) {
   }
 
   # Add pre_match_predictions table
-  if (!"pre_match_predictions" %in% existing_tables) {
+  if (!table_exists(conn, "pre_match_predictions")) {
     cli::cli_alert_info("Creating pre_match_predictions table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS pre_match_predictions (
@@ -124,7 +122,7 @@ add_prediction_tables <- function(path = NULL) {
   }
 
   # Add simulation_results table
-  if (!"simulation_results" %in% existing_tables) {
+  if (!table_exists(conn, "simulation_results")) {
     cli::cli_alert_info("Creating simulation_results table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS simulation_results (
@@ -195,9 +193,7 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
-  existing_tables <- DBI::dbListTables(conn)
-
-  if (!"pre_match_features" %in% existing_tables) {
+  if (!table_exists(conn, "pre_match_features")) {
     cli::cli_alert_danger("pre_match_features table does not exist")
     cli::cli_alert_info("Run add_prediction_tables() first")
     return(invisible(FALSE))
@@ -368,9 +364,7 @@ ensure_match_metrics_table <- function(conn = NULL, path = NULL) {
   cli::cli_h2("Ensuring match_metrics table exists")
 
   # Check if match_metrics table exists
-  tables <- DBI::dbListTables(conn)
-
-  if (!"match_metrics" %in% tables) {
+  if (!table_exists(conn, "match_metrics")) {
     cli::cli_alert_info("Creating match_metrics table...")
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS match_metrics (
@@ -599,7 +593,9 @@ migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
     # Check if target already exists
     target_exists <- nrow(DBI::dbGetQuery(conn, sprintf(
       "SELECT 1 FROM information_schema.tables
-       WHERE table_schema || '.' || table_name = '%s'", new_name
+       WHERE table_schema = ? AND table_name = ?",
+      params = list(strsplit(new_name, ".", fixed = TRUE)[[1]][1],
+                    strsplit(new_name, ".", fixed = TRUE)[[1]][2])
     ))) > 0
 
     if (target_exists) {

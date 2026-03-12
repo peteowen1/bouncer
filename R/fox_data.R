@@ -157,6 +157,7 @@ ingest_fox_sports_data <- function(fox_dir = NULL,
 #' @keywords internal
 ingest_fox_table <- function(conn, parquet_path, table_name, format,
                               verbose = TRUE, gender = NULL) {
+  validate_sql_identifier(table_name, context = "ingest_fox_table")
   fp <- normalizePath(parquet_path, winslash = "/", mustWork = TRUE)
 
   # Check existing match IDs for this format
@@ -182,6 +183,8 @@ ingest_fox_table <- function(conn, parquet_path, table_name, format,
   # Build WHERE clause to skip existing match IDs
   where_clause <- ""
   if (length(existing) > 0) {
+    existing <- as.integer(existing)
+    existing <- existing[!is.na(existing)]
     ids_sql <- paste(existing, collapse = ", ")
     where_clause <- sprintf(" WHERE CAST(match_id AS INTEGER) NOT IN (%s)", ids_sql)
   }

@@ -202,7 +202,7 @@ get_data_info <- function(path = NULL) {
 
   if (nrow(match_types) > 0) {
     cli::cli_h3("Matches by Type")
-    for (i in 1:nrow(match_types)) {
+    for (i in seq_len(nrow(match_types))) {
       cli::cli_alert_info("{match_types$match_type[i]}: {match_types$n[i]}")
     }
   }
@@ -922,6 +922,11 @@ install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
   }
 
   cli::cli_alert_success("Downloaded {downloaded_count} match files")
+
+  if (downloaded_count == 0) {
+    cli::cli_warn("No match files were downloaded. Check network connectivity or release availability.")
+    return(invisible(data_dir))
+  }
 
   # Build database if requested
   if (build_db) {

@@ -335,7 +335,7 @@ rank_players <- function(rating_type = "batting",
   format <- normalize_format(match_type)
   table_name <- paste0(format, "_3way_player_elo")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_abort("Table {.val {table_name}} not found in database")
   }
 

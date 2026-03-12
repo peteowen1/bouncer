@@ -123,10 +123,10 @@ get_player <- function(name_or_id, format = NULL,
   if (!is.null(format)) {
     format <- tolower(format)
     skill_table <- paste0(format, "_player_skill")
+    validate_sql_identifier(skill_table, context = "get_player")
 
     # Check if skill table exists
-    tables <- DBI::dbListTables(conn)
-    if (skill_table %in% tables) {
+    if (table_exists(conn, skill_table)) {
       skills <- DBI::dbGetQuery(conn, sprintf("
         SELECT
           batter_scoring_index,
@@ -527,7 +527,7 @@ get_team <- function(name, format = NULL, db_path = NULL) {
       elo_result,
       elo_roster_combined,
       matches_played
-    FROM team_elo
+    FROM main.team_elo
     WHERE team_id = ?
     %s
     ORDER BY match_date DESC
@@ -547,7 +547,7 @@ get_team <- function(name, format = NULL, db_path = NULL) {
         elo_result,
         elo_roster_combined,
         matches_played
-      FROM team_elo
+      FROM main.team_elo
       WHERE LOWER(team_id) LIKE LOWER(?)
       %s
       ORDER BY match_date DESC
@@ -1057,8 +1057,8 @@ search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Subquery gets most recent ELO per team (not all-time peak)
-  elo_subquery <- "(SELECT t2.elo_result FROM team_elo t2
-     WHERE t2.team_id = team_elo.team_id
+  elo_subquery <- "(SELECT t2.elo_result FROM main.team_elo t2
+     WHERE t2.team_id = main.team_elo.team_id
      ORDER BY t2.match_date DESC LIMIT 1)"
 
   if (is.null(pattern)) {
@@ -1068,7 +1068,7 @@ search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
         COUNT(*) as matches,
         MAX(match_date) as last_match,
         ROUND(%s, 0) as current_elo
-      FROM team_elo
+      FROM main.team_elo
       GROUP BY team_id
       ORDER BY matches DESC
       LIMIT ?
@@ -1080,7 +1080,7 @@ search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
         COUNT(*) as matches,
         MAX(match_date) as last_match,
         ROUND(%s, 0) as current_elo
-      FROM team_elo
+      FROM main.team_elo
       WHERE LOWER(team_id) LIKE LOWER(?)
       GROUP BY team_id
       ORDER BY matches DESC

@@ -299,7 +299,7 @@ plot_skill_progression <- function(player_name,
   skill_table <- paste0(format_lower, "_player_skill")
 
   # Check if table exists
-  if (!skill_table %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, skill_table)) {
     cli::cli_alert_warning("Skill table not found: {skill_table}")
     return(NULL)
   }
@@ -621,7 +621,7 @@ plot_team_strength <- function(team_name, format = "t20", db_path = NULL) {
   skill_table <- paste0(format_lower, "_team_skill")
 
   # Check if table exists
-  if (!skill_table %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, skill_table)) {
     cli::cli_alert_warning("Team skill table not found: {skill_table}")
     return(NULL)
   }

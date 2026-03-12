@@ -289,6 +289,63 @@ has_required_columns <- function(df, required_cols) {
 
 
 # ============================================================================
+# SQL IDENTIFIER & VALUE VALIDATION
+# ============================================================================
+
+#' Validate SQL Identifier
+#'
+#' Checks that a string is a safe SQL identifier (table or column name).
+#' Only allows lowercase alphanumeric characters, underscores, and dots
+#' (for schema-qualified names like "cricsheet.matches").
+#'
+#' @param x Character string. The identifier to validate.
+#' @param context Character. Context for error message (e.g., function name).
+#'
+#' @return Invisibly returns x if valid. Stops with error if not.
+#' @keywords internal
+validate_sql_identifier <- function(x, context = "SQL query") {
+  if (!is.character(x) || length(x) != 1 || is.na(x)) {
+    cli::cli_abort("SQL identifier must be a single non-NA string in {.fn {context}}", call = NULL)
+  }
+  if (!grepl("^[a-z0-9_.]+$", x)) {
+    cli::cli_abort(c(
+      "Invalid SQL identifier in {.fn {context}}",
+      "x" = "Got: {.val {x}}",
+      "i" = "Only lowercase letters, digits, underscores, and dots are allowed"
+    ), call = NULL)
+  }
+  invisible(x)
+}
+
+
+#' Validate Match IDs Are Numeric
+#'
+#' Ensures all match IDs contain only digits, preventing SQL injection
+#' when IDs are interpolated into IN clauses.
+#'
+#' @param ids Character vector. Match IDs to validate.
+#' @param context Character. Context for error message.
+#'
+#' @return Invisibly returns ids if valid. Stops with error if not.
+#' @keywords internal
+validate_match_ids <- function(ids, context = "query") {
+  if (!is.character(ids) && !is.numeric(ids)) {
+    cli::cli_abort("Match IDs must be character or numeric in {.fn {context}}", call = NULL)
+  }
+  ids <- as.character(ids)
+  bad <- ids[!grepl("^[0-9]+$", ids)]
+  if (length(bad) > 0) {
+    cli::cli_abort(c(
+      "Non-numeric match IDs detected in {.fn {context}}",
+      "x" = "Invalid IDs: {.val {head(bad, 5)}}",
+      "i" = "Match IDs must contain only digits"
+    ), call = NULL)
+  }
+  invisible(ids)
+}
+
+
+# ============================================================================
 # SQL VALUE ESCAPING
 # ============================================================================
 

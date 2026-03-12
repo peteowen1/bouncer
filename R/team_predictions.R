@@ -46,7 +46,7 @@ calculate_roster_elo <- function(player_ids,
     stringsAsFactors = FALSE
   )
 
-  if (elo_table %in% DBI::dbListTables(conn)) {
+  if (table_exists(conn, elo_table)) {
     placeholders <- paste(rep("?", length(player_ids)), collapse = ", ")
 
     # Get latest batting ELOs from 3-way ELO table

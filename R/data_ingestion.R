@@ -55,7 +55,7 @@ bulk_write_arrow <- function(conn, table_name, df) {
       escape_sql_quotes(parts[1]), escape_sql_quotes(parts[2])
     ))) > 0
   } else {
-    exists <- table_name %in% DBI::dbListTables(conn)
+    exists <- table_exists(conn, table_name)
   }
   if (!exists) {
     cli::cli_abort("Table {.val {table_name}} does not exist in database")
@@ -524,7 +524,6 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  conn_check <- get_db_connection(path = path, read_only = TRUE)
  on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = FALSE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
- DBI::dbDisconnect(conn_check, shutdown = FALSE)
  existing_ids <- existing_matches$match_id
 
  # Filter to only new files (check BEFORE parsing - saves time!)
@@ -782,7 +781,7 @@ load_match_data <- function(parsed_data, path = NULL) {
 
     invisible(TRUE)
   }, error = function(e) {
-    DBI::dbRollback(conn)
+    tryCatch(DBI::dbRollback(conn), error = function(e2) NULL)
     cli::cli_abort("Failed to load match data: {conditionMessage(e)}")
   })
 }

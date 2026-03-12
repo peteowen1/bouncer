@@ -88,9 +88,7 @@ create_format_team_skill_table <- function(format = "t20", conn, overwrite = FAL
   table_name <- paste0(format, "_team_skill")
 
   # Check if table exists
-  tables <- DBI::dbListTables(conn)
-
-  if (table_name %in% tables) {
+  if (table_exists(conn, table_name)) {
     if (!overwrite) {
       cli::cli_alert_info("Table '{table_name}' already exists")
       return(invisible(TRUE))
@@ -158,7 +156,7 @@ insert_format_team_skills <- function(skills_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_danger("Table '{table_name}' does not exist")
     cli::cli_alert_info("Run create_format_team_skill_table('{format}', conn) first")
     return(invisible(0))
@@ -202,7 +200,7 @@ get_format_team_skill_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table '{table_name}' does not exist")
     return(NULL)
   }
@@ -239,7 +237,7 @@ get_format_team_skill_stats <- function(format = "t20", conn) {
 get_all_team_skill_state <- function(format = "t20", conn) {
   table_name <- get_skill_table_name(format, "team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -342,7 +340,7 @@ get_all_team_skill_state <- function(format = "t20", conn) {
 get_last_processed_team_skill_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -376,7 +374,7 @@ get_team_skill <- function(team_id, role = "batting", format = "t20", conn) {
 
   table_name <- paste0(format, "_team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -437,7 +435,7 @@ join_team_skill_indices <- function(deliveries_df, format = "t20", conn,
 
   table_name <- get_skill_table_name(format, "team_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table '{table_name}' does not exist")
     cli::cli_alert_info("Run 02_calculate_team_skill_indices.R first")
     return(deliveries_df)

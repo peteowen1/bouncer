@@ -124,6 +124,7 @@ ingest_cricinfo_data <- function(cricinfo_dir = NULL,
 
         # Backfill gender from directory name (match parquets don't include it)
         loaded_ids <- sub("_match\\.parquet$", "", basename(match_files))
+        validate_match_ids(loaded_ids, context = "ingest_cricinfo_data")
         ids_sql <- paste0("'", escape_sql_quotes(loaded_ids), "'", collapse = ", ")
         DBI::dbExecute(conn, sprintf(
           "UPDATE cricinfo.matches SET gender = '%s' WHERE match_id IN (%s) AND gender IS NULL",
@@ -194,6 +195,7 @@ ingest_cricinfo_matches <- function(conn, match_files) {
     fp <- normalizePath(f, winslash = "/", mustWork = TRUE)
     # Extract match_id from filename to backfill when parquet has NULL match_id
     file_match_id <- sub("_match\\.parquet$", "", basename(f))
+    validate_match_ids(file_match_id, context = "ingest_cricinfo_matches")
     tryCatch({
       n <- DBI::dbExecute(conn, sprintf("
         INSERT OR IGNORE INTO cricinfo.matches
@@ -230,6 +232,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
   for (i in seq_along(ball_files)) {
     fp <- normalizePath(ball_files[i], winslash = "/", mustWork = TRUE)
     mid <- match_ids[i]
+    validate_match_ids(mid, context = "ingest_cricinfo_balls")
 
     tryCatch({
       n <- DBI::dbExecute(conn, sprintf("
@@ -596,6 +599,7 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
   where_clauses <- character()
 
   if (!is.null(match_ids)) {
+    validate_match_ids(match_ids, context = "load_cricinfo_balls")
     ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("b.match_id IN (%s)", ids_sql))
   }
@@ -666,6 +670,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
 
   where_clauses <- character()
   if (!is.null(match_ids)) {
+    validate_match_ids(match_ids, context = "load_cricinfo_match")
     ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
@@ -726,6 +731,7 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
   where_clauses <- character()
 
   if (!is.null(match_ids)) {
+    validate_match_ids(match_ids, context = "load_cricinfo_innings")
     ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("i.match_id IN (%s)", ids_sql))
   }
@@ -859,6 +865,7 @@ load_cricinfo_balls_remote <- function(match_ids, format, gender) {
     return(data.frame())
   }
 
+  validate_match_ids(match_ids, context = "load_cricinfo_balls_remote")
   ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
   sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
 
@@ -907,6 +914,7 @@ load_cricinfo_match_remote <- function(match_ids, format, gender) {
     return(data.frame())
   }
 
+  validate_match_ids(match_ids, context = "load_cricinfo_match_remote")
   ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
   sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
 
@@ -953,6 +961,7 @@ load_cricinfo_innings_remote <- function(match_ids, format, gender) {
     return(data.frame())
   }
 
+  validate_match_ids(match_ids, context = "load_cricinfo_innings_remote")
   ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
   sql_template <- sprintf("SELECT * FROM {{table}} WHERE match_id IN (%s)", ids_sql)
 

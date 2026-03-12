@@ -1,7 +1,7 @@
 # Tests for Team Prediction Functions
 
 test_that("calculate_roster_elo returns expected structure", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   # Use a small test roster
   roster <- c("V Kohli", "R Sharma")
@@ -24,7 +24,7 @@ test_that("calculate_roster_elo errors on empty roster", {
 })
 
 test_that("calculate_roster_elo respects weights", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   roster <- c("V Kohli")
 
@@ -50,7 +50,7 @@ test_that("calculate_roster_elo respects weights", {
 })
 
 test_that("compare_team_rosters returns expected structure", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   team1 <- c("V Kohli")
   team2 <- c("S Smith")
@@ -70,7 +70,7 @@ test_that("compare_team_rosters returns expected structure", {
 })
 
 test_that("predict_roster_matchup returns valid probabilities", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   team1 <- c("V Kohli")
   team2 <- c("S Smith")
@@ -91,7 +91,7 @@ test_that("predict_roster_matchup returns valid probabilities", {
 })
 
 test_that("predict_innings_score returns valid projections", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   batters <- c("V Kohli")
   bowlers <- c("J Bumrah")
@@ -115,7 +115,7 @@ test_that("predict_innings_score returns valid projections", {
 })
 
 test_that("predict_innings_score handles start of innings", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   batters <- c("V Kohli")
   bowlers <- c("J Bumrah")
@@ -131,7 +131,7 @@ test_that("predict_innings_score handles start of innings", {
 })
 
 test_that("simulate_match returns expected structure", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   team1 <- c("V Kohli")
   team2 <- c("S Smith")
@@ -151,7 +151,7 @@ test_that("simulate_match returns expected structure", {
 })
 
 test_that("simulate_match confidence interval is valid", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   team1 <- c("V Kohli")
   team2 <- c("S Smith")
@@ -167,7 +167,7 @@ test_that("simulate_match confidence interval is valid", {
 })
 
 test_that("team functions handle different match types", {
-  skip_if_not(file.exists(get_default_db_path()), "Database not available")
+  skip_if_not(file.exists(get_db_path()), "Database not available")
 
   roster <- c("V Kohli")
 

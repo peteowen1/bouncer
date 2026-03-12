@@ -312,7 +312,10 @@ fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
     json_data <- result$result$value
     if (!is.null(json_data$error)) return(NULL)
     parse_fn(json_data, match_id)
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    cli::cli_alert_warning("fox_fetch_endpoint failed for match {match_id}: {conditionMessage(e)}")
+    NULL
+  })
 }
 
 #' Fetch player squad data for a single match
