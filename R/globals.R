@@ -21,9 +21,6 @@ NULL
 # Returns y if x is NULL, otherwise returns x
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
-# Import pipe for internal use (not re-exported to users)
-#' @importFrom dplyr %>%
-NULL
 
 # ============================================================================
 # Core Data Variables

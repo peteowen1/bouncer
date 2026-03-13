@@ -36,6 +36,9 @@
 #' result <- query_remote_parquet("deliveries_ODI_male", sql)
 #' }
 query_remote_parquet <- function(table_name, sql_template, release = NULL) {
+  # Check DuckDB is available before downloading anything
+  check_duckdb_available()
+
   # Get release info (use cache)
   if (is.null(release)) {
     if (!exists("release_info", envir = .bouncer_remote_cache)) {
@@ -63,9 +66,6 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
 
   # Normalize path for DuckDB (use forward slashes on all platforms)
   temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = TRUE)
-
-  # Run SQL query with DuckDB
-  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
