@@ -309,6 +309,13 @@ test_that("calculate_projected_scores_vectorized matches scalar version", {
   )
 
   # Scalar function uses public interface (wickets fallen, overs bowled)
+  # Must pass same params explicitly — otherwise load_projection_params()
+  # returns optimized DB values that differ from PROJ_DEFAULT_* constants
+  test_params <- list(
+    a = PROJ_DEFAULT_A, b = PROJ_DEFAULT_B,
+    z = PROJ_DEFAULT_Z, y = PROJ_DEFAULT_Y
+  )
+
   # Convert: wickets = 10 - wickets_remaining, overs = (120 - balls_remaining) / 6
   scalar <- sapply(1:3, function(i) {
     wickets_fallen <- 10 - wickets_remaining[i]
@@ -319,6 +326,7 @@ test_that("calculate_projected_scores_vectorized matches scalar version", {
       overs = overs_bowled,
       expected_initial_score = eis[i],
       format = "t20",
+      params = test_params,
       apply_bounds = FALSE
     )
   })

@@ -129,7 +129,8 @@ test_that("print.bouncer_player doesn't error", {
   player <- get_player("Kohli")
   skip_if(is.null(player), "Player not found in database")
 
-  expect_output(print(player))
+  # cli output goes to stderr, so use expect_no_error instead of expect_output
+  expect_no_error(print(player))
 })
 
 test_that("print.bouncer_player_comparison doesn't error", {
@@ -138,7 +139,7 @@ test_that("print.bouncer_player_comparison doesn't error", {
   comparison <- suppressMessages(compare_players("Kohli", "Sharma", format = "t20"))
   skip_if(is.null(comparison), "Players not found in database")
 
-  expect_output(print(comparison))
+  expect_no_error(print(comparison))
 })
 
 # ============================================================================
@@ -183,8 +184,8 @@ test_that("get_team returns bouncer_team class for valid team", {
   skip_if(is.null(result), "Team not found in database")
 
   expect_s3_class(result, "bouncer_team")
-  expect_true("name" %in% names(result))
-  expect_true("elo" %in% names(result))
+  expect_true("team_name" %in% names(result))
+  expect_true("elo_result" %in% names(result))
 })
 
 test_that("get_team returns NULL for non-existent team", {
@@ -286,7 +287,7 @@ test_that("predict_match returns prediction object for valid teams", {
   expect_s3_class(result, "bouncer_prediction")
   expect_true("team1" %in% names(result))
   expect_true("team2" %in% names(result))
-  expect_true("probabilities" %in% names(result))
+  expect_true("win_prob_team1" %in% names(result))
 })
 
 test_that("predict_match probabilities sum to 1", {
@@ -296,10 +297,10 @@ test_that("predict_match probabilities sum to 1", {
     predict_match("India", "Australia", format = "t20")
   )
   skip_if(is.null(result), "Prediction returned NULL")
-  skip_if(is.null(result$probabilities), "No probabilities in prediction")
+  skip_if(is.null(result$win_prob_team1), "No probabilities in prediction")
 
-  prob_sum <- sum(unlist(result$probabilities), na.rm = TRUE)
-  expect_true(prob_sum > 0.99 && prob_sum < 1.01)
+  prob_sum <- result$win_prob_team1 + result$win_prob_team2
+  expect_equal(prob_sum, 1, tolerance = 0.01)
 })
 
 test_that("predict_match rejects empty team names", {
@@ -322,7 +323,7 @@ test_that("print.bouncer_team doesn't error", {
   team <- suppressMessages(get_team("India"))
   skip_if(is.null(team), "Team not found in database")
 
-  expect_output(print(team))
+  expect_no_error(print(team))
 })
 
 test_that("print.bouncer_team_comparison doesn't error", {
@@ -331,7 +332,7 @@ test_that("print.bouncer_team_comparison doesn't error", {
   comparison <- suppressMessages(compare_teams("India", "Australia", format = "t20"))
   skip_if(is.null(comparison), "Team comparison returned NULL")
 
-  expect_output(print(comparison))
+  expect_no_error(print(comparison))
 })
 
 test_that("print.bouncer_prediction doesn't error", {
@@ -340,5 +341,5 @@ test_that("print.bouncer_prediction doesn't error", {
   prediction <- suppressMessages(predict_match("India", "Australia", format = "t20"))
   skip_if(is.null(prediction), "Prediction returned NULL")
 
-  expect_output(print(prediction))
+  expect_no_error(print(prediction))
 })

@@ -508,54 +508,48 @@ get_team <- function(name, format = NULL, db_path = NULL) {
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Build match type filter
-  type_filter <- ""
+  # Build format filter (team_elo uses 'format' column, not 'match_type')
+  format_filter <- ""
   if (!is.null(format)) {
     format <- tolower(format)
-    type_filter <- switch(format,
-      "t20" = "AND LOWER(match_type) IN ('t20', 'it20')",
-      "odi" = "AND LOWER(match_type) IN ('odi', 'odm')",
-      "test" = "AND LOWER(match_type) IN ('test', 'mdm')",
-      ""
-    )
+    format_filter <- sprintf("AND format = '%s'", escape_sql_quotes(format))
   }
 
   # Get latest ELO for team
+  # team_id format: {team}_{gender}_{format}_{team_type} (e.g., india_male_t20_international)
   query <- sprintf("
     SELECT
       team_id,
       match_id,
       match_date,
-      match_type,
-      elo_result,
-      elo_roster_combined,
+      format,
+      elo_after,
       matches_played
     FROM main.team_elo
     WHERE team_id = ?
     %s
     ORDER BY match_date DESC
     LIMIT 1
-  ", type_filter)
+  ", format_filter)
 
   elo <- DBI::dbGetQuery(conn, query, params = list(name))
 
   if (nrow(elo) == 0) {
-    # Try partial match
+    # Try partial match on team_id (e.g., "India" matches "india_male_t20_international")
     query <- sprintf("
       SELECT
         team_id,
         match_id,
         match_date,
-        match_type,
-        elo_result,
-        elo_roster_combined,
+        format,
+        elo_after,
         matches_played
       FROM main.team_elo
       WHERE LOWER(team_id) LIKE LOWER(?)
       %s
       ORDER BY match_date DESC
       LIMIT 1
-    ", type_filter)
+    ", format_filter)
 
     elo <- DBI::dbGetQuery(conn, query, params = list(paste0("%", name, "%")))
   }
@@ -567,8 +561,8 @@ get_team <- function(name, format = NULL, db_path = NULL) {
 
   result <- list(
     team_name = elo$team_id,
-    elo_result = elo$elo_result,
-    elo_roster = elo$elo_roster_combined,
+    elo_result = elo$elo_after,
+    elo_roster = NA_real_,
     matches_played = elo$matches_played,
     last_match_date = elo$match_date,
     format = format
@@ -1060,7 +1054,7 @@ search_teams <- function(pattern = NULL, limit = 20, db_path = NULL) {
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
   # Subquery gets most recent ELO per team (not all-time peak)
-  elo_subquery <- "(SELECT t2.elo_result FROM main.team_elo t2
+  elo_subquery <- "(SELECT t2.elo_after FROM main.team_elo t2
      WHERE t2.team_id = main.team_elo.team_id
      ORDER BY t2.match_date DESC LIMIT 1)"
 
