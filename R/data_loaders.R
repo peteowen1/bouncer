@@ -167,6 +167,7 @@ create_remote_connection <- function() {
     table_name <- tools::file_path_sans_ext(asset_name)
     parquet_url <- sprintf("%s/%s", base_url, asset_name)
 
+    validate_sql_identifier(table_name, context = "create_remote_connection")
     view_sql <- sprintf("CREATE VIEW %s AS SELECT * FROM '%s'",
                         table_name, parquet_url)
     tryCatch(
@@ -341,6 +342,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
     # Build WHERE clause for direct query (no joins needed - deliveries has match_type)
     where_clauses <- character()
     if (!is.null(match_ids)) {
+      validate_match_ids(match_ids, context = "load_deliveries")
       ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))

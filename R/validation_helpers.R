@@ -333,6 +333,9 @@ validate_match_ids <- function(ids, context = "query") {
     cli::cli_abort("Match IDs must be character or numeric in {.fn {context}}", call = NULL)
   }
   ids <- as.character(ids)
+  if (length(ids) == 0) {
+    cli::cli_abort("Match IDs vector is empty in {.fn {context}}", call = NULL)
+  }
   bad <- ids[!grepl("^[0-9]+$", ids)]
   if (length(bad) > 0) {
     cli::cli_abort(c(

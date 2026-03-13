@@ -204,7 +204,10 @@ get_player_remote <- function(name_or_id, format = NULL) {
       )
       skills <- tryCatch({
         query_remote_parquet(skill_table, skill_sql)
-      }, error = function(e) NULL)
+      }, error = function(e) {
+        cli::cli_alert_warning("Failed to fetch remote skills for {skill_table}: {conditionMessage(e)}")
+        NULL
+      })
     }
   }
 

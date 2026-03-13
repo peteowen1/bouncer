@@ -64,6 +64,11 @@ test_that("validate_match_ids rejects non-numeric strings", {
   expect_error(validate_match_ids("12.5"), "Non-numeric match IDs")
 })
 
+test_that("validate_match_ids rejects empty vectors", {
+  expect_error(validate_match_ids(character(0)), "empty")
+  expect_error(validate_match_ids(numeric(0)), "empty")
+})
+
 test_that("validate_match_ids rejects invalid types", {
   expect_error(validate_match_ids(TRUE), "character or numeric")
   expect_error(validate_match_ids(list(1, 2)), "character or numeric")
