@@ -591,12 +591,12 @@ migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
     }
 
     # Check if target already exists
-    target_exists <- nrow(DBI::dbGetQuery(conn, sprintf(
+    new_parts <- strsplit(new_name, ".", fixed = TRUE)[[1]]
+    target_exists <- nrow(DBI::dbGetQuery(conn,
       "SELECT 1 FROM information_schema.tables
        WHERE table_schema = ? AND table_name = ?",
-      params = list(strsplit(new_name, ".", fixed = TRUE)[[1]][1],
-                    strsplit(new_name, ".", fixed = TRUE)[[1]][2])
-    ))) > 0
+      params = list(new_parts[1], new_parts[2])
+    )) > 0
 
     if (target_exists) {
       if (verbose) cli::cli_alert_info("Skipping {old_name} ({new_name} already exists)")
