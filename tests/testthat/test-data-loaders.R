@@ -12,26 +12,25 @@ test_that("check_duckdb_available returns TRUE when duckdb is installed", {
   expect_true(result)
 })
 
-test_that("check_duckdb_available is called by query_remote_parquet", {
-  # Verify the function source contains check_duckdb_available
-  # This is a static analysis test to ensure the check wasn't removed
-  fn_body <- deparse(bouncer:::query_remote_parquet)
-  fn_text <- paste(fn_body, collapse = "\n")
-
-  expect_true(
-    grepl("check_duckdb_available", fn_text),
-    info = "query_remote_parquet must call check_duckdb_available before using DuckDB"
+test_that("query_remote_parquet calls check_duckdb_available", {
+  # Mock check_duckdb_available to throw — verify query_remote_parquet propagates
+  local_mocked_bindings(
+    check_duckdb_available = function() cli::cli_abort("duckdb not available (mocked)")
+  )
+  expect_error(
+    bouncer:::query_remote_parquet("test_table", "SELECT 1"),
+    "duckdb not available"
   )
 })
 
-test_that("check_duckdb_available is called by create_remote_connection", {
-  # Verify the function source contains check_duckdb_available
-  fn_body <- deparse(bouncer:::create_remote_connection)
-  fn_text <- paste(fn_body, collapse = "\n")
-
-  expect_true(
-    grepl("check_duckdb_available", fn_text),
-    info = "create_remote_connection must call check_duckdb_available before using DuckDB"
+test_that("create_remote_connection calls check_duckdb_available", {
+  # Mock check_duckdb_available to throw — verify create_remote_connection propagates
+  local_mocked_bindings(
+    check_duckdb_available = function() cli::cli_abort("duckdb not available (mocked)")
+  )
+  expect_error(
+    bouncer:::create_remote_connection(),
+    "duckdb not available"
   )
 })
 

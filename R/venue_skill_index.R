@@ -118,7 +118,7 @@ normalize_venue <- function(venue, conn) {
   }
 
   # Check if venue_aliases table exists
-  if (!"venue_aliases" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "venue_aliases")) {
     return(venue)
   }
 
@@ -152,7 +152,7 @@ normalize_venues <- function(venues, conn) {
   }
 
   # Check if venue_aliases table exists
-  if (!"venue_aliases" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "venue_aliases")) {
     return(venues)
   }
 
@@ -204,7 +204,7 @@ build_default_venue_aliases <- function(conn) {
 
 
   # Check if table exists
-  if (!"venue_aliases" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "venue_aliases")) {
     cli::cli_alert_warning("venue_aliases table does not exist")
     cli::cli_alert_info("Run create_schema() or initialize database first")
     return(invisible(0))
@@ -267,7 +267,7 @@ build_default_venue_aliases <- function(conn) {
 #' @return Invisibly returns TRUE on success
 #' @keywords internal
 add_venue_alias <- function(alias, canonical, country = NULL, conn) {
-  if (!"venue_aliases" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "venue_aliases")) {
     cli::cli_alert_danger("venue_aliases table does not exist")
     return(invisible(FALSE))
   }
@@ -313,9 +313,7 @@ create_format_venue_skill_table <- function(format = "t20", conn, overwrite = FA
   table_name <- paste0(format, "_venue_skill")
 
   # Check if table exists
-  tables <- DBI::dbListTables(conn)
-
-  if (table_name %in% tables) {
+  if (table_exists(conn, table_name)) {
     if (!overwrite) {
       cli::cli_alert_info("Table '{table_name}' already exists")
       return(invisible(TRUE))
@@ -376,7 +374,7 @@ insert_format_venue_skills <- function(skills_df, format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_danger("Table '{table_name}' does not exist")
     cli::cli_alert_info("Run create_format_venue_skill_table('{format}', conn) first")
     return(invisible(0))
@@ -422,7 +420,7 @@ insert_format_venue_skills <- function(skills_df, format = "t20", conn) {
 get_all_venue_skill_state <- function(format = "t20", conn) {
   table_name <- get_skill_table_name(format, "venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -492,7 +490,7 @@ get_all_venue_skill_state <- function(format = "t20", conn) {
 get_last_processed_venue_skill_delivery <- function(format = "t20", conn) {
   table_name <- paste0(format, "_venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -529,7 +527,7 @@ get_venue_skill <- function(venue, format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -580,7 +578,7 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
 
   table_name <- get_skill_table_name(format, "venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table '{table_name}' does not exist")
     cli::cli_alert_info("Run data-raw/ratings/venue/01_calculate_venue_skill_indices.R first")
     return(deliveries_df)
@@ -722,7 +720,7 @@ get_format_venue_skill_stats <- function(format = "t20", conn) {
 
   table_name <- paste0(format, "_venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table '{table_name}' does not exist")
     return(NULL)
   }
@@ -764,7 +762,7 @@ get_venue_rankings <- function(format = "t20", metric = "run_rate", conn,
 
   table_name <- paste0(format, "_venue_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table '{table_name}' does not exist")
     return(NULL)
   }

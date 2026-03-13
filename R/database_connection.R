@@ -2,8 +2,8 @@
 
 #' Check DuckDB Availability
 #'
-#' Internal helper to check if DuckDB is installed.
-#' Called by database functions since duckdb is in Suggests.
+#' Internal helper to check if DuckDB and DBI are installed.
+#' Both are in Imports, but this provides a clear error if something is wrong.
 #'
 #' @return TRUE if available, otherwise stops with error
 #' @keywords internal
@@ -22,6 +22,34 @@ check_duckdb_available <- function() {
     ))
   }
   invisible(TRUE)
+}
+
+
+#' Check if a Table Exists in DuckDB
+#'
+#' Schema-aware table existence check using information_schema.
+#' Unlike \code{DBI::dbListTables()}, which only returns tables in the
+#' main schema, this function correctly checks any schema.
+#'
+#' @param conn DuckDB connection.
+#' @param table_name Character. Table name, optionally schema-qualified
+#'   (e.g., "team_elo" or "cricsheet.matches").
+#'
+#' @return Logical. TRUE if the table exists.
+#' @keywords internal
+table_exists <- function(conn, table_name) {
+  parts <- strsplit(table_name, ".", fixed = TRUE)[[1]]
+  if (length(parts) == 2) {
+    schema <- parts[1]
+    tbl <- parts[2]
+  } else {
+    schema <- "main"
+    tbl <- parts[1]
+  }
+  nrow(DBI::dbGetQuery(conn,
+    "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+    params = list(schema, tbl)
+  )) > 0
 }
 
 

@@ -358,13 +358,13 @@ test_that("escape_sql_quotes handles vectors with mixed content", {
   expect_equal(result[4], "normal")
 })
 
-test_that("load_cricinfo_balls handles match_ids with quotes safely", {
+test_that("load_cricinfo_balls rejects non-numeric match_ids", {
   with_mock_cricinfo_db({
-    # This should not cause SQL injection -- just return no results
-    result <- suppressWarnings(suppressMessages(
-      load_cricinfo_balls(match_ids = "1502145'; DROP TABLE cricinfo_balls; --")
-    ))
-    expect_equal(nrow(result), 0)
+    # Non-numeric IDs should be rejected by validate_match_ids
+    expect_error(
+      load_cricinfo_balls(match_ids = "1502145'; DROP TABLE cricinfo_balls; --"),
+      "Non-numeric match IDs"
+    )
 
     # Verify the table still exists
     conn <- DBI::dbConnect(duckdb::duckdb(), ":memory:")

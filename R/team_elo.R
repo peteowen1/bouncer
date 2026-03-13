@@ -160,7 +160,7 @@ calculate_team_roster_elo <- function(team, as_of_date, conn,
   elo_table <- get_format_table("player_elo", match_type)
 
   # Check if format-specific table exists, otherwise fallback to deliveries
-  if (!elo_table %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, elo_table)) {
     elo_table <- NULL
   }
 
@@ -169,7 +169,7 @@ calculate_team_roster_elo <- function(team, as_of_date, conn,
   as_of_date_str <- as.character(as.Date(as_of_date))
 
   # Use t20_player_elo table if available for T20 matches
-  if (!is.null(elo_table) && elo_table %in% DBI::dbListTables(conn)) {
+  if (!is.null(elo_table) && table_exists(conn, elo_table)) {
 
     # Query for latest batter ELOs from dual ELO table
     # Use average of run ELO and wicket ELO for combined batting strength
@@ -492,7 +492,7 @@ calculate_team_roster_skill <- function(team, as_of_date, conn,
   skill_table <- get_format_table("player_skill", format)
 
   # Check if skill table exists
-  if (!skill_table %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, skill_table)) {
     # Return default values if no skill data
     start_vals <- get_skill_start_values(format)
     return(list(

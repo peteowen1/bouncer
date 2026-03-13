@@ -974,9 +974,10 @@ build_event_centrality_lookup <- function(conn, format, gender, min_players = 10
 
   # Build centrality table name
   centrality_table <- paste0(gender, "_", format, "_player_centrality_history")
+  validate_sql_identifier(centrality_table, context = "build_event_centrality_lookup")
 
   # Check if centrality table exists
-  if (!centrality_table %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, centrality_table)) {
     cli::cli_alert_warning("Centrality table {centrality_table} not found, using default starting ELOs")
     return(list())
   }

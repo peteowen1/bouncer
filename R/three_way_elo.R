@@ -64,7 +64,7 @@ get_agnostic_baselines <- function(conn, delivery_ids, format = "t20") {
     EXPECTED_WICKET_T20)
 
   # Check if table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_warning("Table {table_name} not found. Using format defaults.")
     return(data.frame(
       delivery_id = delivery_ids,
@@ -433,7 +433,11 @@ get_3way_player_k <- function(deliveries,
   # Base K from experience decay
   k <- params$k_min + (params$k_max - params$k_min) * exp(-deliveries / params$halflife)
 
-  # Inactivity boost (more uncertainty after absence)
+  # Inactivity boost (more uncertainty after long absence)
+  # Note: 2× threshold is intentional — decay starts at 1× (gentle regression),
+
+  # but K-boost only kicks in after prolonged absence to avoid over-reacting
+  # to players who miss just a few matches
   if (days_inactive > THREE_WAY_INACTIVITY_THRESHOLD_DAYS * 2) {
     decay_factor <- exp(-days_inactive / THREE_WAY_INACTIVITY_HALFLIFE)
     k <- k * (1 + THREE_WAY_INACTIVITY_K_BOOST_FACTOR * (1 - decay_factor))
@@ -1170,8 +1174,8 @@ get_league_baseline_as_of <- function(event_name,
     return(global_avg_runs)
   }
 
-  # Get most recent row (highest cumulative values)
-  latest <- league_data[nrow(league_data), ]
+  # Get most recent row (highest cumulative deliveries = most recent snapshot)
+  latest <- league_data[which.max(league_data$cumulative_deliveries), ]
 
   # Calculate blended baseline
   calculate_league_baseline(
@@ -1393,7 +1397,7 @@ build_3way_elo_params <- function(format = "t20", gender = "male") {
 #' @keywords internal
 get_stored_3way_elo_params <- function(format, conn) {
   # Check if table exists
-  if (!"three_way_elo_params" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "three_way_elo_params")) {
     return(NULL)
   }
 
@@ -1502,7 +1506,7 @@ log_3way_drift_metrics <- function(format, dimension, entity_type,
 #' @return Invisibly returns TRUE.
 #' @keywords internal
 ensure_3way_drift_table <- function(conn) {
-  if (!"three_way_elo_drift_metrics" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "three_way_elo_drift_metrics")) {
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS three_way_elo_drift_metrics (
         metric_date DATE,
@@ -1528,7 +1532,7 @@ ensure_3way_drift_table <- function(conn) {
 #' @return Invisibly returns TRUE.
 #' @keywords internal
 ensure_3way_params_table <- function(conn) {
-  if (!"three_way_elo_params" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "three_way_elo_params")) {
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS three_way_elo_params (
         format VARCHAR PRIMARY KEY,

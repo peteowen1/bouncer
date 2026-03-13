@@ -6,42 +6,33 @@
 # DATA FLOW TESTS (using mock from test-database-mock.R pattern)
 # ============================================================================
 
-test_that("skill index EMA update formula is correct", {
-  # Test the exponential moving average formula used in skill indices
-  # new_skill = (1 - alpha) * old_skill + alpha * residual
-
+test_that("update_skill_index EMA converges to residual value", {
   alpha <- SKILL_ALPHA_T20
-  old_skill <- 0.0
-  residual <- 2.0  # e.g., batter scored 2 runs above expected
 
-  new_skill <- (1 - alpha) * old_skill + alpha * residual
+  # Single update from zero
+  result <- update_skill_index(old_value = 0.0, observation = 2.0, alpha = alpha)
+  expect_equal(result, alpha * 2.0, tolerance = 1e-10)
 
-  # With alpha=0.01, new_skill should be 0.02
-  expect_equal(new_skill, alpha * residual, tolerance = 1e-10)
-
-  # After many updates with same residual, should converge to residual
+  # After many updates with same observation, should converge to observation
   skill <- 0.0
-  for (i in 1:1000) {
-    skill <- (1 - alpha) * skill + alpha * residual
+  for (i in seq_len(1000)) {
+    skill <- update_skill_index(skill, observation = 2.0, alpha = alpha)
   }
-  expect_equal(skill, residual, tolerance = 0.01)
+  expect_equal(skill, 2.0, tolerance = 0.01)
 })
 
-test_that("ELO expected score formula is correct", {
-  # E = 1 / (1 + 10^((Rb - Ra) / 400))
-  # When Ra = Rb, expected score = 0.5
+test_that("calculate_expected_outcome returns correct ELO expectations", {
+  # Equal ratings -> 0.5
+  expect_equal(calculate_expected_outcome(1500, 1500), 0.5, tolerance = 1e-10)
 
-  rating_a <- 1500
-  rating_b <- 1500
+  # 400-point advantage -> 10/11 (~0.909)
+  expect_equal(calculate_expected_outcome(1900, 1500), 10/11, tolerance = 1e-10)
 
-  expected <- 1 / (1 + 10^((rating_b - rating_a) / 400))
-  expect_equal(expected, 0.5, tolerance = 1e-10)
-
-  # When Ra > Rb by 400, expected ~0.909
-  rating_a <- 1900
-  rating_b <- 1500
-  expected <- 1 / (1 + 10^((rating_b - rating_a) / 400))
-  expect_equal(expected, 10/11, tolerance = 1e-10)
+  # Symmetry: A vs B + B vs A = 1
+  expect_equal(
+    calculate_expected_outcome(1600, 1400) + calculate_expected_outcome(1400, 1600),
+    1.0, tolerance = 1e-10
+  )
 })
 
 # ============================================================================

@@ -79,8 +79,10 @@ get_gender_categories <- function() {
 normalize_format <- function(format) {
   format_lower <- tolower(trimws(format))
 
-  # T20 variants
-  if (format_lower %in% c("t20", "t20i", "it20", "t20s", "twenty20")) {
+  # T20 variants (international + domestic)
+  if (format_lower %in% c("t20", "t20i", "it20", "t20s", "twenty20",
+                            "bbl", "wbbl", "ipl", "psl", "cpl", "sa20",
+                            "bpl", "lpl", "mpl", "ilt20")) {
     return("t20")
   }
 
@@ -89,14 +91,15 @@ normalize_format <- function(format) {
     return("odi")
   }
 
-  # Test variants
-  if (format_lower %in% c("test", "tests", "mdm")) {
+  # Test/multi-day variants
+  if (format_lower %in% c("test", "tests", "mdm", "fc", "first-class")) {
     return("test")
   }
 
-  # Default to T20 for domestic leagues and unknown formats
-  cli::cli_warn("Unknown format {.val {format}}, defaulting to T20")
-  "t20"
+  cli::cli_abort(c(
+    "Unknown cricket format: {.val {format}}",
+    "i" = "Expected one of: t20, odi, test (or recognized aliases like IT20, ODM, MDM)"
+  ), call = NULL)
 }
 
 

@@ -1550,7 +1550,7 @@ create_3way_elo_table <- function(format, conn, overwrite = FALSE) {
   }
 
   # Check if table exists
-  if (table_name %in% DBI::dbListTables(conn)) {
+  if (table_exists(conn, table_name)) {
     cli::cli_alert_info("Table {table_name} already exists")
     return(invisible(TRUE))
   }
@@ -1644,7 +1644,7 @@ insert_3way_elos <- function(df, format, conn) {
   table_name <- paste0(tolower(format), "_3way_elo")
 
   # Check table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_danger("Table {table_name} does not exist")
     return(invisible(FALSE))
   }
@@ -1670,7 +1670,7 @@ get_3way_elo_stats <- function(format, conn) {
   table_name <- paste0(tolower(format), "_3way_elo")
 
   # Check table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -1713,7 +1713,7 @@ delete_3way_elo_matches <- function(match_ids, format, conn, verbose = TRUE) {
 
   table_name <- paste0(tolower(format), "_3way_elo")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(invisible(0))
   }
 
@@ -1748,7 +1748,7 @@ delete_3way_elo_matches <- function(match_ids, format, conn, verbose = TRUE) {
 get_latest_3way_player_elos <- function(format, conn, elo_type = "run") {
   table_name <- paste0(tolower(format), "_3way_elo")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(data.frame())
   }
 
@@ -1800,7 +1800,7 @@ get_latest_3way_player_elos <- function(format, conn, elo_type = "run") {
 get_latest_3way_venue_elos <- function(format, conn) {
   table_name <- paste0(tolower(format), "_3way_elo")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(data.frame())
   }
 
@@ -1840,7 +1840,7 @@ create_3way_skill_table <- function(format, conn, overwrite = FALSE) {
   }
 
   # Check if table exists
-  if (table_name %in% DBI::dbListTables(conn)) {
+  if (table_exists(conn, table_name)) {
     cli::cli_alert_info("Table {table_name} already exists")
     return(invisible(TRUE))
   }
@@ -1942,7 +1942,7 @@ insert_3way_skills <- function(df, format, conn) {
   table_name <- paste0(tolower(format), "_3way_skill")
 
   # Check table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     cli::cli_alert_danger("Table {table_name} does not exist")
     return(invisible(FALSE))
   }
@@ -1968,7 +1968,7 @@ get_3way_skill_stats <- function(format, conn) {
   table_name <- paste0(tolower(format), "_3way_skill")
 
   # Check table exists
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(NULL)
   }
 
@@ -2017,7 +2017,7 @@ delete_3way_skill_matches <- function(match_ids, format, conn, verbose = TRUE) {
 
   table_name <- paste0(tolower(format), "_3way_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(invisible(0))
   }
 
@@ -2052,7 +2052,7 @@ delete_3way_skill_matches <- function(match_ids, format, conn, verbose = TRUE) {
 get_latest_3way_player_skills <- function(format, conn, skill_type = "run") {
   table_name <- paste0(tolower(format), "_3way_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(data.frame())
   }
 
@@ -2104,7 +2104,7 @@ get_latest_3way_player_skills <- function(format, conn, skill_type = "run") {
 get_latest_3way_venue_skills <- function(format, conn) {
   table_name <- paste0(tolower(format), "_3way_skill")
 
-  if (!table_name %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, table_name)) {
     return(data.frame())
   }
 
@@ -2144,7 +2144,7 @@ get_latest_3way_venue_skills <- function(format, conn) {
 store_3way_skill_params <- function(params, last_delivery_id, last_match_date,
                                      total_deliveries, conn) {
   # Ensure table exists
-  if (!"skill_index_params" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "skill_index_params")) {
     DBI::dbExecute(conn, "
       CREATE TABLE IF NOT EXISTS skill_index_params (
         format VARCHAR PRIMARY KEY,

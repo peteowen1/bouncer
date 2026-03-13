@@ -204,7 +204,7 @@ simulate_before_state <- function(deliveries) {
   # Subtract this delivery's contribution to get pre-delivery state
   # total_runs in DB is post-delivery cumulative (includes this delivery's runs)
   before$total_runs <- before$total_runs - before$runs_total
-  before$wickets_fallen <- before$wickets_fallen - as.integer(before$is_wicket)
+  before$wickets_fallen <- pmax(0L, before$wickets_fallen - as.integer(before$is_wicket))
 
   # Revert ball counts
   if ("balls_bowled" %in% names(before)) {

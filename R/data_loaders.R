@@ -36,6 +36,9 @@
 #' result <- query_remote_parquet("deliveries_ODI_male", sql)
 #' }
 query_remote_parquet <- function(table_name, sql_template, release = NULL) {
+  # Check DuckDB is available before downloading anything
+  check_duckdb_available()
+
   # Get release info (use cache)
   if (is.null(release)) {
     if (!exists("release_info", envir = .bouncer_remote_cache)) {
@@ -63,9 +66,6 @@ query_remote_parquet <- function(table_name, sql_template, release = NULL) {
 
   # Normalize path for DuckDB (use forward slashes on all platforms)
   temp_file_normalized <- normalizePath(temp_file, winslash = "/", mustWork = TRUE)
-
-  # Run SQL query with DuckDB
-  check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
@@ -149,9 +149,10 @@ create_remote_connection <- function() {
   base_url <- sprintf("https://github.com/peteowen1/bouncerdata/releases/download/%s",
                       release$tag_name)
 
-  # Create DuckDB connection
+  # Create DuckDB connection (on.exit ensures cleanup if setup fails)
   check_duckdb_available()
   conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(tryCatch(DBI::dbDisconnect(conn, shutdown = TRUE), error = function(e) NULL), add = TRUE)
 
   # Install and load httpfs extension
   DBI::dbExecute(conn, "INSTALL httpfs")
@@ -166,6 +167,7 @@ create_remote_connection <- function() {
     table_name <- tools::file_path_sans_ext(asset_name)
     parquet_url <- sprintf("%s/%s", base_url, asset_name)
 
+    validate_sql_identifier(table_name, context = "create_remote_connection")
     view_sql <- sprintf("CREATE VIEW %s AS SELECT * FROM '%s'",
                         table_name, parquet_url)
     tryCatch(
@@ -197,6 +199,7 @@ create_remote_connection <- function() {
   }
 
   cli::cli_alert_success("Connected to remote data (release: {release$tag_name})")
+  on.exit()  # Cancel cleanup — caller owns the connection now
   conn
 }
 
@@ -339,6 +342,7 @@ load_deliveries <- function(match_type = "all", gender = "all", team_type = "all
     # Build WHERE clause for direct query (no joins needed - deliveries has match_type)
     where_clauses <- character()
     if (!is.null(match_ids)) {
+      validate_match_ids(match_ids, context = "load_deliveries")
       ids_escaped <- escape_sql_quotes(match_ids)
       ids_sql <- paste0("'", ids_escaped, "'", collapse = ", ")
       where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
@@ -722,8 +726,7 @@ load_player_skill <- function(match_type = "all", source = c("local", "remote"))
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_player_skill")
-      tables <- DBI::dbListTables(conn)
-      if (!(table_name %in% tables)) {
+      if (!table_exists(conn, table_name)) {
         return(NULL)
       }
 
@@ -805,8 +808,7 @@ load_team_skill <- function(match_type = "all", source = c("local", "remote")) {
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_team_skill")
-      tables <- DBI::dbListTables(conn)
-      if (!(table_name %in% tables)) {
+      if (!table_exists(conn, table_name)) {
         return(NULL)
       }
 
@@ -888,8 +890,7 @@ load_venue_skill <- function(match_type = "all", source = c("local", "remote")) 
 
     dfs <- lapply(formats, function(fmt) {
       table_name <- paste0(fmt, "_venue_skill")
-      tables <- DBI::dbListTables(conn)
-      if (!(table_name %in% tables)) {
+      if (!table_exists(conn, table_name)) {
         return(NULL)
       }
 

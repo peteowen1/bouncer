@@ -62,7 +62,7 @@ get_data_stats <- function(conn) {
 #' @keywords internal
 get_pipeline_state <- function(step_name, conn) {
   # Ensure table exists
-  if (!"pipeline_state" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "pipeline_state")) {
     return(NULL)
   }
 
@@ -252,7 +252,7 @@ print_skip_decision <- function(step_name, decision) {
 #' @return Data frame with all step states
 #' @keywords internal
 get_pipeline_summary <- function(conn) {
-  if (!"pipeline_state" %in% DBI::dbListTables(conn)) {
+  if (!table_exists(conn, "pipeline_state")) {
     return(data.frame())
   }
 

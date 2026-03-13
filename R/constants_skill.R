@@ -378,10 +378,19 @@ get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") 
   suffix <- get_format_gender_suffix(format, gender)
   skill_upper <- toupper(skill_type)
 
+  var_names <- paste0("SKILL_ALPHA_", skill_upper, "_", c("MAX", "MIN", "HALFLIFE"), "_", suffix)
+  missing <- var_names[!vapply(var_names, exists, logical(1), where = topenv())]
+  if (length(missing) > 0) {
+    cli::cli_abort(c(
+      "Unknown skill constant{?s}: {.val {missing}}",
+      "i" = "Check format={.val {format}}, gender={.val {gender}}, skill_type={.val {skill_type}}"
+    ), call = NULL)
+  }
+
   list(
-    alpha_max = get(paste0("SKILL_ALPHA_", skill_upper, "_MAX_", suffix)),
-    alpha_min = get(paste0("SKILL_ALPHA_", skill_upper, "_MIN_", suffix)),
-    halflife = get(paste0("SKILL_ALPHA_", skill_upper, "_HALFLIFE_", suffix))
+    alpha_max = get(var_names[1]),
+    alpha_min = get(var_names[2]),
+    halflife = get(var_names[3])
   )
 }
 
@@ -401,11 +410,21 @@ get_skill_weights <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
   skill_upper <- toupper(skill_type)
 
+  prefixes <- c("SKILL_W_BATTER_", "SKILL_W_BOWLER_", "SKILL_W_VENUE_SESSION_", "SKILL_W_VENUE_PERM_")
+  var_names <- paste0(prefixes, skill_upper, "_", suffix)
+  missing <- var_names[!vapply(var_names, exists, logical(1), where = topenv())]
+  if (length(missing) > 0) {
+    cli::cli_abort(c(
+      "Unknown skill constant{?s}: {.val {missing}}",
+      "i" = "Check format={.val {format}}, gender={.val {gender}}, skill_type={.val {skill_type}}"
+    ), call = NULL)
+  }
+
   list(
-    w_batter = get(paste0("SKILL_W_BATTER_", skill_upper, "_", suffix)),
-    w_bowler = get(paste0("SKILL_W_BOWLER_", skill_upper, "_", suffix)),
-    w_venue_session = get(paste0("SKILL_W_VENUE_SESSION_", skill_upper, "_", suffix)),
-    w_venue_perm = get(paste0("SKILL_W_VENUE_PERM_", skill_upper, "_", suffix))
+    w_batter = get(var_names[1]),
+    w_bowler = get(var_names[2]),
+    w_venue_session = get(var_names[3]),
+    w_venue_perm = get(var_names[4])
   )
 }
 

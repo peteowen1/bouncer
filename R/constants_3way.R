@@ -541,6 +541,11 @@ get_format_gender_suffix <- function(format, gender = "male") {
     format_clean <- "ODI"
   } else if (format_clean %in% c("TEST", "MDM")) {
     format_clean <- "TEST"
+  } else {
+    cli::cli_abort(c(
+      "Unrecognized cricket format: {.val {format}}",
+      "i" = "Expected one of: T20, IT20, T20I, ODI, ODM, TEST, MDM"
+    ), call = NULL)
   }
 
   # Normalize gender

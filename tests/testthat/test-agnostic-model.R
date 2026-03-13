@@ -107,39 +107,27 @@ test_that("calculate_expected_wicket_prob validates input", {
 # PROBABILITY NORMALIZATION TESTS
 # ============================================================================
 
-test_that("probability normalization handles zero row sums",
-{
-  # Simulate what happens in predict_agnostic_outcome with degenerate input
+test_that("calculate_expected_runs handles all-zero probability row", {
+  # All-zero probs (degenerate input) should produce 0 expected runs, not NaN
   probs <- matrix(0, nrow = 1, ncol = 7)
-
-  # The code does: row_sums[row_sums == 0] <- 1
-  row_sums <- rowSums(probs)
-  row_sums[row_sums == 0] <- 1
-  normalized <- probs / row_sums
-
-  # Should not produce NaN/Inf
-  expect_false(any(is.nan(normalized)))
-  expect_false(any(is.infinite(normalized)))
-
-  # All zeros normalized by 1 gives all zeros
-  expect_equal(sum(normalized), 0)
+  result <- calculate_expected_runs(probs)
+  expect_equal(result, 0)
+  expect_false(is.nan(result))
 })
 
-test_that("probability normalization preserves valid distributions", {
+test_that("calculate_expected_runs returns correct value for valid distribution", {
+  # Known distribution: P(wicket)=0.1, P(0)=0.3, P(1)=0.2, P(2)=0.15, P(3)=0.05, P(4)=0.12, P(6)=0.08
   probs <- matrix(c(0.1, 0.3, 0.2, 0.15, 0.05, 0.12, 0.08), nrow = 1)
-  row_sums <- rowSums(probs)
-  normalized <- probs / row_sums
-
-  expect_equal(sum(normalized), 1.0, tolerance = 1e-10)
+  result <- calculate_expected_runs(probs)
+  expected <- 0*0.1 + 0*0.3 + 1*0.2 + 2*0.15 + 3*0.05 + 4*0.12 + 6*0.08
+  expect_equal(result, expected, tolerance = 1e-10)
 })
 
-test_that("probability normalization fixes numerical errors", {
-  # Probabilities that don't quite sum to 1 due to floating point
-  probs <- matrix(c(0.1, 0.3, 0.2, 0.15, 0.05, 0.12, 0.08001), nrow = 1)
-  row_sums <- rowSums(probs)
-  normalized <- probs / row_sums
-
-  expect_equal(sum(normalized), 1.0, tolerance = 1e-10)
+test_that("calculate_expected_wicket_prob returns correct probability", {
+  # Wicket probability is column 1
+  probs <- matrix(c(0.08, 0.3, 0.2, 0.15, 0.05, 0.12, 0.10), nrow = 1)
+  result <- calculate_expected_wicket_prob(probs)
+  expect_equal(result, 0.08, tolerance = 1e-10)
 })
 
 # ============================================================================
@@ -307,6 +295,45 @@ test_that("get_models_dir returns valid path structure", {
   path <- get_models_dir()
   # Should end with "models"
   expect_true(grepl("models$", path))
+})
+
+# ============================================================================
+# MODEL FILENAME / PATH TESTS
+# ============================================================================
+
+test_that("get_model_filename generates correct filenames", {
+  expect_true(grepl("agnostic", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("full", get_model_filename("full", "odi")))
+  expect_true(grepl("margin", get_model_filename("margin", "t20")))
+  expect_true(grepl("stage1", get_model_filename("stage1", "t20")))
+  expect_true(grepl("stage2", get_model_filename("stage2", "t20")))
+})
+
+test_that("get_model_filename includes format in filename", {
+  expect_true(grepl("t20", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("odi", get_model_filename("agnostic", "odi")))
+})
+
+test_that("get_model_filename ends with .ubj", {
+  expect_true(grepl("\\.ubj$", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("\\.ubj$", get_model_filename("full", "odi")))
+})
+
+test_that("get_model_filename errors on unknown model type", {
+  expect_error(get_model_filename("unknown_type", "t20"), "Unknown model_type")
+})
+
+test_that("get_model_path builds correct path", {
+  tmpdir <- tempdir()
+  path <- get_model_path("agnostic", "t20", models_dir = tmpdir)
+
+  expect_true(startsWith(path, tmpdir))
+  expect_true(grepl("agnostic.*t20.*\\.ubj$", path))
+})
+
+test_that("model_exists returns FALSE for nonexistent model", {
+  result <- model_exists("agnostic", "t20", models_dir = tempdir())
+  expect_false(result)
 })
 
 # ============================================================================

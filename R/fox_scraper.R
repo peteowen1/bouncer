@@ -312,7 +312,10 @@ fox_fetch_endpoint <- function(browser, url, parse_fn, match_id) {
     json_data <- result$result$value
     if (!is.null(json_data$error)) return(NULL)
     parse_fn(json_data, match_id)
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    cli::cli_alert_warning("fox_fetch_endpoint failed for match {match_id}: {conditionMessage(e)}")
+    NULL
+  })
 }
 
 #' Fetch player squad data for a single match
@@ -399,7 +402,10 @@ fox_fetch_match <- function(browser, match_id, userkey, format = "TEST", max_inn
           all_innings_data[[inning_num]] <- innings_df
         }
       }
-    }, error = function(e) NULL)
+    }, error = function(e) {
+      cli::cli_alert_warning("  Innings {inning_num} fetch failed for {match_id}: {conditionMessage(e)}")
+      NULL
+    })
 
     Sys.sleep(delay_seconds + runif(1, 0.5, 2))
   }
@@ -819,13 +825,19 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
         Sys.sleep(0.5)
         players_data <- tryCatch({
           fox_fetch_match_players(current_browser, match_id, current_userkey)
-        }, error = function(e) NULL)
+        }, error = function(e) {
+          cli::cli_alert_warning("  Players fetch failed for {match_id}: {conditionMessage(e)}")
+          NULL
+        })
       }
       if (need_details) {
         Sys.sleep(0.5)
         details_data <- tryCatch({
           fox_fetch_match_details(current_browser, match_id, current_userkey)
-        }, error = function(e) NULL)
+        }, error = function(e) {
+          cli::cli_alert_warning("  Details fetch failed for {match_id}: {conditionMessage(e)}")
+          NULL
+        })
       }
     }
 
