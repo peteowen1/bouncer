@@ -390,3 +390,101 @@ test_that("test_overs_to_balls converts correctly", {
   # Edge cases
   expect_equal(test_overs_to_balls(0), 0)
 })
+
+# ============================================================================
+# estimate_test_innings_overs_remaining() Tests
+# ============================================================================
+
+test_that("estimate_test_innings_overs_remaining returns 0 when all out", {
+  result <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 10, current_score = 200, overs_bowled = 80
+  )
+  expect_equal(result, 0)
+})
+
+test_that("estimate_test_innings_overs_remaining respects match overs", {
+  # With only 10 match overs left, can't bat more than 10
+  result <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 0, current_score = 0, overs_bowled = 0,
+    innings_number = 1, match_overs_remaining = 10
+  )
+  expect_lte(result, 10)
+})
+
+test_that("estimate_test_innings_overs_remaining varies by innings number", {
+  # 1st innings should have more remaining than 4th
+  remaining_1 <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 0, current_score = 0, overs_bowled = 0,
+    innings_number = 1
+  )
+  remaining_4 <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 0, current_score = 0, overs_bowled = 0,
+    innings_number = 4
+  )
+  expect_gt(remaining_1, remaining_4)
+})
+
+test_that("estimate_test_innings_overs_remaining handles 3rd innings declaration", {
+  # Big lead in 3rd innings should cap remaining overs
+  result_big_lead <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 2, current_score = 150, overs_bowled = 40,
+    innings_number = 3, lead = 350
+  )
+  result_no_lead <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 2, current_score = 150, overs_bowled = 40,
+    innings_number = 3, lead = 50
+  )
+  expect_lt(result_big_lead, result_no_lead)
+})
+
+test_that("estimate_test_innings_overs_remaining decreases with overs bowled", {
+  r0 <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 2, current_score = 50, overs_bowled = 0, innings_number = 1
+  )
+  r40 <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 2, current_score = 120, overs_bowled = 40, innings_number = 1
+  )
+  r80 <- estimate_test_innings_overs_remaining(
+    wickets_fallen = 2, current_score = 200, overs_bowled = 80, innings_number = 1
+  )
+  expect_gt(r0, r40)
+  expect_gt(r40, r80)
+})
+
+# ============================================================================
+# calculate_test_projected_score() Tests
+# ============================================================================
+
+test_that("calculate_test_projected_score returns at least current score", {
+  projected <- calculate_test_projected_score(
+    current_score = 150,
+    wickets_remaining = 7,
+    overs_bowled = 50,
+    match_days = 5,
+    day_number = 2,
+    overs_bowled_today = 40
+  )
+  expect_gte(projected, 150)
+})
+
+test_that("calculate_test_projected_score returns current score when all out", {
+  projected <- calculate_test_projected_score(
+    current_score = 200,
+    wickets_remaining = 0,
+    overs_bowled = 80,
+    match_days = 5,
+    day_number = 2,
+    overs_bowled_today = 80
+  )
+  expect_equal(projected, 200)
+})
+
+test_that("calculate_test_projected_score increases with more wickets in hand", {
+  proj_few <- calculate_test_projected_score(
+    current_score = 100, wickets_remaining = 3, overs_bowled = 50
+  )
+  proj_many <- calculate_test_projected_score(
+    current_score = 100, wickets_remaining = 8, overs_bowled = 50
+  )
+  expect_gt(proj_many, proj_few)
+})

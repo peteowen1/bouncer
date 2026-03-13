@@ -298,6 +298,45 @@ test_that("get_models_dir returns valid path structure", {
 })
 
 # ============================================================================
+# MODEL FILENAME / PATH TESTS
+# ============================================================================
+
+test_that("get_model_filename generates correct filenames", {
+  expect_true(grepl("agnostic", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("full", get_model_filename("full", "odi")))
+  expect_true(grepl("margin", get_model_filename("margin", "t20")))
+  expect_true(grepl("stage1", get_model_filename("stage1", "t20")))
+  expect_true(grepl("stage2", get_model_filename("stage2", "t20")))
+})
+
+test_that("get_model_filename includes format in filename", {
+  expect_true(grepl("t20", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("odi", get_model_filename("agnostic", "odi")))
+})
+
+test_that("get_model_filename ends with .ubj", {
+  expect_true(grepl("\\.ubj$", get_model_filename("agnostic", "t20")))
+  expect_true(grepl("\\.ubj$", get_model_filename("full", "odi")))
+})
+
+test_that("get_model_filename errors on unknown model type", {
+  expect_error(get_model_filename("unknown_type", "t20"), "Unknown model_type")
+})
+
+test_that("get_model_path builds correct path", {
+  tmpdir <- tempdir()
+  path <- get_model_path("agnostic", "t20", models_dir = tmpdir)
+
+  expect_true(startsWith(path, tmpdir))
+  expect_true(grepl("agnostic.*t20.*\\.ubj$", path))
+})
+
+test_that("model_exists returns FALSE for nonexistent model", {
+  result <- model_exists("agnostic", "t20", models_dir = tempdir())
+  expect_false(result)
+})
+
+# ============================================================================
 # EDGE CASE TESTS
 # ============================================================================
 

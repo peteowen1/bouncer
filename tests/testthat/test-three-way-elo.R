@@ -419,6 +419,147 @@ test_that("NULL calibration score uses max boost", {
 # FORMAT-SPECIFIC PARAMETER TESTS
 # ============================================================================
 
+# ============================================================================
+# BOUNDING FUNCTION TESTS
+# ============================================================================
+
+test_that("bound_player_elo clamps extreme values", {
+  # Normal value passes through
+  expect_equal(bound_player_elo(1500), 1500)
+
+  # Extreme high should be capped
+  capped <- bound_player_elo(9999)
+  expect_lte(capped, THREE_WAY_PLAYER_ELO_MAX)
+
+  # Extreme low should be raised
+  floored <- bound_player_elo(-9999)
+  expect_gte(floored, THREE_WAY_PLAYER_ELO_MIN)
+})
+
+test_that("bound_player_elo is vectorized", {
+  result <- bound_player_elo(c(500, 1500, 3000))
+  expect_equal(length(result), 3)
+  expect_gte(min(result), THREE_WAY_PLAYER_ELO_MIN)
+  expect_lte(max(result), THREE_WAY_PLAYER_ELO_MAX)
+})
+
+test_that("bound_venue_elo clamps extreme values", {
+  expect_equal(bound_venue_elo(1400), 1400)
+
+  capped <- bound_venue_elo(9999)
+  expect_lte(capped, THREE_WAY_VENUE_ELO_MAX)
+
+  floored <- bound_venue_elo(-9999)
+  expect_gte(floored, THREE_WAY_VENUE_ELO_MIN)
+})
+
+test_that("venue bounds are tighter than player bounds", {
+  # Venues should have tighter range since they're more stable
+  venue_range <- THREE_WAY_VENUE_ELO_MAX - THREE_WAY_VENUE_ELO_MIN
+  player_range <- THREE_WAY_PLAYER_ELO_MAX - THREE_WAY_PLAYER_ELO_MIN
+  expect_lte(venue_range, player_range)
+})
+
+# ============================================================================
+# CENTRALITY CORRECTION TESTS
+# ============================================================================
+
+test_that("apply_centrality_correction returns raw ELO for NULL percentile", {
+  expect_equal(apply_centrality_correction(1500, NULL), 1500)
+  expect_equal(apply_centrality_correction(1500, NA), 1500)
+})
+
+test_that("apply_centrality_correction at 50th percentile is near identity", {
+  # 50th percentile → implied ELO = ELO_START, minimal correction
+  result <- apply_centrality_correction(THREE_WAY_ELO_START, 50)
+  expect_equal(result, THREE_WAY_ELO_START, tolerance = 1)
+})
+
+test_that("apply_centrality_correction pushes high-percentile up", {
+  # Elite player (90th percentile) with average ELO should be pushed up
+  result <- apply_centrality_correction(THREE_WAY_ELO_START, 90)
+  expect_gt(result, THREE_WAY_ELO_START)
+})
+
+test_that("apply_centrality_correction pushes low-percentile down", {
+  # Weak-network player (10th percentile) with average ELO should be pushed down
+  result <- apply_centrality_correction(THREE_WAY_ELO_START, 10)
+  expect_lt(result, THREE_WAY_ELO_START)
+})
+
+test_that("apply_centrality_correction is monotonic in percentile", {
+  elo <- 1500
+  r10 <- apply_centrality_correction(elo, 10)
+  r50 <- apply_centrality_correction(elo, 50)
+  r90 <- apply_centrality_correction(elo, 90)
+
+  expect_lt(r10, r50)
+  expect_lt(r50, r90)
+})
+
+# ============================================================================
+# LEAGUE STARTING ELO TESTS
+# ============================================================================
+
+test_that("get_league_starting_elo returns tiered values", {
+  # Tier 1: Major internationals/leagues
+  ipl <- get_league_starting_elo("Indian Premier League")
+  expect_equal(ipl, THREE_WAY_LEAGUE_START_TIER_1)
+
+  # International match type with NULL event
+  intl <- get_league_starting_elo(NULL, match_type = "T20I")
+  expect_equal(intl, THREE_WAY_LEAGUE_START_TIER_1)
+})
+
+test_that("get_league_starting_elo defaults for unknown events", {
+  result <- get_league_starting_elo("Some Unknown League 2026")
+  expect_equal(result, THREE_WAY_LEAGUE_START_TIER_4)
+})
+
+test_that("get_league_starting_elo handles NULL/NA/empty", {
+  # NULL without match type → default ELO start
+  expect_equal(get_league_starting_elo(NULL), THREE_WAY_ELO_START)
+  expect_equal(get_league_starting_elo(NA), THREE_WAY_ELO_START)
+  expect_equal(get_league_starting_elo(""), THREE_WAY_ELO_START)
+})
+
+test_that("league starting ELOs are ordered by tier", {
+  expect_gte(THREE_WAY_LEAGUE_START_TIER_1, THREE_WAY_LEAGUE_START_TIER_2)
+  expect_gte(THREE_WAY_LEAGUE_START_TIER_2, THREE_WAY_LEAGUE_START_TIER_3)
+  expect_gte(THREE_WAY_LEAGUE_START_TIER_3, THREE_WAY_LEAGUE_START_TIER_4)
+})
+
+# ============================================================================
+# CONSTANT ACCESSOR TESTS
+# ============================================================================
+
+test_that("get_runs_per_100_elo returns positive values for all formats", {
+  for (fmt in c("t20", "odi", "test")) {
+    val <- get_runs_per_100_elo(fmt)
+    expect_gt(val, 0, label = paste("Runs per 100 ELO for", fmt))
+  }
+})
+
+test_that("get_wicket_elo_divisor returns positive values", {
+  for (fmt in c("t20", "odi", "test")) {
+    val <- get_wicket_elo_divisor(fmt)
+    expect_gt(val, 0, label = paste("Wicket ELO divisor for", fmt))
+  }
+})
+
+test_that("get_runs_per_100_elo handles gender", {
+  male <- get_runs_per_100_elo("t20", "male")
+  female <- get_runs_per_100_elo("t20", "female")
+
+  # Both should be positive (may or may not differ)
+  expect_gt(male, 0)
+  expect_gt(female, 0)
+})
+
+# ============================================================================
+# FORMAT-SPECIFIC PARAMETER TESTS
+# ============================================================================
+
 test_that("all formats have consistent parameters", {
   for (format in c("t20", "odi", "test")) {
     params <- build_3way_elo_params(format)
