@@ -118,7 +118,8 @@ cli::cli_alert_success("Loaded {nrow(all_matches_dt)} {format_msg} matches")
 # Load all team_elo data ----
 cli::cli_alert_info("Loading team ELO data...")
 team_elo_dt <- as.data.table(DBI::dbGetQuery(conn, "
-  SELECT team_id, match_id, match_date, match_type, elo_result, elo_roster_combined
+  SELECT team_id, match_id, match_date, format AS match_type,
+         elo_after AS elo_result, elo_after AS elo_roster_combined
   FROM team_elo
 "))
 team_elo_dt[, match_date := as.Date(match_date)]
