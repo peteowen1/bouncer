@@ -49,6 +49,8 @@ RANDOM_SEED <- 42
 CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
+TUNE_HYPERPARAMS <- FALSE  # Set TRUE to run random search tuning (slower)
+TUNE_ITERATIONS <- 20      # Number of random search trials
 
 cat("\n")
 cli::cli_h1("Agnostic Outcome Model Training")
@@ -403,25 +405,46 @@ for (format in FORMATS_TO_TRAIN) {
   feature_names <- colnames(train_features)[-1]
   cli::cli_alert_success("XGBoost matrices created ({.val {length(feature_names)}} features)")
 
-  # Cross-Validation ----
-  cli::cli_h3("Finding optimal rounds via CV")
+  # Hyperparameter Tuning / CV ----
 
-  params <- list(
+  fixed_params <- list(
     objective = "multi:softprob",
     num_class = 7,
-    max_depth = 6,
-    eta = 0.15,
-    subsample = 0.8,
-    colsample_bytree = 0.8,
     eval_metric = "mlogloss"
   )
+
+  if (TUNE_HYPERPARAMS) {
+    cli::cli_h3("Tuning hyperparameters via random search ({TUNE_ITERATIONS} trials)")
+
+    tuning_result <- tune_xgb_params(
+      dtrain = dtrain,
+      folds = folds,
+      fixed_params = fixed_params,
+      n_iter = TUNE_ITERATIONS,
+      max_rounds = MAX_ROUNDS,
+      early_stopping = EARLY_STOPPING,
+      seed = RANDOM_SEED
+    )
+
+    params <- tuning_result$best_params
+    cli::cli_alert_success("Best tuned params: max_depth={params$max_depth}, eta={round(params$eta, 3)}, subsample={round(params$subsample, 2)}")
+  } else {
+    params <- c(fixed_params, list(
+      max_depth = 6,
+      eta = 0.15,
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    ))
+  }
+
+  cli::cli_h3("Finding optimal rounds via CV")
 
   set.seed(RANDOM_SEED)
   cv_model <- xgb.cv(
     params = params,
     data = dtrain,
     nrounds = MAX_ROUNDS,
-    nfold = CV_FOLDS,
+    folds = folds,
     early_stopping_rounds = EARLY_STOPPING,
     verbose = 1,
     print_every_n = 20
@@ -515,6 +538,57 @@ for (format in names(all_results)) {
   res <- all_results[[format]]
   cli::cli_alert_info("{toupper(format)}: Accuracy={round(res$test_accuracy*100,1)}%, LogLoss={round(res$test_logloss,4)}, Rounds={res$best_nrounds}")
 }
+
+# Record Benchmarks ----
+cli::cli_h3("Recording benchmarks")
+
+# Close read-only connection first to release DuckDB lock
+if (exists("conn") && !is.null(conn)) {
+  tryCatch(DBI::dbDisconnect(conn, shutdown = TRUE), error = function(e) NULL)
+  conn <- NULL
+}
+
+tryCatch({
+  bench_conn <- get_db_connection(read_only = FALSE)
+  for (fmt in names(all_results)) {
+    res <- all_results[[fmt]]
+    record_benchmarks(
+      conn = bench_conn,
+      step_name = "agnostic_model",
+      model_name = paste0("agnostic_outcome_", fmt),
+      format = fmt,
+      metrics = list(
+        mlogloss = res$test_logloss,
+        accuracy = res$test_accuracy,
+        cv_mlogloss = res$best_cv_score,
+        best_nrounds = res$best_nrounds
+      ),
+      n_train = res$n_train,
+      n_test = res$n_test,
+      notes = "Grouped CV folds by match_id"
+    )
+  }
+
+  # Check for regressions against previous run
+  for (fmt in names(all_results)) {
+    regression <- check_benchmark_regression(
+      conn = bench_conn,
+      step_name = "agnostic_model",
+      format = fmt,
+      current_metrics = list(
+        mlogloss = all_results[[fmt]]$test_logloss
+      )
+    )
+    if (regression$is_regression) {
+      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
+    } else {
+      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
+    }
+  }
+  DBI::dbDisconnect(bench_conn, shutdown = TRUE)
+}, error = function(e) {
+  cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")
+})
 
 cat("\n")
 cli::cli_alert_success("Agnostic model training complete!")

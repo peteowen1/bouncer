@@ -43,6 +43,9 @@ RANDOM_SEED <- 42
 CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
+TUNE_HYPERPARAMS <- FALSE  # Set TRUE to run random search tuning
+TUNE_ITERATIONS <- 20
+INCLUDE_ELO_FEATURES <- TRUE  # Include 3-way ELO ratings as XGBoost features
 
 cat("\n")
 cli::cli_h1("Full Outcome Model Training")
@@ -244,6 +247,52 @@ for (format in FORMATS_TO_TRAIN) {
       )
   })
 
+  # 3-Way ELO features (optional, default to neutral if unavailable)
+  has_elo_features <- FALSE
+  if (!INCLUDE_ELO_FEATURES) {
+    model_data <- model_data %>%
+      mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
+  } else if (INCLUDE_ELO_FEATURES) {
+    cli::cli_alert_info("Adding 3-way ELO features...")
+    elo_table <- paste0(format, "_3way_elo")
+    tryCatch({
+      if (table_exists(conn, elo_table)) {
+        elo_data <- DBI::dbGetQuery(conn, sprintf("
+          SELECT
+            delivery_id,
+            batter_run_elo_before AS batter_run_elo,
+            bowler_run_elo_before AS bowler_run_elo,
+            batter_wicket_elo_before AS batter_wicket_elo,
+            bowler_wicket_elo_before AS bowler_wicket_elo,
+            venue_session_run_elo_before AS venue_session_run_elo,
+            venue_perm_run_elo_before AS venue_perm_run_elo
+          FROM %s
+        ", elo_table))
+
+        model_data <- model_data %>%
+          left_join(elo_data, by = "delivery_id") %>%
+          mutate(
+            # ELO differences (more useful as features than raw values)
+            elo_run_diff = coalesce(batter_run_elo, 1400) - coalesce(bowler_run_elo, 1400),
+            elo_wicket_diff = coalesce(batter_wicket_elo, 1400) - coalesce(bowler_wicket_elo, 1400),
+            elo_venue_run = coalesce(venue_session_run_elo, 1400) + coalesce(venue_perm_run_elo, 1400) - 2800
+          )
+
+        n_elo <- sum(!is.na(model_data$batter_run_elo))
+        cli::cli_alert_success("{n_elo}/{nrow(model_data)} have ELO features")
+        has_elo_features <- TRUE
+      } else {
+        cli::cli_alert_warning("No {elo_table} table found, skipping ELO features")
+        model_data <- model_data %>%
+          mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
+      }
+    }, error = function(e) {
+      cli::cli_alert_warning("ELO features unavailable: {e$message}")
+      model_data <<- model_data %>%
+        mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
+    })
+  }
+
   # Feature Engineering ----
   cli::cli_h3("Engineering features")
 
@@ -379,7 +428,9 @@ for (format in FORMATS_TO_TRAIN) {
           bowling_team_runs_skill, bowling_team_wicket_skill,
           # Venue skills
           venue_run_rate, venue_wicket_rate,
-          venue_boundary_rate, venue_dot_rate
+          venue_boundary_rate, venue_dot_rate,
+          # ELO features (if available)
+          elo_run_diff, elo_wicket_diff, elo_venue_run
         )
     } else {
       # Long-form features (no overs_left)
@@ -410,7 +461,9 @@ for (format in FORMATS_TO_TRAIN) {
           bowling_team_runs_skill, bowling_team_wicket_skill,
           # Venue skills
           venue_run_rate, venue_wicket_rate,
-          venue_boundary_rate, venue_dot_rate
+          venue_boundary_rate, venue_dot_rate,
+          # ELO features (if available)
+          elo_run_diff, elo_wicket_diff, elo_venue_run
         )
     }
   }
@@ -432,18 +485,39 @@ for (format in FORMATS_TO_TRAIN) {
   feature_names <- colnames(train_features)[-1]
   cli::cli_alert_success("XGBoost matrices created ({.val {length(feature_names)}} features)")
 
-  # Cross-Validation ----
-  cli::cli_h3("Finding optimal rounds via CV")
+  # Hyperparameter Tuning / CV ----
 
-  params <- list(
+  fixed_params <- list(
     objective = "multi:softprob",
     num_class = 7,
-    max_depth = 6,
-    eta = 0.15,
-    subsample = 0.8,
-    colsample_bytree = 0.8,
     eval_metric = "mlogloss"
   )
+
+  if (TUNE_HYPERPARAMS) {
+    cli::cli_h3("Tuning hyperparameters ({TUNE_ITERATIONS} trials)")
+
+    tuning_result <- tune_xgb_params(
+      dtrain = dtrain,
+      folds = folds,
+      fixed_params = fixed_params,
+      n_iter = TUNE_ITERATIONS,
+      max_rounds = MAX_ROUNDS,
+      early_stopping = EARLY_STOPPING,
+      seed = RANDOM_SEED
+    )
+
+    params <- tuning_result$best_params
+    cli::cli_alert_success("Best tuned params: max_depth={params$max_depth}, eta={round(params$eta, 3)}")
+  } else {
+    params <- c(fixed_params, list(
+      max_depth = 6,
+      eta = 0.15,
+      subsample = 0.8,
+      colsample_bytree = 0.8
+    ))
+  }
+
+  cli::cli_h3("Finding optimal rounds via CV")
 
   set.seed(RANDOM_SEED)
   cv_model <- xgb.cv(
@@ -563,6 +637,55 @@ if (file.exists(agnostic_results_path)) {
 } else {
   cli::cli_alert_info("Agnostic model results not found for comparison")
 }
+
+# Record Benchmarks ----
+cli::cli_h3("Recording benchmarks")
+
+# Close read-only connection first to release DuckDB lock
+if (exists("conn") && !is.null(conn)) {
+  tryCatch(DBI::dbDisconnect(conn, shutdown = TRUE), error = function(e) NULL)
+  conn <- NULL
+}
+
+tryCatch({
+  bench_conn <- get_db_connection(read_only = FALSE)
+  for (fmt in names(all_results)) {
+    res <- all_results[[fmt]]
+    record_benchmarks(
+      conn = bench_conn,
+      step_name = "full_model",
+      model_name = paste0("full_outcome_", fmt),
+      format = fmt,
+      metrics = list(
+        mlogloss = res$test_logloss,
+        accuracy = res$test_accuracy,
+        cv_mlogloss = res$best_cv_score,
+        best_nrounds = res$best_nrounds
+      ),
+      n_train = res$n_train,
+      n_test = res$n_test,
+      notes = "Grouped CV folds by match_id"
+    )
+  }
+
+  # Check regressions and compare with agnostic
+  for (fmt in names(all_results)) {
+    regression <- check_benchmark_regression(
+      conn = bench_conn,
+      step_name = "full_model",
+      format = fmt,
+      current_metrics = list(mlogloss = all_results[[fmt]]$test_logloss)
+    )
+    if (regression$is_regression) {
+      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
+    } else {
+      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
+    }
+  }
+  DBI::dbDisconnect(bench_conn, shutdown = TRUE)
+}, error = function(e) {
+  cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")
+})
 
 cat("\n")
 cli::cli_alert_success("Full model training complete!")

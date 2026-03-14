@@ -109,7 +109,7 @@ if (FRESH_START) {
 if (!is.null(STEPS_TO_RUN)) {
   cli::cli_alert_info("Steps: {paste(STEPS_TO_RUN, collapse = ', ')}")
 } else {
-  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)")
+  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 5b, 6, 7, 8, 9, 10, 11)")
 }
 cat("\n")
 
@@ -428,6 +428,57 @@ if (should_run(5)) {
 }
 
 
+# Step 5b: 3-Way ELO ----
+
+if (should_run("5b")) {
+  cli::cli_h1("Step 5b: Calculate 3-Way Player ELO")
+
+  step5b_fresh <- is_fresh_start("5b")
+
+  # If fresh start, clear 3-way ELO tables
+  if (step5b_fresh) {
+    cli::cli_alert_warning("FRESH_START: Clearing 3-way ELO tables...")
+    conn <- get_db_connection(read_only = FALSE)
+    for (fmt in FORMATS) {
+      tbl <- paste0(fmt, "_3way_elo")
+      if (table_exists(conn, tbl)) {
+        DBI::dbExecute(conn, sprintf("DELETE FROM %s", tbl))
+        cli::cli_alert_info("Cleared {tbl}")
+      }
+    }
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+  }
+
+  # Check smart skip
+  conn <- get_db_connection(read_only = TRUE)
+  skip_check <- check_smart_skip("3way_elo", "5b", conn, delivery_threshold = 0)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+
+  if (skip_check$should_skip && !step5b_fresh) {
+    cli::cli_alert_info("Skipped: {skip_check$reason}")
+    skipped_steps <- c(skipped_steps, "5b_3way_elo")
+  } else {
+    step_start <- Sys.time()
+    if (step5b_fresh) {
+      cli::cli_alert_success("Running FRESH 3-way ELO calculation")
+    } else {
+      cli::cli_alert_success("Running: {skip_check$reason}")
+    }
+
+    # Source the 3-way ELO calculation
+    source(file.path(DATA_RAW_DIR, "ratings/player/3way-elo/01_calculate_3way_elo.R"), local = TRUE)
+
+    # Update pipeline state
+    conn <- get_db_connection(read_only = FALSE)
+    update_pipeline_state("3way_elo", conn, status = "success")
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["5b_3way_elo"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 5b: 3-Way ELO", step_times[["5b_3way_elo"]])
+  }
+}
+
+
 # Step 6: Team ELO ----
 
 if (should_run(6)) {
@@ -697,6 +748,34 @@ if (length(step_times) > 0) {
   for (i in seq_len(nrow(step_df))) {
     cli::cli_alert_info("{step_df$step[i]}: {round(step_df$minutes[i], 1)} min ({step_df$pct[i]}%)")
   }
+
+  # Persist timing to DuckDB
+  tryCatch({
+    timing_conn <- get_db_connection(read_only = FALSE)
+    DBI::dbExecute(timing_conn, "
+      CREATE TABLE IF NOT EXISTS pipeline_timing (
+        run_timestamp TIMESTAMP,
+        step_name VARCHAR,
+        duration_minutes DOUBLE,
+        pct_of_total DOUBLE,
+        total_pipeline_minutes DOUBLE,
+        mode VARCHAR
+      )
+    ")
+    run_ts <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+    total_mins <- as.numeric(total_time)
+    mode <- if (FRESH_START) "fresh" else "incremental"
+    for (i in seq_len(nrow(step_df))) {
+      DBI::dbExecute(timing_conn, "
+        INSERT INTO pipeline_timing VALUES (?, ?, ?, ?, ?, ?)
+      ", params = list(run_ts, step_df$step[i], step_df$minutes[i],
+                       step_df$pct[i], total_mins, mode))
+    }
+    DBI::dbDisconnect(timing_conn, shutdown = TRUE)
+    cli::cli_alert_success("Timing data persisted to pipeline_timing table")
+  }, error = function(e) {
+    cli::cli_alert_warning("Timing persistence failed: {conditionMessage(e)}")
+  })
 }
 
 # Show skipped steps
@@ -720,6 +799,17 @@ cli::cli_bullets(c(
   "i" = "Database: ../bouncerdata/bouncer.duckdb",
   " " = "  - {{format}}_score_projection tables"
 ))
+
+# Benchmark Summary ----
+tryCatch({
+  bench_conn <- get_db_connection(read_only = TRUE)
+  for (fmt in FORMATS) {
+    print_benchmark_summary(bench_conn, format = fmt)
+  }
+  DBI::dbDisconnect(bench_conn, shutdown = TRUE)
+}, error = function(e) {
+  cli::cli_alert_warning("Benchmark summary unavailable: {conditionMessage(e)}")
+})
 
 cat("\n")
 cli::cli_h2("Next Steps")

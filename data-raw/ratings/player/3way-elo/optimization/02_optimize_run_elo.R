@@ -56,7 +56,7 @@ if (GENDER == "female" && FORMAT == "test") {
   TEST_SIZE <- DEFAULT_TEST_SIZE
 }
 
-MAX_ITERATIONS <- 50
+MAX_ITERATIONS <- 200  # Increased from 50 (C++ makes this feasible)
 VERBOSE <- TRUE
 
 cat("\n")
@@ -180,8 +180,8 @@ param_names <- c(
   "k_venue_perm_max", "k_venue_perm_min", "k_venue_perm_halflife",
   # Venue Session K (3)
   "k_venue_session_max", "k_venue_session_min", "k_venue_session_halflife",
-  # Attribution weights (2) - W_VENUE_PERM and W_VENUE_SESSION derived
-  "w_batter", "w_bowler",
+  # Attribution weights (4) - all independently optimized, sum constrained to 1
+  "w_batter", "w_bowler", "w_venue_session", "w_venue_perm",
   # Runs per ELO point (1)
   "runs_per_100_elo"
 )
@@ -194,8 +194,8 @@ lower_bounds <- c(
   0.5, 0.1, 1000,
   # Venue Session K
   2.0, 0.5, 30,
-  # Attribution weights
-  0.3, 0.1,
+  # Attribution weights (all 4 independently)
+  0.3, 0.1, 0.01, 0.005,
   # Runs per ELO
   0.02
 )
@@ -208,24 +208,29 @@ upper_bounds <- c(
   10.0, 2.0, 8000,
   # Venue Session K
   25.0, 5.0, 300,
-  # Attribution weights (can sum up to 0.95, leaving 0.05 for venue)
-  0.65, 0.35,
+  # Attribution weights
+  0.75, 0.40, 0.35, 0.10,
   # Runs per ELO
   0.20
 )
 
-# Starting values (from current constants)
+# Get format-gender-specific starting values from production constants
+run_weights <- get_run_elo_weights(FORMAT, GENDER)
+run_k <- get_run_k_factors(FORMAT, GENDER)
+venue_k <- get_venue_k_factors(FORMAT, GENDER)
+
+# Starting values (from current constants, format-gender-specific)
 start_params <- c(
   # Player Run K
-  THREE_WAY_K_RUN_MAX_T20, THREE_WAY_K_RUN_MIN_T20, THREE_WAY_K_RUN_HALFLIFE_T20,
+  run_k$k_max, run_k$k_min, run_k$halflife,
   # Venue Permanent K
-  THREE_WAY_K_VENUE_PERM_MAX_T20, THREE_WAY_K_VENUE_PERM_MIN_T20, THREE_WAY_K_VENUE_PERM_HALFLIFE_T20,
+  venue_k$perm_max, venue_k$perm_min, venue_k$perm_halflife,
   # Venue Session K
-  THREE_WAY_K_VENUE_SESSION_MAX_T20, THREE_WAY_K_VENUE_SESSION_MIN_T20, THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20,
-  # Attribution weights
-  THREE_WAY_W_BATTER, THREE_WAY_W_BOWLER,
+  venue_k$session_max, venue_k$session_min, venue_k$session_halflife,
+  # Attribution weights (all 4, matching production exactly)
+  run_weights$w_batter, run_weights$w_bowler, run_weights$w_venue_session, run_weights$w_venue_perm,
   # Runs per ELO
-  THREE_WAY_RUNS_PER_100_ELO_POINTS_T20
+  get_runs_per_100_elo(FORMAT, GENDER)
 )
 
 names(start_params) <- param_names
@@ -236,6 +241,21 @@ cli::cli_alert_success("Defined {length(param_names)} parameters to optimize")
 
 # 7. Define Poisson Loss Function ----
 cli::cli_h2("Defining Poisson loss function")
+
+# Try to compile C++ version for ~50-100x speedup
+USE_CPP <- FALSE
+cpp_file <- file.path(getwd(), "data-raw/ratings/player/3way-elo/optimization/elo_loss_fast.cpp")
+if (file.exists(cpp_file) && requireNamespace("Rcpp", quietly = TRUE)) {
+  tryCatch({
+    Rcpp::sourceCpp(cpp_file)
+    USE_CPP <- TRUE
+    cli::cli_alert_success("Using C++ loss function (fast mode)")
+  }, error = function(e) {
+    cli::cli_alert_warning("C++ compilation failed, using R fallback: {conditionMessage(e)}")
+  })
+} else {
+  cli::cli_alert_info("Using R loss function (set up Rcpp for ~50x speedup)")
+}
 
 #' Prepare data for loss calculation
 #' @param data data.table with delivery data including baseline_runs
@@ -282,13 +302,16 @@ calculate_run_poisson_loss <- function(params, prep_data, verbose = FALSE) {
     k_venue_session_halflife <- params["k_venue_session_halflife"]
     w_batter <- params["w_batter"]
     w_bowler <- params["w_bowler"]
+    w_venue_session <- params["w_venue_session"]
+    w_venue_perm <- params["w_venue_perm"]
     runs_per_100_elo <- params["runs_per_100_elo"]
 
-    # Derive venue weights (what's left after player weights)
-    w_venue_total <- max(0.01, 1 - w_batter - w_bowler)
-    # Split venue weight 80/20 between session and permanent (from constants)
-    w_venue_session <- w_venue_total * 0.8
-    w_venue_perm <- w_venue_total * 0.2
+    # Normalize weights to sum to 1 (soft constraint via projection)
+    w_total <- w_batter + w_bowler + w_venue_session + w_venue_perm
+    w_batter <- w_batter / w_total
+    w_bowler <- w_bowler / w_total
+    w_venue_session <- w_venue_session / w_total
+    w_venue_perm <- w_venue_perm / w_total
 
     runs_per_elo <- runs_per_100_elo / 100
 
@@ -398,6 +421,44 @@ calculate_run_poisson_loss <- function(params, prep_data, verbose = FALSE) {
   })
 }
 
+#' Dispatch loss calculation to C++ or R
+#' @param params Named numeric vector
+#' @param prep_data List from prepare_run_elo_data()
+#' @param verbose Logical
+run_loss <- function(params, prep_data, verbose = FALSE) {
+  if (USE_CPP) {
+    # C++ version expects a plain numeric vector in specific order
+    param_vec <- unname(params[c(
+      "k_run_max", "k_run_min", "k_run_halflife",
+      "k_venue_perm_max", "k_venue_perm_min", "k_venue_perm_halflife",
+      "k_venue_session_max", "k_venue_session_min", "k_venue_session_halflife",
+      "w_batter", "w_bowler", "w_venue_session", "w_venue_perm",
+      "runs_per_100_elo"
+    )])
+    if (any(!is.finite(param_vec))) return(1e10)
+
+    tryCatch({
+      loss <- calculate_run_poisson_loss_cpp(
+        param_vec,
+        prep_data$batter_ids,
+        prep_data$bowler_ids,
+        prep_data$venues,
+        prep_data$match_ids,
+        prep_data$baseline_runs,
+        prep_data$actual_runs,
+        prep_data$elo_start
+      )
+      if (verbose) cat(sprintf("Poisson Loss (C++): %.6f\n", loss))
+      loss
+    }, error = function(e) {
+      if (verbose) cat("C++ error, falling back to R:", conditionMessage(e), "\n")
+      calculate_run_poisson_loss(params, prep_data, verbose)
+    })
+  } else {
+    calculate_run_poisson_loss(params, prep_data, verbose)
+  }
+}
+
 # Prepare data
 cli::cli_alert_info("Preparing data for optimization...")
 train_prep <- prepare_run_elo_data(train_data)
@@ -407,7 +468,7 @@ cli::cli_alert_success("Data prepared")
 # 8. Calculate Baseline Loss ----
 cli::cli_h2("Calculating baseline loss")
 
-baseline_loss <- calculate_run_poisson_loss(start_params, train_prep, verbose = TRUE)
+baseline_loss <- run_loss(start_params, train_prep, verbose = TRUE)
 cli::cli_alert_info("Baseline Poisson loss: {round(baseline_loss, 6)}")
 
 # 9. Run Optimization ----
@@ -432,7 +493,7 @@ optim_result <- optim(
                   fn_eval_count, MAX_FN_EVALS, best_loss))
     }
 
-    loss <- calculate_run_poisson_loss(p, train_prep, verbose = FALSE)
+    loss <- run_loss(p, train_prep, verbose = FALSE)
 
     if (loss < best_loss) {
       best_loss <<- loss
@@ -459,10 +520,10 @@ cli::cli_alert_success("Optimization complete")
 cli::cli_h2("Validation")
 
 train_loss_before <- baseline_loss
-train_loss_after <- calculate_run_poisson_loss(optim_result$par, train_prep, verbose = TRUE)
+train_loss_after <- run_loss(optim_result$par, train_prep, verbose = TRUE)
 
-test_loss_before <- calculate_run_poisson_loss(start_params, test_prep, verbose = TRUE)
-test_loss_after <- calculate_run_poisson_loss(optim_result$par, test_prep, verbose = TRUE)
+test_loss_before <- run_loss(start_params, test_prep, verbose = TRUE)
+test_loss_after <- run_loss(optim_result$par, test_prep, verbose = TRUE)
 
 cat("\nPoisson Loss Summary:\n")
 cat(sprintf("%-20s %12s %12s %12s\n", "Dataset", "Before", "After", "Improvement"))
@@ -504,19 +565,30 @@ for (p in param_names) {
 # 12. Generate Constants Code ----
 cli::cli_h2("Generated Constants for constants_3way.R")
 
-cat("\n# Run ELO Optimized Parameters (Poisson Loss, Feb 2026)\n")
-cat(sprintf("THREE_WAY_K_RUN_MAX_T20 <- %.1f\n", optimized_params["k_run_max"]))
-cat(sprintf("THREE_WAY_K_RUN_MIN_T20 <- %.1f\n", optimized_params["k_run_min"]))
-cat(sprintf("THREE_WAY_K_RUN_HALFLIFE_T20 <- %.0f\n", optimized_params["k_run_halflife"]))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_MAX_T20 <- %.2f\n", optimized_params["k_venue_perm_max"]))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_MIN_T20 <- %.2f\n", optimized_params["k_venue_perm_min"]))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_HALFLIFE_T20 <- %.0f\n", optimized_params["k_venue_perm_halflife"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_MAX_T20 <- %.2f\n", optimized_params["k_venue_session_max"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_MIN_T20 <- %.2f\n", optimized_params["k_venue_session_min"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20 <- %.0f\n", optimized_params["k_venue_session_halflife"]))
-cat(sprintf("THREE_WAY_W_BATTER <- %.3f\n", optimized_params["w_batter"]))
-cat(sprintf("THREE_WAY_W_BOWLER <- %.3f\n", optimized_params["w_bowler"]))
-cat(sprintf("THREE_WAY_RUNS_PER_100_ELO_POINTS_T20 <- %.4f\n", optimized_params["runs_per_100_elo"]))
+# Normalize weights for output
+opt_w <- optimized_params[c("w_batter", "w_bowler", "w_venue_session", "w_venue_perm")]
+opt_w <- opt_w / sum(opt_w)
+
+# Format suffix for constants
+fmt_suffix <- toupper(FORMAT)
+gender_label <- if (GENDER == "female") "F" else ""
+
+cat(sprintf("\n# Run ELO Optimized Parameters (Poisson Loss, %s %s %s)\n",
+            GENDER, toupper(FORMAT), format(Sys.Date())))
+cat(sprintf("THREE_WAY_K_RUN_MAX_%s%s <- %.1f\n", fmt_suffix, gender_label, optimized_params["k_run_max"]))
+cat(sprintf("THREE_WAY_K_RUN_MIN_%s%s <- %.1f\n", fmt_suffix, gender_label, optimized_params["k_run_min"]))
+cat(sprintf("THREE_WAY_K_RUN_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_run_halflife"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_MAX_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_max"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_MIN_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_min"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_halflife"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_MAX_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_max"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_MIN_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_min"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_halflife"]))
+cat(sprintf("THREE_WAY_W_BATTER_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_batter"]))
+cat(sprintf("THREE_WAY_W_BOWLER_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_bowler"]))
+cat(sprintf("THREE_WAY_W_VENUE_SESSION_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_venue_session"]))
+cat(sprintf("THREE_WAY_W_VENUE_PERM_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_venue_perm"]))
+cat(sprintf("THREE_WAY_RUNS_PER_100_ELO_POINTS_%s%s <- %.4f\n", fmt_suffix, gender_label, optimized_params["runs_per_100_elo"]))
 
 # 13. Save Results ----
 cli::cli_h2("Saving results")

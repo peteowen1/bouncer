@@ -218,6 +218,16 @@ reference:
     - add_prediction_tables
     - list_available_formats
 
+  - title: Pipeline Benchmarking
+    desc: Track and compare model performance across pipeline runs
+    contents:
+    - record_benchmarks
+    - get_latest_benchmark
+    - check_benchmark_regression
+    - get_benchmark_history
+    - print_benchmark_summary
+    - tune_xgb_params
+
   - title: Rating Internals
     desc: Low-level functions for ELO and skill index calculations
     contents:

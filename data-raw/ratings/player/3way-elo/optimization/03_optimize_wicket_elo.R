@@ -53,7 +53,7 @@ if (GENDER == "female" && FORMAT == "test") {
   TEST_SIZE <- DEFAULT_TEST_SIZE
 }
 
-MAX_ITERATIONS <- 50
+MAX_ITERATIONS <- 200  # Increased from 50 (C++ makes this feasible)
 VERBOSE <- TRUE
 
 cat("\n")
@@ -173,8 +173,8 @@ param_names <- c(
   "k_venue_perm_max", "k_venue_perm_min", "k_venue_perm_halflife",
   # Venue Session K (3)
   "k_venue_session_max", "k_venue_session_min", "k_venue_session_halflife",
-  # Attribution weights (2)
-  "w_batter", "w_bowler",
+  # Attribution weights (4, all independent, sum constrained to 1)
+  "w_batter", "w_bowler", "w_venue_session", "w_venue_perm",
   # ELO divisor for probability conversion (1)
   "wicket_elo_divisor"
 )
@@ -187,11 +187,10 @@ lower_bounds <- c(
   0.5, 0.1, 1000,
   # Venue Session K
   1.0, 0.2, 30,
-  # Attribution weights (Feb 2026: raised w_bowler minimum from 0.1 to 0.20)
-  # This prevents optimizer from converging to local minimum with bowler weight too low
-  0.25, 0.20,
+  # Attribution weights (all 4 independently)
+  0.25, 0.10, 0.0, 0.0,
   # ELO divisor (standard range)
-  200
+  100
 )
 
 # Upper bounds
@@ -202,25 +201,30 @@ upper_bounds <- c(
   6.0, 1.5, 8000,
   # Venue Session K
   15.0, 3.0, 300,
-  # Attribution weights (Feb 2026: raised w_bowler maximum from 0.35 to 0.45)
-  # Allows optimizer to explore higher bowler weights like other formats (31-35%)
-  0.55, 0.45,
+  # Attribution weights
+  0.75, 0.50, 0.40, 0.15,
   # ELO divisor
   600
 )
 
-# Starting values (from current constants)
+# Get format-gender-specific starting values
+wicket_weights <- get_wicket_elo_weights(FORMAT, GENDER)
+wicket_k <- get_wicket_k_factors(FORMAT, GENDER)
+venue_k <- get_venue_k_factors(FORMAT, GENDER)
+
+# Starting values (from current constants, format-gender-specific)
 start_params <- c(
   # Player Wicket K
-  THREE_WAY_K_WICKET_MAX_T20, THREE_WAY_K_WICKET_MIN_T20, THREE_WAY_K_WICKET_HALFLIFE_T20,
-  # Venue Permanent K (same as run for now)
-  THREE_WAY_K_VENUE_PERM_MAX_T20, THREE_WAY_K_VENUE_PERM_MIN_T20, THREE_WAY_K_VENUE_PERM_HALFLIFE_T20,
+  wicket_k$k_max, wicket_k$k_min, wicket_k$halflife,
+  # Venue Permanent K
+  venue_k$perm_max, venue_k$perm_min, venue_k$perm_halflife,
   # Venue Session K
-  THREE_WAY_K_VENUE_SESSION_MAX_T20, THREE_WAY_K_VENUE_SESSION_MIN_T20, THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20,
-  # Attribution weights (same as run)
-  THREE_WAY_W_BATTER, THREE_WAY_W_BOWLER,
+  venue_k$session_max, venue_k$session_min, venue_k$session_halflife,
+  # Attribution weights (all 4, matching production)
+  wicket_weights$w_batter, wicket_weights$w_bowler,
+  wicket_weights$w_venue_session, wicket_weights$w_venue_perm,
   # ELO divisor
-  THREE_WAY_ELO_DIVISOR
+  get_wicket_elo_divisor(FORMAT, GENDER)
 )
 
 names(start_params) <- param_names
@@ -231,6 +235,21 @@ cli::cli_alert_success("Defined {length(param_names)} parameters to optimize")
 
 # 7. Define Binary Log-Loss Function ----
 cli::cli_h2("Defining binary log-loss function")
+
+# Try to compile C++ version
+USE_CPP <- FALSE
+cpp_file <- file.path(getwd(), "data-raw/ratings/player/3way-elo/optimization/elo_wicket_loss_fast.cpp")
+if (file.exists(cpp_file) && requireNamespace("Rcpp", quietly = TRUE)) {
+  tryCatch({
+    Rcpp::sourceCpp(cpp_file)
+    USE_CPP <- TRUE
+    cli::cli_alert_success("Using C++ loss function (fast mode)")
+  }, error = function(e) {
+    cli::cli_alert_warning("C++ compilation failed, using R fallback: {conditionMessage(e)}")
+  })
+} else {
+  cli::cli_alert_info("Using R loss function")
+}
 
 #' Prepare data for loss calculation
 prepare_wicket_elo_data <- function(data) {
@@ -273,12 +292,16 @@ calculate_wicket_logloss <- function(params, prep_data, verbose = FALSE) {
     k_venue_session_halflife <- params["k_venue_session_halflife"]
     w_batter <- params["w_batter"]
     w_bowler <- params["w_bowler"]
+    w_venue_session <- params["w_venue_session"]
+    w_venue_perm <- params["w_venue_perm"]
     elo_divisor <- params["wicket_elo_divisor"]
 
-    # Derive venue weights
-    w_venue_total <- max(0.01, 1 - w_batter - w_bowler)
-    w_venue_session <- w_venue_total * 0.8
-    w_venue_perm <- w_venue_total * 0.2
+    # Normalize weights to sum to 1
+    w_total <- w_batter + w_bowler + w_venue_session + w_venue_perm
+    w_batter <- w_batter / w_total
+    w_bowler <- w_bowler / w_total
+    w_venue_session <- w_venue_session / w_total
+    w_venue_perm <- w_venue_perm / w_total
 
     n <- length(prep_data$is_wickets)
 
@@ -392,6 +415,39 @@ calculate_wicket_logloss <- function(params, prep_data, verbose = FALSE) {
   })
 }
 
+#' Dispatch loss calculation to C++ or R
+run_wicket_loss <- function(params, prep_data, verbose = FALSE) {
+  if (USE_CPP) {
+    param_vec <- unname(params[c(
+      "k_wicket_max", "k_wicket_min", "k_wicket_halflife",
+      "k_venue_perm_max", "k_venue_perm_min", "k_venue_perm_halflife",
+      "k_venue_session_max", "k_venue_session_min", "k_venue_session_halflife",
+      "w_batter", "w_bowler", "w_venue_session", "w_venue_perm",
+      "wicket_elo_divisor"
+    )])
+    if (any(!is.finite(param_vec))) return(1e10)
+    tryCatch({
+      loss <- calculate_wicket_logloss_cpp(
+        param_vec,
+        prep_data$batter_ids,
+        prep_data$bowler_ids,
+        prep_data$venues,
+        prep_data$match_ids,
+        prep_data$baseline_wicket,
+        prep_data$is_wickets,
+        prep_data$elo_start
+      )
+      if (verbose) cat(sprintf("Binary Log-Loss (C++): %.6f\n", loss))
+      loss
+    }, error = function(e) {
+      if (verbose) cat("C++ error, falling back to R:", conditionMessage(e), "\n")
+      calculate_wicket_logloss(params, prep_data, verbose)
+    })
+  } else {
+    calculate_wicket_logloss(params, prep_data, verbose)
+  }
+}
+
 # Prepare data
 cli::cli_alert_info("Preparing data for optimization...")
 train_prep <- prepare_wicket_elo_data(train_data)
@@ -401,7 +457,7 @@ cli::cli_alert_success("Data prepared")
 # 8. Calculate Baseline Loss ----
 cli::cli_h2("Calculating baseline loss")
 
-baseline_loss <- calculate_wicket_logloss(start_params, train_prep, verbose = TRUE)
+baseline_loss <- run_wicket_loss(start_params, train_prep, verbose = TRUE)
 cli::cli_alert_info("Baseline log-loss: {round(baseline_loss, 6)}")
 
 # For comparison: null model log-loss (always predict base rate)
@@ -432,7 +488,7 @@ optim_result <- optim(
                   fn_eval_count, MAX_FN_EVALS, best_loss))
     }
 
-    loss <- calculate_wicket_logloss(p, train_prep, verbose = FALSE)
+    loss <- run_wicket_loss(p, train_prep, verbose = FALSE)
 
     if (loss < best_loss) {
       best_loss <<- loss
@@ -459,10 +515,10 @@ cli::cli_alert_success("Optimization complete")
 cli::cli_h2("Validation")
 
 train_loss_before <- baseline_loss
-train_loss_after <- calculate_wicket_logloss(optim_result$par, train_prep, verbose = TRUE)
+train_loss_after <- run_wicket_loss(optim_result$par, train_prep, verbose = TRUE)
 
-test_loss_before <- calculate_wicket_logloss(start_params, test_prep, verbose = TRUE)
-test_loss_after <- calculate_wicket_logloss(optim_result$par, test_prep, verbose = TRUE)
+test_loss_before <- run_wicket_loss(start_params, test_prep, verbose = TRUE)
+test_loss_after <- run_wicket_loss(optim_result$par, test_prep, verbose = TRUE)
 
 cat("\nBinary Log-Loss Summary:\n")
 cat(sprintf("%-20s %12s %12s %12s\n", "Dataset", "Before", "After", "Improvement"))
@@ -505,20 +561,29 @@ for (p in param_names) {
 # 12. Generate Constants Code ----
 cli::cli_h2("Generated Constants for constants_3way.R")
 
-cat("\n# Wicket ELO Optimized Parameters (Log-Loss, Feb 2026)\n")
-cat(sprintf("THREE_WAY_K_WICKET_MAX_T20 <- %.1f\n", optimized_params["k_wicket_max"]))
-cat(sprintf("THREE_WAY_K_WICKET_MIN_T20 <- %.1f\n", optimized_params["k_wicket_min"]))
-cat(sprintf("THREE_WAY_K_WICKET_HALFLIFE_T20 <- %.0f\n", optimized_params["k_wicket_halflife"]))
-cat(sprintf("# Wicket-specific venue K-factors (if different from run K)\n"))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_MAX_T20 <- %.2f\n", optimized_params["k_venue_perm_max"]))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_MIN_T20 <- %.2f\n", optimized_params["k_venue_perm_min"]))
-cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_HALFLIFE_T20 <- %.0f\n", optimized_params["k_venue_perm_halflife"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_MAX_T20 <- %.2f\n", optimized_params["k_venue_session_max"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_MIN_T20 <- %.2f\n", optimized_params["k_venue_session_min"]))
-cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_HALFLIFE_T20 <- %.0f\n", optimized_params["k_venue_session_halflife"]))
-cat(sprintf("THREE_WAY_W_BATTER_WICKET <- %.3f\n", optimized_params["w_batter"]))
-cat(sprintf("THREE_WAY_W_BOWLER_WICKET <- %.3f\n", optimized_params["w_bowler"]))
-cat(sprintf("THREE_WAY_WICKET_ELO_DIVISOR <- %.0f\n", optimized_params["wicket_elo_divisor"]))
+# Normalize weights for output
+opt_w <- optimized_params[c("w_batter", "w_bowler", "w_venue_session", "w_venue_perm")]
+opt_w <- opt_w / sum(opt_w)
+
+fmt_suffix <- toupper(FORMAT)
+gender_label <- if (GENDER == "female") "F" else ""
+
+cat(sprintf("\n# Wicket ELO Optimized Parameters (Log-Loss, %s %s %s)\n",
+            GENDER, toupper(FORMAT), format(Sys.Date())))
+cat(sprintf("THREE_WAY_K_WICKET_MAX_%s%s <- %.1f\n", fmt_suffix, gender_label, optimized_params["k_wicket_max"]))
+cat(sprintf("THREE_WAY_K_WICKET_MIN_%s%s <- %.1f\n", fmt_suffix, gender_label, optimized_params["k_wicket_min"]))
+cat(sprintf("THREE_WAY_K_WICKET_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_wicket_halflife"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_MAX_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_max"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_MIN_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_min"]))
+cat(sprintf("THREE_WAY_K_VENUE_PERM_WICKET_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_venue_perm_halflife"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_MAX_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_max"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_MIN_%s%s <- %.2f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_min"]))
+cat(sprintf("THREE_WAY_K_VENUE_SESSION_WICKET_HALFLIFE_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["k_venue_session_halflife"]))
+cat(sprintf("THREE_WAY_W_BATTER_WICKET_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_batter"]))
+cat(sprintf("THREE_WAY_W_BOWLER_WICKET_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_bowler"]))
+cat(sprintf("THREE_WAY_W_VENUE_SESSION_WICKET_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_venue_session"]))
+cat(sprintf("THREE_WAY_W_VENUE_PERM_WICKET_%s%s <- %.3f\n", fmt_suffix, gender_label, opt_w["w_venue_perm"]))
+cat(sprintf("THREE_WAY_WICKET_ELO_DIVISOR_%s%s <- %.0f\n", fmt_suffix, gender_label, optimized_params["wicket_elo_divisor"]))
 
 # 13. Save Results ----
 cli::cli_h2("Saving results")
