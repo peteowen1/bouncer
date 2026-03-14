@@ -23,18 +23,25 @@ CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
 PRINT_EVERY_N <- 50
+if (!exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT <- "t20"
 
 cat("\n")
-cli::cli_h1("Stage 1: Projected Score Model (XGBoost)")
+cli::cli_h1("Stage 1: Projected Score Model ({toupper(IN_MATCH_FORMAT)})")
 cat("\n")
 
 # Load Prepared Data ----
 cli::cli_h2("Loading prepared data")
 
-data_path <- file.path("..", "bouncerdata", "models", "ipl_stage1_data.rds")
+# Try format-specific file first, fall back to legacy IPL file
+output_dir <- file.path(find_bouncerdata_dir(), "models")
+data_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_data.rds"))
+if (!file.exists(data_path)) {
+  # Legacy fallback for T20
+  data_path <- file.path(output_dir, "ipl_stage1_data.rds")
+}
 if (!file.exists(data_path)) {
   cli::cli_alert_danger("Data not found at {data_path}")
-  cli::cli_alert_info("Run 01_prepare_ipl_data.R first to generate feature-engineered data")
+  cli::cli_alert_info("Run 01_prepare_all_formats.R first")
   stop("Data file not found")
 }
 
@@ -319,8 +326,12 @@ cat("\n")
 # Naive Baseline Comparison ----
 cli::cli_h2("Baseline Comparison")
 
-# Naive baseline: project final score = current_runs * (120 / balls_bowled)
-naive_predictions <- test_features$total_runs * (120 / pmax(test_features$balls_bowled, 1))
+# Naive baseline: project final score using current run rate
+max_balls <- switch(IN_MATCH_FORMAT,
+  "t20" = 120, "odi" = 300,
+  "test" = pmax(test_features$balls_bowled + 60, 300)  # Test: assume at least 60 more balls
+)
+naive_predictions <- test_features$total_runs * (max_balls / pmax(test_features$balls_bowled, 1))
 naive_rmse <- sqrt(mean((naive_predictions - test_actuals)^2))
 
 cli::cli_alert_info("Naive projection RMSE: {round(naive_rmse, 2)} runs")
@@ -331,10 +342,8 @@ cat("\n")
 # Save Model and Results ----
 cli::cli_h2("Saving model and results")
 
-output_dir <- file.path("..", "bouncerdata", "models")
-
 # Save XGBoost model (native format)
-model_path <- file.path(output_dir, "ipl_stage1_projected_score.json")
+model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_projected_score.ubj"))
 xgb.save(final_model, model_path)
 cli::cli_alert_success("Model saved to {model_path}")
 
@@ -364,7 +373,7 @@ results <- list(
   )
 )
 
-results_path <- file.path(output_dir, "ipl_stage1_results.rds")
+results_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_results.rds"))
 saveRDS(results, results_path)
 cli::cli_alert_success("Results saved to {results_path}")
 
