@@ -49,8 +49,8 @@ RANDOM_SEED <- 42
 CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
-TUNE_HYPERPARAMS <- FALSE  # Set TRUE to run random search tuning (slower)
-TUNE_ITERATIONS <- 20      # Number of random search trials
+if (!exists("TUNE_HYPERPARAMS")) TUNE_HYPERPARAMS <- FALSE  # Set TRUE before sourcing for tuning
+if (!exists("TUNE_ITERATIONS")) TUNE_ITERATIONS <- 20       # Number of random search trials
 
 cat("\n")
 cli::cli_h1("Agnostic Outcome Model Training")

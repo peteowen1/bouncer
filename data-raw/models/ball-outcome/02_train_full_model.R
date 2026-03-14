@@ -43,9 +43,9 @@ RANDOM_SEED <- 42
 CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
-TUNE_HYPERPARAMS <- FALSE  # Set TRUE to run random search tuning
-TUNE_ITERATIONS <- 20
-INCLUDE_ELO_FEATURES <- TRUE  # Include 3-way ELO ratings as XGBoost features
+if (!exists("TUNE_HYPERPARAMS")) TUNE_HYPERPARAMS <- FALSE
+if (!exists("TUNE_ITERATIONS")) TUNE_ITERATIONS <- 20
+if (!exists("INCLUDE_ELO_FEATURES")) INCLUDE_ELO_FEATURES <- TRUE
 
 cat("\n")
 cli::cli_h1("Full Outcome Model Training")
