@@ -246,12 +246,26 @@ predict_win_probability <- function(current_score,
 
   # Calculate win probability
   if (innings == 1) {
-    # TODO: Known approximation — linear heuristic based on runs above/below venue par.
-    # A proper 1st-innings win probability model would require training on historical
-    # 1st-innings score → match outcome data. Current formula is a placeholder.
-    above_par <- projected_score - feature_data$venue_avg_first_innings
-    win_prob <- 0.5 + (above_par / 100)
-    win_prob <- pmax(0.05, pmin(0.95, win_prob))  # Bound between 5-95%
+    # Try to use the trained innings 1 win probability model
+    if (!is.null(models$innings1_model) && !is.null(models$innings1_features)) {
+      feature_data$projected_final_score <- projected_score
+      feature_data$projected_vs_baseline <- projected_score - feature_data$venue_avg_first_innings
+      win_prob <- tryCatch({
+        calculate_innings1_win_prob(
+          feature_data, models$innings1_model, models$innings1_features
+        )
+      }, error = function(e) NULL)
+    } else {
+      win_prob <- NULL
+    }
+
+    # Fallback: logistic heuristic (better than linear)
+    if (is.null(win_prob)) {
+      above_par <- projected_score - feature_data$venue_avg_first_innings
+      # Logistic: naturally bounded 0-1, ~65% at +30 runs, ~35% at -30 runs
+      win_prob <- 1 / (1 + exp(-above_par / 40))
+    }
+    win_prob <- pmax(0.05, pmin(0.95, win_prob))
 
   } else {
     # For 2nd innings, use Stage 2 model
@@ -278,7 +292,7 @@ predict_win_probability <- function(current_score,
     innings = innings,
     target = target,
     format = format,
-    method = if (innings == 1) "heuristic" else "model",
+    method = if (innings == 1 && !is.null(models$innings1_model)) "model" else if (innings == 1) "heuristic" else "model",
     runs_above_par = if (innings == 1) projected_score - feature_data$venue_avg_first_innings else NULL
   )
 
@@ -427,6 +441,35 @@ calculate_projected_score_from_model <- function(data, model, feature_cols, form
 #' @return Numeric win probability (0-1) for chasing team
 #'
 #' @keywords internal
+#' Calculate Innings 1 Win Probability Using Trained Model
+#'
+#' @param data List with feature data (projected_final_score, etc.)
+#' @param model XGBoost model for innings 1 win probability
+#' @param feature_cols Character vector of feature column names
+#' @return Numeric win probability (0-1)
+#' @keywords internal
+calculate_innings1_win_prob <- function(data, model, feature_cols) {
+  # Ensure all feature columns exist
+  for (col in feature_cols) {
+    if (!col %in% names(data)) {
+      data[[col]] <- 0
+    }
+  }
+
+  features <- as.matrix(data[, feature_cols, drop = FALSE])
+  features[is.na(features)] <- 0
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
+
+  if (requireNamespace("xgboost", quietly = TRUE)) {
+    dmatrix <- xgboost::xgb.DMatrix(data = features)
+    win_prob <- stats::predict(model, dmatrix)
+    pmax(0, pmin(1, win_prob))
+  } else {
+    NULL  # Signal to use fallback
+  }
+}
+
+
 calculate_chase_win_prob <- function(data, model, feature_cols) {
 
   # Ensure all feature columns exist

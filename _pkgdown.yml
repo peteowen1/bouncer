@@ -152,6 +152,13 @@ reference:
     - get_team_elo
     - get_dynamic_k
 
+  - title: Hawkeye Features
+    desc: Advanced player features from Cricinfo Hawkeye data
+    contents:
+    - calculate_hawkeye_batter_features
+    - calculate_hawkeye_bowler_features
+    - get_hawkeye_coverage
+
   - title: Centrality & PageRank
     desc: Network-based player quality adjustment
     contents:
