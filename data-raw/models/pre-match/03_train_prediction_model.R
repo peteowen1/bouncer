@@ -540,33 +540,66 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
   # Calibration
   cli::cli_h2("Calibration Analysis")
 
-  test_prepared$pred_prob <- pred_probs
-  test_prepared$actual <- y_test
+  if (is_multiclass) {
+    # 3-class calibration: check each class probability vs actual frequency
+    test_prepared$pred_team1_win <- pred_probs_matrix[, "team1_win"]
+    test_prepared$pred_draw <- pred_probs_matrix[, "draw"]
+    test_prepared$pred_team2_win <- pred_probs_matrix[, "team2_win"]
+    test_prepared$actual_class <- y_test  # 0=team1 win, 1=draw, 2=team2 win
 
-  calibration <- test_prepared %>%
-    mutate(prob_bin = cut(pred_prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
-    group_by(prob_bin) %>%
-    summarise(
-      n = n(),
-      mean_pred = mean(pred_prob),
-      actual_rate = mean(actual),
-      .groups = "drop"
-    ) %>%
-    filter(n >= 5)
+    for (cls_idx in 1:3) {
+      cls_name <- c("Team 1 Win", "Draw", "Team 2 Win")[cls_idx]
+      cls_prob <- pred_probs_matrix[, cls_idx]
+      cls_actual <- as.integer(y_test == (cls_idx - 1))
 
-  cat("\nCalibration (predicted prob vs actual win rate):\n")
-  for (i in seq_len(nrow(calibration))) {
-    cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
-                calibration$prob_bin[i],
-                calibration$mean_pred[i] * 100,
-                calibration$actual_rate[i] * 100,
-                calibration$n[i]))
+      cls_cal <- data.frame(prob = cls_prob, actual = cls_actual) %>%
+        mutate(prob_bin = cut(prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
+        group_by(prob_bin) %>%
+        summarise(n = n(), mean_pred = mean(prob), actual_rate = mean(actual), .groups = "drop") %>%
+        filter(n >= 5)
+
+      if (nrow(cls_cal) > 0) {
+        cat(sprintf("\nCalibration for %s:\n", cls_name))
+        for (i in seq_len(nrow(cls_cal))) {
+          cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
+                      cls_cal$prob_bin[i], cls_cal$mean_pred[i] * 100,
+                      cls_cal$actual_rate[i] * 100, cls_cal$n[i]))
+        }
+      }
+    }
+
+    # For downstream compatibility, set pred_prob to team1 win probability
+    test_prepared$pred_prob <- pred_probs_matrix[, "team1_win"]
+    test_prepared$actual <- as.integer(y_test == 0)  # binary: team1 won or not
+  } else {
+    test_prepared$pred_prob <- pred_probs
+    test_prepared$actual <- y_test
+
+    calibration <- test_prepared %>%
+      mutate(prob_bin = cut(pred_prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
+      group_by(prob_bin) %>%
+      summarise(
+        n = n(),
+        mean_pred = mean(pred_prob),
+        actual_rate = mean(actual),
+        .groups = "drop"
+      ) %>%
+      filter(n >= 5)
+
+    cat("\nCalibration (predicted prob vs actual win rate):\n")
+    for (i in seq_len(nrow(calibration))) {
+      cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
+                  calibration$prob_bin[i],
+                  calibration$mean_pred[i] * 100,
+                  calibration$actual_rate[i] * 100,
+                  calibration$n[i]))
+    }
   }
 
   # Margin-Weighted Accuracy Analysis
   cli::cli_h2("Win Probability by Margin Size")
 
-  # Get margin data from test set (now includes model predictions)
+  # Get margin data from test set
   margin_data <- test_prepared %>%
     select(match_id, pred_prob, actual) %>%
     left_join(
@@ -577,7 +610,7 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
 
   n_with_margin <- sum(!is.na(margin_data$actual_margin))
 
-  if (n_with_margin >= 20) {
+  if (n_with_margin >= 20 && !is_multiclass) {
     margin_valid <- margin_data %>% filter(!is.na(actual_margin))
 
     # Margin-weighted accuracy: correct predictions weighted by margin magnitude
@@ -623,6 +656,36 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
       weighted_accuracy = margin_weighted_acc,
       calibration_by_margin = margin_calibration
     )
+  } else if (is_multiclass && n_with_margin >= 20) {
+    # 3-class margin analysis for Test cricket
+    margin_valid <- margin_data %>% filter(!is.na(actual_margin))
+
+    # For 3-class: check if predicted class matches actual class
+    margin_valid$pred_class_local <- pred_class[match(margin_valid$match_id, test_prepared$match_id)]
+    margin_valid$actual_class <- y_test[match(margin_valid$match_id, test_prepared$match_id)]
+    margin_valid$correct <- margin_valid$pred_class_local == margin_valid$actual_class
+
+    margin_valid <- margin_valid %>%
+      mutate(
+        abs_margin = abs(actual_margin),
+        outcome_type = case_when(
+          actual_class == 1 ~ "Draw",
+          abs_margin <= 100 ~ "Close result",
+          TRUE ~ "Decisive result"
+        )
+      )
+
+    margin_cal <- margin_valid %>%
+      group_by(outcome_type) %>%
+      summarise(n = n(), accuracy = mean(correct), .groups = "drop")
+
+    cat("\n3-class accuracy by outcome type:\n")
+    for (i in seq_len(nrow(margin_cal))) {
+      cat(sprintf("  %s: %.1f%% (n=%d)\n",
+                  margin_cal$outcome_type[i], margin_cal$accuracy[i] * 100, margin_cal$n[i]))
+    }
+
+    winprob_margin_metrics <- list(n_matches = n_with_margin, by_outcome_type = margin_cal)
   } else {
     cli::cli_alert_warning("Only {n_with_margin} matches with margin data - skipping margin analysis")
     winprob_margin_metrics <- NULL
@@ -652,7 +715,8 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
     winprob_margin_metrics = winprob_margin_metrics,
     cv_result = cv_result$evaluation_log,
     importance = importance,
-    calibration = calibration,
+    calibration = if (exists("calibration")) calibration else NULL,
+    is_multiclass = is_multiclass,
     feature_cols = c(all_feature_cols, "predicted_margin"),  # Include new feature
     params = list(
       winprob = xgb_params,
@@ -679,12 +743,13 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
     margin_mae = if (!is.null(margin_model_metrics)) margin_model_metrics$model_mae else NA,
     margin_baseline_mae = if (!is.null(margin_model_metrics)) margin_model_metrics$baseline_mae else NA,
     margin_improvement = if (!is.null(margin_model_metrics)) margin_model_metrics$improvement_pct else NA,
-    # Secondary: Win probability
+    # Secondary: Win probability / outcome prediction
+    is_multiclass = is_multiclass,
     accuracy = accuracy,
     baseline_acc = baseline_acc,
     accuracy_improvement = accuracy - baseline_acc,
     log_loss = log_loss,
-    margin_weighted_acc = if (!is.null(winprob_margin_metrics)) winprob_margin_metrics$weighted_accuracy else NA,
+    margin_weighted_acc = if (!is_multiclass && !is.null(winprob_margin_metrics)) winprob_margin_metrics$weighted_accuracy else NA,
     n_train = nrow(train_prepared),
     n_test = nrow(test_prepared)
   )

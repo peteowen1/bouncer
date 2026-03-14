@@ -73,7 +73,17 @@ base_feature_cols <- get_prediction_feature_cols()
 X_test_base <- as.matrix(test_prepared[, base_feature_cols])
 X_test_base[is.na(X_test_base)] <- 0
 
-y_test <- test_prepared$team1_wins
+# Check if model is multiclass (Test cricket 3-class)
+is_multiclass <- !is.null(training_results$is_multiclass) && training_results$is_multiclass
+
+if (is_multiclass) {
+  # 3-class: 0=team1 win, 1=draw, 2=team2 win
+  y_test <- ifelse(is.na(test_prepared$team1_wins), 1L,
+                   ifelse(test_prepared$team1_wins == 1, 0L, 2L))
+  cli::cli_alert_info("Using 3-class target (team1_win={sum(y_test==0)}, draw={sum(y_test==1)}, team2_win={sum(y_test==2)})")
+} else {
+  y_test <- test_prepared$team1_wins
+}
 y_margin_test <- test_data$actual_margin
 
 # =============================================================================
@@ -189,46 +199,104 @@ X_test[is.na(X_test)] <- 0
 
 # Generate predictions
 dtest <- xgb.DMatrix(data = X_test)
-pred_probs <- predict(model, dtest)
-pred_class <- as.integer(pred_probs > 0.5)
+raw_preds <- predict(model, dtest)
 
-test_prepared$pred_prob <- pred_probs
-test_prepared$pred_class <- pred_class
+if (is_multiclass) {
+  pred_probs_matrix <- matrix(raw_preds, ncol = 3, byrow = TRUE)
+  colnames(pred_probs_matrix) <- c("team1_win", "draw", "team2_win")
+  pred_class <- max.col(pred_probs_matrix) - 1
+  pred_probs <- pred_probs_matrix[, "team1_win"]  # For compatibility
 
-# 7. Overall Metrics ----
-cli::cli_h2("Win Probability Performance")
+  test_prepared$pred_prob <- pred_probs
+  test_prepared$pred_class <- pred_class
 
-accuracy <- mean(pred_class == y_test)
-log_loss <- -mean(y_test * log(pmax(pred_probs, 1e-7)) +
-                   (1 - y_test) * log(pmax(1 - pred_probs, 1e-7)))
-brier <- mean((pred_probs - y_test)^2)
+  # 7. Overall Metrics ----
+  cli::cli_h2("Outcome Prediction Performance (3-class)")
 
-cli::cli_alert_success("Accuracy: {round(accuracy * 100, 1)}%")
-cli::cli_alert_success("Log Loss: {round(log_loss, 4)}")
-cli::cli_alert_success("Brier Score: {round(brier, 4)}")
+  accuracy <- mean(pred_class == y_test)
+  eps <- 1e-7
+  log_loss <- -mean(sapply(seq_along(y_test), function(i) {
+    log(max(pred_probs_matrix[i, y_test[i] + 1], eps))
+  }))
+
+  cli::cli_alert_success("3-class Accuracy: {round(accuracy * 100, 1)}%")
+  cli::cli_alert_success("Multiclass Log Loss: {round(log_loss, 4)}")
+
+  # Per-class accuracy
+  for (cls in 0:2) {
+    cls_name <- c("Team 1 Win", "Draw", "Team 2 Win")[cls + 1]
+    cls_idx <- y_test == cls
+    if (sum(cls_idx) > 0) {
+      cls_acc <- mean(pred_class[cls_idx] == cls)
+      cli::cli_alert_info("  {cls_name}: {round(cls_acc * 100, 1)}% ({sum(cls_idx)} matches)")
+    }
+  }
+
+  brier <- NA  # Not directly applicable for multiclass
+
+} else {
+  pred_probs <- raw_preds
+  pred_class <- as.integer(pred_probs > 0.5)
+
+  test_prepared$pred_prob <- pred_probs
+  test_prepared$pred_class <- pred_class
+
+  # 7. Overall Metrics ----
+  cli::cli_h2("Win Probability Performance")
+
+  accuracy <- mean(pred_class == y_test)
+  log_loss <- -mean(y_test * log(pmax(pred_probs, 1e-7)) +
+                     (1 - y_test) * log(pmax(1 - pred_probs, 1e-7)))
+  brier <- mean((pred_probs - y_test)^2)
+
+  cli::cli_alert_success("Accuracy: {round(accuracy * 100, 1)}%")
+  cli::cli_alert_success("Log Loss: {round(log_loss, 4)}")
+  cli::cli_alert_success("Brier Score: {round(brier, 4)}")
+}
 
 # 6. Baseline Comparisons ----
 cli::cli_h2("Baseline Comparisons")
 
-# Baseline 1: Always predict higher ELO team
-baseline_elo <- as.integer(test_prepared$elo_diff_result > 0)
-baseline_elo_acc <- mean(baseline_elo == y_test)
-cli::cli_alert_info("Baseline (higher result ELO wins): {round(baseline_elo_acc * 100, 1)}%")
+if (is_multiclass) {
+  # 3-class baselines for Test cricket
+  # Baseline: predict higher ELO team wins, predict draw when close
+  baseline_elo_3c <- ifelse(is.na(test_prepared$elo_diff_result), 1L,
+                            ifelse(test_prepared$elo_diff_result > 0, 0L, 2L))
+  baseline_elo_acc <- mean(baseline_elo_3c == y_test)
+  cli::cli_alert_info("Baseline (ELO, no draw pred): {round(baseline_elo_acc * 100, 1)}%")
 
-# Baseline 2: Always predict higher roster ELO team
-baseline_roster <- as.integer(test_prepared$elo_diff_roster > 0)
-baseline_roster_acc <- mean(baseline_roster == y_test)
-cli::cli_alert_info("Baseline (higher roster ELO wins): {round(baseline_roster_acc * 100, 1)}%")
+  baseline_smart <- ifelse(is.na(test_prepared$elo_diff_result), 1L,
+                           ifelse(abs(test_prepared$elo_diff_result) < 50, 1L,
+                                  ifelse(test_prepared$elo_diff_result > 0, 0L, 2L)))
+  baseline_smart_acc <- mean(baseline_smart == y_test)
+  cli::cli_alert_info("Baseline (ELO + draw when close): {round(baseline_smart_acc * 100, 1)}%")
 
-# Baseline 3: Random (50%)
-cli::cli_alert_info("Baseline (random): 50.0%")
+  # Always predict draw baseline (since draws are ~33%)
+  baseline_draw_acc <- mean(1L == y_test)
+  cli::cli_alert_info("Baseline (always predict draw): {round(baseline_draw_acc * 100, 1)}%")
 
-# Baseline 4: Always predict team with better form
-baseline_form <- as.integer(test_prepared$form_diff > 0)
-baseline_form_acc <- mean(baseline_form == y_test)
-cli::cli_alert_info("Baseline (better form wins): {round(baseline_form_acc * 100, 1)}%")
+  baseline_form_acc <- 0
+  baseline_roster_acc <- 0
 
-cli::cli_alert_success("Model improvement over best baseline: +{round((accuracy - max(baseline_elo_acc, baseline_roster_acc, baseline_form_acc)) * 100, 1)}%")
+  cli::cli_alert_success("Model improvement over best baseline: {round((accuracy - max(baseline_elo_acc, baseline_smart_acc, baseline_draw_acc)) * 100, 1)}pp")
+} else {
+  # Binary baselines
+  baseline_elo <- as.integer(test_prepared$elo_diff_result > 0)
+  baseline_elo_acc <- mean(baseline_elo == y_test)
+  cli::cli_alert_info("Baseline (higher result ELO wins): {round(baseline_elo_acc * 100, 1)}%")
+
+  baseline_roster <- as.integer(test_prepared$elo_diff_roster > 0)
+  baseline_roster_acc <- mean(baseline_roster == y_test)
+  cli::cli_alert_info("Baseline (higher roster ELO wins): {round(baseline_roster_acc * 100, 1)}%")
+
+  cli::cli_alert_info("Baseline (random): 50.0%")
+
+  baseline_form <- as.integer(test_prepared$form_diff > 0)
+  baseline_form_acc <- mean(baseline_form == y_test)
+  cli::cli_alert_info("Baseline (better form wins): {round(baseline_form_acc * 100, 1)}%")
+
+  cli::cli_alert_success("Model improvement over best baseline: +{round((accuracy - max(baseline_elo_acc, baseline_roster_acc, baseline_form_acc)) * 100, 1)}%")
+}
 
 # 7. Analysis by Season ----
 cli::cli_h2("Performance by Season")
