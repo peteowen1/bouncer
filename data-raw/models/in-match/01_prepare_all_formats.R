@@ -19,6 +19,7 @@
 library(DBI)
 library(dplyr)
 library(tidyr)
+library(data.table)  # Required for calculate_rolling_features `:=` dispatch
 devtools::load_all()
 
 # Configuration ----

@@ -2,6 +2,9 @@
 #
 # Functions for calculating features used in projected score and win probability models.
 
+#' @importFrom data.table := .SD .N .GRP setorder fcase frollsum as.data.table is.data.table copy set
+NULL
+
 #' Calculate Rolling Features for Deliveries
 #'
 #' Calculates rolling momentum features over specified ball/over windows.
