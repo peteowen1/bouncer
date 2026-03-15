@@ -627,6 +627,34 @@ utils::globalVariables(c(
 
 
 # ============================================================================
+# Test Win Probability Variables (08_test_win_probability_v3.R)
+# ============================================================================
+
+utils::globalVariables(c(
+  "is_result", "total_wickets_match", "total_runs_match",
+  "runs_per_over_match", "overs_per_wicket_current",
+  "current_innings_projected_overs", "completed_innings_overs",
+  "avg_overs_per_innings", "remaining_innings_count",
+  "projected_total_overs", "time_pressure",
+  "abs_lead", "lead_per_over_remaining", "follow_on_possible",
+  "overs_per_day", "overs_deficit", "rain_days_so_far"
+))
+
+
+# ============================================================================
+# Weather Variables (weather.R)
+# ============================================================================
+
+utils::globalVariables(c(
+  "latitude", "longitude", "match_days",
+  "precipitation_total", "rain_total", "is_rain",
+  "log_precip", "log_wind", "rain_days",
+  "temp_avg", "temp_max", "temp_min", "wind_avg", "wind_max",
+  "geocode_source", "match_days_weather"
+))
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 

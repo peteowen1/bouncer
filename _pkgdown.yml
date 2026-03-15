@@ -82,6 +82,16 @@ reference:
     - get_unscraped_matches
     - add_cricinfo_tables
 
+  - title: Weather Data
+    desc: Fetch and manage weather data for cricket matches
+    contents:
+    - geocode_venues
+    - fetch_weather_openmeteo
+    - fetch_forecast_weather
+    - load_venue_coordinates
+    - load_match_weather
+    - add_weather_features
+
   - title: Fox Sports Data
     desc: Load ball-by-ball data from Fox Sports
     contents:
