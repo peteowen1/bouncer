@@ -56,10 +56,10 @@ setDT(deliveries)
 
 cli::cli_alert_success("Loaded {nrow(deliveries)} deliveries from {uniqueN(deliveries$match_id)} matches")
 
-# Load innings totals for each match
+# Load innings totals for each match (include total_overs for time calculation)
 innings_totals <- DBI::dbGetQuery(conn, "
   SELECT match_id, innings, total_runs AS innings_total,
-         total_wickets AS innings_wickets, batting_team
+         total_wickets AS innings_wickets, total_overs AS innings_overs, batting_team
   FROM cricsheet.match_innings
   WHERE match_id IN (
     SELECT match_id FROM cricsheet.matches
@@ -129,35 +129,59 @@ deliveries[innings == 4, `:=`(
   runs_needed = (team1_completed_runs - team2_completed_runs + 1L) - total_runs
 )]
 
-# Cumulative match overs: sum of completed innings overs + current innings overs
-# This approximates match day (~90 overs/day)
-deliveries[, prior_innings_overs := fcase(
+# ── TIME FEATURES (critical for draw prediction) ──
+# Use ACTUAL overs from match_innings for completed innings
+innings_overs_wide <- dcast(innings_totals, match_id ~ paste0("overs_inn", innings),
+                             value.var = "innings_overs", fill = NA)
+deliveries <- merge(deliveries, innings_overs_wide, by = "match_id", all.x = TRUE)
+
+# Cumulative match overs = sum of completed innings overs + current over
+deliveries[, prior_completed_overs := fcase(
   innings == 1, 0,
-  innings == 2, fifelse(!is.na(innings_total_inn1), innings_total_inn1 / 3.5, 90),  # ~3.5 RPO average
-  innings == 3, fifelse(!is.na(innings_total_inn1) & !is.na(innings_total_inn2),
-                        innings_total_inn1 / 3.5 + innings_total_inn2 / 3.5, 180),
-  innings == 4, fifelse(!is.na(innings_total_inn1) & !is.na(innings_total_inn2) & !is.na(innings_total_inn3),
-                        innings_total_inn1 / 3.5 + innings_total_inn2 / 3.5 + innings_total_inn3 / 3.5, 270),
+  innings == 2, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90),
+  innings == 3, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90) +
+                fifelse(!is.na(overs_inn2), as.double(overs_inn2), 90),
+  innings == 4, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90) +
+                fifelse(!is.na(overs_inn2), as.double(overs_inn2), 90) +
+                fifelse(!is.na(overs_inn3), as.double(overs_inn3), 90),
   default = 0
 )]
 
-# Use actual overs from match_innings for completed innings (more accurate)
-# Estimate cumulative match overs from innings run totals / ~3.5 RPO
-deliveries[, cumulative_match_overs := as.double(over) + fcase(
-  innings == 1, 0,
-  innings == 2, fifelse(!is.na(innings_total_inn1), as.double(innings_total_inn1) / 3.5, 90),
-  innings == 3, fifelse(!is.na(innings_total_inn1), as.double(innings_total_inn1) / 3.5, 90) +
-                fifelse(!is.na(innings_total_inn2), as.double(innings_total_inn2) / 3.5, 90),
-  innings == 4, fifelse(!is.na(innings_total_inn1), as.double(innings_total_inn1) / 3.5, 90) +
-                fifelse(!is.na(innings_total_inn2), as.double(innings_total_inn2) / 3.5, 90) +
-                fifelse(!is.na(innings_total_inn3), as.double(innings_total_inn3) / 3.5, 90),
-  default = 0
+deliveries[, cumulative_match_overs := prior_completed_overs + as.double(over)]
+
+# ~90 overs/day, 5 days = 450 max overs
+MAX_TEST_OVERS <- 450
+deliveries[, overs_remaining_match := pmax(0, MAX_TEST_OVERS - cumulative_match_overs)]
+deliveries[, match_progress := pmin(1, cumulative_match_overs / MAX_TEST_OVERS)]
+deliveries[, approx_day := pmin(5L, as.integer(floor(cumulative_match_overs / 90) + 1))]
+
+# ── INNINGS-SPECIFIC STRATEGIC FEATURES ──
+
+# 4th innings: the decider
+# runs_needed: how many more runs to win (0 for other innings)
+# overs_per_run_needed: can they get the runs in time?
+# survive_for_draw: is blocking for a draw viable? (low runs needed + many overs remaining)
+deliveries[innings == 4, `:=`(
+  target_runs = team1_completed_runs - team2_completed_runs + 1L,
+  runs_needed = pmax(0L, (team1_completed_runs - team2_completed_runs + 1L) - total_runs)
+)]
+deliveries[innings == 4, `:=`(
+  runs_per_over_needed = fifelse(overs_remaining_match > 0, as.double(runs_needed) / overs_remaining_match, 10),
+  overs_per_wicket = fifelse(wickets_in_hand > 0, overs_remaining_match / wickets_in_hand, 0),
+  can_survive_for_draw = as.integer(overs_remaining_match < 60 & wickets_in_hand >= 4)
 )]
 
-# Approximate match day (1-5) and match progress (0-1)
-deliveries[, approx_day := pmin(5, floor(cumulative_match_overs / 90) + 1)]
-deliveries[, match_progress := pmin(1, cumulative_match_overs / 450)]
-deliveries[, overs_remaining_approx := pmax(0, 450 - cumulative_match_overs)]
+# 3rd innings: setting a target
+# How big is the lead, and how many overs are left for the 4th innings?
+deliveries[innings == 3, `:=`(
+  overs_for_4th_innings = pmax(0, overs_remaining_match - as.double(over))  # rough estimate
+)]
+
+# All innings: relative position
+deliveries[, `:=`(
+  lead_per_wicket = fifelse(wickets_fallen > 0, as.double(team1_lead) / wickets_fallen, as.double(team1_lead)),
+  is_following_on = as.integer(innings == 3 & team1_lead < 0 & batting_is_team1 == 1)
+)]
 
 # Phase within innings (Test-specific)
 deliveries[, phase := fcase(
@@ -193,26 +217,35 @@ cli::cli_alert_info("Match outcomes: team1_win={outcome_dist[match_outcome==0, N
 cli::cli_h2("Preparing feature matrix")
 
 feature_cols <- c(
-  # Current state
+  # Current innings state
   "total_runs", "wickets_fallen", "wickets_in_hand",
   "balls_bowled", "current_run_rate",
   # Innings identity
   "innings_1", "innings_2", "innings_3", "innings_4",
   "batting_is_team1",
-  # Match state
-  "team1_lead", "completed_innings",
-  # Time/day features (critical for draw prediction)
-  "match_progress", "cumulative_match_overs", "approx_day", "overs_remaining_approx",
+  # Match state (lead/deficit)
+  "team1_lead", "completed_innings", "lead_per_wicket",
+  # TIME FEATURES (critical for draw prediction)
+  "cumulative_match_overs", "overs_remaining_match", "match_progress", "approx_day",
+  # 4th innings chase features
+  "target_runs", "runs_needed", "runs_per_over_needed", "overs_per_wicket",
+  "can_survive_for_draw",
+  # Strategic context
+  "is_following_on",
   # Phase
   "phase_new_ball", "phase_middle", "phase_old_ball",
-  # Context
+  # Venue/context
   "venue_avg", "gender_male"
 )
 
-# 4th innings specific (fill 0 for other innings)
-deliveries[is.na(target_runs), target_runs := 0]
-deliveries[is.na(runs_needed), runs_needed := 0]
-feature_cols <- c(feature_cols, "target_runs", "runs_needed")
+# Fill NAs for innings-specific features (0 = not applicable in this innings)
+for (col in c("target_runs", "runs_needed", "runs_per_over_needed",
+              "overs_per_wicket", "can_survive_for_draw",
+              "overs_for_4th_innings", "is_following_on")) {
+  if (col %in% names(deliveries)) {
+    deliveries[is.na(get(col)), (col) := 0]
+  }
+}
 
 # Clean NAs
 for (col in feature_cols) {
@@ -344,7 +377,57 @@ for (inn in 1:4) {
   if (sum(inn_idx) > 0) {
     inn_acc <- mean(pred_class[inn_idx] == y_test[inn_idx])
     inn_n <- sum(inn_idx)
-    cli::cli_alert_info("  Innings {inn}: {round(inn_acc * 100, 1)}% ({inn_n} deliveries)")
+
+    # Per-class breakdown for this innings
+    inn_probs <- pred_probs[inn_idx, ]
+    inn_actual <- y_test[inn_idx]
+    inn_mlogloss <- -mean(sapply(seq_along(inn_actual), function(i) {
+      log(max(inn_probs[i, inn_actual[i] + 1], eps))
+    }))
+
+    cli::cli_alert_info("  Innings {inn}: {round(inn_acc * 100, 1)}% accuracy, mlogloss={round(inn_mlogloss, 4)} ({inn_n} deliveries)")
+  }
+}
+
+# 4th innings deep dive (most predictable)
+cli::cli_h3("4th Innings Performance (Key Metric)")
+inn4_idx <- test_dt$innings == 4
+if (sum(inn4_idx) > 0) {
+  inn4_probs <- pred_probs[inn4_idx, ]
+  inn4_actual <- y_test[inn4_idx]
+  inn4_pred <- pred_class[inn4_idx]
+  inn4_acc <- mean(inn4_pred == inn4_actual)
+  inn4_mlogloss <- -mean(sapply(seq_along(inn4_actual), function(i) {
+    log(max(inn4_probs[i, inn4_actual[i] + 1], eps))
+  }))
+
+  cli::cli_alert_success("4th innings accuracy: {round(inn4_acc * 100, 1)}%")
+  cli::cli_alert_success("4th innings mlogloss: {round(inn4_mlogloss, 4)} (random={round(-log(1/3), 4)})")
+
+  # 4th innings by match progress
+  inn4_dt <- test_dt[inn4_idx]
+  inn4_dt$pred_class <- inn4_pred
+  inn4_dt$correct <- inn4_pred == inn4_actual
+
+  for (day in 3:5) {
+    day_idx <- inn4_dt$approx_day == day
+    if (sum(day_idx) > 10) {
+      day_acc <- mean(inn4_dt$correct[day_idx])
+      cli::cli_alert_info("  Day {day}: {round(day_acc * 100, 1)}% ({sum(day_idx)} deliveries)")
+    }
+  }
+
+  # 4th innings draw calibration
+  inn4_draw_probs <- inn4_probs[, "draw"]
+  inn4_actual_draw <- as.integer(inn4_actual == 1)
+  cat("\n  4th innings draw calibration:\n")
+  for (threshold in c(0.2, 0.4, 0.6, 0.8)) {
+    above <- inn4_draw_probs > threshold
+    if (sum(above) > 10) {
+      actual_rate <- mean(inn4_actual_draw[above])
+      cat(sprintf("    P(draw) > %.0f%%: actual draw rate = %.1f%% (n=%d)\n",
+                  threshold * 100, actual_rate * 100, sum(above)))
+    }
   }
 }
 
