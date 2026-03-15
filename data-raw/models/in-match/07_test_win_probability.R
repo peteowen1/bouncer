@@ -1,18 +1,15 @@
 # Test Cricket Win Probability Model (3-class: Win/Draw/Loss) ----
 #
-# Unlike T20/ODI, Test cricket has:
-#   - 4 innings (not 2)
-#   - Draws as ~33% of outcomes
-#   - No fixed target until 4th innings
-#   - Time pressure (5 days) affects draw probability
-#   - Pitch deterioration across innings
+# Uses the PROJECTED SCORE MODEL output as a key feature.
+# The projected score model already works (+44% over naive), so we
+# leverage it: projected lead/deficit + overs remaining → win/draw/loss.
 #
-# Architecture: XGBoost multiclass (3-class: team1_win, draw, team2_win)
-# One model handles all 4 innings with innings-specific features.
-#
-# Output:
-#   - bouncerdata/models/test_win_probability.ubj
-#   - bouncerdata/models/test_winprob_results.rds
+# Key design decisions:
+#   - Projected innings total from Stage 1 model as core feature
+#   - Overs remaining (max 450 - cumulative) for draw prediction
+#   - Sample every 6th delivery (one per over) to reduce noise
+#   - Upweight 3rd/4th innings (more informative)
+#   - 3-class: team1_win=0, draw=1, team2_win=2
 
 # Setup ----
 library(DBI)
@@ -24,10 +21,10 @@ devtools::load_all()
 RANDOM_SEED <- 42
 CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
-EARLY_STOPPING <- 20
+EARLY_STOPPING <- 30
 
 cat("\n")
-cli::cli_h1("Test Cricket Win Probability Model (3-class)")
+cli::cli_h1("Test Win Probability Model v2 (Projection-Based)")
 cat("\n")
 
 # Load Data ----
@@ -36,13 +33,25 @@ cli::cli_h2("Loading data")
 output_dir <- file.path(find_bouncerdata_dir(), "models")
 conn <- get_db_connection(read_only = TRUE)
 
-# Load all Test deliveries with match outcomes
+# Load stage 1 model for projected scores
+stage1_path <- file.path(output_dir, "test_stage1_results.rds")
+if (!file.exists(stage1_path)) stop("Run 03_projected_score_model.R with IN_MATCH_FORMAT='test' first")
+stage1_results <- readRDS(stage1_path)
+stage1_model <- stage1_results$model
+stage1_features <- stage1_results$feature_cols
+cli::cli_alert_success("Loaded Stage 1 projected score model")
+
+# Load prepared stage 1 data (has all the rolling features we need)
+stage1_data_path <- file.path(output_dir, "test_stage1_data.rds")
+if (!file.exists(stage1_data_path)) stop("Run 01_prepare_all_formats.R with FORMATS_TO_PREPARE='test' first")
+stage1_data <- readRDS(stage1_data_path)
+
+# Load all Test deliveries with outcomes
 deliveries <- DBI::dbGetQuery(conn, "
   SELECT
     d.delivery_id, d.match_id, d.season, d.match_date,
     d.venue, d.gender, d.batting_team, d.bowling_team,
     d.innings, d.over, d.ball,
-    d.runs_batter, d.runs_total, d.is_wicket,
     d.total_runs,
     (d.wickets_fallen - CAST(d.is_wicket AS INT)) AS wickets_fallen,
     m.outcome_type, m.outcome_winner, m.team1, m.team2
@@ -53,234 +62,254 @@ deliveries <- DBI::dbGetQuery(conn, "
   ORDER BY d.match_date, d.match_id, d.innings, d.over, d.ball
 ")
 setDT(deliveries)
-
 cli::cli_alert_success("Loaded {nrow(deliveries)} deliveries from {uniqueN(deliveries$match_id)} matches")
 
-# Load innings totals for each match (include total_overs for time calculation)
+# Load innings totals (for completed innings and overs)
 innings_totals <- DBI::dbGetQuery(conn, "
   SELECT match_id, innings, total_runs AS innings_total,
-         total_wickets AS innings_wickets, total_overs AS innings_overs, batting_team
+         total_wickets AS innings_wickets, total_overs AS innings_overs
   FROM cricsheet.match_innings
   WHERE match_id IN (
-    SELECT match_id FROM cricsheet.matches
-    WHERE LOWER(match_type) IN ('test', 'mdm')
+    SELECT match_id FROM cricsheet.matches WHERE LOWER(match_type) IN ('test', 'mdm')
   )
   ORDER BY match_id, innings
 ")
 setDT(innings_totals)
+
+# Venue averages
+venue_avgs <- DBI::dbGetQuery(conn, "
+  SELECT venue, AVG(total_runs) as venue_avg
+  FROM cricsheet.match_innings mi
+  JOIN cricsheet.matches m ON mi.match_id = m.match_id
+  WHERE LOWER(m.match_type) IN ('test', 'mdm') AND mi.innings = 1
+  GROUP BY venue HAVING COUNT(*) >= 3
+")
+setDT(venue_avgs)
 
 DBI::dbDisconnect(conn, shutdown = TRUE)
 
 # Feature Engineering ----
 cli::cli_h2("Engineering features")
 
-# Add match outcome (3-class)
+# Match outcome (3-class)
 deliveries[, match_outcome := fcase(
-  outcome_type == "draw", 1L,  # Draw
-  outcome_winner == team1, 0L,  # Team 1 wins
-  default = 2L                  # Team 2 wins
+  outcome_type == "draw", 1L,
+  outcome_winner == team1, 0L,
+  default = 2L
 )]
 
-# Add: is batting team = team1?
-deliveries[, batting_is_team1 := as.integer(batting_team == team1)]
-
-# Calculate cumulative match state
-deliveries[, balls_bowled := over * 6L + ball]
-deliveries[, wickets_in_hand := 10L - wickets_fallen]
-deliveries[, current_run_rate := fifelse(balls_bowled > 0, total_runs / balls_bowled * 6, 0)]
-
-# Pivot innings totals to wide format for lead/deficit calculation
-innings_wide <- dcast(innings_totals, match_id ~ paste0("inn", innings),
-                      value.var = c("innings_total", "innings_wickets", "batting_team"),
-                      fill = NA)
-
-deliveries <- merge(deliveries, innings_wide, by = "match_id", all.x = TRUE)
-
-# Calculate lead/deficit from batting team's perspective
-# Positive lead = batting team ahead, negative = behind
+# Basic state
 deliveries[, `:=`(
-  # Completed innings totals for team1 and team2
-  team1_completed_runs = fcase(
-    innings == 1, 0L,
-    innings == 2, innings_total_inn1,
-    innings == 3, innings_total_inn1,
-    innings == 4, innings_total_inn1 + fifelse(!is.na(innings_total_inn3), innings_total_inn3, 0L)
-  ),
-  team2_completed_runs = fcase(
-    innings == 1, 0L,
-    innings == 2, 0L,
-    innings == 3, innings_total_inn2,
-    innings == 4, innings_total_inn2
-  )
+  balls_bowled = as.integer(over * 6L + ball),
+  wickets_in_hand = 10L - wickets_fallen,
+  current_run_rate = fifelse(over > 0, total_runs / (over + ball/6), 0),
+  batting_is_team1 = as.integer(batting_team == team1)
 )]
 
-# Current lead from team1's perspective
+# Innings totals (wide format)
+inn_wide <- dcast(innings_totals, match_id ~ paste0("inn", innings),
+                  value.var = c("innings_total", "innings_wickets", "innings_overs"), fill = NA)
+deliveries <- merge(deliveries, inn_wide, by = "match_id", all.x = TRUE)
+deliveries <- merge(deliveries, venue_avgs, by = "venue", all.x = TRUE)
+deliveries[is.na(venue_avg), venue_avg := 340]
+
+# Team1 lead (cumulative)
+deliveries[, team1_completed := fcase(
+  innings == 1, 0L,
+  innings == 2, fifelse(!is.na(innings_total_inn1), innings_total_inn1, 0L),
+  innings == 3, fifelse(!is.na(innings_total_inn1), innings_total_inn1, 0L),
+  innings == 4, fifelse(!is.na(innings_total_inn1), innings_total_inn1, 0L) +
+                fifelse(!is.na(innings_total_inn3), innings_total_inn3, 0L),
+  default = 0L
+)]
+deliveries[, team2_completed := fcase(
+  innings <= 2, 0L,
+  innings == 3, fifelse(!is.na(innings_total_inn2), innings_total_inn2, 0L),
+  innings == 4, fifelse(!is.na(innings_total_inn2), innings_total_inn2, 0L),
+  default = 0L
+)]
 deliveries[, team1_lead := fcase(
-  batting_is_team1 == 1, team1_completed_runs + total_runs - team2_completed_runs,
-  default = team1_completed_runs - (team2_completed_runs + total_runs)
+  batting_is_team1 == 1L, as.integer(team1_completed + total_runs - team2_completed),
+  default = as.integer(team1_completed - (team2_completed + total_runs))
 )]
 
-# How many completed innings so far?
-deliveries[, completed_innings := as.integer(innings) - 1L]
-
-# 4th innings specific: target and runs needed
-deliveries[innings == 4, `:=`(
-  target_runs = team1_completed_runs - team2_completed_runs + 1L,
-  runs_needed = (team1_completed_runs - team2_completed_runs + 1L) - total_runs
-)]
-
-# ── TIME FEATURES (critical for draw prediction) ──
-# Use ACTUAL overs from match_innings for completed innings
-innings_overs_wide <- dcast(innings_totals, match_id ~ paste0("overs_inn", innings),
-                             value.var = "innings_overs", fill = NA)
-deliveries <- merge(deliveries, innings_overs_wide, by = "match_id", all.x = TRUE)
-
-# Cumulative match overs = sum of completed innings overs + current over
-deliveries[, prior_completed_overs := fcase(
+# Cumulative match overs (from actual innings overs)
+deliveries[, cum_overs := as.double(over) + fcase(
   innings == 1, 0,
-  innings == 2, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90),
-  innings == 3, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90) +
-                fifelse(!is.na(overs_inn2), as.double(overs_inn2), 90),
-  innings == 4, fifelse(!is.na(overs_inn1), as.double(overs_inn1), 90) +
-                fifelse(!is.na(overs_inn2), as.double(overs_inn2), 90) +
-                fifelse(!is.na(overs_inn3), as.double(overs_inn3), 90),
+  innings == 2, fifelse(!is.na(innings_overs_inn1), as.double(innings_overs_inn1), 90),
+  innings == 3, fifelse(!is.na(innings_overs_inn1), as.double(innings_overs_inn1), 90) +
+                fifelse(!is.na(innings_overs_inn2), as.double(innings_overs_inn2), 90),
+  innings == 4, fifelse(!is.na(innings_overs_inn1), as.double(innings_overs_inn1), 90) +
+                fifelse(!is.na(innings_overs_inn2), as.double(innings_overs_inn2), 90) +
+                fifelse(!is.na(innings_overs_inn3), as.double(innings_overs_inn3), 90),
   default = 0
 )]
 
-deliveries[, cumulative_match_overs := prior_completed_overs + as.double(over)]
+MAX_OVERS <- 450
+deliveries[, `:=`(
+  overs_remaining = pmax(0, MAX_OVERS - cum_overs),
+  match_progress = pmin(1, cum_overs / MAX_OVERS),
+  approx_day = pmin(5L, as.integer(floor(cum_overs / 90) + 1))
+)]
 
-# ~90 overs/day, 5 days = 450 max overs
-MAX_TEST_OVERS <- 450
-deliveries[, overs_remaining_match := pmax(0, MAX_TEST_OVERS - cumulative_match_overs)]
-deliveries[, match_progress := pmin(1, cumulative_match_overs / MAX_TEST_OVERS)]
-deliveries[, approx_day := pmin(5L, as.integer(floor(cumulative_match_overs / 90) + 1))]
-
-# ── INNINGS-SPECIFIC STRATEGIC FEATURES ──
-
-# 4th innings: the decider
-# runs_needed: how many more runs to win (0 for other innings)
-# overs_per_run_needed: can they get the runs in time?
-# survive_for_draw: is blocking for a draw viable? (low runs needed + many overs remaining)
+# 4th innings specific
 deliveries[innings == 4, `:=`(
-  target_runs = team1_completed_runs - team2_completed_runs + 1L,
-  runs_needed = pmax(0L, (team1_completed_runs - team2_completed_runs + 1L) - total_runs)
+  target = as.integer(team1_completed - team2_completed + 1L),
+  runs_needed = pmax(0L, as.integer(team1_completed - team2_completed + 1L) - total_runs)
 )]
 deliveries[innings == 4, `:=`(
-  runs_per_over_needed = fifelse(overs_remaining_match > 0, as.double(runs_needed) / overs_remaining_match, 10),
-  overs_per_wicket = fifelse(wickets_in_hand > 0, overs_remaining_match / wickets_in_hand, 0),
-  can_survive_for_draw = as.integer(overs_remaining_match < 60 & wickets_in_hand >= 4)
+  req_rate = fifelse(overs_remaining > 0, as.double(runs_needed) / overs_remaining, 99),
+  overs_per_wicket = fifelse(wickets_in_hand > 0, overs_remaining / as.double(wickets_in_hand), 0)
 )]
 
-# 3rd innings: setting a target
-# How big is the lead, and how many overs are left for the 4th innings?
-deliveries[innings == 3, `:=`(
-  overs_for_4th_innings = pmax(0, overs_remaining_match - as.double(over))  # rough estimate
-)]
+# Fill NAs for non-4th-innings
+for (col in c("target", "runs_needed", "req_rate", "overs_per_wicket")) {
+  deliveries[is.na(get(col)), (col) := 0]
+}
 
-# All innings: relative position
+# Add phase features needed by Stage 1 model
 deliveries[, `:=`(
-  lead_per_wicket = fifelse(wickets_fallen > 0, as.double(team1_lead) / wickets_fallen, as.double(team1_lead)),
-  is_following_on = as.integer(innings == 3 & team1_lead < 0 & batting_is_team1 == 1)
-)]
-
-# Phase within innings (Test-specific)
-deliveries[, phase := fcase(
-  over < 20, "new_ball",
-  over < 80, "middle",
-  default = "old_ball"
-)]
-
-# One-hot encode
-deliveries[, `:=`(
-  phase_new_ball = as.integer(phase == "new_ball"),
-  phase_middle = as.integer(phase == "middle"),
-  phase_old_ball = as.integer(phase == "old_ball"),
+  phase_powerplay = 0L,  # Test doesn't use powerplay phases in the same way
+  phase_middle = as.integer(over >= 20 & over < 80),
+  phase_death = 0L,
+  phase_new_ball = as.integer(over < 20),
+  phase_old_ball = as.integer(over >= 80),
   gender_male = as.integer(tolower(gender) == "male"),
-  innings_1 = as.integer(innings == 1),
-  innings_2 = as.integer(innings == 2),
-  innings_3 = as.integer(innings == 3),
-  innings_4 = as.integer(innings == 4)
+  overs_remaining_innings = 0,  # Test has no fixed overs
+  overs_into_phase = fcase(
+    over < 20, as.double(over),
+    over < 80, as.double(over - 20),
+    default = as.double(over - 80)
+  )
 )]
 
-# Venue average first innings score
-venue_avgs <- deliveries[innings == 1, .(venue_avg = mean(as.numeric(innings_total_inn1), na.rm = TRUE)), by = venue]
-deliveries <- merge(deliveries, venue_avgs, by = "venue", all.x = TRUE)
-deliveries[is.na(venue_avg), venue_avg := 340]  # global average
+# Generate projected scores using Stage 1 model
+cli::cli_h2("Generating projected scores")
+
+# Merge rolling features from stage1 data
+stage1_all <- rbind(stage1_data$train, stage1_data$test)
+setDT(stage1_all)
+
+# Get projected score for each delivery
+# Stage 1 only covers 1st innings — for other innings, use current run rate projection
+deliveries[, projected_innings_total := fifelse(
+  innings == 1 & over > 0, total_runs * (90 / (over + ball/6)),  # Simple rate projection for all innings
+  total_runs * (90 / pmax(over + ball/6, 1))
+)]
+
+# Try to use actual Stage 1 XGBoost model for 1st innings
+if (!is.null(stage1_model)) {
+  tryCatch({
+    inn1_idx <- which(deliveries$innings == 1)
+    if (length(inn1_idx) > 0) {
+      # Match deliveries to stage1 prepared data by delivery_id
+      inn1_delivery_ids <- deliveries$delivery_id[inn1_idx]
+      matched <- stage1_all[delivery_id %in% inn1_delivery_ids]
+
+      if (nrow(matched) > 0) {
+        # Ensure all feature columns exist, fill missing with 0
+        for (feat in stage1_features) {
+          if (!feat %in% names(matched)) {
+            matched[, (feat) := 0]
+          }
+        }
+        matched_features <- as.matrix(matched[, ..stage1_features])
+        matched_features[is.na(matched_features)] <- 0
+
+        dmat <- xgb.DMatrix(data = matched_features)
+        preds <- predict(stage1_model, dmat)
+
+        # Map back
+        pred_dt <- data.table(delivery_id = matched$delivery_id, projected_xgb = preds)
+        deliveries <- merge(deliveries, pred_dt, by = "delivery_id", all.x = TRUE)
+        deliveries[!is.na(projected_xgb), projected_innings_total := projected_xgb]
+        deliveries[, projected_xgb := NULL]
+
+        n_xgb <- sum(!is.na(preds))
+        cli::cli_alert_success("Applied Stage 1 model to {n_xgb} 1st innings deliveries")
+      }
+    }
+  }, error = function(e) {
+    cli::cli_alert_warning("Stage 1 prediction failed: {conditionMessage(e)}")
+  })
+}
+
+# Projected lead: what will team1's lead be at end of this innings?
+deliveries[, projected_lead := fcase(
+  batting_is_team1 == 1L & innings == 1, as.double(projected_innings_total) - venue_avg,
+  batting_is_team1 == 1L, as.double(team1_completed + projected_innings_total - team2_completed) - venue_avg,
+  batting_is_team1 == 0L & innings == 2, as.double(team1_completed - (team2_completed + projected_innings_total)),
+  default = as.double(team1_lead)
+)]
 
 cli::cli_alert_success("Features engineered")
 
-# Show outcome distribution
-outcome_dist <- deliveries[, .N, by = match_outcome][order(match_outcome)]
-cli::cli_alert_info("Match outcomes: team1_win={outcome_dist[match_outcome==0, N]}, draw={outcome_dist[match_outcome==1, N]}, team2_win={outcome_dist[match_outcome==2, N]}")
+# Sample: one per over (reduce noise, balance innings)
+cli::cli_h2("Sampling (1 per over)")
+
+# Take last ball of each over for cleaner state
+sampled <- deliveries[, .SD[.N], by = .(match_id, innings, over)]
+cli::cli_alert_info("Sampled {nrow(sampled)} from {nrow(deliveries)} (1 per over)")
+
+# Outcome distribution
+cat(sprintf("  team1_win: %d, draw: %d, team2_win: %d\n",
+            sum(sampled$match_outcome == 0), sum(sampled$match_outcome == 1), sum(sampled$match_outcome == 2)))
 
 # Prepare Features ----
 cli::cli_h2("Preparing feature matrix")
 
 feature_cols <- c(
   # Current innings state
-  "total_runs", "wickets_fallen", "wickets_in_hand",
-  "balls_bowled", "current_run_rate",
-  # Innings identity
-  "innings_1", "innings_2", "innings_3", "innings_4",
+  "total_runs", "wickets_fallen", "wickets_in_hand", "current_run_rate",
+  # Innings
   "batting_is_team1",
-  # Match state (lead/deficit)
-  "team1_lead", "completed_innings", "lead_per_wicket",
-  # TIME FEATURES (critical for draw prediction)
-  "cumulative_match_overs", "overs_remaining_match", "match_progress", "approx_day",
-  # 4th innings chase features
-  "target_runs", "runs_needed", "runs_per_over_needed", "overs_per_wicket",
-  "can_survive_for_draw",
-  # Strategic context
-  "is_following_on",
-  # Phase
-  "phase_new_ball", "phase_middle", "phase_old_ball",
-  # Venue/context
-  "venue_avg", "gender_male"
+  # Match state
+  "team1_lead", "projected_lead", "projected_innings_total",
+  # Time (critical for draws)
+  "cum_overs", "overs_remaining", "match_progress", "approx_day",
+  # 4th innings chase
+  "target", "runs_needed", "req_rate", "overs_per_wicket",
+  # Context
+  "venue_avg"
 )
 
-# Fill NAs for innings-specific features (0 = not applicable in this innings)
-for (col in c("target_runs", "runs_needed", "runs_per_over_needed",
-              "overs_per_wicket", "can_survive_for_draw",
-              "overs_for_4th_innings", "is_following_on")) {
-  if (col %in% names(deliveries)) {
-    deliveries[is.na(get(col)), (col) := 0]
-  }
-}
-
-# Clean NAs
 for (col in feature_cols) {
-  deliveries[is.na(get(col)), (col) := 0]
+  sampled[is.na(get(col)), (col) := 0]
 }
 
-# Train/Test split by season
-TEST_SEASONS <- c("2024", "2025", "2023/24", "2024/25")
-train_dt <- deliveries[!season %in% TEST_SEASONS]
-test_dt <- deliveries[season %in% TEST_SEASONS]
+# Innings as numeric (not one-hot — saves features)
+sampled[, innings_num := as.double(innings)]
+feature_cols <- c(feature_cols, "innings_num")
 
-cli::cli_alert_info("Train: {nrow(train_dt)} deliveries ({uniqueN(train_dt$match_id)} matches)")
-cli::cli_alert_info("Test: {nrow(test_dt)} deliveries ({uniqueN(test_dt$match_id)} matches)")
+# Train/test split
+TEST_SEASONS <- c("2024", "2025", "2023/24", "2024/25")
+train_dt <- sampled[!season %in% TEST_SEASONS]
+test_dt <- sampled[season %in% TEST_SEASONS]
 
 y_train <- train_dt$match_outcome
 y_test <- test_dt$match_outcome
+
+cli::cli_alert_info("Train: {nrow(train_dt)} samples ({uniqueN(train_dt$match_id)} matches)")
+cli::cli_alert_info("Test: {nrow(test_dt)} samples ({uniqueN(test_dt$match_id)} matches)")
 
 # Grouped CV folds
 set.seed(RANDOM_SEED)
 unique_matches <- unique(train_dt$match_id)
 shuffled <- sample(unique_matches)
 fold_ids <- cut(seq_along(shuffled), breaks = CV_FOLDS, labels = FALSE)
-folds <- list()
-for (i in 1:CV_FOLDS) {
-  fold_matches <- shuffled[fold_ids == i]
-  folds[[i]] <- which(train_dt$match_id %in% fold_matches)
-}
+folds <- lapply(1:CV_FOLDS, function(i) which(train_dt$match_id %in% shuffled[fold_ids == i]))
 
 X_train <- as.matrix(train_dt[, ..feature_cols])
 X_test <- as.matrix(test_dt[, ..feature_cols])
 
-dtrain <- xgb.DMatrix(data = X_train, label = y_train)
+# Upweight later innings (3rd/4th more informative than 1st/2nd)
+weights_train <- fifelse(train_dt$innings >= 3, 2.0, 1.0)
+weights_train <- fifelse(train_dt$innings == 4, 3.0, weights_train)
+
+dtrain <- xgb.DMatrix(data = X_train, label = y_train, weight = weights_train)
 dtest <- xgb.DMatrix(data = X_test, label = y_test)
 
-cli::cli_alert_success("Matrices created: {ncol(X_train)} features")
+cli::cli_alert_success("Matrices created: {ncol(X_train)} features, weights: inn1-2=1x, inn3=2x, inn4=3x")
 
 # Train Model ----
 cli::cli_h2("Training 3-class model")
@@ -289,11 +318,12 @@ params <- list(
   objective = "multi:softprob",
   num_class = 3,
   eval_metric = "mlogloss",
-  max_depth = 5,
+  max_depth = 4,
   eta = 0.05,
   subsample = 0.8,
   colsample_bytree = 0.8,
-  min_child_weight = 5
+  min_child_weight = 10,
+  lambda = 2
 )
 
 set.seed(RANDOM_SEED)
@@ -312,17 +342,10 @@ best_nrounds <- cv_model$early_stop$best_iteration %||%
   which.min(cv_model$evaluation_log$test_mlogloss_mean)
 if (is.null(best_nrounds) || is.na(best_nrounds)) best_nrounds <- 100
 
-best_cv_score <- cv_model$evaluation_log$test_mlogloss_mean[best_nrounds]
-cli::cli_alert_success("Best iteration: {best_nrounds}, CV mlogloss: {round(best_cv_score, 4)}")
+best_cv <- cv_model$evaluation_log$test_mlogloss_mean[best_nrounds]
+cli::cli_alert_success("Best: {best_nrounds} rounds, CV mlogloss: {round(best_cv, 4)}")
 
-# Train final model
-model <- xgb.train(
-  params = params,
-  data = dtrain,
-  nrounds = best_nrounds,
-  evals = list(train = dtrain),
-  verbose = 0
-)
+model <- xgb.train(params = params, data = dtrain, nrounds = best_nrounds, verbose = 0)
 
 # Evaluate ----
 cli::cli_h2("Evaluation")
@@ -332,161 +355,102 @@ pred_probs <- matrix(raw_preds, ncol = 3, byrow = TRUE)
 colnames(pred_probs) <- c("team1_win", "draw", "team2_win")
 pred_class <- max.col(pred_probs) - 1
 
-# Overall accuracy
-accuracy <- mean(pred_class == y_test)
-cli::cli_alert_success("3-class accuracy: {round(accuracy * 100, 1)}%")
-
-# Per-class accuracy
-for (cls in 0:2) {
-  cls_name <- c("Team 1 Win", "Draw", "Team 2 Win")[cls + 1]
-  cls_idx <- y_test == cls
-  if (sum(cls_idx) > 0) {
-    cls_acc <- mean(pred_class[cls_idx] == cls)
-    cls_n <- sum(cls_idx)
-    cli::cli_alert_info("  {cls_name}: {round(cls_acc * 100, 1)}% recall ({cls_n} deliveries)")
-  }
-}
-
-# Multiclass log loss
 eps <- 1e-7
-mlogloss <- -mean(sapply(seq_along(y_test), function(i) {
+overall_acc <- mean(pred_class == y_test)
+overall_mlogloss <- -mean(sapply(seq_along(y_test), function(i) {
   log(max(pred_probs[i, y_test[i] + 1], eps))
 }))
-cli::cli_alert_success("mlogloss: {round(mlogloss, 4)}")
 
-# Baselines
-baseline_random <- -log(1/3)  # 1.099
-cli::cli_alert_info("Baseline (random 3-class): {round(baseline_random, 4)}")
+baseline_random <- -log(1/3)
 
-# Always predict draw
-baseline_draw_acc <- mean(1L == y_test)
-cli::cli_alert_info("Baseline (always draw): {round(baseline_draw_acc * 100, 1)}% accuracy")
+cat(sprintf("\n  OVERALL: accuracy=%.1f%%, mlogloss=%.4f (random=%.4f, improvement=%+.1f%%)\n",
+            overall_acc * 100, overall_mlogloss, baseline_random,
+            (baseline_random - overall_mlogloss) / baseline_random * 100))
 
-# ELO-based
-baseline_elo_acc <- mean(ifelse(test_dt$team1_lead > 0, 0L,
-                                 ifelse(test_dt$team1_lead < 0, 2L, 1L)) == y_test)
-cli::cli_alert_info("Baseline (predict by current lead): {round(baseline_elo_acc * 100, 1)}%")
-
-improvement <- (baseline_random - mlogloss) / baseline_random * 100
-cli::cli_alert_success("Improvement over random: {round(improvement, 1)}%")
-
-# Per-innings accuracy
-cli::cli_h3("Accuracy by innings")
-for (inn in 1:4) {
-  inn_idx <- test_dt$innings == inn
-  if (sum(inn_idx) > 0) {
-    inn_acc <- mean(pred_class[inn_idx] == y_test[inn_idx])
-    inn_n <- sum(inn_idx)
-
-    # Per-class breakdown for this innings
-    inn_probs <- pred_probs[inn_idx, ]
-    inn_actual <- y_test[inn_idx]
-    inn_mlogloss <- -mean(sapply(seq_along(inn_actual), function(i) {
-      log(max(inn_probs[i, inn_actual[i] + 1], eps))
-    }))
-
-    cli::cli_alert_info("  Innings {inn}: {round(inn_acc * 100, 1)}% accuracy, mlogloss={round(inn_mlogloss, 4)} ({inn_n} deliveries)")
+# Per-class
+for (cls in 0:2) {
+  cls_name <- c("Team1 Win", "Draw", "Team2 Win")[cls + 1]
+  idx <- y_test == cls
+  if (sum(idx) > 0) {
+    recall <- mean(pred_class[idx] == cls)
+    cat(sprintf("  %-12s recall=%.1f%% (%d samples)\n", cls_name, recall * 100, sum(idx)))
   }
 }
 
-# 4th innings deep dive (most predictable)
-cli::cli_h3("4th Innings Performance (Key Metric)")
-inn4_idx <- test_dt$innings == 4
-if (sum(inn4_idx) > 0) {
-  inn4_probs <- pred_probs[inn4_idx, ]
-  inn4_actual <- y_test[inn4_idx]
-  inn4_pred <- pred_class[inn4_idx]
-  inn4_acc <- mean(inn4_pred == inn4_actual)
-  inn4_mlogloss <- -mean(sapply(seq_along(inn4_actual), function(i) {
-    log(max(inn4_probs[i, inn4_actual[i] + 1], eps))
-  }))
-
-  cli::cli_alert_success("4th innings accuracy: {round(inn4_acc * 100, 1)}%")
-  cli::cli_alert_success("4th innings mlogloss: {round(inn4_mlogloss, 4)} (random={round(-log(1/3), 4)})")
-
-  # 4th innings by match progress
-  inn4_dt <- test_dt[inn4_idx]
-  inn4_dt$pred_class <- inn4_pred
-  inn4_dt$correct <- inn4_pred == inn4_actual
-
-  for (day in 3:5) {
-    day_idx <- inn4_dt$approx_day == day
-    if (sum(day_idx) > 10) {
-      day_acc <- mean(inn4_dt$correct[day_idx])
-      cli::cli_alert_info("  Day {day}: {round(day_acc * 100, 1)}% ({sum(day_idx)} deliveries)")
-    }
+# Per-innings (the key metric)
+cli::cli_h3("Performance by Innings")
+for (inn in 1:4) {
+  idx <- test_dt$innings == inn
+  if (sum(idx) > 0) {
+    inn_acc <- mean(pred_class[idx] == y_test[idx])
+    inn_probs <- pred_probs[idx, ]
+    inn_actual <- y_test[idx]
+    inn_ml <- -mean(sapply(seq_along(inn_actual), function(i) {
+      log(max(inn_probs[i, inn_actual[i] + 1], eps))
+    }))
+    imp <- (baseline_random - inn_ml) / baseline_random * 100
+    cat(sprintf("  Innings %d: accuracy=%.1f%%, mlogloss=%.4f (%+.1f%% vs random), n=%d\n",
+                inn, inn_acc * 100, inn_ml, imp, sum(idx)))
   }
+}
 
-  # 4th innings draw calibration
-  inn4_draw_probs <- inn4_probs[, "draw"]
-  inn4_actual_draw <- as.integer(inn4_actual == 1)
-  cat("\n  4th innings draw calibration:\n")
-  for (threshold in c(0.2, 0.4, 0.6, 0.8)) {
-    above <- inn4_draw_probs > threshold
-    if (sum(above) > 10) {
-      actual_rate <- mean(inn4_actual_draw[above])
-      cat(sprintf("    P(draw) > %.0f%%: actual draw rate = %.1f%% (n=%d)\n",
-                  threshold * 100, actual_rate * 100, sum(above)))
-    }
+# Per-day
+cli::cli_h3("Performance by Day")
+for (day in 1:5) {
+  idx <- test_dt$approx_day == day
+  if (sum(idx) > 10) {
+    day_acc <- mean(pred_class[idx] == y_test[idx])
+    day_probs <- pred_probs[idx, ]
+    day_actual <- y_test[idx]
+    day_ml <- -mean(sapply(seq_along(day_actual), function(i) {
+      log(max(day_probs[i, day_actual[i] + 1], eps))
+    }))
+    imp <- (baseline_random - day_ml) / baseline_random * 100
+    cat(sprintf("  Day %d: accuracy=%.1f%%, mlogloss=%.4f (%+.1f%% vs random), n=%d\n",
+                day, day_acc * 100, day_ml, imp, sum(idx)))
   }
+}
+
+# Draw calibration
+cli::cli_h3("Draw Calibration")
+draw_probs_vec <- pred_probs[, "draw"]
+actual_draw <- as.integer(y_test == 1)
+for (lo in c(0, 0.2, 0.4, 0.6)) {
+  hi <- lo + 0.2
+  idx <- draw_probs_vec >= lo & draw_probs_vec < hi
+  if (sum(idx) > 20) {
+    cat(sprintf("  P(draw) %.0f-%.0f%%: predicted=%.1f%%, actual=%.1f%% (n=%d)\n",
+                lo*100, hi*100, mean(draw_probs_vec[idx])*100, mean(actual_draw[idx])*100, sum(idx)))
+  }
+}
+idx80 <- draw_probs_vec >= 0.8
+if (sum(idx80) > 10) {
+  cat(sprintf("  P(draw) 80-100%%: predicted=%.1f%%, actual=%.1f%% (n=%d)\n",
+              mean(draw_probs_vec[idx80])*100, mean(actual_draw[idx80])*100, sum(idx80)))
 }
 
 # Feature importance
-cli::cli_h3("Feature importance")
+cli::cli_h3("Feature Importance")
 importance <- xgb.importance(model = model)
-for (i in seq_len(min(10, nrow(importance)))) {
-  cli::cli_alert_info("  {i}. {importance$Feature[i]}: {round(importance$Gain[i], 3)}")
-}
-
-# Draw probability calibration
-cli::cli_h3("Draw probability calibration")
-draw_probs <- pred_probs[, "draw"]
-actual_draw <- as.integer(y_test == 1)
-
-draw_cal <- data.frame(prob = draw_probs, actual = actual_draw) %>%
-  mutate(prob_bin = cut(prob, breaks = c(0, 0.1, 0.2, 0.3, 0.5, 0.7, 1.0), include.lowest = TRUE)) %>%
-  group_by(prob_bin) %>%
-  summarise(n = n(), mean_pred = mean(prob), actual_rate = mean(actual), .groups = "drop") %>%
-  filter(n >= 100)
-
-cat("\nDraw probability calibration:\n")
-for (i in seq_len(nrow(draw_cal))) {
-  cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
-              draw_cal$prob_bin[i], draw_cal$mean_pred[i] * 100,
-              draw_cal$actual_rate[i] * 100, draw_cal$n[i]))
+for (i in seq_len(min(12, nrow(importance)))) {
+  cli::cli_alert_info("{i}. {importance$Feature[i]}: {round(importance$Gain[i], 3)}")
 }
 
 # Save ----
 cli::cli_h2("Saving")
-
-model_path <- file.path(output_dir, "test_win_probability.ubj")
-xgb.save(model, model_path)
-cli::cli_alert_success("Model saved to {model_path}")
-
-results <- list(
-  model = model,
-  params = params,
-  best_nrounds = best_nrounds,
+xgb.save(model, file.path(output_dir, "test_win_probability.ubj"))
+saveRDS(list(
+  model = model, params = params, best_nrounds = best_nrounds,
   feature_cols = feature_cols,
   metrics = list(
-    accuracy = accuracy,
-    mlogloss = mlogloss,
-    best_cv_mlogloss = best_cv_score,
-    baseline_random = baseline_random,
-    improvement_over_random = improvement
+    accuracy = overall_acc, mlogloss = overall_mlogloss,
+    cv_mlogloss = best_cv, baseline = baseline_random,
+    improvement = (baseline_random - overall_mlogloss) / baseline_random * 100
   ),
-  importance = importance,
-  created_at = Sys.time()
-)
+  importance = importance, created_at = Sys.time()
+), file.path(output_dir, "test_winprob_results.rds"))
+cli::cli_alert_success("Saved")
 
-results_path <- file.path(output_dir, "test_winprob_results.rds")
-saveRDS(results, results_path)
-cli::cli_alert_success("Results saved to {results_path}")
-
-cat("\n")
-cli::cli_h1("Summary")
-cat(sprintf("  3-class accuracy: %.1f%%\n", accuracy * 100))
-cat(sprintf("  mlogloss: %.4f (random baseline: %.4f)\n", mlogloss, baseline_random))
-cat(sprintf("  Improvement: +%.1f%% over random\n", improvement))
-cat(sprintf("  Best rounds: %d\n", best_nrounds))
-cat("\n")
+cat(sprintf("\n  SUMMARY: %.1f%% accuracy, mlogloss %.4f (%+.1f%% vs random)\n",
+            overall_acc * 100, overall_mlogloss,
+            (baseline_random - overall_mlogloss) / baseline_random * 100))
