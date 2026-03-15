@@ -298,8 +298,5 @@ if (exists("conn") && !is.null(conn)) {
 cat("\n")
 cli::cli_alert_success("All formats prepared!")
 cli::cli_h3("Next Steps")
-cli::cli_bullets(c(
-  "i" = "Run 03_projected_score_model.R for projected score (Stage 1)",
-  "i" = "Run 05_win_probability_innings2.R for chase win prob (Stage 2)",
-  "i" = "Models will be saved as {format}_stage1_results.rds / {format}_stage2_results.rds"
-))
+cli::cli_alert_info("Run 03_projected_score_model.R for projected score (Stage 1)")
+cli::cli_alert_info("Run 05_win_probability_innings2.R for chase win prob (Stage 2)")
