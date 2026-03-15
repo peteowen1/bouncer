@@ -493,6 +493,9 @@ prepare_prediction_features <- function(df) {
 
       # Match context
       is_knockout = as.integer(dplyr::coalesce(is_knockout, FALSE)),
+      # Home advantage (team1 is usually the home team in Cricsheet)
+      # is_neutral_venue comes from venue-country matching
+      team1_is_home = as.integer(!dplyr::coalesce(is_neutral_venue, TRUE)),
 
       # Interaction features
       # Strong team with good form = momentum
@@ -515,12 +518,11 @@ prepare_prediction_features <- function(df) {
 #' @keywords internal
 get_prediction_feature_cols <- function() {
   c(
-    # ELO differences (2)
-    "elo_diff_result", "elo_diff_roster",
+    # ELO differences (1 — roster ELO not available, was duplicate of result)
+    "elo_diff_result",
 
-    # Raw ELO values (5)
+    # Raw ELO values (3)
     "team1_elo_scaled", "team2_elo_scaled",
-    "team1_roster_scaled", "team2_roster_scaled",
     "match_quality",
 
     # Form & H2H (5)
@@ -549,8 +551,9 @@ get_prediction_feature_cols <- function() {
     "elo_form_interaction", "toss_venue_interaction",
     "bat_advantage_high_scoring", "total_advantage",
 
-    # Match context (1)
-    "is_knockout"
+    # Match context (2)
+    "is_knockout",
+    "team1_is_home"
   )
 }
 

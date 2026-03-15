@@ -109,7 +109,7 @@ if (FRESH_START) {
 if (!is.null(STEPS_TO_RUN)) {
   cli::cli_alert_info("Steps: {paste(STEPS_TO_RUN, collapse = ', ')}")
 } else {
-  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 5b, 6, 7, 8, 9, 10, 11)")
+  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 5b, 6, 7, 8, 9, 10, 11, 12)")
 }
 cat("\n")
 
@@ -720,6 +720,76 @@ if (should_run(11)) {
 
     step_times[["11_score_projection"]] <- difftime(Sys.time(), step_start, units = "mins")
     print_step_complete("Step 11: Score Projections", step_times[["11_score_projection"]])
+  }
+}
+
+
+# Step 12: In-Match Models (Projected Score + Win Probability) ----
+
+if (should_run(12)) {
+  cli::cli_h1("Step 12: Train In-Match Models")
+
+  # Check smart skip (retrain if models are missing or enough new data)
+  conn <- get_db_connection(read_only = TRUE)
+  skip_check <- check_smart_skip("in_match_models", 12, conn,
+                                  delivery_threshold = MODEL_RETRAIN_THRESHOLD)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
+
+  if (skip_check$should_skip && !FRESH_START) {
+    cli::cli_alert_info("Skipped: {skip_check$reason}")
+    skipped_steps <- c(skipped_steps, "12_in_match_models")
+  } else {
+    step_start <- Sys.time()
+    cli::cli_alert_success("Running: {skip_check$reason}")
+
+    for (fmt in c("t20", "odi")) {
+      cli::cli_h2("In-Match Models: {toupper(fmt)}")
+
+      # Prepare data
+      tryCatch({
+        FORMATS_TO_PREPARE <- fmt
+        source(file.path(DATA_RAW_DIR, "models/in-match/01_prepare_all_formats.R"), local = TRUE)
+      }, error = function(e) {
+        cli::cli_alert_warning("Data prep failed for {fmt}: {conditionMessage(e)}")
+      })
+
+      # Train projected score (Stage 1)
+      tryCatch({
+        IN_MATCH_FORMAT <- fmt
+        source(file.path(DATA_RAW_DIR, "models/in-match/03_projected_score_model.R"), local = TRUE)
+        cli::cli_alert_success("{toupper(fmt)} projected score model trained")
+      }, error = function(e) {
+        cli::cli_alert_warning("{toupper(fmt)} projected score failed: {conditionMessage(e)}")
+      })
+
+      # Train chase win probability (Stage 2)
+      tryCatch({
+        IN_MATCH_FORMAT <- fmt
+        source(file.path(DATA_RAW_DIR, "models/in-match/05_win_probability_innings2.R"), local = TRUE)
+        cli::cli_alert_success("{toupper(fmt)} chase win probability model trained")
+      }, error = function(e) {
+        cli::cli_alert_warning("{toupper(fmt)} chase win prob failed: {conditionMessage(e)}")
+      })
+    }
+
+    # Test: projected score only (no simple chase model for 4-innings format)
+    tryCatch({
+      FORMATS_TO_PREPARE <- "test"
+      source(file.path(DATA_RAW_DIR, "models/in-match/01_prepare_all_formats.R"), local = TRUE)
+      IN_MATCH_FORMAT <- "test"
+      source(file.path(DATA_RAW_DIR, "models/in-match/03_projected_score_model.R"), local = TRUE)
+      cli::cli_alert_success("TEST projected score model trained")
+    }, error = function(e) {
+      cli::cli_alert_warning("TEST in-match models failed: {conditionMessage(e)}")
+    })
+
+    # Update pipeline state
+    conn <- get_db_connection(read_only = FALSE)
+    update_pipeline_state("in_match_models", conn, status = "success")
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["12_in_match_models"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 12: In-Match Models", step_times[["12_in_match_models"]])
   }
 }
 

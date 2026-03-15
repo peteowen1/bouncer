@@ -83,6 +83,9 @@ utils::globalVariables(c(
 # ============================================================================
 
 utils::globalVariables(c(
+  # Hawkeye features
+  "shot_diversity",
+  "distinct_shot_types",
   # Basic ELO ratings by format
   "elo_batting",
   "elo_bowling",
