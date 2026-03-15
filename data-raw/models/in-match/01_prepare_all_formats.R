@@ -46,7 +46,8 @@ cat("\n")
 
 # Database Connection ----
 conn <- get_db_connection(read_only = TRUE)
-on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+# Note: no on.exit() — connection closed explicitly at end to avoid
+# premature close when sourced from wrapper scripts
 
 for (current_format in FORMATS_TO_PREPARE) {
 
@@ -118,12 +119,13 @@ for (current_format in FORMATS_TO_PREPARE) {
       (d.wickets_fallen - CAST(d.is_wicket AS INT)) AS wickets_fallen
     FROM cricsheet.deliveries d
     WHERE LOWER(d.match_type) IN (%s)
-      AND d.match_id IN (%s)
     ORDER BY d.match_date, d.match_id, d.innings, d.over, d.ball
-  ", match_type_filter,
-     paste(valid_match_ids, collapse = ", "))
+  ", match_type_filter)
 
   deliveries_df <- DBI::dbGetQuery(conn, deliveries_query)
+
+  # Filter to valid matches (safer than SQL IN clause with string IDs)
+  deliveries_df <- deliveries_df[deliveries_df$match_id %in% valid_match_ids, ]
   cli::cli_alert_success("Loaded {nrow(deliveries_df)} deliveries from {length(unique(deliveries_df$match_id))} matches")
 
   # Join match + innings info ----
@@ -147,12 +149,28 @@ for (current_format in FORMATS_TO_PREPARE) {
   )
   deliveries_df <- bind_cols(deliveries_df, phase_features)
 
-  # Run rates and wickets in hand
-  deliveries_df <- deliveries_df %>%
-    mutate(
-      current_run_rate = calculate_run_rate(total_runs, balls_bowled),
-      wickets_in_hand = 10 - wickets_fallen
-    )
+  # Run rates, balls remaining, wickets in hand
+  if (!is.null(max_overs)) {
+    max_balls <- max_overs * 6
+    deliveries_df <- deliveries_df %>%
+      mutate(
+        balls_bowled = over * 6 + ball,
+        balls_remaining = pmax(0, max_balls - balls_bowled),
+        overs_remaining = balls_remaining / 6,
+        current_run_rate = calculate_run_rate(total_runs, balls_bowled),
+        wickets_in_hand = 10 - wickets_fallen
+      )
+  } else {
+    # Test: no fixed max balls
+    deliveries_df <- deliveries_df %>%
+      mutate(
+        balls_bowled = over * 6 + ball,
+        balls_remaining = NA_real_,
+        overs_remaining = NA_real_,
+        current_run_rate = calculate_run_rate(total_runs, balls_bowled),
+        wickets_in_hand = 10 - wickets_fallen
+      )
+  }
 
   # Rolling features
   cli::cli_alert_info("Calculating rolling features...")
@@ -269,6 +287,11 @@ for (current_format in FORMATS_TO_PREPARE) {
   cat(sprintf("\n  %s complete: %d stage1, %s stage2 deliveries\n",
               toupper(current_format), nrow(stage1_data),
               if (!is.null(stage2_data)) nrow(stage2_data) else "N/A"))
+}
+
+# Cleanup DB connection
+if (exists("conn") && !is.null(conn)) {
+  tryCatch(DBI::dbDisconnect(conn, shutdown = TRUE), error = function(e) NULL)
 }
 
 cat("\n")

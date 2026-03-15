@@ -146,10 +146,11 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
       default = "death"
     )
 
+    over_dbl <- as.double(over)
     overs_into_phase <- data.table::fcase(
-      over < 10, over,
-      over < 40, over - 10,
-      default = over - 40
+      over < 10, over_dbl,
+      over < 40, over_dbl - 10,
+      default = over_dbl - 40
     )
 
     total_overs <- 50
