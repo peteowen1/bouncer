@@ -150,59 +150,66 @@ SKILL_INDEX_WICKET_MIN <- -0.05  # -5% wicket probability
 # Experienced (halflife balls): alpha = midpoint between max and min
 # Veterans (many balls): alpha approaches ALPHA_MIN (stable ratings)
 
-# Men's T20
-SKILL_ALPHA_RUN_MAX_MENS_T20 <- 0.05      # New player learns fast
-SKILL_ALPHA_RUN_MIN_MENS_T20 <- 0.01      # Experienced player is stable
-SKILL_ALPHA_RUN_HALFLIFE_MENS_T20 <- 300  # ~25 T20 innings until halfway
+# Format-gender specific alpha and weight parameters consolidated into SKILL_PARAMS.
+# Keys use SKILL_ALPHA_{RUN|WICKET}_{MAX|MIN|HALFLIFE} and
+# SKILL_W_{BATTER|BOWLER|VENUE_SESSION|VENUE_PERM}_{RUN|WICKET} naming.
 
-SKILL_ALPHA_WICKET_MAX_MENS_T20 <- 0.04
-SKILL_ALPHA_WICKET_MIN_MENS_T20 <- 0.008
-SKILL_ALPHA_WICKET_HALFLIFE_MENS_T20 <- 350
+SKILL_PARAMS <- list(
 
-# Men's ODI
-SKILL_ALPHA_RUN_MAX_MENS_ODI <- 0.04
-SKILL_ALPHA_RUN_MIN_MENS_ODI <- 0.008
-SKILL_ALPHA_RUN_HALFLIFE_MENS_ODI <- 500  # ~10 ODI innings
+  MENS_T20 = list(
+    SKILL_ALPHA_RUN_MAX = 0.05, SKILL_ALPHA_RUN_MIN = 0.01, SKILL_ALPHA_RUN_HALFLIFE = 300,
+    SKILL_ALPHA_WICKET_MAX = 0.04, SKILL_ALPHA_WICKET_MIN = 0.008, SKILL_ALPHA_WICKET_HALFLIFE = 350,
+    SKILL_W_BATTER_RUN = 0.55, SKILL_W_BOWLER_RUN = 0.30,
+    SKILL_W_VENUE_SESSION_RUN = 0.12, SKILL_W_VENUE_PERM_RUN = 0.03,
+    SKILL_W_BATTER_WICKET = 0.45, SKILL_W_BOWLER_WICKET = 0.25,
+    SKILL_W_VENUE_SESSION_WICKET = 0.24, SKILL_W_VENUE_PERM_WICKET = 0.06
+  ),
 
-SKILL_ALPHA_WICKET_MAX_MENS_ODI <- 0.03
-SKILL_ALPHA_WICKET_MIN_MENS_ODI <- 0.006
-SKILL_ALPHA_WICKET_HALFLIFE_MENS_ODI <- 600
+  MENS_ODI = list(
+    SKILL_ALPHA_RUN_MAX = 0.04, SKILL_ALPHA_RUN_MIN = 0.008, SKILL_ALPHA_RUN_HALFLIFE = 500,
+    SKILL_ALPHA_WICKET_MAX = 0.03, SKILL_ALPHA_WICKET_MIN = 0.006, SKILL_ALPHA_WICKET_HALFLIFE = 600,
+    SKILL_W_BATTER_RUN = 0.52, SKILL_W_BOWLER_RUN = 0.28,
+    SKILL_W_VENUE_SESSION_RUN = 0.16, SKILL_W_VENUE_PERM_RUN = 0.04,
+    SKILL_W_BATTER_WICKET = 0.50, SKILL_W_BOWLER_WICKET = 0.32,
+    SKILL_W_VENUE_SESSION_WICKET = 0.14, SKILL_W_VENUE_PERM_WICKET = 0.04
+  ),
 
-# Men's Test
-SKILL_ALPHA_RUN_MAX_MENS_TEST <- 0.03
-SKILL_ALPHA_RUN_MIN_MENS_TEST <- 0.005
-SKILL_ALPHA_RUN_HALFLIFE_MENS_TEST <- 800  # ~8 Test innings
+  MENS_TEST = list(
+    SKILL_ALPHA_RUN_MAX = 0.03, SKILL_ALPHA_RUN_MIN = 0.005, SKILL_ALPHA_RUN_HALFLIFE = 800,
+    SKILL_ALPHA_WICKET_MAX = 0.025, SKILL_ALPHA_WICKET_MIN = 0.004, SKILL_ALPHA_WICKET_HALFLIFE = 900,
+    SKILL_W_BATTER_RUN = 0.55, SKILL_W_BOWLER_RUN = 0.30,
+    SKILL_W_VENUE_SESSION_RUN = 0.12, SKILL_W_VENUE_PERM_RUN = 0.03,
+    SKILL_W_BATTER_WICKET = 0.52, SKILL_W_BOWLER_WICKET = 0.32,
+    SKILL_W_VENUE_SESSION_WICKET = 0.13, SKILL_W_VENUE_PERM_WICKET = 0.03
+  ),
 
-SKILL_ALPHA_WICKET_MAX_MENS_TEST <- 0.025
-SKILL_ALPHA_WICKET_MIN_MENS_TEST <- 0.004
-SKILL_ALPHA_WICKET_HALFLIFE_MENS_TEST <- 900
+  WOMENS_T20 = list(
+    SKILL_ALPHA_RUN_MAX = 0.06, SKILL_ALPHA_RUN_MIN = 0.012, SKILL_ALPHA_RUN_HALFLIFE = 250,
+    SKILL_ALPHA_WICKET_MAX = 0.05, SKILL_ALPHA_WICKET_MIN = 0.010, SKILL_ALPHA_WICKET_HALFLIFE = 300,
+    SKILL_W_BATTER_RUN = 0.50, SKILL_W_BOWLER_RUN = 0.20,
+    SKILL_W_VENUE_SESSION_RUN = 0.24, SKILL_W_VENUE_PERM_RUN = 0.06,
+    SKILL_W_BATTER_WICKET = 0.55, SKILL_W_BOWLER_WICKET = 0.30,
+    SKILL_W_VENUE_SESSION_WICKET = 0.12, SKILL_W_VENUE_PERM_WICKET = 0.03
+  ),
 
-# Women's T20
-SKILL_ALPHA_RUN_MAX_WOMENS_T20 <- 0.06
-SKILL_ALPHA_RUN_MIN_WOMENS_T20 <- 0.012
-SKILL_ALPHA_RUN_HALFLIFE_WOMENS_T20 <- 250
+  WOMENS_ODI = list(
+    SKILL_ALPHA_RUN_MAX = 0.05, SKILL_ALPHA_RUN_MIN = 0.010, SKILL_ALPHA_RUN_HALFLIFE = 400,
+    SKILL_ALPHA_WICKET_MAX = 0.04, SKILL_ALPHA_WICKET_MIN = 0.008, SKILL_ALPHA_WICKET_HALFLIFE = 500,
+    SKILL_W_BATTER_RUN = 0.52, SKILL_W_BOWLER_RUN = 0.25,
+    SKILL_W_VENUE_SESSION_RUN = 0.18, SKILL_W_VENUE_PERM_RUN = 0.05,
+    SKILL_W_BATTER_WICKET = 0.54, SKILL_W_BOWLER_WICKET = 0.15,
+    SKILL_W_VENUE_SESSION_WICKET = 0.25, SKILL_W_VENUE_PERM_WICKET = 0.06
+  ),
 
-SKILL_ALPHA_WICKET_MAX_WOMENS_T20 <- 0.05
-SKILL_ALPHA_WICKET_MIN_WOMENS_T20 <- 0.010
-SKILL_ALPHA_WICKET_HALFLIFE_WOMENS_T20 <- 300
-
-# Women's ODI
-SKILL_ALPHA_RUN_MAX_WOMENS_ODI <- 0.05
-SKILL_ALPHA_RUN_MIN_WOMENS_ODI <- 0.010
-SKILL_ALPHA_RUN_HALFLIFE_WOMENS_ODI <- 400
-
-SKILL_ALPHA_WICKET_MAX_WOMENS_ODI <- 0.04
-SKILL_ALPHA_WICKET_MIN_WOMENS_ODI <- 0.008
-SKILL_ALPHA_WICKET_HALFLIFE_WOMENS_ODI <- 500
-
-# Women's Test
-SKILL_ALPHA_RUN_MAX_WOMENS_TEST <- 0.035
-SKILL_ALPHA_RUN_MIN_WOMENS_TEST <- 0.006
-SKILL_ALPHA_RUN_HALFLIFE_WOMENS_TEST <- 700
-
-SKILL_ALPHA_WICKET_MAX_WOMENS_TEST <- 0.030
-SKILL_ALPHA_WICKET_MIN_WOMENS_TEST <- 0.005
-SKILL_ALPHA_WICKET_HALFLIFE_WOMENS_TEST <- 800
+  WOMENS_TEST = list(
+    SKILL_ALPHA_RUN_MAX = 0.035, SKILL_ALPHA_RUN_MIN = 0.006, SKILL_ALPHA_RUN_HALFLIFE = 700,
+    SKILL_ALPHA_WICKET_MAX = 0.030, SKILL_ALPHA_WICKET_MIN = 0.005, SKILL_ALPHA_WICKET_HALFLIFE = 800,
+    SKILL_W_BATTER_RUN = 0.50, SKILL_W_BOWLER_RUN = 0.32,
+    SKILL_W_VENUE_SESSION_RUN = 0.14, SKILL_W_VENUE_PERM_RUN = 0.04,
+    SKILL_W_BATTER_WICKET = 0.52, SKILL_W_BOWLER_WICKET = 0.32,
+    SKILL_W_VENUE_SESSION_WICKET = 0.13, SKILL_W_VENUE_PERM_WICKET = 0.03
+  )
+)
 
 # ============================================================================
 # CONTINUOUS DECAY (BAYESIAN PRIOR TOWARD NEUTRAL)
@@ -249,92 +256,7 @@ SKILL_VENUE_RUN_MIN <- -0.30
 SKILL_VENUE_WICKET_MAX <- 0.03
 SKILL_VENUE_WICKET_MIN <- -0.03
 
-# ============================================================================
-# ATTRIBUTION WEIGHTS (Placeholder - to be optimized)
-# ============================================================================
-# How much each entity contributes to the combined skill effect
-# Weights should sum to 1.0 for run skill, and separately for wicket skill
-#
-# These will be re-optimized after implementing the skill index system
-# Initial values are approximations based on ELO weight patterns
-
-# Run skill attribution weights (Men's T20)
-SKILL_W_BATTER_RUN_MENS_T20 <- 0.55
-SKILL_W_BOWLER_RUN_MENS_T20 <- 0.30
-SKILL_W_VENUE_SESSION_RUN_MENS_T20 <- 0.12
-SKILL_W_VENUE_PERM_RUN_MENS_T20 <- 0.03
-
-# Wicket skill attribution weights (Men's T20)
-SKILL_W_BATTER_WICKET_MENS_T20 <- 0.45
-SKILL_W_BOWLER_WICKET_MENS_T20 <- 0.25
-SKILL_W_VENUE_SESSION_WICKET_MENS_T20 <- 0.24
-SKILL_W_VENUE_PERM_WICKET_MENS_T20 <- 0.06
-
-# Run skill attribution weights (Men's ODI)
-SKILL_W_BATTER_RUN_MENS_ODI <- 0.52
-SKILL_W_BOWLER_RUN_MENS_ODI <- 0.28
-SKILL_W_VENUE_SESSION_RUN_MENS_ODI <- 0.16
-SKILL_W_VENUE_PERM_RUN_MENS_ODI <- 0.04
-
-# Wicket skill attribution weights (Men's ODI)
-SKILL_W_BATTER_WICKET_MENS_ODI <- 0.50
-SKILL_W_BOWLER_WICKET_MENS_ODI <- 0.32
-SKILL_W_VENUE_SESSION_WICKET_MENS_ODI <- 0.14
-SKILL_W_VENUE_PERM_WICKET_MENS_ODI <- 0.04
-
-# Run skill attribution weights (Men's Test)
-SKILL_W_BATTER_RUN_MENS_TEST <- 0.55
-SKILL_W_BOWLER_RUN_MENS_TEST <- 0.30
-SKILL_W_VENUE_SESSION_RUN_MENS_TEST <- 0.12
-SKILL_W_VENUE_PERM_RUN_MENS_TEST <- 0.03
-
-# Wicket skill attribution weights (Men's Test)
-SKILL_W_BATTER_WICKET_MENS_TEST <- 0.52
-SKILL_W_BOWLER_WICKET_MENS_TEST <- 0.32
-SKILL_W_VENUE_SESSION_WICKET_MENS_TEST <- 0.13
-SKILL_W_VENUE_PERM_WICKET_MENS_TEST <- 0.03
-
-# Women's formats (placeholder - same as men's until optimized)
-SKILL_W_BATTER_RUN_WOMENS_T20 <- 0.50
-SKILL_W_BOWLER_RUN_WOMENS_T20 <- 0.20
-SKILL_W_VENUE_SESSION_RUN_WOMENS_T20 <- 0.24
-SKILL_W_VENUE_PERM_RUN_WOMENS_T20 <- 0.06
-
-SKILL_W_BATTER_WICKET_WOMENS_T20 <- 0.55
-SKILL_W_BOWLER_WICKET_WOMENS_T20 <- 0.30
-SKILL_W_VENUE_SESSION_WICKET_WOMENS_T20 <- 0.12
-SKILL_W_VENUE_PERM_WICKET_WOMENS_T20 <- 0.03
-
-SKILL_W_BATTER_RUN_WOMENS_ODI <- 0.52
-SKILL_W_BOWLER_RUN_WOMENS_ODI <- 0.25
-SKILL_W_VENUE_SESSION_RUN_WOMENS_ODI <- 0.18
-SKILL_W_VENUE_PERM_RUN_WOMENS_ODI <- 0.05
-
-SKILL_W_BATTER_WICKET_WOMENS_ODI <- 0.54
-SKILL_W_BOWLER_WICKET_WOMENS_ODI <- 0.15
-SKILL_W_VENUE_SESSION_WICKET_WOMENS_ODI <- 0.25
-SKILL_W_VENUE_PERM_WICKET_WOMENS_ODI <- 0.06
-
-SKILL_W_BATTER_RUN_WOMENS_TEST <- 0.50
-SKILL_W_BOWLER_RUN_WOMENS_TEST <- 0.32
-SKILL_W_VENUE_SESSION_RUN_WOMENS_TEST <- 0.14
-SKILL_W_VENUE_PERM_RUN_WOMENS_TEST <- 0.04
-
-SKILL_W_BATTER_WICKET_WOMENS_TEST <- 0.52
-SKILL_W_BOWLER_WICKET_WOMENS_TEST <- 0.32
-SKILL_W_VENUE_SESSION_WICKET_WOMENS_TEST <- 0.13
-SKILL_W_VENUE_PERM_WICKET_WOMENS_TEST <- 0.03
-
-# Legacy aliases for backward compatibility (point to Men's T20)
-SKILL_W_BATTER_RUN <- SKILL_W_BATTER_RUN_MENS_T20
-SKILL_W_BOWLER_RUN <- SKILL_W_BOWLER_RUN_MENS_T20
-SKILL_W_VENUE_SESSION_RUN <- SKILL_W_VENUE_SESSION_RUN_MENS_T20
-SKILL_W_VENUE_PERM_RUN <- SKILL_W_VENUE_PERM_RUN_MENS_T20
-
-SKILL_W_BATTER_WICKET <- SKILL_W_BATTER_WICKET_MENS_T20
-SKILL_W_BOWLER_WICKET <- SKILL_W_BOWLER_WICKET_MENS_T20
-SKILL_W_VENUE_SESSION_WICKET <- SKILL_W_VENUE_SESSION_WICKET_MENS_T20
-SKILL_W_VENUE_PERM_WICKET <- SKILL_W_VENUE_PERM_WICKET_MENS_T20
+# Attribution weights and alpha params are now in SKILL_PARAMS (above).
 
 # ============================================================================
 # EXPECTED SKILL RANGES BY ENTITY TYPE (Reference values for validation)
@@ -376,21 +298,15 @@ SKILL_VENUE_WICKET_LOW <- -0.01     # Batter-friendly venue
 #' @export
 get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
-  skill_upper <- toupper(skill_type)
-
-  var_names <- paste0("SKILL_ALPHA_", skill_upper, "_", c("MAX", "MIN", "HALFLIFE"), "_", suffix)
-  missing <- var_names[!vapply(var_names, exists, logical(1), where = topenv())]
-  if (length(missing) > 0) {
-    cli::cli_abort(c(
-      "Unknown skill constant{?s}: {.val {missing}}",
-      "i" = "Check format={.val {format}}, gender={.val {gender}}, skill_type={.val {skill_type}}"
-    ), call = NULL)
+  p <- SKILL_PARAMS[[suffix]]
+  if (is.null(p)) {
+    cli::cli_abort("Unknown format-gender combo: {suffix}", call = NULL)
   }
-
+  skill_upper <- toupper(skill_type)
   list(
-    alpha_max = get(var_names[1]),
-    alpha_min = get(var_names[2]),
-    halflife = get(var_names[3])
+    alpha_max = p[[paste0("SKILL_ALPHA_", skill_upper, "_MAX")]],
+    alpha_min = p[[paste0("SKILL_ALPHA_", skill_upper, "_MIN")]],
+    halflife = p[[paste0("SKILL_ALPHA_", skill_upper, "_HALFLIFE")]]
   )
 }
 
@@ -408,23 +324,16 @@ get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") 
 #' @export
 get_skill_weights <- function(format, gender = "male", skill_type = "run") {
   suffix <- get_format_gender_suffix(format, gender)
-  skill_upper <- toupper(skill_type)
-
-  prefixes <- c("SKILL_W_BATTER_", "SKILL_W_BOWLER_", "SKILL_W_VENUE_SESSION_", "SKILL_W_VENUE_PERM_")
-  var_names <- paste0(prefixes, skill_upper, "_", suffix)
-  missing <- var_names[!vapply(var_names, exists, logical(1), where = topenv())]
-  if (length(missing) > 0) {
-    cli::cli_abort(c(
-      "Unknown skill constant{?s}: {.val {missing}}",
-      "i" = "Check format={.val {format}}, gender={.val {gender}}, skill_type={.val {skill_type}}"
-    ), call = NULL)
+  p <- SKILL_PARAMS[[suffix]]
+  if (is.null(p)) {
+    cli::cli_abort("Unknown format-gender combo: {suffix}", call = NULL)
   }
-
+  skill_upper <- toupper(skill_type)
   list(
-    w_batter = get(var_names[1]),
-    w_bowler = get(var_names[2]),
-    w_venue_session = get(var_names[3]),
-    w_venue_perm = get(var_names[4])
+    w_batter = p[[paste0("SKILL_W_BATTER_", skill_upper)]],
+    w_bowler = p[[paste0("SKILL_W_BOWLER_", skill_upper)]],
+    w_venue_session = p[[paste0("SKILL_W_VENUE_SESSION_", skill_upper)]],
+    w_venue_perm = p[[paste0("SKILL_W_VENUE_PERM_", skill_upper)]]
   )
 }
 

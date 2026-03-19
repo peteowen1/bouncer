@@ -267,93 +267,73 @@ simulate_before_state <- function(deliveries) {
 }
 
 
-#' Prepare Stage 1 Features for Prediction
+#' Prepare WPA Features for Prediction
 #'
-#' Prepares feature matrix for Stage 1 (projected score) model.
+#' Prepares feature matrix for Stage 1 (projected score) or Stage 2
+#' (win probability) models. Stage 2 adds is_dls and is_ko columns.
 #'
 #' @param data data.frame with delivery data
 #' @param feature_cols Character vector of required feature columns
+#' @param stage Integer. 1 for projected score, 2 for win probability.
 #'
 #' @return matrix suitable for XGBoost prediction
 #'
 #' @keywords internal
+prepare_wpa_features <- function(data, feature_cols, stage = 1L) {
+
+  # Create one-hot encoded features (shared across both stages)
+  data$phase_powerplay <- as.integer(data$phase == "powerplay")
+  data$phase_middle <- as.integer(data$phase == "middle")
+  data$phase_death <- as.integer(data$phase == "death")
+  data$gender_male <- as.integer(data$gender == "male")
+  data$wickets_in_hand <- 10 - data$wickets_fallen
+
+  # Stage 2 adds DLS and knockout indicators
+  if (stage == 2L) {
+    data$is_dls <- as.integer(data$is_dls_match)
+    data$is_ko <- as.integer(data$is_knockout)
+  }
+
+  # Ensure all required columns exist
+  for (col in feature_cols) {
+    if (!col %in% names(data)) {
+      data[[col]] <- 0
+    }
+  }
+
+  # Extract feature matrix
+  features <- as.matrix(data[, feature_cols, drop = FALSE])
+
+  # Handle NA and Inf
+  features[is.na(features)] <- 0
+  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
+
+  return(features)
+}
+
+# Backward-compatible wrappers
 prepare_stage1_features <- function(data, feature_cols) {
-
-  # Create one-hot encoded features
-  data$phase_powerplay <- as.integer(data$phase == "powerplay")
-  data$phase_middle <- as.integer(data$phase == "middle")
-  data$phase_death <- as.integer(data$phase == "death")
-  data$gender_male <- as.integer(data$gender == "male")
-  data$wickets_in_hand <- 10 - data$wickets_fallen
-
-  # Ensure all required columns exist
-  for (col in feature_cols) {
-    if (!col %in% names(data)) {
-      data[[col]] <- 0
-    }
-  }
-
-  # Extract feature matrix
-  features <- as.matrix(data[, feature_cols, drop = FALSE])
-
-  # Handle NA and Inf
-  features[is.na(features)] <- 0
-  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
-
-  return(features)
+  prepare_wpa_features(data, feature_cols, stage = 1L)
 }
 
-
-#' Prepare Stage 2 Features for Prediction
-#'
-#' Prepares feature matrix for Stage 2 (win probability) model.
-#'
-#' @param data data.frame with delivery data including Stage 1 predictions
-#' @param feature_cols Character vector of required feature columns
-#'
-#' @return matrix suitable for XGBoost prediction
-#'
-#' @keywords internal
 prepare_stage2_features <- function(data, feature_cols) {
-
-  # Create one-hot encoded features
-  data$phase_powerplay <- as.integer(data$phase == "powerplay")
-  data$phase_middle <- as.integer(data$phase == "middle")
-  data$phase_death <- as.integer(data$phase == "death")
-  data$gender_male <- as.integer(data$gender == "male")
-  data$is_dls <- as.integer(data$is_dls_match)
-  data$is_ko <- as.integer(data$is_knockout)
-  data$wickets_in_hand <- 10 - data$wickets_fallen
-
-  # Ensure all required columns exist
-  for (col in feature_cols) {
-    if (!col %in% names(data)) {
-      data[[col]] <- 0
-    }
-  }
-
-  # Extract feature matrix
-  features <- as.matrix(data[, feature_cols, drop = FALSE])
-
-  # Handle NA and Inf
-  features[is.na(features)] <- 0
-  features[is.infinite(features)] <- INF_FEATURE_PLACEHOLDER
-
-  return(features)
+  prepare_wpa_features(data, feature_cols, stage = 2L)
 }
 
 
-#' Assign WPA Credit to Batter and Bowler
+#' Assign Delivery Credit to Batter and Bowler
 #'
-#' Assigns credit/blame for WPA to batter and bowler based on delivery outcome.
+#' Assigns credit/blame for a per-delivery metric (WPA or ERA) to batter
+#' and bowler based on delivery outcome. Handles extras attribution.
 #'
 #' @param deliveries data.frame with delivery outcomes
-#' @param wpa Numeric vector of WPA values
+#' @param values Numeric vector of per-delivery metric values
+#' @param metric Character. Metric name prefix for output (e.g., "wpa", "era").
 #'
-#' @return list with batter_wpa and bowler_wpa vectors
+#' @return Named list with batter_(metric) and bowler_(metric) vectors
 #'
 #' @keywords internal
-assign_wpa_credit <- function(deliveries, wpa) {
+assign_delivery_credit <- function(deliveries, values, metric = "wpa") {
 
   # Identify extras (check column existence BEFORE access to avoid logical(0))
   is_wide <- if ("wides" %in% names(deliveries)) {
@@ -381,24 +361,29 @@ assign_wpa_credit <- function(deliveries, wpa) {
   is_neutral_extra <- is_bye | is_legbye
 
   # Default: batter gets full credit, bowler gets inverse
-  batter_wpa <- wpa
-  bowler_wpa <- -wpa
+  batter_values <- values
+  bowler_values <- -values
 
   # Wides and no-balls: bowler only (batter didn't contribute)
-  batter_wpa[is_bowler_extra] <- 0
-  # bowler_wpa stays as -wpa (blame for extras)
+  batter_values[is_bowler_extra] <- 0
 
   # Byes and leg-byes: neutral (neither batter nor bowler caused)
-  batter_wpa[is_neutral_extra] <- 0
-  bowler_wpa[is_neutral_extra] <- 0
+  batter_values[is_neutral_extra] <- 0
+  bowler_values[is_neutral_extra] <- 0
 
-  # Note: wickets - batter still gets blame via negative WPA,
-  # bowler gets credit via positive -wpa (negative of negative = positive)
+  result <- list()
+  result[[paste0("batter_", metric)]] <- batter_values
+  result[[paste0("bowler_", metric)]] <- bowler_values
+  result
+}
 
-  list(
-    batter_wpa = batter_wpa,
-    bowler_wpa = bowler_wpa
-  )
+# Backward-compatible wrappers
+assign_wpa_credit <- function(deliveries, wpa) {
+  assign_delivery_credit(deliveries, wpa, "wpa")
+}
+
+assign_era_credit <- function(deliveries, era) {
+  assign_delivery_credit(deliveries, era, "era")
 }
 
 
@@ -491,62 +476,7 @@ calculate_delivery_era <- function(deliveries, stage1_model, stage1_feature_cols
 }
 
 
-#' Assign ERA Credit to Batter and Bowler
-#'
-#' Assigns credit/blame for ERA to batter and bowler based on delivery outcome.
-#'
-#' @param deliveries data.frame with delivery outcomes
-#' @param era Numeric vector of ERA values
-#'
-#' @return list with batter_era and bowler_era vectors
-#'
-#' @keywords internal
-assign_era_credit <- function(deliveries, era) {
-
-  # Handle extras columns that may not exist
-  is_wide <- if ("wides" %in% names(deliveries)) {
-    !is.na(deliveries$wides) & deliveries$wides > 0
-  } else {
-    rep(FALSE, nrow(deliveries))
-  }
-
-  is_noball <- if ("noballs" %in% names(deliveries)) {
-    !is.na(deliveries$noballs) & deliveries$noballs > 0
-  } else {
-    rep(FALSE, nrow(deliveries))
-  }
-
-  is_bye <- if ("byes" %in% names(deliveries)) {
-    !is.na(deliveries$byes) & deliveries$byes > 0
-  } else {
-    rep(FALSE, nrow(deliveries))
-  }
-
-  is_legbye <- if ("legbyes" %in% names(deliveries)) {
-    !is.na(deliveries$legbyes) & deliveries$legbyes > 0
-  } else {
-    rep(FALSE, nrow(deliveries))
-  }
-
-  is_bowler_extra <- is_wide | is_noball
-  is_neutral_extra <- is_bye | is_legbye
-
-  # Default: batter gets credit for positive ERA, bowler gets inverse
-  batter_era <- era
-  bowler_era <- -era
-
-  # Wides and no-balls: bowler only
-  batter_era[is_bowler_extra] <- 0
-
-  # Byes and leg-byes: neutral
-  batter_era[is_neutral_extra] <- 0
-  bowler_era[is_neutral_extra] <- 0
-
-  list(
-    batter_era = batter_era,
-    bowler_era = bowler_era
-  )
-}
+# assign_era_credit() is now a wrapper for assign_delivery_credit() defined above.
 
 
 #' Calculate Match-Level WPA/ERA for Each Player

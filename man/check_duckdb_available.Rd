@@ -12,5 +12,6 @@ TRUE if available, otherwise stops with error
 \description{
 Internal helper to check if DuckDB and DBI are installed.
 Both are in Imports, but this provides a clear error if something is wrong.
+Result is cached after first successful check.
 }
 \keyword{internal}

@@ -508,11 +508,19 @@ get_team <- function(name, format = NULL, db_path = NULL) {
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Build format filter (team_elo uses 'format' column, not 'match_type')
+  # Build format filter (team_elo uses 'match_type' column)
   format_filter <- ""
   if (!is.null(format)) {
     format <- tolower(format)
-    format_filter <- sprintf("AND format = '%s'", escape_sql_quotes(format))
+    # Map normalized format to match_type values stored in DB
+    mt_values <- switch(format,
+      "t20" = c("T20", "IT20"),
+      "odi" = c("ODI", "ODM"),
+      "test" = c("Test", "MDM"),
+      format
+    )
+    mt_sql <- paste0("'", escape_sql_quotes(mt_values), "'", collapse = ", ")
+    format_filter <- sprintf("AND match_type IN (%s)", mt_sql)
   }
 
   # Get latest ELO for team
@@ -522,8 +530,8 @@ get_team <- function(name, format = NULL, db_path = NULL) {
       team_id,
       match_id,
       match_date,
-      format,
-      elo_after,
+      match_type,
+      elo_result,
       matches_played
     FROM main.team_elo
     WHERE team_id = ?
@@ -541,8 +549,8 @@ get_team <- function(name, format = NULL, db_path = NULL) {
         team_id,
         match_id,
         match_date,
-        format,
-        elo_after,
+        match_type,
+        elo_result,
         matches_played
       FROM main.team_elo
       WHERE LOWER(team_id) LIKE LOWER(?)
@@ -561,7 +569,7 @@ get_team <- function(name, format = NULL, db_path = NULL) {
 
   result <- list(
     team_name = elo$team_id,
-    elo_result = elo$elo_after,
+    elo_result = elo$elo_result,
     elo_roster = NA_real_,
     matches_played = elo$matches_played,
     last_match_date = elo$match_date,

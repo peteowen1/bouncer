@@ -176,9 +176,10 @@ calculate_delivery_outcome_score <- function(runs_batter, is_wicket, is_boundary
     score <- 0.2 + (base_score * 0.8)
   }
 
-  # Boundary bonus (4s and 6s are premium)
+  # Boundary bonus: additive to ensure visible even at max score
+  # 4s: 0.733 -> 0.783, 6s: 1.0 -> 1.0 (already max)
   if (is_boundary) {
-    score <- min(score * 1.1, 1.0)
+    score <- score + 0.05
   }
 
   # Ensure in [0, 1] range

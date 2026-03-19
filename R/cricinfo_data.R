@@ -559,6 +559,80 @@ get_unscraped_matches <- function(format = "all", gender = "all",
 # R LOADERS
 # ============================================================================
 
+#' Query a Cricinfo Table from Local DuckDB
+#'
+#' Shared helper for all local Cricinfo loaders. Builds WHERE clauses,
+#' optionally JOINs with cricinfo.matches for format/gender filtering,
+#' and returns the result.
+#'
+#' @param table Character. Schema-qualified table (e.g., "cricinfo.balls").
+#' @param alias Character. Table alias in SQL (e.g., "b", "m", "i").
+#' @param order_cols Character. ORDER BY clause columns.
+#' @param match_ids Character vector of match IDs (NULL = all).
+#' @param format Character. Format filter (NULL = all).
+#' @param gender Character. Gender filter (NULL = all).
+#' @param data_label Character. Human-readable label for messages.
+#'
+#' @return Data frame.
+#' @keywords internal
+query_cricinfo_table <- function(table, alias, order_cols, match_ids, format,
+                                  gender, data_label) {
+  conn <- get_db_connection(read_only = TRUE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+  needs_join <- !is.null(format) || !is.null(gender)
+  # For matches table, format/gender are direct columns — no join needed
+  is_matches <- (table == "cricinfo.matches")
+  needs_join <- needs_join && !is_matches
+
+  where_clauses <- character()
+
+  if (!is.null(match_ids)) {
+    validate_match_ids(match_ids, context = paste0("load_cricinfo_", data_label))
+    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
+    prefix <- if (needs_join || !is_matches) paste0(alias, ".") else ""
+    where_clauses <- c(where_clauses, sprintf("%smatch_id IN (%s)", prefix, ids_sql))
+  }
+  if (!is.null(format)) {
+    fmt_col <- if (needs_join) "m.format" else "format"
+    where_clauses <- c(where_clauses, cricinfo_format_sql(fmt_col, format))
+  }
+  if (!is.null(gender)) {
+    gnd_col <- if (needs_join) "m.gender" else "gender"
+    where_clauses <- c(where_clauses,
+      sprintf("LOWER(%s) = '%s'", gnd_col, escape_sql_quotes(tolower(gender))))
+  }
+
+  where_sql <- if (length(where_clauses) > 0) {
+    paste("WHERE", paste(where_clauses, collapse = " AND "))
+  } else {
+    ""
+  }
+
+  if (needs_join) {
+    sql <- sprintf(
+      "SELECT %s.* FROM %s %s INNER JOIN cricinfo.matches m ON %s.match_id = m.match_id %s ORDER BY %s",
+      alias, table, alias, alias, where_sql, order_cols)
+  } else if (is_matches) {
+    sql <- sprintf("SELECT * FROM %s %s ORDER BY %s", table, where_sql, order_cols)
+  } else {
+    sql <- sprintf(
+      "SELECT %s.* FROM %s %s %s ORDER BY %s",
+      alias, table, alias, where_sql, order_cols)
+  }
+
+  result <- DBI::dbGetQuery(conn, sql)
+
+  if (nrow(result) == 0) {
+    cli::cli_warn("No Cricinfo {data_label} data found for the specified filters")
+    return(data.frame())
+  }
+
+  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} Cricinfo {data_label} rows")
+  result
+}
+
+
 #' Load Cricinfo Ball-by-Ball Data
 #'
 #' Load ball-by-ball data with Hawkeye fields (wagon wheel, pitch map,
@@ -588,56 +662,12 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
                                  gender = NULL,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
-
   if (source == "remote") {
-    return(load_cricinfo_balls_remote(match_ids, format, gender))
+    return(load_cricinfo_remote("balls", match_ids, format, gender))
   }
-
-  conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-
-  where_clauses <- character()
-
-  if (!is.null(match_ids)) {
-    validate_match_ids(match_ids, context = "load_cricinfo_balls")
-    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("b.match_id IN (%s)", ids_sql))
-  }
-  if (!is.null(format)) {
-    where_clauses <- c(where_clauses, cricinfo_format_sql("m.format", format))
-  }
-  if (!is.null(gender)) {
-    where_clauses <- c(where_clauses,
-      sprintf("LOWER(m.gender) = '%s'", escape_sql_quotes(tolower(gender))))
-  }
-
-  # If filtering by format/gender, need to join with cricinfo.matches
-  if (!is.null(format) || !is.null(gender)) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT b.* FROM cricinfo.balls b
-       INNER JOIN cricinfo.matches m ON b.match_id = m.match_id
-       %s ORDER BY b.match_id, b.innings_number, b.over_number, b.ball_number",
-      where_sql)
-  } else if (length(where_clauses) > 0) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT b.* FROM cricinfo.balls b %s
-       ORDER BY b.match_id, b.innings_number, b.over_number, b.ball_number",
-      where_sql)
-  } else {
-    sql <- "SELECT * FROM cricinfo.balls ORDER BY match_id, innings_number, over_number, ball_number"
-  }
-
-  result <- DBI::dbGetQuery(conn, sql)
-
-  if (nrow(result) == 0) {
-    cli::cli_warn("No Cricinfo ball data found for the specified filters")
-    return(data.frame())
-  }
-
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} Cricinfo balls")
-  result
+  query_cricinfo_table("cricinfo.balls", "b",
+    "b.match_id, b.innings_number, b.over_number, b.ball_number",
+    match_ids, format, gender, "balls")
 }
 
 
@@ -660,44 +690,12 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
                                  gender = NULL,
                                  source = c("local", "remote")) {
   source <- match.arg(source)
-
   if (source == "remote") {
-    return(load_cricinfo_match_remote(match_ids, format, gender))
+    return(load_cricinfo_remote("match", match_ids, format, gender))
   }
-
-  conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-
-  where_clauses <- character()
-  if (!is.null(match_ids)) {
-    validate_match_ids(match_ids, context = "load_cricinfo_match")
-    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
-  }
-  if (!is.null(format)) {
-    where_clauses <- c(where_clauses, cricinfo_format_sql("format", format))
-  }
-  if (!is.null(gender)) {
-    where_clauses <- c(where_clauses,
-      sprintf("LOWER(gender) = '%s'", escape_sql_quotes(tolower(gender))))
-  }
-
-  where_sql <- if (length(where_clauses) > 0) {
-    paste("WHERE", paste(where_clauses, collapse = " AND "))
-  } else {
-    ""
-  }
-
-  sql <- sprintf("SELECT * FROM cricinfo.matches %s ORDER BY start_date DESC", where_sql)
-  result <- DBI::dbGetQuery(conn, sql)
-
-  if (nrow(result) == 0) {
-    cli::cli_warn("No Cricinfo match data found for the specified filters")
-    return(data.frame())
-  }
-
-  cli::cli_alert_success("Loaded {nrow(result)} Cricinfo match{?es}")
-  result
+  query_cricinfo_table("cricinfo.matches", "m",
+    "start_date DESC",
+    match_ids, format, gender, "match")
 }
 
 
@@ -720,55 +718,12 @@ load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
                                    gender = NULL,
                                    source = c("local", "remote")) {
   source <- match.arg(source)
-
   if (source == "remote") {
-    return(load_cricinfo_innings_remote(match_ids, format, gender))
+    return(load_cricinfo_remote("innings", match_ids, format, gender))
   }
-
-  conn <- get_db_connection(read_only = TRUE)
-  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-
-  where_clauses <- character()
-
-  if (!is.null(match_ids)) {
-    validate_match_ids(match_ids, context = "load_cricinfo_innings")
-    ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
-    where_clauses <- c(where_clauses, sprintf("i.match_id IN (%s)", ids_sql))
-  }
-  if (!is.null(format)) {
-    where_clauses <- c(where_clauses, cricinfo_format_sql("m.format", format))
-  }
-  if (!is.null(gender)) {
-    where_clauses <- c(where_clauses,
-      sprintf("LOWER(m.gender) = '%s'", escape_sql_quotes(tolower(gender))))
-  }
-
-  if (!is.null(format) || !is.null(gender)) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT i.* FROM cricinfo.innings i
-       INNER JOIN cricinfo.matches m ON i.match_id = m.match_id
-       %s ORDER BY i.match_id, i.innings_number, i.batting_position",
-      where_sql)
-  } else if (length(where_clauses) > 0) {
-    where_sql <- paste("WHERE", paste(where_clauses, collapse = " AND "))
-    sql <- sprintf(
-      "SELECT i.* FROM cricinfo.innings i %s
-       ORDER BY i.match_id, i.innings_number, i.batting_position",
-      where_sql)
-  } else {
-    sql <- "SELECT * FROM cricinfo.innings ORDER BY match_id, innings_number, batting_position"
-  }
-
-  result <- DBI::dbGetQuery(conn, sql)
-
-  if (nrow(result) == 0) {
-    cli::cli_warn("No Cricinfo innings data found for the specified filters")
-    return(data.frame())
-  }
-
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} Cricinfo innings rows")
-  result
+  query_cricinfo_table("cricinfo.innings", "i",
+    "i.match_id, i.innings_number, i.batting_position",
+    match_ids, format, gender, "innings")
 }
 
 
@@ -891,17 +846,4 @@ load_cricinfo_remote <- function(data_type, match_ids, format, gender) {
 }
 
 
-#' @keywords internal
-load_cricinfo_balls_remote <- function(match_ids, format, gender) {
-  load_cricinfo_remote("balls", match_ids, format, gender)
-}
-
-#' @keywords internal
-load_cricinfo_match_remote <- function(match_ids, format, gender) {
-  load_cricinfo_remote("match", match_ids, format, gender)
-}
-
-#' @keywords internal
-load_cricinfo_innings_remote <- function(match_ids, format, gender) {
-  load_cricinfo_remote("innings", match_ids, format, gender)
-}
+# Remote wrappers removed — public loaders call load_cricinfo_remote() directly.

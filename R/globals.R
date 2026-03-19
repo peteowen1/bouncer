@@ -653,6 +653,14 @@ utils::globalVariables(c(
   "geocode_source", "match_days_weather"
 ))
 
+# ============================================================================
+# Pre-match Features (pre_match_features.R)
+# ============================================================================
+
+utils::globalVariables(c(
+  "is_neutral_venue"
+))
+
 
 # ============================================================================
 # Utility Functions
