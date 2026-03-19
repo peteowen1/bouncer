@@ -303,8 +303,12 @@ get_skill_alpha_params <- function(format, gender = "male", skill_type = "run") 
     cli::cli_abort("Unknown format-gender combo: {suffix}", call = NULL)
   }
   skill_upper <- toupper(skill_type)
+  alpha_max <- p[[paste0("SKILL_ALPHA_", skill_upper, "_MAX")]]
+  if (is.null(alpha_max)) {
+    cli::cli_abort("Unknown skill_type: {.val {skill_type}} for {suffix}", call = NULL)
+  }
   list(
-    alpha_max = p[[paste0("SKILL_ALPHA_", skill_upper, "_MAX")]],
+    alpha_max = alpha_max,
     alpha_min = p[[paste0("SKILL_ALPHA_", skill_upper, "_MIN")]],
     halflife = p[[paste0("SKILL_ALPHA_", skill_upper, "_HALFLIFE")]]
   )
@@ -329,8 +333,12 @@ get_skill_weights <- function(format, gender = "male", skill_type = "run") {
     cli::cli_abort("Unknown format-gender combo: {suffix}", call = NULL)
   }
   skill_upper <- toupper(skill_type)
+  w_batter <- p[[paste0("SKILL_W_BATTER_", skill_upper)]]
+  if (is.null(w_batter)) {
+    cli::cli_abort("Unknown skill_type: {.val {skill_type}} for {suffix}", call = NULL)
+  }
   list(
-    w_batter = p[[paste0("SKILL_W_BATTER_", skill_upper)]],
+    w_batter = w_batter,
     w_bowler = p[[paste0("SKILL_W_BOWLER_", skill_upper)]],
     w_venue_session = p[[paste0("SKILL_W_VENUE_SESSION_", skill_upper)]],
     w_venue_perm = p[[paste0("SKILL_W_VENUE_PERM_", skill_upper)]]

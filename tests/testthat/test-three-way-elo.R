@@ -584,3 +584,45 @@ test_that("all formats have consistent parameters", {
     expect_equal(weight_sum, 1.0, tolerance = 1e-10)
   }
 })
+
+# ============================================================================
+# ERROR PATH TESTS (for constants lookup validation)
+# ============================================================================
+
+test_that("get_format_gender_suffix errors on invalid format", {
+  expect_error(get_format_gender_suffix("hundred"), "Unrecognized")
+  expect_error(get_format_gender_suffix(""), "Unrecognized")
+})
+
+test_that("get_3way_constant errors on unknown prefix", {
+  expect_error(get_3way_constant("NONEXISTENT_PARAM", "t20"), "Unknown 3-way constant")
+})
+
+test_that("get_3way_constant errors on unknown format-gender combo", {
+  # get_format_gender_suffix will abort before we even get to the list lookup
+  expect_error(get_3way_constant("THREE_WAY_W_BATTER", "baseball"), "Unrecognized")
+})
+
+test_that("exported 3-way accessors error on invalid format", {
+  expect_error(get_run_elo_weights("hundred"), "Unrecognized")
+  expect_error(get_wicket_elo_weights("hundred"), "Unrecognized")
+  expect_error(get_runs_per_100_elo("hundred"), "Unrecognized")
+  expect_error(get_run_k_factors("hundred"), "Unrecognized")
+  expect_error(get_wicket_k_factors("hundred"), "Unrecognized")
+  expect_error(get_venue_k_factors("hundred"), "Unrecognized")
+  expect_error(get_wicket_elo_divisor("hundred"), "Unrecognized")
+})
+
+# ============================================================================
+# VENUE COUNTRY MAP TESTS
+# ============================================================================
+
+test_that("get_venue_country_map returns valid named list from CSV", {
+  map <- get_venue_country_map()
+  expect_type(map, "list")
+  expect_true(length(map) > 100)  # Should have 400+ venues
+  expect_true("Melbourne Cricket Ground" %in% names(map))
+  expect_equal(map[["Melbourne Cricket Ground"]], "Australia")
+  expect_true("Wankhede Stadium" %in% names(map))
+  expect_equal(map[["Wankhede Stadium"]], "India")
+})

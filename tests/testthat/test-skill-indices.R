@@ -282,6 +282,16 @@ test_that("skill alpha bounds are valid", {
   }
 })
 
+test_that("get_skill_alpha_params errors on invalid skill_type", {
+  expect_error(get_skill_alpha_params("t20", skill_type = "economy"), "Unknown skill_type")
+  expect_error(get_skill_alpha_params("t20", skill_type = "foo"), "Unknown skill_type")
+})
+
+test_that("get_skill_weights errors on invalid skill_type", {
+  expect_error(get_skill_weights("t20", skill_type = "economy"), "Unknown skill_type")
+  expect_error(get_skill_weights("t20", skill_type = "foo"), "Unknown skill_type")
+})
+
 test_that("dynamic skill alphas have max > min", {
   for (fg in names(SKILL_PARAMS)) {
     p <- SKILL_PARAMS[[fg]]

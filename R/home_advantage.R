@@ -147,6 +147,12 @@ get_venue_country_map <- function() {
   }
 
   df <- utils::read.csv(csv_path, stringsAsFactors = FALSE)
+  if (!all(c("venue", "country") %in% names(df))) {
+    cli::cli_abort("venue_country_map.csv must have 'venue' and 'country' columns, found: {paste(names(df), collapse=', ')}")
+  }
+  if (nrow(df) == 0) {
+    cli::cli_abort("venue_country_map.csv is empty")
+  }
   venue_map <- stats::setNames(as.list(df$country), df$venue)
   assign("map", venue_map, envir = .venue_country_cache)
   venue_map

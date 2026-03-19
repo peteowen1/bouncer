@@ -486,6 +486,14 @@ get_3way_constant <- function(prefix, format, gender = "male") {
   value
 }
 
+# Internal helper: get params for a format-gender with NULL guard
+get_3way_params <- function(format, gender = "male") {
+  suffix <- get_format_gender_suffix(format, gender)
+  p <- THREE_WAY_PARAMS[[suffix]]
+  if (is.null(p)) cli::cli_abort("Unknown format-gender combo: {suffix}")
+  p
+}
+
 #' Get Run ELO attribution weights for format-gender
 #'
 #' @param format Format (T20, ODI, TEST)
@@ -498,8 +506,7 @@ get_3way_constant <- function(prefix, format, gender = "male") {
 #'
 #' @export
 get_run_elo_weights <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  p <- THREE_WAY_PARAMS[[suffix]]
+  p <- get_3way_params(format, gender)
   list(
     w_batter = p$THREE_WAY_W_BATTER,
     w_bowler = p$THREE_WAY_W_BOWLER,
@@ -520,8 +527,7 @@ get_run_elo_weights <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_elo_weights <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  p <- THREE_WAY_PARAMS[[suffix]]
+  p <- get_3way_params(format, gender)
   list(
     w_batter = p$THREE_WAY_W_BATTER_WICKET,
     w_bowler = p$THREE_WAY_W_BOWLER_WICKET,
@@ -542,8 +548,7 @@ get_wicket_elo_weights <- function(format, gender = "male") {
 #'
 #' @export
 get_runs_per_100_elo <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  THREE_WAY_PARAMS[[suffix]]$THREE_WAY_RUNS_PER_100_ELO_POINTS
+  get_3way_params(format, gender)$THREE_WAY_RUNS_PER_100_ELO_POINTS
 }
 
 #' Get player Run K-factors for format-gender
@@ -558,8 +563,7 @@ get_runs_per_100_elo <- function(format, gender = "male") {
 #'
 #' @export
 get_run_k_factors <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  p <- THREE_WAY_PARAMS[[suffix]]
+  p <- get_3way_params(format, gender)
   list(
     k_max = p$THREE_WAY_K_RUN_MAX,
     k_min = p$THREE_WAY_K_RUN_MIN,
@@ -579,8 +583,7 @@ get_run_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_k_factors <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  p <- THREE_WAY_PARAMS[[suffix]]
+  p <- get_3way_params(format, gender)
   list(
     k_max = p$THREE_WAY_K_WICKET_MAX,
     k_min = p$THREE_WAY_K_WICKET_MIN,
@@ -600,8 +603,7 @@ get_wicket_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_venue_k_factors <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  p <- THREE_WAY_PARAMS[[suffix]]
+  p <- get_3way_params(format, gender)
   list(
     perm_max = p$THREE_WAY_K_VENUE_PERM_MAX,
     perm_min = p$THREE_WAY_K_VENUE_PERM_MIN,
@@ -624,8 +626,7 @@ get_venue_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_elo_divisor <- function(format, gender = "male") {
-  suffix <- get_format_gender_suffix(format, gender)
-  THREE_WAY_PARAMS[[suffix]]$THREE_WAY_WICKET_ELO_DIVISOR
+  get_3way_params(format, gender)$THREE_WAY_WICKET_ELO_DIVISOR
 }
 
 NULL

@@ -628,7 +628,7 @@ query_cricinfo_table <- function(table, alias, order_cols, match_ids, format,
     return(data.frame())
   }
 
-  cli::cli_alert_success("Loaded {format(nrow(result), big.mark=',')} Cricinfo {data_label} rows")
+  cli::cli_alert_success("Loaded {base::format(nrow(result), big.mark=',')} Cricinfo {data_label} rows")
   result
 }
 
