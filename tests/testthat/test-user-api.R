@@ -1,9 +1,18 @@
 # Tests for User API Functions
 
-# Helper to check if database is available
+# Helper to check if database is available with correct schema
 db_available <- function() {
   tryCatch({
-    file.exists(get_default_db_path())
+    path <- get_default_db_path()
+    if (!file.exists(path)) return(FALSE)
+    conn <- get_db_connection(path = path, read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+    # Verify team_elo has expected columns (not stale schema)
+    has_data <- table_exists(conn, "main.team_elo")
+    if (!has_data) return(FALSE)
+    cols <- DBI::dbGetQuery(conn,
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'team_elo'")
+    "elo_after" %in% cols$column_name
   }, error = function(e) FALSE)
 }
 

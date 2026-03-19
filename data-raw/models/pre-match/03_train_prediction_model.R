@@ -45,32 +45,62 @@ FORMAT_GROUPS <- list(
 )
 
 RANDOM_SEED <- 42
+N_ROUNDS <- 500
+EARLY_STOPPING <- 30
+N_FOLDS <- 5
 
-# Stage 1: Margin model hyperparameters (regression)
-XGB_MARGIN_PARAMS <- list(
-  objective = "reg:squarederror",
-  eval_metric = "rmse",
-  max_depth = 5,           # Slightly shallower for regression
-  eta = 0.03,              # Slightly faster learning for regression
-  subsample = 0.8,
-  colsample_bytree = 0.8,
-  min_child_weight = 3     # Slightly more regularization for continuous target
-)
+# Format-specific hyperparameters
+# T20: ~13K matches (large dataset, deeper trees OK)
+# ODI: ~5K matches (moderate, need some regularization)
+# Test: ~2K with results, ~3K including draws (small, heavy regularization)
+get_format_params <- function(format) {
+  # Stage 1: Margin regression
+  margin_params <- switch(format,
+    "t20" = list(
+      objective = "reg:squarederror", eval_metric = "rmse",
+      max_depth = 5, eta = 0.03, subsample = 0.8,
+      colsample_bytree = 0.8, min_child_weight = 3
+    ),
+    "odi" = list(
+      objective = "reg:squarederror", eval_metric = "rmse",
+      max_depth = 4, eta = 0.02, subsample = 0.7,
+      colsample_bytree = 0.7, min_child_weight = 5
+    ),
+    "test" = list(
+      objective = "reg:squarederror", eval_metric = "rmse",
+      max_depth = 3, eta = 0.02, subsample = 0.7,
+      colsample_bytree = 0.6, min_child_weight = 10,
+      lambda = 2, alpha = 0.5  # Extra L2/L1 regularization
+    )
+  )
 
-# Stage 2: Win probability model hyperparameters (classification)
-XGB_PARAMS <- list(
-  objective = "binary:logistic",
-  eval_metric = "logloss",
-  max_depth = 6,           # Deeper trees for more complex patterns
-  eta = 0.02,              # Faster learning
-  subsample = 0.8,        # Minimal regularization
-  colsample_bytree = 0.8, # Minimal feature sampling
-  min_child_weight = 1    # Allow finer splits
-)
+  # Stage 2: Win/draw/loss classification
+  # Test uses 3-class (win/draw/loss) since 33% of Tests are draws
+  if (format == "test") {
+    class_params <- list(
+      objective = "multi:softprob", eval_metric = "mlogloss",
+      num_class = 3,  # 0=team1 win, 1=draw, 2=team2 win
+      max_depth = 3, eta = 0.02, subsample = 0.7,
+      colsample_bytree = 0.6, min_child_weight = 10,
+      lambda = 2, alpha = 0.5
+    )
+  } else {
+    class_params <- list(
+      objective = "binary:logistic", eval_metric = "logloss",
+      max_depth = switch(format, "t20" = 6, "odi" = 4),
+      eta = switch(format, "t20" = 0.02, "odi" = 0.02),
+      subsample = switch(format, "t20" = 0.8, "odi" = 0.7),
+      colsample_bytree = switch(format, "t20" = 0.8, "odi" = 0.7),
+      min_child_weight = switch(format, "t20" = 1, "odi" = 3)
+    )
+  }
 
-N_ROUNDS <- 500            # More rounds (with early stopping)
-EARLY_STOPPING <- 30       # Increased patience
-N_FOLDS <- 5               # CV folds for margin stacking
+  list(margin = margin_params, classification = class_params)
+}
+
+# Backwards compatibility - default params for if called without format
+XGB_MARGIN_PARAMS <- get_format_params("t20")$margin
+XGB_PARAMS <- get_format_params("t20")$classification
 
 # Output directory (use package helper to find the correct bouncerdata path)
 bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
@@ -224,7 +254,18 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
 
   set.seed(random_seed)
 
+  # Get format-specific hyperparameters
+  format_params <- get_format_params(format)
+  xgb_margin_params <- format_params$margin
+  xgb_params <- format_params$classification
+  is_multiclass <- format == "test"
+
   cli::cli_h1("{toupper(format)} Model Training")
+  if (is_multiclass) {
+    cli::cli_alert_info("Using 3-class model (win/draw/loss) for Test cricket")
+  }
+  cli::cli_alert_info("Margin params: max_depth={xgb_margin_params$max_depth}, eta={xgb_margin_params$eta}, min_child_weight={xgb_margin_params$min_child_weight}")
+  cli::cli_alert_info("Classification params: max_depth={xgb_params$max_depth}, objective={xgb_params$objective}")
 
   # Load Feature Data
   cli::cli_h2("Loading feature data")
@@ -251,12 +292,24 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
   all_feature_cols <- get_prediction_feature_cols()
 
   X_train_base <- as.matrix(train_prepared[, all_feature_cols])
-  y_train <- train_prepared$team1_wins
   y_margin_train <- train_data$actual_margin
 
   X_test_base <- as.matrix(test_prepared[, all_feature_cols])
-  y_test <- test_prepared$team1_wins
   y_margin_test <- test_data$actual_margin
+
+  # Construct target variable
+  if (is_multiclass) {
+    # 3-class for Test: 0=team1 win, 1=draw, 2=team2 win
+    y_train <- ifelse(is.na(train_prepared$team1_wins), 1L,       # draw (no winner)
+                      ifelse(train_prepared$team1_wins == 1, 0L,   # team1 win
+                             2L))                                   # team2 win
+    y_test <- ifelse(is.na(test_prepared$team1_wins), 1L,
+                     ifelse(test_prepared$team1_wins == 1, 0L, 2L))
+    cli::cli_alert_info("Target: 3-class (team1_win={sum(y_train==0)}, draw={sum(y_train==1)}, team2_win={sum(y_train==2)})")
+  } else {
+    y_train <- train_prepared$team1_wins
+    y_test <- test_prepared$team1_wins
+  }
 
   cli::cli_alert_info("Base feature matrix: {ncol(X_train_base)} features")
   cli::cli_alert_info("Training samples: {nrow(X_train_base)}")
@@ -370,21 +423,27 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
   )
 
   # Handle different xgboost versions (v3.1+ uses early_stop$best_iteration)
+  eval_metric_col <- if (is_multiclass) "test_mlogloss_mean" else "test_logloss_mean"
   best_nrounds <- cv_result$early_stop$best_iteration %||%
                   cv_result$best_iteration %||%
-                  cv_result$best_ntreelimit %||%
-                  which.min(cv_result$evaluation_log$test_logloss_mean)
+                  cv_result$best_ntreelimit
+  if (is.null(best_nrounds) || is.na(best_nrounds)) {
+    best_nrounds <- which.min(cv_result$evaluation_log[[eval_metric_col]])
+  }
 
-  best_cv_score <- cv_result$evaluation_log$test_logloss_mean[best_nrounds]
-  best_cv_std <- cv_result$evaluation_log$test_logloss_std[best_nrounds]
+  best_cv_score <- cv_result$evaluation_log[[eval_metric_col]][best_nrounds]
+  best_cv_std_col <- sub("_mean$", "_std", eval_metric_col)
+  best_cv_std <- cv_result$evaluation_log[[best_cv_std_col]][best_nrounds]
 
   cli::cli_alert_success("Cross-validation complete")
   cli::cli_alert_info("Best iteration: {best_nrounds}")
-  cli::cli_alert_info("Best CV logloss: {round(best_cv_score, 4)} (+/- {round(best_cv_std, 4)})")
+  cli::cli_alert_info("Best CV {if (is_multiclass) 'mlogloss' else 'logloss'}: {round(best_cv_score, 4)} (+/- {round(best_cv_std, 4)})")
 
-  baseline_logloss <- -log(0.5)
-  if (best_cv_score > baseline_logloss) {
-    cli::cli_alert_warning("CV logloss ({round(best_cv_score, 4)}) is worse than random guessing ({round(baseline_logloss, 4)})")
+  if (!is_multiclass) {
+    baseline_logloss <- -log(0.5)
+    if (best_cv_score > baseline_logloss) {
+      cli::cli_alert_warning("CV logloss ({round(best_cv_score, 4)}) is worse than random guessing ({round(baseline_logloss, 4)})")
+    }
   }
 
   # Train Final Model
@@ -404,22 +463,69 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
   # Evaluate Model
   cli::cli_h2("Evaluating model")
 
-  pred_probs <- predict(model, dtest)
-  pred_class <- as.integer(pred_probs > 0.5)
+  raw_preds <- predict(model, dtest)
 
-  accuracy <- mean(pred_class == y_test)
-  cli::cli_alert_info("Test Accuracy: {round(accuracy * 100, 1)}%")
+  if (is_multiclass) {
+    # Reshape multiclass probabilities: n_samples × 3 matrix
+    pred_probs_matrix <- matrix(raw_preds, ncol = 3, byrow = TRUE)
+    colnames(pred_probs_matrix) <- c("team1_win", "draw", "team2_win")
+    pred_class <- max.col(pred_probs_matrix) - 1  # 0, 1, or 2
 
-  log_loss <- -mean(y_test * log(pmax(pred_probs, 1e-7)) +
-                     (1 - y_test) * log(pmax(1 - pred_probs, 1e-7)))
-  cli::cli_alert_info("Test Log Loss: {round(log_loss, 4)}")
+    accuracy <- mean(pred_class == y_test)
+    cli::cli_alert_info("Test Accuracy (3-class): {round(accuracy * 100, 1)}%")
 
-  brier <- mean((pred_probs - y_test)^2)
-  cli::cli_alert_info("Test Brier Score: {round(brier, 4)}")
+    # Per-class accuracy
+    for (cls in 0:2) {
+      cls_name <- c("team1_win", "draw", "team2_win")[cls + 1]
+      cls_idx <- y_test == cls
+      if (sum(cls_idx) > 0) {
+        cls_acc <- mean(pred_class[cls_idx] == cls)
+        cli::cli_alert_info("  {cls_name}: {round(cls_acc * 100, 1)}% ({sum(cls_idx)} matches)")
+      }
+    }
 
-  baseline_pred <- as.integer(test_prepared$elo_diff_result > 0)
-  baseline_acc <- mean(baseline_pred == y_test)
-  cli::cli_alert_info("Baseline Accuracy (higher ELO): {round(baseline_acc * 100, 1)}%")
+    # Multiclass log loss
+    eps <- 1e-7
+    log_loss <- -mean(sapply(seq_along(y_test), function(i) {
+      log(max(pred_probs_matrix[i, y_test[i] + 1], eps))
+    }))
+    cli::cli_alert_info("Test mlogloss: {round(log_loss, 4)}")
+
+    # For compatibility, extract team1 win probability
+    pred_probs <- pred_probs_matrix[, "team1_win"]
+    brier <- NA  # Not directly comparable for multiclass
+
+    # Baseline: higher ELO team wins (ignoring draws)
+    baseline_pred <- ifelse(is.na(test_prepared$elo_diff_result), 1L,  # predict draw if no ELO diff
+                            ifelse(test_prepared$elo_diff_result > 0, 0L, 2L))
+    baseline_acc <- mean(baseline_pred == y_test)
+    cli::cli_alert_info("Baseline Accuracy (ELO, no draw pred): {round(baseline_acc * 100, 1)}%")
+
+    # Smarter baseline: predict draw when ELO diff is small
+    baseline_smart <- ifelse(is.na(test_prepared$elo_diff_result), 1L,
+                             ifelse(abs(test_prepared$elo_diff_result) < 50, 1L,
+                                    ifelse(test_prepared$elo_diff_result > 0, 0L, 2L)))
+    baseline_smart_acc <- mean(baseline_smart == y_test)
+    cli::cli_alert_info("Baseline Accuracy (ELO + draw heuristic): {round(baseline_smart_acc * 100, 1)}%")
+
+  } else {
+    pred_probs <- raw_preds
+    pred_class <- as.integer(pred_probs > 0.5)
+
+    accuracy <- mean(pred_class == y_test)
+    cli::cli_alert_info("Test Accuracy: {round(accuracy * 100, 1)}%")
+
+    log_loss <- -mean(y_test * log(pmax(pred_probs, 1e-7)) +
+                       (1 - y_test) * log(pmax(1 - pred_probs, 1e-7)))
+    cli::cli_alert_info("Test Log Loss: {round(log_loss, 4)}")
+
+    brier <- mean((pred_probs - y_test)^2)
+    cli::cli_alert_info("Test Brier Score: {round(brier, 4)}")
+
+    baseline_pred <- as.integer(test_prepared$elo_diff_result > 0)
+    baseline_acc <- mean(baseline_pred == y_test)
+    cli::cli_alert_info("Baseline Accuracy (higher ELO): {round(baseline_acc * 100, 1)}%")
+  }
 
   # Feature Importance
   cli::cli_h2("Feature Importance")
@@ -434,33 +540,66 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
   # Calibration
   cli::cli_h2("Calibration Analysis")
 
-  test_prepared$pred_prob <- pred_probs
-  test_prepared$actual <- y_test
+  if (is_multiclass) {
+    # 3-class calibration: check each class probability vs actual frequency
+    test_prepared$pred_team1_win <- pred_probs_matrix[, "team1_win"]
+    test_prepared$pred_draw <- pred_probs_matrix[, "draw"]
+    test_prepared$pred_team2_win <- pred_probs_matrix[, "team2_win"]
+    test_prepared$actual_class <- y_test  # 0=team1 win, 1=draw, 2=team2 win
 
-  calibration <- test_prepared %>%
-    mutate(prob_bin = cut(pred_prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
-    group_by(prob_bin) %>%
-    summarise(
-      n = n(),
-      mean_pred = mean(pred_prob),
-      actual_rate = mean(actual),
-      .groups = "drop"
-    ) %>%
-    filter(n >= 5)
+    for (cls_idx in 1:3) {
+      cls_name <- c("Team 1 Win", "Draw", "Team 2 Win")[cls_idx]
+      cls_prob <- pred_probs_matrix[, cls_idx]
+      cls_actual <- as.integer(y_test == (cls_idx - 1))
 
-  cat("\nCalibration (predicted prob vs actual win rate):\n")
-  for (i in seq_len(nrow(calibration))) {
-    cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
-                calibration$prob_bin[i],
-                calibration$mean_pred[i] * 100,
-                calibration$actual_rate[i] * 100,
-                calibration$n[i]))
+      cls_cal <- data.frame(prob = cls_prob, actual = cls_actual) %>%
+        mutate(prob_bin = cut(prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
+        group_by(prob_bin) %>%
+        summarise(n = n(), mean_pred = mean(prob), actual_rate = mean(actual), .groups = "drop") %>%
+        filter(n >= 5)
+
+      if (nrow(cls_cal) > 0) {
+        cat(sprintf("\nCalibration for %s:\n", cls_name))
+        for (i in seq_len(nrow(cls_cal))) {
+          cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
+                      cls_cal$prob_bin[i], cls_cal$mean_pred[i] * 100,
+                      cls_cal$actual_rate[i] * 100, cls_cal$n[i]))
+        }
+      }
+    }
+
+    # For downstream compatibility, set pred_prob to team1 win probability
+    test_prepared$pred_prob <- pred_probs_matrix[, "team1_win"]
+    test_prepared$actual <- as.integer(y_test == 0)  # binary: team1 won or not
+  } else {
+    test_prepared$pred_prob <- pred_probs
+    test_prepared$actual <- y_test
+
+    calibration <- test_prepared %>%
+      mutate(prob_bin = cut(pred_prob, breaks = seq(0, 1, 0.1), include.lowest = TRUE)) %>%
+      group_by(prob_bin) %>%
+      summarise(
+        n = n(),
+        mean_pred = mean(pred_prob),
+        actual_rate = mean(actual),
+        .groups = "drop"
+      ) %>%
+      filter(n >= 5)
+
+    cat("\nCalibration (predicted prob vs actual win rate):\n")
+    for (i in seq_len(nrow(calibration))) {
+      cat(sprintf("  %s: Predicted %.1f%%, Actual %.1f%% (n=%d)\n",
+                  calibration$prob_bin[i],
+                  calibration$mean_pred[i] * 100,
+                  calibration$actual_rate[i] * 100,
+                  calibration$n[i]))
+    }
   }
 
   # Margin-Weighted Accuracy Analysis
   cli::cli_h2("Win Probability by Margin Size")
 
-  # Get margin data from test set (now includes model predictions)
+  # Get margin data from test set
   margin_data <- test_prepared %>%
     select(match_id, pred_prob, actual) %>%
     left_join(
@@ -471,7 +610,7 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
 
   n_with_margin <- sum(!is.na(margin_data$actual_margin))
 
-  if (n_with_margin >= 20) {
+  if (n_with_margin >= 20 && !is_multiclass) {
     margin_valid <- margin_data %>% filter(!is.na(actual_margin))
 
     # Margin-weighted accuracy: correct predictions weighted by margin magnitude
@@ -517,6 +656,36 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
       weighted_accuracy = margin_weighted_acc,
       calibration_by_margin = margin_calibration
     )
+  } else if (is_multiclass && n_with_margin >= 20) {
+    # 3-class margin analysis for Test cricket
+    margin_valid <- margin_data %>% filter(!is.na(actual_margin))
+
+    # For 3-class: check if predicted class matches actual class
+    margin_valid$pred_class_local <- pred_class[match(margin_valid$match_id, test_prepared$match_id)]
+    margin_valid$actual_class <- y_test[match(margin_valid$match_id, test_prepared$match_id)]
+    margin_valid$correct <- margin_valid$pred_class_local == margin_valid$actual_class
+
+    margin_valid <- margin_valid %>%
+      mutate(
+        abs_margin = abs(actual_margin),
+        outcome_type = case_when(
+          actual_class == 1 ~ "Draw",
+          abs_margin <= 100 ~ "Close result",
+          TRUE ~ "Decisive result"
+        )
+      )
+
+    margin_cal <- margin_valid %>%
+      group_by(outcome_type) %>%
+      summarise(n = n(), accuracy = mean(correct), .groups = "drop")
+
+    cat("\n3-class accuracy by outcome type:\n")
+    for (i in seq_len(nrow(margin_cal))) {
+      cat(sprintf("  %s: %.1f%% (n=%d)\n",
+                  margin_cal$outcome_type[i], margin_cal$accuracy[i] * 100, margin_cal$n[i]))
+    }
+
+    winprob_margin_metrics <- list(n_matches = n_with_margin, by_outcome_type = margin_cal)
   } else {
     cli::cli_alert_warning("Only {n_with_margin} matches with margin data - skipping margin analysis")
     winprob_margin_metrics <- NULL
@@ -546,7 +715,8 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
     winprob_margin_metrics = winprob_margin_metrics,
     cv_result = cv_result$evaluation_log,
     importance = importance,
-    calibration = calibration,
+    calibration = if (exists("calibration")) calibration else NULL,
+    is_multiclass = is_multiclass,
     feature_cols = c(all_feature_cols, "predicted_margin"),  # Include new feature
     params = list(
       winprob = xgb_params,
@@ -573,12 +743,13 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
     margin_mae = if (!is.null(margin_model_metrics)) margin_model_metrics$model_mae else NA,
     margin_baseline_mae = if (!is.null(margin_model_metrics)) margin_model_metrics$baseline_mae else NA,
     margin_improvement = if (!is.null(margin_model_metrics)) margin_model_metrics$improvement_pct else NA,
-    # Secondary: Win probability
+    # Secondary: Win probability / outcome prediction
+    is_multiclass = is_multiclass,
     accuracy = accuracy,
     baseline_acc = baseline_acc,
     accuracy_improvement = accuracy - baseline_acc,
     log_loss = log_loss,
-    margin_weighted_acc = if (!is.null(winprob_margin_metrics)) winprob_margin_metrics$weighted_accuracy else NA,
+    margin_weighted_acc = if (!is_multiclass && !is.null(winprob_margin_metrics)) winprob_margin_metrics$weighted_accuracy else NA,
     n_train = nrow(train_prepared),
     n_test = nrow(test_prepared)
   )

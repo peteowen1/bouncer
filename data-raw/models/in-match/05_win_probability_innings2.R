@@ -23,19 +23,24 @@ CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
 PRINT_EVERY_N <- 20
+if (!exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT <- "t20"
 
 cat("\n")
-cli::cli_h1("Stage 2: Win Probability Model (XGBoost)")
+cli::cli_h1("Stage 2: Win Probability Model ({toupper(IN_MATCH_FORMAT)})")
 cat("\n")
 
 # Load Prepared Data ----
 cli::cli_h2("Loading prepared data")
 
-# Stage 2 data
-stage2_path <- file.path("..", "bouncerdata", "models", "ipl_stage2_data.rds")
+output_dir <- file.path(find_bouncerdata_dir(), "models")
+stage2_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage2_data.rds"))
+if (!file.exists(stage2_path)) {
+  # Legacy fallback
+  stage2_path <- file.path(output_dir, "ipl_stage2_data.rds")
+}
 if (!file.exists(stage2_path)) {
   cli::cli_alert_danger("Data not found at {stage2_path}")
-  cli::cli_alert_info("Run 01_prepare_data.R first")
+  cli::cli_alert_info("Run 01_prepare_all_formats.R first")
   stop("Data file not found")
 }
 
@@ -543,10 +548,8 @@ cat("\n")
 # Save Model and Results ----
 cli::cli_h2("Saving model and results")
 
-output_dir <- file.path("..", "bouncerdata", "models")
-
 # Save XGBoost model
-model_path <- file.path(output_dir, "ipl_stage2_win_probability.json")
+model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage2_win_probability.ubj"))
 xgb.save(final_model, model_path)
 cli::cli_alert_success("Model saved to {model_path}")
 
@@ -579,7 +582,7 @@ results <- list(
   )
 )
 
-results_path <- file.path(output_dir, "ipl_stage2_results.rds")
+results_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage2_results.rds"))
 saveRDS(results, results_path)
 cli::cli_alert_success("Results saved to {results_path}")
 

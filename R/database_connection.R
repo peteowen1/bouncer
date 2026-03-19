@@ -1,13 +1,19 @@
 # Database Connection Functions for Bouncer
 
+# Cached result for check_duckdb_available() — avoids 15+ redundant
+# requireNamespace() calls per session (both packages are in Imports).
+.duckdb_cache <- new.env(parent = emptyenv())
+
 #' Check DuckDB Availability
 #'
 #' Internal helper to check if DuckDB and DBI are installed.
 #' Both are in Imports, but this provides a clear error if something is wrong.
+#' Result is cached after first successful check.
 #'
 #' @return TRUE if available, otherwise stops with error
 #' @keywords internal
 check_duckdb_available <- function() {
+  if (isTRUE(.duckdb_cache$available)) return(invisible(TRUE))
 
   if (!requireNamespace("DBI", quietly = TRUE)) {
     cli::cli_abort(c(
@@ -21,6 +27,7 @@ check_duckdb_available <- function() {
       "i" = "Install with: {.code install.packages('duckdb')}"
     ))
   }
+  .duckdb_cache$available <- TRUE
   invisible(TRUE)
 }
 

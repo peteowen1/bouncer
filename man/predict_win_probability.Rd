@@ -12,6 +12,7 @@ predict_win_probability(
   target = NULL,
   format = "t20",
   venue_stats = NULL,
+  match_state = NULL,
   skill_adjustments = NULL,
   models = NULL
 )
@@ -23,14 +24,22 @@ predict_win_probability(
 
 \item{overs}{Numeric. Overs bowled in cricket notation (e.g., 10.3 = 10 overs + 3 balls).}
 
-\item{innings}{Integer. Current innings (1 or 2).}
+\item{innings}{Integer. Current innings (1-2 for limited overs, 1-4 for Test).}
 
-\item{target}{Integer. Target score (required if innings = 2).}
+\item{target}{Integer. Target score (required if innings = 2 for limited overs,
+or innings = 4 for Test).}
 
-\item{format}{Character. Match format: "t20", "odi".}
+\item{format}{Character. Match format: "t20", "odi", "test".}
 
 \item{venue_stats}{List. Venue-specific statistics (optional).
-If NULL, uses format averages.}
+If NULL, uses format averages. For Test, can include venue_avg (1st innings
+average) and venue_result_rate (historical P(result) at venue).}
+
+\item{match_state}{List. Additional Test match state (optional). Can include:
+\itemize{
+\item completed_innings - list of lists with runs, wickets, overs per innings
+\item batting_is_team1 - logical, is batting team the team listed first?
+}}
 
 \item{skill_adjustments}{List. Team/player skill adjustments (optional).}
 
@@ -38,34 +47,43 @@ If NULL, uses format averages.}
 If NULL, models are loaded automatically.}
 }
 \value{
-A \code{bouncer_win_prob} object containing:
+A \code{bouncer_win_prob} object. For limited-overs formats:
 \itemize{
 \item win_prob - Win probability for batting-first team (0-1)
 \item projected_score - Projected final innings score
-\item current_score - Input current score
-\item wickets - Input wickets fallen
-\item overs - Input overs bowled
-\item innings - Input innings number
-\item format - Match format
-\item method - "model" (2nd innings) or "heuristic" (1st innings)
+}
+For Test format, additionally:
+\itemize{
+\item draw_prob - Draw probability (0-1)
+\item team1_win - Team 1 win probability
+\item team2_win - Team 2 win probability
 }
 }
 \description{
 Calculate win probability for the batting-first team given the current
-match state. Uses scoreboard-friendly inputs.
-}
-\note{
-First-innings win probability uses a linear heuristic based on
-projected score vs venue par. Second-innings uses the full Stage 2 model.
+match state. Uses scoreboard-friendly inputs. For Test matches, returns
+three-way probabilities (team1 win, draw, team2 win) via a decomposed
+two-model pipeline.
 }
 \examples{
 \dontrun{
-# First innings: India 85/2 after 10 overs
+# T20 first innings: India 85/2 after 10 overs
 wp <- predict_win_probability(85, 2, 10.0, innings = 1, format = "t20")
 print(wp)
 
-# Second innings: Chasing 180, currently 100/3 after 12.4 overs
+# T20 second innings: Chasing 180, currently 100/3 after 12.4 overs
 wp <- predict_win_probability(100, 3, 12.4, innings = 2, target = 180, format = "t20")
+print(wp)
+
+# Test match: 3rd innings, team2 batting at 150/4 after 50 overs
+wp <- predict_win_probability(150, 4, 50, innings = 3, format = "test",
+  match_state = list(
+    completed_innings = list(
+      list(runs = 350, wickets = 10, overs = 120),
+      list(runs = 280, wickets = 10, overs = 95)
+    ),
+    batting_is_team1 = FALSE
+  ))
 print(wp)
 }
 }

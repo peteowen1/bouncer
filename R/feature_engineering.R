@@ -2,6 +2,9 @@
 #
 # Functions for calculating features used in projected score and win probability models.
 
+#' @importFrom data.table := .SD .N .GRP setorder fcase frollsum as.data.table is.data.table copy set
+NULL
+
 #' Calculate Rolling Features for Deliveries
 #'
 #' Calculates rolling momentum features over specified ball/over windows.
@@ -146,10 +149,11 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
       default = "death"
     )
 
+    over_dbl <- as.double(over)
     overs_into_phase <- data.table::fcase(
-      over < 10, over,
-      over < 40, over - 10,
-      default = over - 40
+      over < 10, over_dbl,
+      over < 40, over_dbl - 10,
+      default = over_dbl - 40
     )
 
     total_overs <- 50

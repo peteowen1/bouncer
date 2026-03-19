@@ -11,6 +11,7 @@ Named list where names are venue names and values are country names
 }
 \description{
 Returns a named list mapping international cricket venue names to country names.
+Loaded from inst/extdata/venue_country_map.csv and cached for the session.
 Country names match team names as they appear in the data (e.g., "West Indies" not "Barbados").
 }
 \keyword{internal}

@@ -269,16 +269,17 @@ create_schema <- function(conn, verbose = TRUE) {
       team_id VARCHAR,
       match_id VARCHAR,
       match_date DATE,
-      match_type VARCHAR,
-      event_name VARCHAR,
+      format VARCHAR,
+      gender VARCHAR,
+      team_type VARCHAR,
 
-      -- Result-based ELO (traditional, updates on wins/losses)
-      elo_result DOUBLE,
+      -- ELO before and after this match
+      elo_before DOUBLE,
+      elo_after DOUBLE,
+      elo_diff DOUBLE,
 
-      -- Roster-based ELO (aggregated from player ELOs)
-      elo_roster_batting DOUBLE,
-      elo_roster_bowling DOUBLE,
-      elo_roster_combined DOUBLE,
+      -- Whether team played in this match (vs. carry-forward row)
+      played_in_match BOOLEAN,
 
       -- Context
       matches_played INTEGER,

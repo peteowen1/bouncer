@@ -7,7 +7,7 @@
 load_in_match_models(format = "t20", models_path = NULL, force_reload = FALSE)
 }
 \arguments{
-\item{format}{Character. Match format: "t20", "odi".}
+\item{format}{Character. Match format: "t20", "odi", "test".}
 
 \item{models_path}{Character. Path to models directory. If NULL, uses default.}
 
@@ -21,6 +21,8 @@ A list containing:
 \item stage1_features - Feature column names for Stage 1
 \item stage2_features - Feature column names for Stage 2
 }
+For Test format, returns a different structure with result_model and
+conditional_model (decomposed pipeline).
 }
 \description{
 Loads the trained in-match prediction models for a given format.

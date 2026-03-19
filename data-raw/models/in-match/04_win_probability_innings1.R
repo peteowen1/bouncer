@@ -27,18 +27,20 @@ CV_FOLDS <- 5
 MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
 PRINT_EVERY_N <- 50
+if (!exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT <- "t20"
 
 cat("\n")
-cli::cli_h1("Innings 1 Win Probability Model (XGBoost)")
+cli::cli_h1("Innings 1 Win Probability Model ({toupper(IN_MATCH_FORMAT)})")
 cat("\n")
 
 # Load Prepared Data ----
 cli::cli_h2("Loading prepared data")
 
-output_dir <- file.path("..", "bouncerdata", "models")
+output_dir <- file.path(find_bouncerdata_dir(), "models")
 
-# Stage 1 data (1st innings deliveries with win labels)
-stage1_path <- file.path(output_dir, "ipl_stage1_data.rds")
+# Stage 1 data
+stage1_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_data.rds"))
+if (!file.exists(stage1_path)) stage1_path <- file.path(output_dir, "ipl_stage1_data.rds")
 if (!file.exists(stage1_path)) {
   cli::cli_alert_danger("Data not found at {stage1_path}")
   cli::cli_alert_info("Run 01_prepare_data.R first")
@@ -60,7 +62,8 @@ if (!"batting_first_wins" %in% names(train_data)) {
 }
 
 # Load Stage 1 projected score model
-stage1_model_path <- file.path(output_dir, "ipl_stage1_results.rds")
+stage1_model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_results.rds"))
+if (!file.exists(stage1_model_path)) stage1_model_path <- file.path(output_dir, "ipl_stage1_results.rds")
 if (!file.exists(stage1_model_path)) {
   cli::cli_alert_danger("Stage 1 model not found at {stage1_model_path}")
   cli::cli_alert_info("Run 03_projected_score_model.R first")
@@ -533,7 +536,7 @@ cat("\n")
 cli::cli_h2("Saving model and results")
 
 # Save XGBoost model
-model_path <- file.path(output_dir, "ipl_innings1_win_probability.json")
+model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_innings1_win_probability.ubj"))
 xgb.save(final_model, model_path)
 cli::cli_alert_success("Model saved to {model_path}")
 
@@ -566,7 +569,7 @@ results <- list(
   )
 )
 
-results_path <- file.path(output_dir, "ipl_innings1_results.rds")
+results_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_innings1_results.rds"))
 saveRDS(results, results_path)
 cli::cli_alert_success("Results saved to {results_path}")
 

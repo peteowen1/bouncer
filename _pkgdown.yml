@@ -82,6 +82,16 @@ reference:
     - get_unscraped_matches
     - add_cricinfo_tables
 
+  - title: Weather Data
+    desc: Fetch and manage weather data for cricket matches
+    contents:
+    - geocode_venues
+    - fetch_weather_openmeteo
+    - fetch_forecast_weather
+    - load_venue_coordinates
+    - load_match_weather
+    - add_weather_features
+
   - title: Fox Sports Data
     desc: Load ball-by-ball data from Fox Sports
     contents:
@@ -152,6 +162,13 @@ reference:
     - get_team_elo
     - get_dynamic_k
 
+  - title: Hawkeye Features
+    desc: Advanced player features from Cricinfo Hawkeye data
+    contents:
+    - calculate_hawkeye_batter_features
+    - calculate_hawkeye_bowler_features
+    - get_hawkeye_coverage
+
   - title: Centrality & PageRank
     desc: Network-based player quality adjustment
     contents:
@@ -217,6 +234,16 @@ reference:
     - get_all_data_folders
     - add_prediction_tables
     - list_available_formats
+
+  - title: Pipeline Benchmarking
+    desc: Track and compare model performance across pipeline runs
+    contents:
+    - record_benchmarks
+    - get_latest_benchmark
+    - check_benchmark_regression
+    - get_benchmark_history
+    - print_benchmark_summary
+    - tune_xgb_params
 
   - title: Rating Internals
     desc: Low-level functions for ELO and skill index calculations

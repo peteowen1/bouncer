@@ -118,7 +118,8 @@ cli::cli_alert_success("Loaded {nrow(all_matches_dt)} {format_msg} matches")
 # Load all team_elo data ----
 cli::cli_alert_info("Loading team ELO data...")
 team_elo_dt <- as.data.table(DBI::dbGetQuery(conn, "
-  SELECT team_id, match_id, match_date, match_type, elo_result, elo_roster_combined
+  SELECT team_id, match_id, match_date, format AS match_type,
+         elo_after AS elo_result, elo_after AS elo_roster_combined
   FROM team_elo
 "))
 team_elo_dt[, match_date := as.Date(match_date)]
@@ -304,10 +305,20 @@ for (current_format in formats_to_process) {
     bowler_skills <- data.table(player_id = character(), economy_index = numeric())
   }
 
-  # Filter to matches with outcomes
-  matches_with_outcome <- matches_dt[!is.na(outcome_winner) & outcome_winner != ""]
+  # Filter to processable matches
+  # Test: include draws (no outcome_winner) since they're 33% of matches
+  # T20/ODI: exclude no-results (rain, etc.) since they're uninformative
+  if (current_format == "test") {
+    # Keep all Test matches except those with no outcome_type at all
+    matches_with_outcome <- matches_dt[!is.na(match_date)]
+    # outcome_type is 'normal', 'draw', or 'tie' for completed Tests
+    n_draws <- sum(is.na(matches_with_outcome$outcome_winner_id) | matches_with_outcome$outcome_winner_id == "")
+    cli::cli_alert_info("Including {n_draws} draws/no-results out of {nrow(matches_with_outcome)} Test matches")
+  } else {
+    matches_with_outcome <- matches_dt[!is.na(outcome_winner) & outcome_winner != ""]
+  }
   n_matches <- nrow(matches_with_outcome)
-  cli::cli_alert_info("Processing {n_matches} matches with outcomes")
+  cli::cli_alert_info("Processing {n_matches} matches")
 
   # Process matches
   start_calc <- Sys.time()
@@ -389,11 +400,21 @@ for (current_format in formats_to_process) {
       by = "match_id"
     ) %>%
     mutate(
-      team1_wins = as.integer(outcome_winner == team1),
-      match_year = as.integer(format(as.Date(match_date), "%Y"))
+      # team1_wins: 1 = team1 won, 0 = team2 won, NA = draw/no result
+      team1_wins = case_when(
+        is.na(outcome_winner) | outcome_winner == "" ~ NA_integer_,  # draw
+        outcome_winner == team1 ~ 1L,
+        TRUE ~ 0L
+      ),
+      match_year = as.integer(base::format(as.Date(match_date), "%Y"))
     )
 
-  cli::cli_alert_info("Team 1 win rate: {round(mean(features_list$team1_wins, na.rm = TRUE) * 100, 1)}%")
+  n_draws <- sum(is.na(features_list$team1_wins))
+  n_results <- sum(!is.na(features_list$team1_wins))
+  cli::cli_alert_info("Results: {n_results} win/loss, {n_draws} draws/no-result")
+  if (n_results > 0) {
+    cli::cli_alert_info("Team 1 win rate (excl draws): {round(mean(features_list$team1_wins, na.rm = TRUE) * 100, 1)}%")
+  }
 
   # Create Train/Test Splits
   cli::cli_h2("Creating train/test splits")

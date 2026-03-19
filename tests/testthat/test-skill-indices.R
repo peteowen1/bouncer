@@ -116,12 +116,13 @@ test_that("get_skill_alpha returns max at 0 deliveries and decays with experienc
   # Formula: alpha_min + (alpha_max - alpha_min) * exp(-deliveries / halflife)
   # At 0 deliveries, alpha = alpha_max
   alpha_0 <- get_skill_alpha(0, format = "t20", skill_type = "run", gender = "male")
-  expect_equal(alpha_0, SKILL_ALPHA_RUN_MAX_MENS_T20)
+  params <- get_skill_alpha_params("t20", gender = "male", skill_type = "run")
+  expect_equal(alpha_0, params$alpha_max)
 
   # At many deliveries, alpha approaches alpha_min
   alpha_big <- get_skill_alpha(10000, format = "t20", skill_type = "run", gender = "male")
   expect_true(alpha_big < alpha_0)
-  expect_true(abs(alpha_big - SKILL_ALPHA_RUN_MIN_MENS_T20) < 0.001)
+  expect_true(abs(alpha_big - params$alpha_min) < 0.001)
 })
 
 test_that("get_skill_alpha is monotonically decreasing", {
@@ -281,26 +282,30 @@ test_that("skill alpha bounds are valid", {
   }
 })
 
-test_that("dynamic skill alphas have max > min", {
-  # Check player dynamic alpha params
-  expect_true(SKILL_ALPHA_RUN_MAX_MENS_T20 > SKILL_ALPHA_RUN_MIN_MENS_T20)
-  expect_true(SKILL_ALPHA_WICKET_MAX_MENS_T20 > SKILL_ALPHA_WICKET_MIN_MENS_T20)
-  expect_true(SKILL_ALPHA_RUN_MAX_MENS_ODI > SKILL_ALPHA_RUN_MIN_MENS_ODI)
-  expect_true(SKILL_ALPHA_RUN_MAX_MENS_TEST > SKILL_ALPHA_RUN_MIN_MENS_TEST)
+test_that("get_skill_alpha_params errors on invalid skill_type", {
+  expect_error(get_skill_alpha_params("t20", skill_type = "economy"), "Unknown skill_type")
+  expect_error(get_skill_alpha_params("t20", skill_type = "foo"), "Unknown skill_type")
+})
 
-  # Check womens too
-  expect_true(SKILL_ALPHA_RUN_MAX_WOMENS_T20 > SKILL_ALPHA_RUN_MIN_WOMENS_T20)
-  expect_true(SKILL_ALPHA_RUN_MAX_WOMENS_ODI > SKILL_ALPHA_RUN_MIN_WOMENS_ODI)
-  expect_true(SKILL_ALPHA_RUN_MAX_WOMENS_TEST > SKILL_ALPHA_RUN_MIN_WOMENS_TEST)
+test_that("get_skill_weights errors on invalid skill_type", {
+  expect_error(get_skill_weights("t20", skill_type = "economy"), "Unknown skill_type")
+  expect_error(get_skill_weights("t20", skill_type = "foo"), "Unknown skill_type")
+})
+
+test_that("dynamic skill alphas have max > min", {
+  for (fg in names(SKILL_PARAMS)) {
+    p <- SKILL_PARAMS[[fg]]
+    expect_true(p$SKILL_ALPHA_RUN_MAX > p$SKILL_ALPHA_RUN_MIN, label = paste(fg, "run"))
+    expect_true(p$SKILL_ALPHA_WICKET_MAX > p$SKILL_ALPHA_WICKET_MIN, label = paste(fg, "wicket"))
+  }
 })
 
 test_that("dynamic skill alpha halflife values are positive", {
-  expect_true(SKILL_ALPHA_RUN_HALFLIFE_MENS_T20 > 0)
-  expect_true(SKILL_ALPHA_RUN_HALFLIFE_MENS_ODI > 0)
-  expect_true(SKILL_ALPHA_RUN_HALFLIFE_MENS_TEST > 0)
-  expect_true(SKILL_ALPHA_WICKET_HALFLIFE_MENS_T20 > 0)
-  expect_true(SKILL_ALPHA_WICKET_HALFLIFE_MENS_ODI > 0)
-  expect_true(SKILL_ALPHA_WICKET_HALFLIFE_MENS_TEST > 0)
+  for (fg in names(SKILL_PARAMS)) {
+    p <- SKILL_PARAMS[[fg]]
+    expect_true(p$SKILL_ALPHA_RUN_HALFLIFE > 0, label = paste(fg, "run halflife"))
+    expect_true(p$SKILL_ALPHA_WICKET_HALFLIFE > 0, label = paste(fg, "wicket halflife"))
+  }
 })
 
 test_that("skill index bounds are symmetric around zero", {
@@ -310,33 +315,15 @@ test_that("skill index bounds are symmetric around zero", {
   expect_equal(SKILL_VENUE_WICKET_MAX, -SKILL_VENUE_WICKET_MIN)
 })
 
-test_that("skill attribution weights sum to 1", {
-  # Mens T20 run weights
-  run_sum <- SKILL_W_BATTER_RUN_MENS_T20 + SKILL_W_BOWLER_RUN_MENS_T20 +
-    SKILL_W_VENUE_SESSION_RUN_MENS_T20 + SKILL_W_VENUE_PERM_RUN_MENS_T20
-  expect_equal(run_sum, 1.0, tolerance = 0.001)
-
-  # Mens T20 wicket weights
-  wkt_sum <- SKILL_W_BATTER_WICKET_MENS_T20 + SKILL_W_BOWLER_WICKET_MENS_T20 +
-    SKILL_W_VENUE_SESSION_WICKET_MENS_T20 + SKILL_W_VENUE_PERM_WICKET_MENS_T20
-  expect_equal(wkt_sum, 1.0, tolerance = 0.001)
-})
-
 test_that("skill attribution weights sum to 1 for all format-gender combos", {
-  formats <- c("MENS_T20", "MENS_ODI", "MENS_TEST",
-               "WOMENS_T20", "WOMENS_ODI", "WOMENS_TEST")
-
-  for (fg in formats) {
-    run_sum <- get(paste0("SKILL_W_BATTER_RUN_", fg)) +
-      get(paste0("SKILL_W_BOWLER_RUN_", fg)) +
-      get(paste0("SKILL_W_VENUE_SESSION_RUN_", fg)) +
-      get(paste0("SKILL_W_VENUE_PERM_RUN_", fg))
+  for (fg in names(SKILL_PARAMS)) {
+    p <- SKILL_PARAMS[[fg]]
+    run_sum <- p$SKILL_W_BATTER_RUN + p$SKILL_W_BOWLER_RUN +
+      p$SKILL_W_VENUE_SESSION_RUN + p$SKILL_W_VENUE_PERM_RUN
     expect_equal(run_sum, 1.0, tolerance = 0.001, label = paste(fg, "run weights"))
 
-    wkt_sum <- get(paste0("SKILL_W_BATTER_WICKET_", fg)) +
-      get(paste0("SKILL_W_BOWLER_WICKET_", fg)) +
-      get(paste0("SKILL_W_VENUE_SESSION_WICKET_", fg)) +
-      get(paste0("SKILL_W_VENUE_PERM_WICKET_", fg))
+    wkt_sum <- p$SKILL_W_BATTER_WICKET + p$SKILL_W_BOWLER_WICKET +
+      p$SKILL_W_VENUE_SESSION_WICKET + p$SKILL_W_VENUE_PERM_WICKET
     expect_equal(wkt_sum, 1.0, tolerance = 0.001, label = paste(fg, "wicket weights"))
   }
 })

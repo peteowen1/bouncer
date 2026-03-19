@@ -5,6 +5,7 @@
 # - Format-gender specific parameters (optimized Feb 2026)
 #
 # Split from constants.R for better maintainability.
+# Format-gender parameters consolidated into THREE_WAY_PARAMS list (Mar 2026).
 
 # ============================================================================
 # PREDICTION CALCULATION CONSTANTS
@@ -46,8 +47,8 @@ THREE_WAY_REPLACEMENT_LEVEL <- 1500  # Players/venues decay towards this when in
 # Hard bounds to prevent extreme ELO values that produce unrealistic predictions.
 # Venue bounds are tighter since venue characteristics should be more stable.
 #
-# Player bounds: ±400 from start (1000-1800)
-# Venue bounds: ±200 from start (1200-1600) - more conservative
+# Player bounds: +/-400 from start (1000-1800)
+# Venue bounds: +/-200 from start (1200-1600) - more conservative
 #
 # These bounds are applied AFTER each ELO update to prevent drift.
 
@@ -134,205 +135,188 @@ THREE_WAY_TIER_3_EVENTS <- c(
   "County Championship"
 )
 
-# ============================================================================
-# FORMAT-GENDER SPECIFIC ATTRIBUTION WEIGHTS (Feb 2026 Optimization)
-# ============================================================================
-# Optimized separately for each format-gender combination using:
-# - Run ELO: Poisson loss (see 02_optimize_run_elo.R)
-# - Wicket ELO: Binary log-loss (see 03_optimize_wicket_elo.R)
-# Results saved in bouncerdata/models/{run|wicket}_elo_params_{gender}_{format}.rds
-
 # Update rule: "standard" = k*delta, "sqrt" = k*sign(delta)*sqrt(|delta|)
 # Poisson optimization (Jan 2026) found linear (power=1.0) optimal for all formats
 THREE_WAY_UPDATE_RULE <- "linear"
 
-# ----------------------------------------------------------------------------
-# RUN ELO: Attribution Weights (w_batter + w_bowler + w_venue = 1.0)
-# Venue split 80% session / 20% permanent
-# ----------------------------------------------------------------------------
-
-# Men's T20 (baseline, unchanged from prior optimization)
-THREE_WAY_W_BATTER_MENS_T20 <- 0.612
-THREE_WAY_W_BOWLER_MENS_T20 <- 0.311
-THREE_WAY_W_VENUE_SESSION_MENS_T20 <- 0.062  # 0.077 * 0.8
-THREE_WAY_W_VENUE_PERM_MENS_T20 <- 0.015     # 0.077 * 0.2
-
-# Men's ODI (venue importance: 15.8%)
-THREE_WAY_W_BATTER_MENS_ODI <- 0.563
-THREE_WAY_W_BOWLER_MENS_ODI <- 0.279
-THREE_WAY_W_VENUE_SESSION_MENS_ODI <- 0.126  # 0.158 * 0.8
-THREE_WAY_W_VENUE_PERM_MENS_ODI <- 0.032     # 0.158 * 0.2
-
-# Men's Test (batter-dominant: 62.8%)
-THREE_WAY_W_BATTER_MENS_TEST <- 0.628
-THREE_WAY_W_BOWLER_MENS_TEST <- 0.290
-THREE_WAY_W_VENUE_SESSION_MENS_TEST <- 0.066  # 0.082 * 0.8
-THREE_WAY_W_VENUE_PERM_MENS_TEST <- 0.016     # 0.082 * 0.2
-
-# Women's T20 (venue importance: 28.9% - much higher than men's!)
-THREE_WAY_W_BATTER_WOMENS_T20 <- 0.542
-THREE_WAY_W_BOWLER_WOMENS_T20 <- 0.169
-THREE_WAY_W_VENUE_SESSION_WOMENS_T20 <- 0.231  # 0.289 * 0.8
-THREE_WAY_W_VENUE_PERM_WOMENS_T20 <- 0.058     # 0.289 * 0.2
-
-# Women's ODI (venue importance: 16.7%)
-THREE_WAY_W_BATTER_WOMENS_ODI <- 0.597
-THREE_WAY_W_BOWLER_WOMENS_ODI <- 0.236
-THREE_WAY_W_VENUE_SESSION_WOMENS_ODI <- 0.134  # 0.167 * 0.8
-THREE_WAY_W_VENUE_PERM_WOMENS_ODI <- 0.033     # 0.167 * 0.2
-
-# Women's Test (venue importance: 14.4%)
-THREE_WAY_W_BATTER_WOMENS_TEST <- 0.541
-THREE_WAY_W_BOWLER_WOMENS_TEST <- 0.315
-THREE_WAY_W_VENUE_SESSION_WOMENS_TEST <- 0.115  # 0.144 * 0.8
-THREE_WAY_W_VENUE_PERM_WOMENS_TEST <- 0.029     # 0.144 * 0.2
-
-
-# ----------------------------------------------------------------------------
-# WICKET ELO: Attribution Weights
-# Note: Men's T20 rebalanced Feb 2026 (see comment below)
-# ----------------------------------------------------------------------------
-
-# Men's T20 (Feb 2026: re-optimized with raised bounds)
-# Optimizer found: w_batter=0.411, w_bowler=0.200 (hit lower bound), w_venue=0.389
-# Shows 3.85% improvement over null model in internal simulation
-# New weights: 41% batter, 20% bowler, 39% venue (31% session + 8% perm)
-THREE_WAY_W_BATTER_WICKET_MENS_T20 <- 0.411
-THREE_WAY_W_BOWLER_WICKET_MENS_T20 <- 0.200
-THREE_WAY_W_VENUE_SESSION_WICKET_MENS_T20 <- 0.311   # 0.389 * 0.8
-THREE_WAY_W_VENUE_PERM_WICKET_MENS_T20 <- 0.078      # 0.389 * 0.2
-
-# Men's ODI (player-dominant for wickets)
-THREE_WAY_W_BATTER_WICKET_MENS_ODI <- 0.612
-THREE_WAY_W_BOWLER_WICKET_MENS_ODI <- 0.312
-THREE_WAY_W_VENUE_SESSION_WICKET_MENS_ODI <- 0.061  # 0.076 * 0.8
-THREE_WAY_W_VENUE_PERM_WICKET_MENS_ODI <- 0.015     # 0.076 * 0.2
-
-# Men's Test (player-dominant for wickets)
-THREE_WAY_W_BATTER_WICKET_MENS_TEST <- 0.612
-THREE_WAY_W_BOWLER_WICKET_MENS_TEST <- 0.312
-THREE_WAY_W_VENUE_SESSION_WICKET_MENS_TEST <- 0.061  # 0.076 * 0.8
-THREE_WAY_W_VENUE_PERM_WICKET_MENS_TEST <- 0.015     # 0.076 * 0.2
-
-# Women's T20 (zero venue effect, all player skill)
-THREE_WAY_W_BATTER_WICKET_WOMENS_T20 <- 0.650
-THREE_WAY_W_BOWLER_WICKET_WOMENS_T20 <- 0.350
-THREE_WAY_W_VENUE_SESSION_WICKET_WOMENS_T20 <- 0.000
-THREE_WAY_W_VENUE_PERM_WICKET_WOMENS_T20 <- 0.000
-
-# Women's ODI (venue importance: 25.9%)
-THREE_WAY_W_BATTER_WICKET_WOMENS_ODI <- 0.641
-THREE_WAY_W_BOWLER_WICKET_WOMENS_ODI <- 0.100
-THREE_WAY_W_VENUE_SESSION_WICKET_WOMENS_ODI <- 0.207  # 0.259 * 0.8
-THREE_WAY_W_VENUE_PERM_WICKET_WOMENS_ODI <- 0.052     # 0.259 * 0.2
-
-# Women's Test (player-dominant)
-THREE_WAY_W_BATTER_WICKET_WOMENS_TEST <- 0.613
-THREE_WAY_W_BOWLER_WICKET_WOMENS_TEST <- 0.311
-THREE_WAY_W_VENUE_SESSION_WICKET_WOMENS_TEST <- 0.061  # 0.076 * 0.8
-THREE_WAY_W_VENUE_PERM_WICKET_WOMENS_TEST <- 0.015     # 0.076 * 0.2
-
-
-# ----------------------------------------------------------------------------
-# RUNS_PER_100_ELO: How much each 100 ELO points affects run prediction
-# ----------------------------------------------------------------------------
-
-# Men's formats
-THREE_WAY_RUNS_PER_100_ELO_POINTS_MENS_T20 <- 0.0745   # Unchanged
-THREE_WAY_RUNS_PER_100_ELO_POINTS_MENS_ODI <- 0.0826   # Optimized
-THREE_WAY_RUNS_PER_100_ELO_POINTS_MENS_TEST <- 0.0932  # Optimized (+25% vs baseline)
-
-# Women's formats
-THREE_WAY_RUNS_PER_100_ELO_POINTS_WOMENS_T20 <- 0.128   # +70% vs men's T20
-THREE_WAY_RUNS_PER_100_ELO_POINTS_WOMENS_ODI <- 0.0894
-THREE_WAY_RUNS_PER_100_ELO_POINTS_WOMENS_TEST <- 0.0798
-
-
 # ============================================================================
-# 3-WAY ELO DYNAMIC K-FACTORS (Format-Gender Specific)
+# FORMAT-GENDER SPECIFIC PARAMETERS (Consolidated Lookup Table)
 # ============================================================================
-# K = K_MIN + (K_MAX - K_MIN) * exp(-deliveries / K_HALFLIFE)
-# Optimized separately for each format-gender combination (Feb 2026)
+# All format-gender-specific constants in a single nested list.
+# Keys match the old variable name prefixes for backward compatibility
+# with get_3way_constant().
+#
+# Optimized separately for each format-gender combination (Feb 2026):
+# - Run ELO: Poisson loss (see 02_optimize_run_elo.R)
+# - Wicket ELO: Binary log-loss (see 03_optimize_wicket_elo.R)
+# Results saved in bouncerdata/models/{run|wicket}_elo_params_{gender}_{format}.rds
 
-# ----------------------------------------------------------------------------
-# RUN K-FACTORS: Men's formats
-# ----------------------------------------------------------------------------
+THREE_WAY_PARAMS <- list(
 
-THREE_WAY_K_RUN_MAX_MENS_T20 <- 11.0
-THREE_WAY_K_RUN_MIN_MENS_T20 <- 7.0
-THREE_WAY_K_RUN_HALFLIFE_MENS_T20 <- 150
+  # ---- Men's T20 (baseline) ----
+  MENS_T20 = list(
+    # Run ELO attribution weights (w_batter + w_bowler + w_venue = 1.0)
+    THREE_WAY_W_BATTER         = 0.612,
+    THREE_WAY_W_BOWLER         = 0.311,
+    THREE_WAY_W_VENUE_SESSION  = 0.062,  # 0.077 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.015,  # 0.077 * 0.2
+    # Wicket ELO attribution weights (Feb 2026: re-optimized with raised bounds)
+    THREE_WAY_W_BATTER_WICKET         = 0.411,
+    THREE_WAY_W_BOWLER_WICKET         = 0.200,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.311,  # 0.389 * 0.8
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.078,  # 0.389 * 0.2
+    # Runs per 100 ELO points
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.0745,
+    # Run K-factors: K = K_MIN + (K_MAX - K_MIN) * exp(-deliveries / K_HALFLIFE)
+    THREE_WAY_K_RUN_MAX      = 11.0,
+    THREE_WAY_K_RUN_MIN      = 7.0,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    # Wicket K-factors
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 150,
+    # Wicket ELO divisor
+    THREE_WAY_WICKET_ELO_DIVISOR = 400,
+    # Venue K-factors (permanent + session)
+    THREE_WAY_K_VENUE_PERM_MAX      = 6.15,
+    THREE_WAY_K_VENUE_PERM_MIN      = 1.0,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 15.0,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 2.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 150
+  ),
 
-THREE_WAY_K_RUN_MAX_MENS_ODI <- 12.5    # Higher max for ODI
-THREE_WAY_K_RUN_MIN_MENS_ODI <- 5.1
-THREE_WAY_K_RUN_HALFLIFE_MENS_ODI <- 150
+  # ---- Men's ODI ----
+  MENS_ODI = list(
+    THREE_WAY_W_BATTER         = 0.563,
+    THREE_WAY_W_BOWLER         = 0.279,
+    THREE_WAY_W_VENUE_SESSION  = 0.126,  # 0.158 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.032,  # 0.158 * 0.2
+    THREE_WAY_W_BATTER_WICKET         = 0.612,
+    THREE_WAY_W_BOWLER_WICKET         = 0.312,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.061,  # 0.076 * 0.8
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.015,  # 0.076 * 0.2
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.0826,
+    THREE_WAY_K_RUN_MAX      = 12.5,
+    THREE_WAY_K_RUN_MIN      = 5.1,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 150,
+    THREE_WAY_WICKET_ELO_DIVISOR = 400,
+    THREE_WAY_K_VENUE_PERM_MAX      = 7.22,
+    THREE_WAY_K_VENUE_PERM_MIN      = 1.27,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 13.97,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 5.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 150
+  ),
 
-THREE_WAY_K_RUN_MAX_MENS_TEST <- 12.8
-THREE_WAY_K_RUN_MIN_MENS_TEST <- 4.7
-THREE_WAY_K_RUN_HALFLIFE_MENS_TEST <- 150
+  # ---- Men's Test ----
+  MENS_TEST = list(
+    THREE_WAY_W_BATTER         = 0.628,
+    THREE_WAY_W_BOWLER         = 0.290,
+    THREE_WAY_W_VENUE_SESSION  = 0.066,  # 0.082 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.016,  # 0.082 * 0.2
+    THREE_WAY_W_BATTER_WICKET         = 0.612,
+    THREE_WAY_W_BOWLER_WICKET         = 0.312,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.061,  # 0.076 * 0.8
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.015,  # 0.076 * 0.2
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.0932,
+    THREE_WAY_K_RUN_MAX      = 12.8,
+    THREE_WAY_K_RUN_MIN      = 4.7,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 150,
+    THREE_WAY_WICKET_ELO_DIVISOR = 400,
+    THREE_WAY_K_VENUE_PERM_MAX      = 6.25,
+    THREE_WAY_K_VENUE_PERM_MIN      = 1.14,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 14.41,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 5.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 150
+  ),
 
-# ----------------------------------------------------------------------------
-# RUN K-FACTORS: Women's formats
-# ----------------------------------------------------------------------------
+  # ---- Women's T20 (venue importance 28.9% - much higher than men's) ----
+  WOMENS_T20 = list(
+    THREE_WAY_W_BATTER         = 0.542,
+    THREE_WAY_W_BOWLER         = 0.169,
+    THREE_WAY_W_VENUE_SESSION  = 0.231,  # 0.289 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.058,  # 0.289 * 0.2
+    # Zero venue effect for wickets, all player skill
+    THREE_WAY_W_BATTER_WICKET         = 0.650,
+    THREE_WAY_W_BOWLER_WICKET         = 0.350,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.000,
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.000,
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.128,  # +70% vs men's T20
+    THREE_WAY_K_RUN_MAX      = 13.6,
+    THREE_WAY_K_RUN_MIN      = 3.5,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 443,  # Much slower decay
+    THREE_WAY_WICKET_ELO_DIVISOR = 200,  # Faster response
+    THREE_WAY_K_VENUE_PERM_MAX      = 10.0,  # Higher: venue characteristics matter more
+    THREE_WAY_K_VENUE_PERM_MIN      = 0.98,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 13.2,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 2.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 151
+  ),
 
-THREE_WAY_K_RUN_MAX_WOMENS_T20 <- 13.6   # Higher max for women's
-THREE_WAY_K_RUN_MIN_WOMENS_T20 <- 3.5
-THREE_WAY_K_RUN_HALFLIFE_WOMENS_T20 <- 150
+  # ---- Women's ODI ----
+  WOMENS_ODI = list(
+    THREE_WAY_W_BATTER         = 0.597,
+    THREE_WAY_W_BOWLER         = 0.236,
+    THREE_WAY_W_VENUE_SESSION  = 0.134,  # 0.167 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.033,  # 0.167 * 0.2
+    THREE_WAY_W_BATTER_WICKET         = 0.641,
+    THREE_WAY_W_BOWLER_WICKET         = 0.100,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.207,  # 0.259 * 0.8
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.052,  # 0.259 * 0.2
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.0894,
+    THREE_WAY_K_RUN_MAX      = 13.5,
+    THREE_WAY_K_RUN_MIN      = 3.4,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 296,  # Slower decay than men's
+    THREE_WAY_WICKET_ELO_DIVISOR = 200,  # Faster response
+    THREE_WAY_K_VENUE_PERM_MAX      = 6.26,
+    THREE_WAY_K_VENUE_PERM_MIN      = 1.07,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 14.4,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 5.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 150
+  ),
 
-THREE_WAY_K_RUN_MAX_WOMENS_ODI <- 13.5
-THREE_WAY_K_RUN_MIN_WOMENS_ODI <- 3.4
-THREE_WAY_K_RUN_HALFLIFE_WOMENS_ODI <- 150
-
-THREE_WAY_K_RUN_MAX_WOMENS_TEST <- 10.2  # Lower for Test
-THREE_WAY_K_RUN_MIN_WOMENS_TEST <- 8.0
-THREE_WAY_K_RUN_HALFLIFE_WOMENS_TEST <- 150
-
-
-# ----------------------------------------------------------------------------
-# WICKET K-FACTORS: Men's formats
-# Wicket halflives vary more by gender than format
-# ----------------------------------------------------------------------------
-
-THREE_WAY_K_WICKET_MAX_MENS_T20 <- 12.0
-THREE_WAY_K_WICKET_MIN_MENS_T20 <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_MENS_T20 <- 150
-
-THREE_WAY_K_WICKET_MAX_MENS_ODI <- 12.0
-THREE_WAY_K_WICKET_MIN_MENS_ODI <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_MENS_ODI <- 150
-
-THREE_WAY_K_WICKET_MAX_MENS_TEST <- 12.0
-THREE_WAY_K_WICKET_MIN_MENS_TEST <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_MENS_TEST <- 150
-
-# ----------------------------------------------------------------------------
-# WICKET K-FACTORS: Women's formats
-# Note: Much longer halflives in women's T20/ODI (443/296 balls)
-# ----------------------------------------------------------------------------
-
-THREE_WAY_K_WICKET_MAX_WOMENS_T20 <- 12.0
-THREE_WAY_K_WICKET_MIN_WOMENS_T20 <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_WOMENS_T20 <- 443  # Much slower decay
-
-THREE_WAY_K_WICKET_MAX_WOMENS_ODI <- 12.0
-THREE_WAY_K_WICKET_MIN_WOMENS_ODI <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_WOMENS_ODI <- 296  # Slower decay than men's
-
-THREE_WAY_K_WICKET_MAX_WOMENS_TEST <- 12.0
-THREE_WAY_K_WICKET_MIN_WOMENS_TEST <- 4.0
-THREE_WAY_K_WICKET_HALFLIFE_WOMENS_TEST <- 150
-
-
-# ----------------------------------------------------------------------------
-# WICKET ELO DIVISOR (Format-Gender Specific)
-# Women's T20/ODI use 200 (faster response), others use 400
-# ----------------------------------------------------------------------------
-
-THREE_WAY_WICKET_ELO_DIVISOR_MENS_T20 <- 400
-THREE_WAY_WICKET_ELO_DIVISOR_MENS_ODI <- 400
-THREE_WAY_WICKET_ELO_DIVISOR_MENS_TEST <- 400
-THREE_WAY_WICKET_ELO_DIVISOR_WOMENS_T20 <- 200  # Faster response
-THREE_WAY_WICKET_ELO_DIVISOR_WOMENS_ODI <- 200  # Faster response
-THREE_WAY_WICKET_ELO_DIVISOR_WOMENS_TEST <- 400
+  # ---- Women's Test ----
+  WOMENS_TEST = list(
+    THREE_WAY_W_BATTER         = 0.541,
+    THREE_WAY_W_BOWLER         = 0.315,
+    THREE_WAY_W_VENUE_SESSION  = 0.115,  # 0.144 * 0.8
+    THREE_WAY_W_VENUE_PERM     = 0.029,  # 0.144 * 0.2
+    THREE_WAY_W_BATTER_WICKET         = 0.613,
+    THREE_WAY_W_BOWLER_WICKET         = 0.311,
+    THREE_WAY_W_VENUE_SESSION_WICKET  = 0.061,  # 0.076 * 0.8
+    THREE_WAY_W_VENUE_PERM_WICKET     = 0.015,  # 0.076 * 0.2
+    THREE_WAY_RUNS_PER_100_ELO_POINTS = 0.0798,
+    THREE_WAY_K_RUN_MAX      = 10.2,
+    THREE_WAY_K_RUN_MIN      = 8.0,
+    THREE_WAY_K_RUN_HALFLIFE = 150,
+    THREE_WAY_K_WICKET_MAX      = 12.0,
+    THREE_WAY_K_WICKET_MIN      = 4.0,
+    THREE_WAY_K_WICKET_HALFLIFE = 150,
+    THREE_WAY_WICKET_ELO_DIVISOR = 400,
+    THREE_WAY_K_VENUE_PERM_MAX      = 6.07,
+    THREE_WAY_K_VENUE_PERM_MIN      = 1.30,
+    THREE_WAY_K_VENUE_PERM_HALFLIFE = 4000,
+    THREE_WAY_K_VENUE_SESSION_MAX      = 14.6,
+    THREE_WAY_K_VENUE_SESSION_MIN      = 5.0,
+    THREE_WAY_K_VENUE_SESSION_HALFLIFE = 150
+  )
+)
 
 # ============================================================================
 # VENUE K-FACTOR REDUCTION (Feb 2026 - Prevent Venue ELO Drift)
@@ -354,82 +338,6 @@ THREE_WAY_VENUE_PERM_K_MULTIPLIER <- 0.1  # 10x reduction to prevent excessive v
 
 THREE_WAY_VENUE_SESSION_DECAY_HALFLIFE <- 3     # 3 days - very short-term
 THREE_WAY_VENUE_PERM_DECAY_HALFLIFE <- 1095     # 3 years - long-term characteristics
-
-# ============================================================================
-# VENUE K-FACTORS (Dual Component System - Format-Gender Specific)
-# ============================================================================
-# Optimized via Poisson loss for each format-gender (Feb 2026)
-# See data-raw/ratings/player/3way-elo/optimization/02_optimize_run_elo.R
-#
-# Two components:
-#   - PERMANENT: Slow-learning venue characteristics (pitch type, boundaries, altitude)
-#   - SESSION: Fast-learning current conditions (resets each match)
-#
-# K = K_MIN + (K_MAX - K_MIN) * exp(-balls / K_HALFLIFE)
-
-# ----------------------------------------------------------------------------
-# VENUE K-FACTORS: Men's formats
-# ----------------------------------------------------------------------------
-
-# Men's T20
-THREE_WAY_K_VENUE_PERM_MAX_MENS_T20 <- 6.15
-THREE_WAY_K_VENUE_PERM_MIN_MENS_T20 <- 1.0
-THREE_WAY_K_VENUE_PERM_HALFLIFE_MENS_T20 <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_MENS_T20 <- 15.0
-THREE_WAY_K_VENUE_SESSION_MIN_MENS_T20 <- 2.0
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_MENS_T20 <- 150
-
-# Men's ODI (higher venue session min = venue matters more consistently)
-THREE_WAY_K_VENUE_PERM_MAX_MENS_ODI <- 7.22
-THREE_WAY_K_VENUE_PERM_MIN_MENS_ODI <- 1.27
-THREE_WAY_K_VENUE_PERM_HALFLIFE_MENS_ODI <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_MENS_ODI <- 13.97
-THREE_WAY_K_VENUE_SESSION_MIN_MENS_ODI <- 5.0   # Much higher floor
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_MENS_ODI <- 150
-
-# Men's Test
-THREE_WAY_K_VENUE_PERM_MAX_MENS_TEST <- 6.25
-THREE_WAY_K_VENUE_PERM_MIN_MENS_TEST <- 1.14
-THREE_WAY_K_VENUE_PERM_HALFLIFE_MENS_TEST <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_MENS_TEST <- 14.41
-THREE_WAY_K_VENUE_SESSION_MIN_MENS_TEST <- 5.0
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_MENS_TEST <- 150
-
-# ----------------------------------------------------------------------------
-# VENUE K-FACTORS: Women's formats
-# Note: Women's T20 has higher venue_perm_max (10 vs 6.15 for men's)
-# ----------------------------------------------------------------------------
-
-# Women's T20 (venue_perm_max=10 - venue characteristics matter more)
-THREE_WAY_K_VENUE_PERM_MAX_WOMENS_T20 <- 10.0
-THREE_WAY_K_VENUE_PERM_MIN_WOMENS_T20 <- 0.98
-THREE_WAY_K_VENUE_PERM_HALFLIFE_WOMENS_T20 <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_WOMENS_T20 <- 13.2
-THREE_WAY_K_VENUE_SESSION_MIN_WOMENS_T20 <- 2.0
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_WOMENS_T20 <- 151
-
-# Women's ODI
-THREE_WAY_K_VENUE_PERM_MAX_WOMENS_ODI <- 6.26
-THREE_WAY_K_VENUE_PERM_MIN_WOMENS_ODI <- 1.07
-THREE_WAY_K_VENUE_PERM_HALFLIFE_WOMENS_ODI <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_WOMENS_ODI <- 14.4
-THREE_WAY_K_VENUE_SESSION_MIN_WOMENS_ODI <- 5.0
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_WOMENS_ODI <- 150
-
-# Women's Test
-THREE_WAY_K_VENUE_PERM_MAX_WOMENS_TEST <- 6.07
-THREE_WAY_K_VENUE_PERM_MIN_WOMENS_TEST <- 1.30
-THREE_WAY_K_VENUE_PERM_HALFLIFE_WOMENS_TEST <- 4000
-
-THREE_WAY_K_VENUE_SESSION_MAX_WOMENS_TEST <- 14.6
-THREE_WAY_K_VENUE_SESSION_MIN_WOMENS_TEST <- 5.0
-THREE_WAY_K_VENUE_SESSION_HALFLIFE_WOMENS_TEST <- 150
-
 
 # ============================================================================
 # PLAYER INACTIVITY DECAY
@@ -551,11 +459,14 @@ get_format_gender_suffix <- function(format, gender = "male") {
   # Normalize gender
   gender_clean <- if (tolower(gender) == "female") "WOMENS" else "MENS"
 
-
   paste0(gender_clean, "_", format_clean)
 }
 
 #' Look up a format-gender-specific 3-way ELO constant
+#'
+#' Retrieves a constant from the THREE_WAY_PARAMS lookup table.
+#' The prefix should match the key name within each format-gender entry
+#' (e.g., "THREE_WAY_W_BATTER", "THREE_WAY_K_RUN_MAX").
 #'
 #' @param prefix Constant prefix (e.g., "THREE_WAY_W_BATTER")
 #' @param format Format (T20, ODI, TEST)
@@ -564,9 +475,23 @@ get_format_gender_suffix <- function(format, gender = "male") {
 #' @keywords internal
 get_3way_constant <- function(prefix, format, gender = "male") {
   suffix <- get_format_gender_suffix(format, gender)
-  var_name <- paste0(prefix, "_", suffix)
-  if (!exists(var_name)) cli::cli_abort("Unknown 3-way constant: {var_name}")
-  get(var_name)
+  params <- THREE_WAY_PARAMS[[suffix]]
+  if (is.null(params)) {
+    cli::cli_abort("Unknown format-gender combo: {suffix}")
+  }
+  value <- params[[prefix]]
+  if (is.null(value)) {
+    cli::cli_abort("Unknown 3-way constant: {prefix} for {suffix}")
+  }
+  value
+}
+
+# Internal helper: get params for a format-gender with NULL guard
+get_3way_params <- function(format, gender = "male") {
+  suffix <- get_format_gender_suffix(format, gender)
+  p <- THREE_WAY_PARAMS[[suffix]]
+  if (is.null(p)) cli::cli_abort("Unknown format-gender combo: {suffix}")
+  p
 }
 
 #' Get Run ELO attribution weights for format-gender
@@ -581,11 +506,12 @@ get_3way_constant <- function(prefix, format, gender = "male") {
 #'
 #' @export
 get_run_elo_weights <- function(format, gender = "male") {
+  p <- get_3way_params(format, gender)
   list(
-    w_batter = get_3way_constant("THREE_WAY_W_BATTER", format, gender),
-    w_bowler = get_3way_constant("THREE_WAY_W_BOWLER", format, gender),
-    w_venue_session = get_3way_constant("THREE_WAY_W_VENUE_SESSION", format, gender),
-    w_venue_perm = get_3way_constant("THREE_WAY_W_VENUE_PERM", format, gender)
+    w_batter = p$THREE_WAY_W_BATTER,
+    w_bowler = p$THREE_WAY_W_BOWLER,
+    w_venue_session = p$THREE_WAY_W_VENUE_SESSION,
+    w_venue_perm = p$THREE_WAY_W_VENUE_PERM
   )
 }
 
@@ -601,11 +527,12 @@ get_run_elo_weights <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_elo_weights <- function(format, gender = "male") {
+  p <- get_3way_params(format, gender)
   list(
-    w_batter = get_3way_constant("THREE_WAY_W_BATTER_WICKET", format, gender),
-    w_bowler = get_3way_constant("THREE_WAY_W_BOWLER_WICKET", format, gender),
-    w_venue_session = get_3way_constant("THREE_WAY_W_VENUE_SESSION_WICKET", format, gender),
-    w_venue_perm = get_3way_constant("THREE_WAY_W_VENUE_PERM_WICKET", format, gender)
+    w_batter = p$THREE_WAY_W_BATTER_WICKET,
+    w_bowler = p$THREE_WAY_W_BOWLER_WICKET,
+    w_venue_session = p$THREE_WAY_W_VENUE_SESSION_WICKET,
+    w_venue_perm = p$THREE_WAY_W_VENUE_PERM_WICKET
   )
 }
 
@@ -621,7 +548,7 @@ get_wicket_elo_weights <- function(format, gender = "male") {
 #'
 #' @export
 get_runs_per_100_elo <- function(format, gender = "male") {
-  get_3way_constant("THREE_WAY_RUNS_PER_100_ELO_POINTS", format, gender)
+  get_3way_params(format, gender)$THREE_WAY_RUNS_PER_100_ELO_POINTS
 }
 
 #' Get player Run K-factors for format-gender
@@ -636,10 +563,11 @@ get_runs_per_100_elo <- function(format, gender = "male") {
 #'
 #' @export
 get_run_k_factors <- function(format, gender = "male") {
+  p <- get_3way_params(format, gender)
   list(
-    k_max = get_3way_constant("THREE_WAY_K_RUN_MAX", format, gender),
-    k_min = get_3way_constant("THREE_WAY_K_RUN_MIN", format, gender),
-    halflife = get_3way_constant("THREE_WAY_K_RUN_HALFLIFE", format, gender)
+    k_max = p$THREE_WAY_K_RUN_MAX,
+    k_min = p$THREE_WAY_K_RUN_MIN,
+    halflife = p$THREE_WAY_K_RUN_HALFLIFE
   )
 }
 
@@ -655,10 +583,11 @@ get_run_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_k_factors <- function(format, gender = "male") {
+  p <- get_3way_params(format, gender)
   list(
-    k_max = get_3way_constant("THREE_WAY_K_WICKET_MAX", format, gender),
-    k_min = get_3way_constant("THREE_WAY_K_WICKET_MIN", format, gender),
-    halflife = get_3way_constant("THREE_WAY_K_WICKET_HALFLIFE", format, gender)
+    k_max = p$THREE_WAY_K_WICKET_MAX,
+    k_min = p$THREE_WAY_K_WICKET_MIN,
+    halflife = p$THREE_WAY_K_WICKET_HALFLIFE
   )
 }
 
@@ -674,13 +603,14 @@ get_wicket_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_venue_k_factors <- function(format, gender = "male") {
+  p <- get_3way_params(format, gender)
   list(
-    perm_max = get_3way_constant("THREE_WAY_K_VENUE_PERM_MAX", format, gender),
-    perm_min = get_3way_constant("THREE_WAY_K_VENUE_PERM_MIN", format, gender),
-    perm_halflife = get_3way_constant("THREE_WAY_K_VENUE_PERM_HALFLIFE", format, gender),
-    session_max = get_3way_constant("THREE_WAY_K_VENUE_SESSION_MAX", format, gender),
-    session_min = get_3way_constant("THREE_WAY_K_VENUE_SESSION_MIN", format, gender),
-    session_halflife = get_3way_constant("THREE_WAY_K_VENUE_SESSION_HALFLIFE", format, gender)
+    perm_max = p$THREE_WAY_K_VENUE_PERM_MAX,
+    perm_min = p$THREE_WAY_K_VENUE_PERM_MIN,
+    perm_halflife = p$THREE_WAY_K_VENUE_PERM_HALFLIFE,
+    session_max = p$THREE_WAY_K_VENUE_SESSION_MAX,
+    session_min = p$THREE_WAY_K_VENUE_SESSION_MIN,
+    session_halflife = p$THREE_WAY_K_VENUE_SESSION_HALFLIFE
   )
 }
 
@@ -696,7 +626,7 @@ get_venue_k_factors <- function(format, gender = "male") {
 #'
 #' @export
 get_wicket_elo_divisor <- function(format, gender = "male") {
-  get_3way_constant("THREE_WAY_WICKET_ELO_DIVISOR", format, gender)
+  get_3way_params(format, gender)$THREE_WAY_WICKET_ELO_DIVISOR
 }
 
 NULL

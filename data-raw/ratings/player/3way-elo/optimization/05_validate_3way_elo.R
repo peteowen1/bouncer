@@ -19,17 +19,21 @@ library(data.table)
 devtools::load_all()
 
 # 2. Configuration ----
-FORMAT <- "t20"                    # Format to validate
-VALIDATION_EVENTS <- c(            # Events to use for validation
- "Indian Premier League"          # Focus on IPL for high-quality data
-)
+# Accept command-line arguments: Rscript 05_validate_3way_elo.R [format] [gender]
+args <- commandArgs(trailingOnly = TRUE)
+FORMAT <- if (length(args) >= 1 && args[1] != "") tolower(args[1]) else "t20"
+GENDER <- if (length(args) >= 2 && args[2] != "") tolower(args[2]) else NULL
+
+# Default validation events per format (use ALL data if no specific events)
+VALIDATION_EVENTS <- NULL          # NULL = all events (cross-format support)
 USE_BLENDING <- TRUE               # Apply sample-size blending to ELOs
 VALIDATION_YEARS <- c(2023, 2024, 2025)  # Recent seasons
 
 cat("\n")
 cli::cli_h1("3-Way ELO Validation")
 cli::cli_alert_info("Format: {toupper(FORMAT)}")
-cli::cli_alert_info("Events: {paste(VALIDATION_EVENTS, collapse = ', ')}")
+cli::cli_alert_info("Gender: {if (is.null(GENDER)) 'all' else GENDER}")
+cli::cli_alert_info("Events: {if (is.null(VALIDATION_EVENTS)) 'all' else paste(VALIDATION_EVENTS, collapse = ', ')}")
 cli::cli_alert_info("Use blending: {USE_BLENDING}")
 cat("\n")
 
@@ -42,9 +46,19 @@ cli::cli_alert_success("Connected to database")
 # 4. Load Validation Data ----
 cli::cli_h2("Loading validation data")
 
-# Build event filter
-event_filter <- paste(sprintf("'%s'", VALIDATION_EVENTS), collapse = ", ")
+# Build optional filters
 year_filter <- paste(VALIDATION_YEARS, collapse = ", ")
+event_clause <- if (!is.null(VALIDATION_EVENTS)) {
+  event_filter <- paste(sprintf("'%s'", VALIDATION_EVENTS), collapse = ", ")
+  sprintf("AND m.event_name IN (%s)", event_filter)
+} else {
+  ""
+}
+gender_clause <- if (!is.null(GENDER)) {
+  sprintf("AND m.gender = '%s'", GENDER)
+} else {
+  ""
+}
 
 # Query 3-way ELO table with actual outcomes
 query <- sprintf("
@@ -75,13 +89,15 @@ query <- sprintf("
    e.exp_runs,
    e.exp_wicket,
    -- Match info
-   m.event_name
+   m.event_name,
+   m.gender
  FROM %s_3way_elo e
  JOIN cricsheet.matches m ON e.match_id = m.match_id
- WHERE m.event_name IN (%s)
-   AND EXTRACT(YEAR FROM e.match_date) IN (%s)
+ WHERE EXTRACT(YEAR FROM e.match_date) IN (%s)
+   %s
+   %s
  ORDER BY e.match_date, e.match_id, e.delivery_id
-", FORMAT, event_filter, year_filter)
+", FORMAT, year_filter, event_clause, gender_clause)
 
 validation_data <- DBI::dbGetQuery(conn, query)
 setDT(validation_data)
@@ -405,6 +421,7 @@ cli::cli_h2("Saving results")
 
 results <- list(
  format = FORMAT,
+ gender = GENDER,
  events = VALIDATION_EVENTS,
  use_blending = USE_BLENDING,
  n_deliveries = n_deliveries,
@@ -438,4 +455,58 @@ dir.create(dirname(results_file), showWarnings = FALSE, recursive = TRUE)
 saveRDS(results, results_file)
 
 cli::cli_alert_success("Saved results to {results_file}")
+
+# Record benchmarks to DuckDB
+cli::cli_h2("Recording benchmarks")
+tryCatch({
+  bench_conn <- get_db_connection(read_only = FALSE)
+  test_dates <- range(validation_data$match_date, na.rm = TRUE)
+  gender_label <- if (is.null(GENDER)) "all" else GENDER
+  record_benchmarks(
+    conn = bench_conn,
+    step_name = "3way_elo",
+    model_name = paste0("3way_elo_", FORMAT),
+    format = FORMAT,
+    gender = gender_label,
+    metrics = list(
+      brier_score = brier_score,
+      log_loss = log_loss,
+      poisson_loss = poisson_loss,
+      rmse = rmse,
+      mae = mae
+    ),
+    baselines = list(
+      brier_score = brier_baseline,
+      log_loss = log_loss_baseline,
+      poisson_loss = poisson_baseline,
+      rmse = rmse_baseline,
+      mae = mae_baseline
+    ),
+    n_test = n_deliveries,
+    date_range = test_dates,
+    notes = paste("Validated on",
+                  if (is.null(VALIDATION_EVENTS)) "all events" else paste(VALIDATION_EVENTS, collapse = ", "),
+                  "| Gender:", gender_label, "| Blending:", USE_BLENDING)
+  )
+
+  # Check regression
+  regression <- check_benchmark_regression(
+    conn = bench_conn,
+    step_name = "3way_elo",
+    format = FORMAT,
+    current_metrics = list(
+      poisson_loss = poisson_loss,
+      log_loss = log_loss,
+      brier_score = brier_score
+    )
+  )
+  if (regression$is_regression) {
+    cli::cli_alert_danger("REGRESSION: {paste(regression$messages, collapse = '; ')}")
+  } else {
+    cli::cli_alert_success("{regression$messages}")
+  }
+  DBI::dbDisconnect(bench_conn, shutdown = TRUE)
+}, error = function(e) {
+  cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")
+})
 cat("\n")

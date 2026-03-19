@@ -508,7 +508,7 @@ get_team <- function(name, format = NULL, db_path = NULL) {
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Build format filter (team_elo uses 'format' column, not 'match_type')
+  # Build format filter (team_elo uses 'format' column with lowercase values like 't20')
   format_filter <- ""
   if (!is.null(format)) {
     format <- tolower(format)

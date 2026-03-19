@@ -17,6 +17,8 @@ get_3way_constant(prefix, format, gender = "male")
 The constant value
 }
 \description{
-Look up a format-gender-specific 3-way ELO constant
+Retrieves a constant from the THREE_WAY_PARAMS lookup table.
+The prefix should match the key name within each format-gender entry
+(e.g., "THREE_WAY_W_BATTER", "THREE_WAY_K_RUN_MAX").
 }
 \keyword{internal}
