@@ -395,8 +395,8 @@ cricinfo_format_sql <- function(column, format) {
 #' @param gender Character. "male", "female", or "all" (default).
 #' @param status Character. Match status filter: "all" (default), "POST"
 #'   (completed), "PRE" (upcoming), "LIVE".
-#' @param source Character. "local" (default) queries DuckDB. "remote"
-#'   downloads fixtures.parquet from the cricinfo GitHub release.
+#' @param source Character. "remote" (default) downloads fixtures.parquet
+#'   from the cricinfo GitHub release. "local" queries DuckDB.
 #'
 #' @return Data frame of fixtures.
 #' @export
@@ -414,7 +414,7 @@ cricinfo_format_sql <- function(column, format) {
 #' }
 load_cricinfo_fixtures <- function(format = "all", gender = "all",
                                     status = "all",
-                                    source = c("local", "remote")) {
+                                    source = c("remote", "local")) {
   source <- match.arg(source)
 
   where_clauses <- character()
@@ -471,7 +471,7 @@ load_cricinfo_fixtures <- function(format = "all", gender = "all",
 #' @param format Character. "t20i", "odi", "test", or "all" (default).
 #' @param gender Character. "male", "female", or "all" (default).
 #' @param days_ahead Integer. Number of days ahead to look. Default 30.
-#' @param source Character. "local" (default) or "remote".
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame of upcoming fixtures.
 #' @export
@@ -483,7 +483,7 @@ load_cricinfo_fixtures <- function(format = "all", gender = "all",
 #' }
 get_upcoming_matches <- function(format = "all", gender = "all",
                                   days_ahead = 30,
-                                  source = c("local", "remote")) {
+                                  source = c("remote", "local")) {
   source <- match.arg(source)
 
   fixtures <- load_cricinfo_fixtures(format = format, gender = gender,
@@ -520,7 +520,7 @@ get_upcoming_matches <- function(format = "all", gender = "all",
 #'
 #' @param format Character. "t20i", "odi", "test", or "all" (default).
 #' @param gender Character. "male", "female", or "all" (default).
-#' @param source Character. "local" (default) or "remote".
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame of unscraped fixtures.
 #' @export
@@ -531,7 +531,7 @@ get_upcoming_matches <- function(format = "all", gender = "all",
 #' get_unscraped_matches(format = "t20i")
 #' }
 get_unscraped_matches <- function(format = "all", gender = "all",
-                                   source = c("local", "remote")) {
+                                   source = c("remote", "local")) {
   source <- match.arg(source)
 
   fixtures <- load_cricinfo_fixtures(format = format, gender = gender,
@@ -642,7 +642,7 @@ query_cricinfo_table <- function(table, alias, order_cols, match_ids, format,
 #'   If NULL, loads all.
 #' @param format Character. "t20i", "odi", "test", or NULL (all formats).
 #' @param gender Character. "male", "female", or NULL (all genders).
-#' @param source Character. "local" (default) or "remote".
+#' @param source Character. "remote" (default) or "local".
 #'
 #' @return Data frame of ball-by-ball data with Hawkeye columns.
 #' @export
@@ -660,7 +660,7 @@ query_cricinfo_table <- function(table, alias, order_cols, match_ids, format,
 #' }
 load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
                                  gender = NULL,
-                                 source = c("local", "remote")) {
+                                 source = c("remote", "local")) {
   source <- match.arg(source)
   if (source == "remote") {
     return(load_cricinfo_remote("balls", match_ids, format, gender))
@@ -688,7 +688,7 @@ load_cricinfo_balls <- function(match_ids = NULL, format = NULL,
 #' }
 load_cricinfo_match <- function(match_ids = NULL, format = NULL,
                                  gender = NULL,
-                                 source = c("local", "remote")) {
+                                 source = c("remote", "local")) {
   source <- match.arg(source)
   if (source == "remote") {
     return(load_cricinfo_remote("match", match_ids, format, gender))
@@ -716,7 +716,7 @@ load_cricinfo_match <- function(match_ids = NULL, format = NULL,
 #' }
 load_cricinfo_innings <- function(match_ids = NULL, format = NULL,
                                    gender = NULL,
-                                   source = c("local", "remote")) {
+                                   source = c("remote", "local")) {
   source <- match.arg(source)
   if (source == "remote") {
     return(load_cricinfo_remote("innings", match_ids, format, gender))
