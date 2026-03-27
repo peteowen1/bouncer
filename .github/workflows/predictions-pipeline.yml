@@ -59,6 +59,7 @@ jobs:
         id: predict
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
           CACHE_DIR: ${{ runner.temp }}/prediction_caches
           OUTPUT_DIR: ${{ runner.temp }}/predictions_output
           UPLOAD_PREDICTIONS: 'true'
