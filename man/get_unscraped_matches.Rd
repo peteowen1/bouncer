@@ -7,7 +7,7 @@
 get_unscraped_matches(
   format = "all",
   gender = "all",
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -15,7 +15,7 @@ get_unscraped_matches(
 
 \item{gender}{Character. "male", "female", or "all" (default).}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame of unscraped fixtures.

@@ -8,7 +8,7 @@ load_cricinfo_match(
   match_ids = NULL,
   format = NULL,
   gender = NULL,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -19,7 +19,7 @@ If NULL, loads all.}
 
 \item{gender}{Character. "male", "female", or NULL (all genders).}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame of match metadata.

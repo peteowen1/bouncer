@@ -8,7 +8,7 @@ load_cricinfo_fixtures(
   format = "all",
   gender = "all",
   status = "all",
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -19,8 +19,8 @@ load_cricinfo_fixtures(
 \item{status}{Character. Match status filter: "all" (default), "POST"
 (completed), "PRE" (upcoming), "LIVE".}
 
-\item{source}{Character. "local" (default) queries DuckDB. "remote"
-downloads fixtures.parquet from the cricinfo GitHub release.}
+\item{source}{Character. "remote" (default) downloads fixtures.parquet
+from the cricinfo GitHub release. "local" queries DuckDB.}
 }
 \value{
 Data frame of fixtures.
