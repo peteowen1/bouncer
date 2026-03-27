@@ -93,7 +93,11 @@ export_query_to_parquet(conn, "
 cli_h2("Exporting team ELO")
 
 export_query_to_parquet(conn, "
-  SELECT * FROM main.team_elo ORDER BY match_date
+  SELECT team_id, match_id, match_date, format, gender, team_type,
+         elo_before, elo_after AS elo_result, elo_after AS elo_roster_combined,
+         elo_diff, matches_played
+  FROM main.team_elo
+  ORDER BY match_date
 ", file.path(cache_dir, "team_elo.parquet"))
 
 # 4. Player skill indices (latest per player per format) ----
