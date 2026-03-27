@@ -111,6 +111,7 @@ db_path <- file.path(tempdir(), "bouncer_predictions.duckdb")
 if (file.exists(db_path)) file.remove(db_path)
 
 conn <- dbConnect(duckdb(), db_path)
+on.exit(dbDisconnect(conn, shutdown = TRUE))
 
 # Create schemas
 dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricsheet")
@@ -261,7 +262,8 @@ if (file.exists(lineups_path)) {
 cli_h2("Loading upcoming fixtures")
 
 upcoming <- tryCatch(
-  get_upcoming_matches(source = "remote", days_ahead = 14),
+  get_upcoming_matches(source = "remote",
+                       days_ahead = as.integer(Sys.getenv("DAYS_AHEAD", "14"))),
   error = function(e) {
     cli_alert_warning("Could not load fixtures from Cricinfo: {e$message}")
     data.frame()
@@ -269,9 +271,9 @@ upcoming <- tryCatch(
 )
 
 if (nrow(upcoming) == 0) {
-  cli_alert_warning("No upcoming matches found in next 14 days")
-  dbDisconnect(conn, shutdown = TRUE)
-  quit(save = "no", status = 0)
+  days <- as.integer(Sys.getenv("DAYS_AHEAD", "14"))
+  cli_alert_warning("No upcoming matches found in next {days} days")
+  quit(save = "no", status = 0)  # on.exit handles disconnect
 }
 
 cli_alert_success("Found {nrow(upcoming)} upcoming matches")
@@ -343,8 +345,7 @@ for (i in seq_len(nrow(upcoming))) {
   })
 }
 
-# Cleanup DB
-dbDisconnect(conn, shutdown = TRUE)
+# Cleanup DB (on.exit handles disconnect, just remove temp file)
 if (file.exists(db_path)) file.remove(db_path)
 
 # 6. Export predictions ----

@@ -62,6 +62,7 @@ jobs:
           CACHE_DIR: ${{ runner.temp }}/prediction_caches
           OUTPUT_DIR: ${{ runner.temp }}/predictions_output
           UPLOAD_PREDICTIONS: 'true'
+          DAYS_AHEAD: ${{ github.event.inputs.days_ahead || '14' }}
         run: |
           Rscript data-raw/models/pre-match/run_predictions_gha.R
 
