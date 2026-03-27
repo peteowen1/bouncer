@@ -125,17 +125,24 @@ for (fmt in FORMATS) {
 cli_h2("Exporting player 3-Way ELO (latest per player)")
 
 for (fmt in FORMATS) {
-  elo_table <- paste0(fmt, "_3way_elo")
-
-  # Check if table exists
-  exists_check <- tryCatch(
-    { DBI::dbGetQuery(conn, sprintf("SELECT 1 FROM main.%s LIMIT 1", elo_table)); TRUE },
-    error = function(e) FALSE
+  # Try gender-prefixed table names first (mens_t20_3way_elo), then fallback
+  elo_candidates <- c(
+    paste0("mens_", fmt, "_3way_elo"),
+    paste0(fmt, "_3way_elo")
   )
-  if (!exists_check) {
-    cli_alert_warning("Table {elo_table} not found, skipping")
+  elo_table <- NULL
+  for (candidate in elo_candidates) {
+    exists_check <- tryCatch(
+      { DBI::dbGetQuery(conn, sprintf("SELECT 1 FROM main.%s LIMIT 1", candidate)); TRUE },
+      error = function(e) FALSE
+    )
+    if (exists_check) { elo_table <- candidate; break }
+  }
+  if (is.null(elo_table)) {
+    cli_alert_warning("No 3-Way ELO table found for {fmt} (tried: {paste(elo_candidates, collapse=', ')})")
     next
   }
+  cli_alert_info("Using table: {elo_table}")
 
   export_query_to_parquet(conn, sprintf("
     WITH ranked AS (
