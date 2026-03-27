@@ -36,6 +36,7 @@ Imports:
     Matrix
 Suggests:
     arrow,
+    bouncermodels,
     chromote,
     furrr (>= 0.3.0),
     future (>= 1.30.0),
