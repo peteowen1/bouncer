@@ -384,6 +384,11 @@ store_pre_match_features <- function(features, conn) {
 get_pre_match_features <- function(match_id = NULL, event_name = NULL,
                                     match_type = NULL, conn) {
 
+  # Return empty if table doesn't exist (e.g., temp DuckDB from GHA predictions)
+  if (!table_exists(conn, "pre_match_features")) {
+    return(data.frame())
+  }
+
   query <- "SELECT * FROM pre_match_features WHERE 1=1"
   params <- list()
 
