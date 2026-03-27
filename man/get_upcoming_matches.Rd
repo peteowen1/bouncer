@@ -8,7 +8,7 @@ get_upcoming_matches(
   format = "all",
   gender = "all",
   days_ahead = 30,
-  source = c("local", "remote")
+  source = c("remote", "local")
 )
 }
 \arguments{
@@ -18,7 +18,7 @@ get_upcoming_matches(
 
 \item{days_ahead}{Integer. Number of days ahead to look. Default 30.}
 
-\item{source}{Character. "local" (default) or "remote".}
+\item{source}{Character. "remote" (default) or "local".}
 }
 \value{
 Data frame of upcoming fixtures.
