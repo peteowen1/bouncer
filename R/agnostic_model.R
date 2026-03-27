@@ -33,18 +33,29 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
                                  model_dir = NULL) {
 
   format <- match.arg(format)
+  model_name <- paste0("agnostic_outcome_", format)
 
-  if (is.null(model_dir)) {
-    model_dir <- get_models_dir()
+  # Try bouncermodels package first (preferred)
+  if (is.null(model_dir) && requireNamespace("bouncermodels", quietly = TRUE)) {
+    model <- tryCatch(
+      bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded agnostic {format} model from bouncermodels")
+      return(model)
+    }
   }
 
-  # Agnostic models use XGBoost (for consistency and speed)
+  # Fall back to local file
+  if (is.null(model_dir)) model_dir <- get_models_dir()
   model_file <- file.path(model_dir, get_model_filename("agnostic", format))
 
   if (!file.exists(model_file)) {
     cli::cli_abort(c(
       "Agnostic model not found at: {.file {model_file}}",
-      "i" = "Run data-raw/models/ball-outcome/01_train_agnostic_model.R first."
+      "i" = "Install bouncermodels: devtools::install_github('peteowen1/bouncermodels')",
+      "i" = "Or run data-raw/models/ball-outcome/01_train_agnostic_model.R"
     ))
   }
 
@@ -53,9 +64,7 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
   }
 
   model <- xgboost::xgb.load(model_file)
-
   cli::cli_alert_success("Loaded agnostic {format} model from {.file {model_file}}")
-
   return(model)
 }
 
@@ -217,17 +226,29 @@ load_full_model <- function(format = c("t20", "odi", "test"),
                              model_dir = NULL) {
 
   format <- match.arg(format)
+  model_name <- paste0("full_outcome_", format)
 
-  if (is.null(model_dir)) {
-    model_dir <- get_models_dir()
+  # Try bouncermodels package first (preferred)
+  if (is.null(model_dir) && requireNamespace("bouncermodels", quietly = TRUE)) {
+    model <- tryCatch(
+      bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded full {format} model from bouncermodels")
+      return(model)
+    }
   }
 
+  # Fall back to local file
+  if (is.null(model_dir)) model_dir <- get_models_dir()
   model_file <- file.path(model_dir, get_model_filename("full", format))
 
   if (!file.exists(model_file)) {
     cli::cli_abort(c(
       "Full model not found at: {.file {model_file}}",
-      "i" = "Run data-raw/models/ball-outcome/02_train_full_model.R first."
+      "i" = "Install bouncermodels: devtools::install_github('peteowen1/bouncermodels')",
+      "i" = "Or run data-raw/models/ball-outcome/02_train_full_model.R"
     ))
   }
 
