@@ -199,21 +199,21 @@ for (fmt in FORMATS) {
   bowler_skill_path <- file.path(cache_dir, paste0(fmt, "_bowler_skill_latest.parquet"))
 
   if (file.exists(batter_skill_path) && file.exists(bowler_skill_path)) {
-    # Create a unified skill table matching the schema expected by existing functions
+    # Create unified skill table with explicit VARCHAR types to avoid NULL type inference
     dbExecute(conn, sprintf(
       "CREATE TABLE main.%s_player_skill AS
-       SELECT b.batter_id, b.match_date, b.batter_scoring_index, b.batter_survival_rate, b.batter_balls_faced,
-              NULL AS bowler_id, NULL AS bowler_economy_index, NULL AS bowler_strike_rate, NULL AS bowler_balls_bowled,
-              NULL AS delivery_id
+       SELECT b.batter_id::VARCHAR AS batter_id, b.match_date, b.batter_scoring_index, b.batter_survival_rate, b.batter_balls_faced,
+              CAST(NULL AS VARCHAR) AS bowler_id, CAST(NULL AS DOUBLE) AS bowler_economy_index,
+              CAST(NULL AS DOUBLE) AS bowler_strike_rate, CAST(NULL AS INTEGER) AS bowler_balls_bowled,
+              CAST(NULL AS VARCHAR) AS delivery_id
        FROM read_parquet('%s') b",
       fmt, gsub("\\\\", "/", batter_skill_path)
     ))
-    # Add bowler rows
     dbExecute(conn, sprintf(
       "INSERT INTO main.%s_player_skill
-       SELECT NULL, w.match_date, NULL, NULL, NULL,
-              w.bowler_id, w.bowler_economy_index, w.bowler_strike_rate, w.bowler_balls_bowled,
-              NULL
+       SELECT CAST(NULL AS VARCHAR), w.match_date, CAST(NULL AS DOUBLE), CAST(NULL AS DOUBLE), CAST(NULL AS INTEGER),
+              w.bowler_id::VARCHAR, w.bowler_economy_index, w.bowler_strike_rate, w.bowler_balls_bowled,
+              CAST(NULL AS VARCHAR)
        FROM read_parquet('%s') w",
       fmt, gsub("\\\\", "/", bowler_skill_path)
     ))
@@ -227,17 +227,17 @@ for (fmt in FORMATS) {
   if (file.exists(batter_elo_path) && file.exists(bowler_elo_path)) {
     dbExecute(conn, sprintf(
       "CREATE TABLE main.%s_3way_elo AS
-       SELECT b.batter_id, b.match_date, b.batter_run_elo_after, b.batter_wicket_elo_after,
-              NULL AS bowler_id, NULL AS bowler_run_elo_after, NULL AS bowler_wicket_elo_after,
-              NULL AS delivery_id
+       SELECT b.batter_id::VARCHAR AS batter_id, b.match_date, b.batter_run_elo_after, b.batter_wicket_elo_after,
+              CAST(NULL AS VARCHAR) AS bowler_id, CAST(NULL AS DOUBLE) AS bowler_run_elo_after,
+              CAST(NULL AS DOUBLE) AS bowler_wicket_elo_after, CAST(NULL AS VARCHAR) AS delivery_id
        FROM read_parquet('%s') b",
       fmt, gsub("\\\\", "/", batter_elo_path)
     ))
     dbExecute(conn, sprintf(
       "INSERT INTO main.%s_3way_elo
-       SELECT NULL, w.match_date, NULL, NULL,
-              w.bowler_id, w.bowler_run_elo_after, w.bowler_wicket_elo_after,
-              NULL
+       SELECT CAST(NULL AS VARCHAR), w.match_date, CAST(NULL AS DOUBLE), CAST(NULL AS DOUBLE),
+              w.bowler_id::VARCHAR, w.bowler_run_elo_after, w.bowler_wicket_elo_after,
+              CAST(NULL AS VARCHAR)
        FROM read_parquet('%s') w",
       fmt, gsub("\\\\", "/", bowler_elo_path)
     ))
