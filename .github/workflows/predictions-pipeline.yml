@@ -2,7 +2,7 @@ name: Predictions Pipeline
 
 on:
   repository_dispatch:
-    types: [cricsheet-complete]
+    types: [cricinfo-complete]
   workflow_dispatch:
     inputs:
       days_ahead:
