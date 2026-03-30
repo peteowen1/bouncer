@@ -12,8 +12,11 @@ on:
         required: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+
+concurrency:
+  group: predictions-pipeline
+  cancel-in-progress: false
 
 jobs:
   predict:
@@ -40,6 +43,8 @@ jobs:
 
       - name: Setup R dependencies
         uses: r-lib/actions/setup-r-dependencies@v2
+        env:
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
         with:
           cache-version: 1
           extra-packages: |

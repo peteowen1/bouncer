@@ -55,21 +55,28 @@ GENDER_CATEGORIES <- list(
   womens = "female"
 )
 
-# Processing options - can be overridden via command line
-# Usage: Rscript 01_calculate_3way_elo.R [gender] [format]
+# Processing options - can be overridden via:
+#   1. Pre-setting variables before source() (e.g., from run_mens_t20.R wrapper)
+#   2. Command line args: Rscript 01_calculate_3way_elo.R [gender] [format]
 # Examples:
 #   Rscript 01_calculate_3way_elo.R mens t20
 #   Rscript 01_calculate_3way_elo.R womens odi
 #   Rscript 01_calculate_3way_elo.R  # uses defaults below
 
 args <- commandArgs(trailingOnly = TRUE)
-GENDER_FILTER <- if (length(args) >= 1 && args[1] != "") args[1] else "mens"
-FORMAT_FILTER <- if (length(args) >= 2 && args[2] != "") args[2] else "t20"
-EVENT_FILTER <- NULL     # NULL = all events, or full event name
-BATCH_SIZE <- 10000      # Deliveries per batch insert
-MATCH_LIMIT <- NULL      # Set to integer to limit matches (for testing)
-FORCE_FULL <- TRUE       # If TRUE, always recalculate everything
-LOAD_FROM_CHECKPOINT <- FALSE  # Set TRUE to load from checkpoint file and skip calculation
+
+# Respect pre-set variables from wrapper scripts, then command-line args, then defaults
+if (!exists("GENDER_FILTER")) {
+  GENDER_FILTER <- if (length(args) >= 1 && args[1] != "") args[1] else "mens"
+}
+if (!exists("FORMAT_FILTER")) {
+  FORMAT_FILTER <- if (length(args) >= 2 && args[2] != "") args[2] else "t20"
+}
+if (!exists("EVENT_FILTER"))          EVENT_FILTER <- NULL
+if (!exists("BATCH_SIZE"))            BATCH_SIZE <- 10000
+if (!exists("MATCH_LIMIT"))           MATCH_LIMIT <- NULL
+if (!exists("FORCE_FULL"))            FORCE_FULL <- TRUE
+if (!exists("LOAD_FROM_CHECKPOINT"))  LOAD_FROM_CHECKPOINT <- FALSE
 
 cat("\n")
 cli::cli_h1("3-Way ELO Calculation")

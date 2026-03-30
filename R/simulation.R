@@ -738,7 +738,10 @@ set_simulation_seed <- function(seed) {
 
 #' Get Simulation Seeds
 #'
-#' Generates a vector of seeds for parallel simulations.
+#' Generates a vector of deterministic seeds for parallel simulations.
+#' Each parallel worker should receive one seed via \code{set.seed(seeds[i])}
+#' to ensure reproducibility, since R's global RNG state does not propagate
+#' to \code{future}/\code{furrr} workers.
 #'
 #' @param n Integer. Number of seeds to generate
 #' @param base_seed Integer. Base seed (default 42)

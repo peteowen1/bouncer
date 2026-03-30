@@ -137,3 +137,155 @@ test_that("skill start values are consistent with expected values", {
   expect_equal(SKILL_START_STRIKE_ODI, EXPECTED_WICKET_ODI)
   expect_equal(SKILL_START_STRIKE_TEST, EXPECTED_WICKET_TEST)
 })
+
+# ============================================================================
+# PIPELINE DATA FLOW TESTS
+# ============================================================================
+# These tests verify the contract between pipeline stages:
+#   ELO ratings → Skill indices → Expected runs → Residuals → Skill updates
+# using synthetic fixture data (no database required).
+
+test_that("ELO → expected outcome → skill residual pipeline is consistent", {
+  # Stage 1: ELO gives expected outcome
+  batter_elo <- 1600
+  bowler_elo <- 1400
+  expected <- calculate_expected_outcome(batter_elo, bowler_elo)
+
+  # Strong batter should be favoured
+
+  expect_gt(expected, 0.5)
+
+  # Stage 2: ELO update is zero-sum between batter and bowler perspectives
+  k <- 20
+  actual_outcome <- 1  # batter wins the exchange
+  batter_new <- calculate_elo_update(batter_elo, expected, actual_outcome, k)
+  bowler_new <- calculate_elo_update(bowler_elo, 1 - expected, 1 - actual_outcome, k)
+
+  # Zero-sum: total ELO should be preserved
+  expect_equal(batter_new + bowler_new, batter_elo + bowler_elo, tolerance = 1e-10)
+
+  # Batter won as expected (was favoured) → small gain
+  batter_gain <- batter_new - batter_elo
+  expect_gt(batter_gain, 0)
+  expect_lt(batter_gain, k)  # Gain bounded by K
+
+  # Stage 3: Skill index update uses residual (actual - expected)
+  skill <- 0.0
+  agnostic_expected_runs <- EXPECTED_RUNS_T20
+  actual_runs <- 4  # hit a boundary
+  residual <- actual_runs - agnostic_expected_runs
+
+  # Positive residual → skill should increase
+  alpha <- SKILL_ALPHA_T20
+  new_skill <- update_skill_index(skill, residual, alpha)
+  expect_gt(new_skill, 0)
+
+  # Stage 4: Skill-adjusted expected runs should differ from agnostic baseline
+  adjusted <- calculate_expected_runs_skill(
+    agnostic_runs = agnostic_expected_runs,
+    batter_run_skill = new_skill,
+    bowler_run_skill = 0,
+    venue_perm_run_skill = 0,
+    venue_session_run_skill = 0,
+    format = "t20"
+  )
+
+  # Good batter skill → higher expected runs
+  expect_gt(adjusted, agnostic_expected_runs)
+})
+
+test_that("skill indices converge correctly over repeated deliveries", {
+  # Simulate a batter who consistently scores above average
+  alpha <- SKILL_ALPHA_T20
+  baseline <- EXPECTED_RUNS_T20
+  actual_rpb <- 1.8  # above average T20 scoring rate
+  residual <- actual_rpb - baseline
+
+  # Run 500 deliveries of consistent above-average performance
+  skill <- 0.0
+  for (i in seq_len(500)) {
+    skill <- update_skill_index(skill, residual, alpha)
+  }
+
+  # Skill should converge toward the residual (how much above average)
+  expect_equal(skill, residual, tolerance = 0.05)
+
+  # The adjusted expected runs should be above baseline
+  # (Note: skill effect is weighted by w_batter, so adjusted < actual_rpb)
+  adjusted <- calculate_expected_runs_skill(
+    agnostic_runs = baseline,
+    batter_run_skill = skill,
+    bowler_run_skill = 0,
+    venue_perm_run_skill = 0,
+    venue_session_run_skill = 0,
+    format = "t20"
+  )
+  expect_gt(adjusted, baseline)
+})
+
+test_that("pipeline respects format-specific parameters", {
+  # Same player performance should produce different skill values per format
+  # because alpha (learning rate) differs: T20 > ODI > Test
+  skill_t20 <- 0.0
+  skill_odi <- 0.0
+  skill_test <- 0.0
+
+  residual <- 0.5  # consistently above average
+
+  for (i in seq_len(100)) {
+    skill_t20 <- update_skill_index(skill_t20, residual, SKILL_ALPHA_T20)
+    skill_odi <- update_skill_index(skill_odi, residual, SKILL_ALPHA_ODI)
+    skill_test <- update_skill_index(skill_test, residual, SKILL_ALPHA_TEST)
+  }
+
+  # T20 adapts fastest (highest alpha) → closest to residual after 100 updates
+  expect_gt(skill_t20, skill_odi)
+  expect_gt(skill_odi, skill_test)
+})
+
+test_that("chronological ordering invariant affects ELO outcomes", {
+  # This test demonstrates WHY chronological ordering matters.
+  # Different orderings of wins/losses produce different final ratings
+  # because ELO updates compound (K-factor depends on experience).
+
+  start_elo <- 1400
+
+  # Sequence 1: win first, then lose
+  elo_a <- start_elo
+  expected_a <- calculate_expected_outcome(elo_a, 1400)
+  elo_a <- calculate_elo_update(elo_a, expected_a, 1, 32)  # win
+  expected_a <- calculate_expected_outcome(elo_a, 1400)
+  elo_a <- calculate_elo_update(elo_a, expected_a, 0, 32)  # lose
+
+  # Sequence 2: lose first, then win
+  elo_b <- start_elo
+  expected_b <- calculate_expected_outcome(elo_b, 1400)
+  elo_b <- calculate_elo_update(elo_b, expected_b, 0, 32)  # lose
+  expected_b <- calculate_expected_outcome(elo_b, 1400)
+  elo_b <- calculate_elo_update(elo_b, expected_b, 1, 32)  # win
+
+  # With equal start/opponent, win-then-lose vs lose-then-win
+  # produce different final ELOs because the expected value shifts
+  expect_false(elo_a == elo_b)
+})
+
+test_that("3-way ELO attribution weights are valid for all format-gender combos", {
+  for (fmt in c("T20", "ODI", "Test")) {
+    for (gender in c("male", "female")) {
+      w <- get_run_elo_weights(fmt, gender)
+
+      # All weights should be positive
+      expect_true(all(c(w$w_batter, w$w_bowler, w$w_venue_session, w$w_venue_perm) > 0),
+                  info = paste("Negative weight for", fmt, gender))
+
+      # Weights must sum to 1
+      total <- w$w_batter + w$w_bowler + w$w_venue_session + w$w_venue_perm
+      expect_equal(total, 1.0, tolerance = 1e-10,
+                   info = paste("Weights don't sum to 1 for", fmt, gender))
+
+      # Batter should have highest weight (primary contributor)
+      expect_true(w$w_batter > w$w_bowler,
+                  info = paste("Bowler weight exceeds batter for", fmt, gender))
+    }
+  }
+})

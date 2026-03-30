@@ -475,6 +475,25 @@ install_all_bouncer_data <- function(db_path = NULL,
     cli::cli_alert_info("Unchanged matches: {download_result$unchanged_count}")
   }
 
+  # Post-load sanity check
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
+  tryCatch({
+    match_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n
+    delivery_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.deliveries")$n
+
+    if (match_count == 0) {
+      cli::cli_warn("No matches found in database after loading - data may not have been ingested correctly")
+    } else if (delivery_count / match_count < 50) {
+      cli::cli_warn(c(
+        "Unusually low delivery count per match: {round(delivery_count / match_count, 1)}",
+        "i" = "Expected ~270+ deliveries per match on average",
+        "i" = "Some match files may have failed to parse"
+      ))
+    }
+  }, error = function(e) {
+    cli::cli_alert_warning("Could not verify data integrity: {e$message}")
+  }, finally = DBI::dbDisconnect(conn, shutdown = TRUE))
+
   get_data_info(path = db_path)
 
   cli::cli_alert_success("Database ready at {.file {db_path}}")

@@ -246,3 +246,29 @@ test_that("simulations are reproducible with seed", {
 
   expect_identical(result1, result2)
 })
+
+test_that("get_simulation_seeds produces deterministic unique seeds", {
+  seeds1 <- get_simulation_seeds(100, base_seed = 42)
+  seeds2 <- get_simulation_seeds(100, base_seed = 42)
+
+  # Same base seed → identical seed vectors
+
+  expect_identical(seeds1, seeds2)
+
+  # All seeds should be unique (no collisions)
+  expect_equal(length(unique(seeds1)), 100)
+
+  # Different base seed → different seeds
+  seeds3 <- get_simulation_seeds(100, base_seed = 99)
+  expect_false(identical(seeds1, seeds3))
+})
+
+test_that("set_simulation_seed produces deterministic outcomes", {
+  set_simulation_seed(42)
+  vals1 <- runif(10)
+
+  set_simulation_seed(42)
+  vals2 <- runif(10)
+
+  expect_identical(vals1, vals2)
+})

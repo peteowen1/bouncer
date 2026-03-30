@@ -72,6 +72,20 @@ download_cricsheet_data <- function(match_type,
     cli::cli_abort("Failed to download from Cricsheet: {e$message}")
   })
 
+  # Validate downloaded file
+  if (!file.exists(dest_file)) {
+    cli::cli_abort("Download failed: file not created at {.file {dest_file}}")
+  }
+  file_size <- file.size(dest_file)
+  if (is.na(file_size) || file_size < 1000) {
+    cli::cli_abort(c(
+      "Downloaded file appears truncated or empty",
+      "i" = "File size: {file_size %||% 0} bytes",
+      "i" = "Expected at least 1KB for valid Cricsheet data"
+    ))
+  }
+  cli::cli_alert_info("File size: {round(file_size / 1e6, 1)} MB")
+
   # Extract if requested
   if (extract && tools::file_ext(dest_file) == "zip") {
     cli::cli_alert_info("Extracting ZIP file...")
@@ -86,6 +100,9 @@ download_cricsheet_data <- function(match_type,
 
     # Get list of extracted files
     extracted_files <- list.files(extract_dir, full.names = TRUE, recursive = TRUE)
+    if (length(extracted_files) == 0) {
+      cli::cli_abort("ZIP extraction produced no files - archive may be corrupted")
+    }
 
     cli::cli_alert_success("Extracted {length(extracted_files)} files to {.file {extract_dir}}")
 
