@@ -108,6 +108,43 @@ load_player_game_data <- function(format = c("t20", "odi", "test"),
 }
 
 
+#' Download and Read a Parquet File from a GitHub Release
+#'
+#' Downloads a parquet file from a piggyback release and reads it as a data.table.
+#' Caches the download in a temporary directory for the R session.
+#'
+#' @param tag Character. Release tag (e.g., "ratings", "cricsheet").
+#' @param file_name Character. Asset file name (e.g., "t20_stat_ratings.parquet").
+#' @param repo Character. GitHub repo (default: "peteowen1/bouncerdata").
+#'
+#' @return data.table with the parquet contents.
+#' @keywords internal
+load_release_parquet <- function(tag, file_name, repo = "peteowen1/bouncerdata") {
+  if (!requireNamespace("piggyback", quietly = TRUE)) {
+    cli::cli_abort("Package {.pkg piggyback} required for remote loading")
+  }
+  if (!requireNamespace("arrow", quietly = TRUE)) {
+    cli::cli_abort("Package {.pkg arrow} required for parquet reading")
+  }
+
+  cache_dir <- file.path(tempdir(), "bouncer_release_cache", tag)
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+  local_path <- file.path(cache_dir, file_name)
+
+  if (!file.exists(local_path)) {
+    cli::cli_alert_info("Downloading {file_name} from {repo}@{tag}...")
+    piggyback::pb_download(file_name, dest = cache_dir, repo = repo, tag = tag,
+                            .token = Sys.getenv("GITHUB_PAT"))
+  }
+
+  if (!file.exists(local_path)) {
+    cli::cli_abort("Failed to download {file_name} from {repo}@{tag}")
+  }
+
+  data.table::as.data.table(arrow::read_parquet(local_path))
+}
+
+
 #' Load Player Game Data from GitHub Release
 #' @param format Character. Match format.
 #' @param match_ids Character vector or NULL.
