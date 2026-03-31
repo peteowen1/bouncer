@@ -212,16 +212,9 @@ stat_rating_role_map <- function() {
 #' Per-stat optimized values are baked into \code{.stat_rating_params()}
 #' after running the optimization script.
 #'
-#' @return A named list with elements:
-#'   \describe{
-#'     \item{lambda_rate}{Fallback decay rate for rate stats (per day).}
-#'     \item{lambda_efficiency}{Fallback decay rate for efficiency stats (per day).}
-#'     \item{prior_games_rate}{Fallback prior pseudo-games for Gamma-Poisson.}
-#'     \item{prior_attempts_efficiency}{Fallback prior pseudo-attempts for Beta-Binomial.}
-#'     \item{min_wt_matches}{Minimum weighted matches to appear in output.}
-#'     \item{credible_level}{Width of credible interval (e.g., 0.80 for 80\%).}
-#'     \item{stat_params}{Per-stat optimized lambda and prior_strength.}
-#'   }
+#' @return A named list with elements: lambda_rate, lambda_efficiency,
+#'   prior_games_rate, prior_attempts_efficiency, min_wt_matches,
+#'   credible_level, and stat_params (per-stat optimized hyperparameters).
 #' @export
 default_stat_rating_params <- function() {
   list(

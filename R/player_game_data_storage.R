@@ -59,7 +59,7 @@ store_player_game_data <- function(conn, data, format = c("t20", "odi", "test"))
 #' @param match_ids Character vector. Filter to specific matches (NULL = all).
 #' @param player_ids Character vector. Filter to specific players (NULL = all).
 #' @param source Character. "local" for DuckDB, "remote" for GitHub release.
-#' @param db_path Character. Custom DB path (only for source = "local").
+#' @param path Character. Custom DB path (only for source = "local").
 #'
 #' @return data.table with player game data.
 #' @export

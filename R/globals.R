@@ -708,7 +708,53 @@ utils::globalVariables(c(
   "team",
   # Merge helpers
   "match_date_bat",
-  "match_date_bowl"
+  "match_date_bowl",
+  # Join prefixes (data.table i. notation)
+  "i.player_name",
+  "i.team",
+  "i.role_group",
+  "i.n_matches",
+  "i.wt_matches",
+  "i.psv",
+  "i.batv",
+  "i.bowlv",
+  # Stat rating data prep
+  "batting_balls_survived",
+  "batting_controlled_balls",
+  "batting_attacking_balls",
+  "bowling_good_length_balls",
+  "bowling_on_stump_balls",
+  "bowling_beat_bat_balls",
+  "matches_bowled",
+  "matches_batted",
+  "total_matches",
+  "mu",
+  # Stat rating estimation
+  "match_date_rating",
+  "days_since",
+  ".wnum",
+  ".wden",
+  "alpha0",
+  "w_num",
+  "w_den",
+  "mu0",
+  # EPR
+  "days_diff",
+  "wt_bat",
+  "wt_bowl",
+  "bat_value",
+  "bowl_value",
+  "bat_exposure",
+  "bowl_exposure",
+  # BOUNCER
+  "epr_z",
+  "psr_z",
+  "bouncer_z",
+  # Team aggregation
+  "team_rank",
+  # Remaining data.table / check compliance
+  ".I",
+  "elo_rating"
 ))
 
 
@@ -727,6 +773,8 @@ utils::globalVariables(c(
   "prior_strength",
   "n_games",
   "wt_games",
+  "n_matches",
+  "wt_matches",
   "ref_date",
   "days_since_ref",
   "decay_weight",

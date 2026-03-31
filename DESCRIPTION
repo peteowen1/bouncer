@@ -42,6 +42,7 @@ Suggests:
     future (>= 1.30.0),
     ggplot2,
     mgcv (>= 1.8-0),
+    piggyback,
     progressr (>= 0.13.0),
     RcppSimdJson,
     scales,

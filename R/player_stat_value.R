@@ -250,7 +250,7 @@ aggregate_team_stat_ratings <- function(stat_ratings, match_data, stat_defs = NU
 
   # Sum ratings per team per match (top 11 by total weighted matches)
   team_agg <- dt[md, on = c("player_id", "match_id"), nomatch = 0]
-  team_agg[, team_rank := frank(-wt_matches, ties.method = "first"), by = .(match_id, team)]
+  team_agg[, team_rank := data.table::frank(-wt_matches, ties.method = "first"), by = .(match_id, team)]
 
   top11 <- team_agg[team_rank <= 11]
   team_totals <- top11[, lapply(.SD, sum, na.rm = TRUE),

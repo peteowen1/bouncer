@@ -22,16 +22,10 @@ create_player_game_data(
 }
 \value{
 data.table with one row per player per match. Players who both
-bat and bowl in a match get a single row with both batting_* and bowling_*
-columns populated. Columns include:
-\describe{
-\item{match_id, player_id, player_name}{Identifiers}
-\item{team, match_date, season}{Match context}
-\item{role}{"batter", "bowler", or "all_rounder" (both roles in match)}
-\item{batting_\emph{}{Batting box-score stats and value metrics}
-\item{bowling_}}{Bowling box-score stats and value metrics}
-\item{total_wpa, total_era}{Combined batting + bowling value}
-}
+bat and bowl get a single row with both batting and bowling columns.
+Key columns: match_id, player_id, player_name, team, match_date, role,
+batting_runs, batting_wpa, batting_era, bowling_wickets, bowling_wpa,
+bowling_era, total_wpa, total_era, plus Hawkeye features.
 }
 \description{
 Aggregates Cricinfo delivery data into one row per player per match,

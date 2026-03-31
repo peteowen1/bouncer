@@ -315,7 +315,7 @@ store_stat_ratings <- function(conn, ratings, format = c("t20", "odi", "test")) 
 #'
 #' @param format Character. Match format.
 #' @param source Character. "local" or "remote".
-#' @param db_path Character. Custom DB path (local only).
+#' @param path Character. Custom DB path (local only).
 #'
 #' @return data.table with player stat ratings.
 #' @export
