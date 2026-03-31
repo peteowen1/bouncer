@@ -10,8 +10,6 @@
 #' @param leagues Character vector of leagues to download. Options: "ipl", "bbl", "cpl",
 #'   "psl", "wbbl", etc. Default is c("ipl").
 #' @param gender Character string. "male", "female", or "both". Default "male".
-#' @param start_season Character or numeric. Only download matches from this season onwards.
-#'   If NULL, downloads all available data.
 #' @param db_path Database path. If NULL, uses default system data directory.
 #' @param download_path Path to store downloaded files. If NULL, uses temp directory.
 #' @param keep_downloads Logical. If TRUE, keeps downloaded JSON files. Default FALSE.
@@ -30,13 +28,10 @@
 #'   leagues = c("ipl", "bbl")
 #' )
 #'
-#' # Install only recent data (from 2020 onwards)
-#' install_bouncer_data(start_season = 2020)
 #' }
 install_bouncer_data <- function(formats = c("odi", "t20i"),
                                   leagues = c("ipl"),
                                   gender = "male",
-                                  start_season = NULL,
                                   db_path = NULL,
                                   download_path = NULL,
                                   keep_downloads = FALSE) {
@@ -89,9 +84,6 @@ install_bouncer_data <- function(formats = c("odi", "t20i"),
         })
 
         if (length(files) > 0) {
-          # Season filtering removed (placeholder implementation)
-          # To filter by season, filter after loading based on match_date in database
-
           # Load to database
           batch_load_matches(files, path = db_path)
         }

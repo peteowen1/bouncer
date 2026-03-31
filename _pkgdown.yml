@@ -192,7 +192,9 @@ reference:
     - plot_skill_progression
     - plot_player_comparison
     - plot_elo_history
+    - plot_team_elo_comparison
     - plot_team_strength
+    - plot_ranking
 
   - title: Database Queries
     desc: Direct database access for advanced users

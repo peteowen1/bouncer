@@ -370,7 +370,19 @@ save_match_weather <- function(weather, conn = NULL) {
 
   DBI::dbExecute(conn, sprintf("
     INSERT INTO main.match_weather
-    SELECT * FROM %s", temp_name))
+      (match_id, venue, match_type, match_date,
+       temp_avg, temp_max, temp_min,
+       precipitation_total, rain_total,
+       wind_max, wind_avg,
+       rain_days, match_days_weather,
+       is_rain, log_precip, log_wind)
+    SELECT match_id, venue, match_type, match_date,
+           temp_avg, temp_max, temp_min,
+           precipitation_total, rain_total,
+           wind_max, wind_avg,
+           rain_days, match_days_weather,
+           is_rain, log_precip, log_wind
+    FROM %s", temp_name))
 
   DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", temp_name))
 

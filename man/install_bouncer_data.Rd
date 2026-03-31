@@ -8,7 +8,6 @@ install_bouncer_data(
   formats = c("odi", "t20i"),
   leagues = c("ipl"),
   gender = "male",
-  start_season = NULL,
   db_path = NULL,
   download_path = NULL,
   keep_downloads = FALSE
@@ -22,9 +21,6 @@ Default is c("odi", "t20i").}
 "psl", "wbbl", etc. Default is c("ipl").}
 
 \item{gender}{Character string. "male", "female", or "both". Default "male".}
-
-\item{start_season}{Character or numeric. Only download matches from this season onwards.
-If NULL, downloads all available data.}
 
 \item{db_path}{Database path. If NULL, uses default system data directory.}
 
@@ -50,7 +46,5 @@ install_bouncer_data(
   leagues = c("ipl", "bbl")
 )
 
-# Install only recent data (from 2020 onwards)
-install_bouncer_data(start_season = 2020)
 }
 }
