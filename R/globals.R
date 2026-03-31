@@ -663,6 +663,95 @@ utils::globalVariables(c(
 
 
 # ============================================================================
+# Player Game Data Variables (player_game_data.R)
+# ============================================================================
+
+utils::globalVariables(c(
+  # Batting game data
+  "batting_balls_faced",
+  "batting_runs",
+  "batting_fours",
+  "batting_sixes",
+  "batting_boundaries",
+  "batting_dot_balls",
+  "batting_dismissed",
+  "batting_strike_rate",
+  "batting_wpa",
+  "batting_max_wpa",
+  "batting_positive_wpa_pct",
+  "batting_era",
+  "batting_pct_controlled",
+  "batting_pct_attacking",
+  "batting_pct_leg_side",
+  "batting_hawkeye_balls",
+  # Bowling game data
+  "bowling_balls_bowled",
+  "bowling_total_deliveries",
+  "bowling_runs_conceded",
+  "bowling_wickets",
+  "bowling_fours_conceded",
+  "bowling_sixes_conceded",
+  "bowling_boundaries_conceded",
+  "bowling_dot_balls",
+  "bowling_wides",
+  "bowling_noballs",
+  "bowling_economy",
+  "bowling_wpa",
+  "bowling_max_wpa",
+  "bowling_era",
+  "bowling_pct_good_length",
+  "bowling_pct_on_stump",
+  "bowling_pct_beat_bat",
+  "bowling_hawkeye_balls",
+  # Player info
+  "player_name",
+  "team",
+  # Merge helpers
+  "match_date_bat",
+  "match_date_bowl"
+))
+
+
+# ============================================================================
+# Stat Rating Variables (stat_rating_config.R, stat_ratings.R)
+# ============================================================================
+
+utils::globalVariables(c(
+  "stat_name",
+  "type",
+  "source_col",
+  "category",
+  "higher_is_better",
+  "role_group",
+  "lambda",
+  "prior_strength",
+  "n_games",
+  "wt_games",
+  "ref_date",
+  "days_since_ref",
+  "decay_weight",
+  "cum_weighted_stat",
+  "cum_weighted_exposure",
+  "alpha_post",
+  "beta_post",
+  "mu_role",
+  # PSV/BatV/BowlV
+  "psv_raw",
+  "psv",
+  "batv",
+  "bowlv",
+  "psr_raw",
+  "psr",
+  # EPR
+  "batting_epr",
+  "bowling_epr",
+  "total_epr",
+  # BOUNCER
+  "bouncer_rating"
+))
+
+
+# ============================================================================
 # Utility Functions
 # ============================================================================
 

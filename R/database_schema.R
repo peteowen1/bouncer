@@ -868,6 +868,9 @@ create_schema <- function(conn, verbose = TRUE) {
   # Create Cricinfo tables (rich ball-by-ball, matches, innings, fixtures)
   create_cricinfo_tables(conn, verbose)
 
+  # Create player game data tables (per-player per-match value metrics)
+  create_player_game_data_tables(conn, verbose)
+
   n_tables <- length(DBI::dbListTables(conn))
   cli::cli_alert_success("Schema created successfully ({n_tables} tables)")
   invisible(TRUE)
@@ -1133,6 +1136,99 @@ create_cricinfo_tables <- function(conn, verbose = TRUE) {
     ON cricinfo.fixtures(format, gender)")
   DBI::dbExecute(conn, "CREATE INDEX IF NOT EXISTS idx_cricinfo_fixtures_status
     ON cricinfo.fixtures(status)")
+
+  invisible(TRUE)
+}
+
+
+#' Create Player Game Data Tables
+#'
+#' Creates per-format tables for player-match value metrics.
+#' One table per format: t20_player_game_data, odi_player_game_data, test_player_game_data.
+#'
+#' @param conn A DuckDB connection object
+#' @param verbose Logical. If TRUE, shows progress.
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_player_game_data_tables <- function(conn, verbose = TRUE) {
+  for (fmt in c("t20", "odi", "test")) {
+    table_name <- paste0(fmt, "_player_game_data")
+    if (verbose) cli::cli_alert_info("Creating {table_name} table...")
+
+    DBI::dbExecute(conn, sprintf("
+      CREATE TABLE IF NOT EXISTS %s (
+        -- Identifiers
+        match_id VARCHAR,
+        player_id VARCHAR,
+        player_name VARCHAR,
+        team VARCHAR,
+        match_date VARCHAR,
+        role VARCHAR,
+
+        -- Batting box-score
+        batting_balls_faced INTEGER DEFAULT 0,
+        batting_runs INTEGER DEFAULT 0,
+        batting_fours INTEGER DEFAULT 0,
+        batting_sixes INTEGER DEFAULT 0,
+        batting_boundaries INTEGER DEFAULT 0,
+        batting_dot_balls INTEGER DEFAULT 0,
+        batting_dismissed INTEGER DEFAULT 0,
+        batting_strike_rate DOUBLE DEFAULT 0,
+
+        -- Batting value metrics
+        batting_wpa DOUBLE DEFAULT 0,
+        batting_max_wpa DOUBLE DEFAULT 0,
+        batting_positive_wpa_pct DOUBLE,
+        batting_era DOUBLE DEFAULT 0,
+
+        -- Batting Hawkeye
+        batting_pct_controlled DOUBLE,
+        batting_pct_attacking DOUBLE,
+        batting_pct_leg_side DOUBLE,
+        batting_hawkeye_balls INTEGER DEFAULT 0,
+
+        -- Bowling box-score
+        bowling_balls_bowled INTEGER DEFAULT 0,
+        bowling_total_deliveries INTEGER DEFAULT 0,
+        bowling_runs_conceded INTEGER DEFAULT 0,
+        bowling_wickets INTEGER DEFAULT 0,
+        bowling_fours_conceded INTEGER DEFAULT 0,
+        bowling_sixes_conceded INTEGER DEFAULT 0,
+        bowling_boundaries_conceded INTEGER DEFAULT 0,
+        bowling_dot_balls INTEGER DEFAULT 0,
+        bowling_wides INTEGER DEFAULT 0,
+        bowling_noballs INTEGER DEFAULT 0,
+        bowling_economy DOUBLE DEFAULT 0,
+
+        -- Bowling value metrics
+        bowling_wpa DOUBLE DEFAULT 0,
+        bowling_max_wpa DOUBLE DEFAULT 0,
+        bowling_era DOUBLE DEFAULT 0,
+
+        -- Bowling Hawkeye
+        bowling_pct_good_length DOUBLE,
+        bowling_pct_on_stump DOUBLE,
+        bowling_pct_beat_bat DOUBLE,
+        bowling_hawkeye_balls INTEGER DEFAULT 0,
+
+        -- Combined value
+        total_wpa DOUBLE DEFAULT 0,
+        total_era DOUBLE DEFAULT 0,
+
+        PRIMARY KEY (match_id, player_id)
+      )
+    ", table_name))
+
+    DBI::dbExecute(conn, sprintf(
+      "CREATE INDEX IF NOT EXISTS idx_%s_player ON %s(player_id)",
+      table_name, table_name
+    ))
+    DBI::dbExecute(conn, sprintf(
+      "CREATE INDEX IF NOT EXISTS idx_%s_date ON %s(match_date)",
+      table_name, table_name
+    ))
+  }
 
   invisible(TRUE)
 }
