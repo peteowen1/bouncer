@@ -77,7 +77,10 @@ player_career_summary <- function(player_id, format = c("t20", "odi", "test")) {
   # Load per-match data
   pgd <- tryCatch(
     load_player_game_data(format, player_ids = player_id),
-    error = function(e) data.table::data.table()
+    error = function(e) {
+      cli::cli_warn("Failed to load player game data: {e$message}")
+      data.table::data.table()
+    }
   )
 
   if (nrow(pgd) == 0) {

@@ -346,7 +346,10 @@ analyze_player <- function(name_or_id, format = NULL, db_path = NULL) {
             dplyr::ungroup()
         }
       }
-    }, error = function(e) NULL)
+    }, error = function(e) {
+      cli::cli_warn("Could not load skill history: {e$message}")
+      NULL
+    })
   }
 
   result <- list(

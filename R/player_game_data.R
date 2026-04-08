@@ -151,7 +151,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
       SUM(CASE WHEN is_six THEN 1 ELSE 0 END) AS batting_sixes,
       SUM(CASE WHEN is_four OR is_six THEN 1 ELSE 0 END) AS batting_boundaries,
       SUM(CASE WHEN batsman_runs = 0 AND NOT is_wicket THEN 1 ELSE 0 END) AS batting_dot_balls,
-      MAX(CASE WHEN is_wicket AND dismissal_type NOT IN ('retired hurt', 'retired not out', 'retired out')
+      SUM(CASE WHEN is_wicket AND dismissal_type NOT IN ('retired hurt', 'retired not out', 'retired out')
           THEN 1 ELSE 0 END) AS batting_dismissed,
       ROUND(SUM(batsman_runs) * 100.0 / NULLIF(COUNT(*), 0), 2) AS batting_strike_rate,
 
@@ -371,7 +371,8 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #' @keywords internal
 .build_match_filter <- function(match_ids) {
   if (is.null(match_ids)) return("")
-  ids_sql <- paste(sprintf("'%s'", match_ids), collapse = ", ")
+  validate_match_ids(match_ids, context = ".build_match_filter")
+  ids_sql <- paste(sprintf("'%s'", escape_sql_quotes(match_ids)), collapse = ", ")
   sprintf("AND b.match_id IN (%s)", ids_sql)
 }
 
@@ -381,7 +382,11 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #' @keywords internal
 .build_gender_filter <- function(gender) {
   if (is.null(gender)) return("")
-  sprintf("AND LOWER(m.gender) = '%s'", tolower(gender))
+  gender <- tolower(gender)
+  if (!gender %in% c("male", "female")) {
+    cli::cli_abort("gender must be 'male' or 'female', not {.val {gender}}")
+  }
+  sprintf("AND LOWER(m.gender) = '%s'", escape_sql_quotes(gender))
 }
 
 
@@ -469,7 +474,10 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
       JOIN cricinfo.matches m ON b.match_id = m.match_id
       WHERE %s AND b.bowler_player_id IS NOT NULL
     ", format_sql, format_sql)))
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    cli::cli_warn("Could not assign teams: {e$message}")
+    NULL
+  })
 
   if (!is.null(team_info) && nrow(team_info) > 0) {
     # Deduplicate: take first team assignment per player-match

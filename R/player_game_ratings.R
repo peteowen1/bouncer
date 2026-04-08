@@ -40,7 +40,10 @@ player_game_ratings <- function(format = c("t20", "odi", "test"),
     coef_df <- utils::read.csv(coef_path, stringsAsFactors = FALSE)
     psv <- tryCatch(
       calculate_psv(pgd, coef_df),
-      error = function(e) NULL
+      error = function(e) {
+        cli::cli_warn("PSV calculation failed: {e$message}")
+        NULL
+      }
     )
     if (!is.null(psv)) {
       pgd[psv, psv := i.psv, on = c("match_id", "player_id")]
@@ -54,7 +57,10 @@ player_game_ratings <- function(format = c("t20", "odi", "test"),
       bowlv_coef <- utils::read.csv(bowlv_path, stringsAsFactors = FALSE)
       psv_comp <- tryCatch(
         calculate_psv_components(pgd, coef_df, batv_coef, bowlv_coef),
-        error = function(e) NULL
+        error = function(e) {
+          cli::cli_warn("BatV/BowlV calculation failed: {e$message}")
+          NULL
+        }
       )
       if (!is.null(psv_comp)) {
         pgd[psv_comp, `:=`(batv = i.batv, bowlv = i.bowlv),

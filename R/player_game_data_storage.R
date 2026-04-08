@@ -29,7 +29,15 @@ store_player_game_data <- function(conn, data, format = c("t20", "odi", "test"))
     table_name
   ))$column_name
 
-  # Reorder data to match DB schema
+  # Reorder data to match DB schema, log mismatches
+  missing_in_data <- setdiff(target_cols, names(data))
+  extra_in_data <- setdiff(names(data), target_cols)
+  if (length(missing_in_data) > 0) {
+    cli::cli_warn("Columns in DB schema but not in data (will be NULL): {paste(missing_in_data, collapse = ', ')}")
+  }
+  if (length(extra_in_data) > 0) {
+    cli::cli_warn("Columns in data but not in DB schema (will be dropped): {paste(extra_in_data, collapse = ', ')}")
+  }
   available_cols <- intersect(target_cols, names(data))
   data_ordered <- data[, available_cols, with = FALSE]
 
@@ -88,11 +96,12 @@ load_player_game_data <- function(format = c("t20", "odi", "test"),
 
   where_clauses <- character(0)
   if (!is.null(match_ids)) {
-    ids_sql <- paste(sprintf("'%s'", match_ids), collapse = ", ")
+    validate_match_ids(match_ids, context = "load_player_game_data")
+    ids_sql <- paste(sprintf("'%s'", escape_sql_quotes(match_ids)), collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("match_id IN (%s)", ids_sql))
   }
   if (!is.null(player_ids)) {
-    ids_sql <- paste(sprintf("'%s'", player_ids), collapse = ", ")
+    ids_sql <- paste(sprintf("'%s'", escape_sql_quotes(player_ids)), collapse = ", ")
     where_clauses <- c(where_clauses, sprintf("player_id IN (%s)", ids_sql))
   }
 

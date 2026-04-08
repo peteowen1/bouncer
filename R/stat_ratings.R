@@ -148,6 +148,9 @@ estimate_player_stat_ratings <- function(stat_data, ref_date = NULL,
       alpha_post = alpha0 + w_num,
       beta_post = prior_str + w_den
     )]
+    # Clamp alpha_post to small positive value — WPA/ERA stats can produce
+    # negative w_num, which would make qgamma() return NaN
+    agg[alpha_post <= 0, alpha_post := 1e-4]
 
     rating_col <- paste0(stat_nm, "_rating")
     lower_col <- paste0(stat_nm, "_rating_lower")
