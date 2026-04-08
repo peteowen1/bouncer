@@ -51,6 +51,8 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown
+Remotes:
+    peteowen1/bouncermodels
 VignetteBuilder: knitr
 URL: https://peteowen1.github.io/bouncer/, https://github.com/peteowen1/bouncer
 BugReports: https://github.com/peteowen1/bouncer/issues
