@@ -679,6 +679,7 @@ fox_discover_matches <- function(browser, userkey, format = "TEST", years = 2024
 #' @param refresh_key_every Refresh userkey after this many matches
 #' @param delay_between Seconds to wait between matches
 #' @param max_consecutive_failures Stop and reconnect after this many failures in a row
+#' @param per_match_timeout Seconds before a single match fetch is aborted (default 300)
 #' @return Combined data.frame of all ball-by-ball data, or NULL
 #' @keywords internal
 fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
@@ -686,7 +687,8 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
                                use_parquet = TRUE, include_players = TRUE,
                                include_details = TRUE, skip_existing = TRUE,
                                refresh_key_every = 10, delay_between = 8,
-                               max_consecutive_failures = 3) {
+                               max_consecutive_failures = 3,
+                               per_match_timeout = 300) {
 
   if (is.null(output_dir)) {
     output_dir <- file.path(find_bouncerdata_dir(), "fox_cricket")
@@ -749,11 +751,14 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
       tryCatch(current_browser$close(), error = function(e) NULL)
       Sys.sleep(2)
 
-      # Create new browser session
+      # Create new browser session (with 30s timeout to prevent hangs)
       reconnect_failed <- FALSE
       tryCatch({
+        setTimeLimit(elapsed = 30, transient = TRUE)
+        on.exit(setTimeLimit(elapsed = Inf), add = TRUE)
         current_browser <- chromote::ChromoteSession$new()
         current_browser$Network$enable()
+        setTimeLimit(elapsed = Inf)
         Sys.sleep(2)
 
         # Get new userkey
@@ -804,9 +809,14 @@ fox_fetch_matches <- function(browser, match_ids, userkey, format = "TEST",
     # Fetch balls if needed (this also fetches players/details if requested)
     if (need_balls) {
       match_result <- tryCatch({
-        fox_fetch_match(current_browser, match_id, current_userkey, format = format,
+        setTimeLimit(elapsed = per_match_timeout, transient = TRUE)
+        on.exit(setTimeLimit(elapsed = Inf), add = TRUE)
+        result <- fox_fetch_match(current_browser, match_id, current_userkey, format = format,
                         include_players = need_players, include_details = need_details)
+        setTimeLimit(elapsed = Inf)
+        result
       }, error = function(e) {
+        setTimeLimit(elapsed = Inf)
         cli::cli_alert_warning("  Error: {e$message}")
         NULL
       })

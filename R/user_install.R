@@ -10,8 +10,6 @@
 #' @param leagues Character vector of leagues to download. Options: "ipl", "bbl", "cpl",
 #'   "psl", "wbbl", etc. Default is c("ipl").
 #' @param gender Character string. "male", "female", or "both". Default "male".
-#' @param start_season Character or numeric. Only download matches from this season onwards.
-#'   If NULL, downloads all available data.
 #' @param db_path Database path. If NULL, uses default system data directory.
 #' @param download_path Path to store downloaded files. If NULL, uses temp directory.
 #' @param keep_downloads Logical. If TRUE, keeps downloaded JSON files. Default FALSE.
@@ -30,13 +28,10 @@
 #'   leagues = c("ipl", "bbl")
 #' )
 #'
-#' # Install only recent data (from 2020 onwards)
-#' install_bouncer_data(start_season = 2020)
 #' }
 install_bouncer_data <- function(formats = c("odi", "t20i"),
                                   leagues = c("ipl"),
                                   gender = "male",
-                                  start_season = NULL,
                                   db_path = NULL,
                                   download_path = NULL,
                                   keep_downloads = FALSE) {
@@ -89,9 +84,6 @@ install_bouncer_data <- function(formats = c("odi", "t20i"),
         })
 
         if (length(files) > 0) {
-          # Season filtering removed (placeholder implementation)
-          # To filter by season, filter after loading based on match_date in database
-
           # Load to database
           batch_load_matches(files, path = db_path)
         }
@@ -474,6 +466,25 @@ install_all_bouncer_data <- function(db_path = NULL,
     cli::cli_alert_info("Updated matches: {length(download_result$changed_files)}")
     cli::cli_alert_info("Unchanged matches: {download_result$unchanged_count}")
   }
+
+  # Post-load sanity check
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
+  tryCatch({
+    match_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n
+    delivery_count <- DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.deliveries")$n
+
+    if (match_count == 0) {
+      cli::cli_warn("No matches found in database after loading - data may not have been ingested correctly")
+    } else if (delivery_count / match_count < 50) {
+      cli::cli_warn(c(
+        "Unusually low delivery count per match: {round(delivery_count / match_count, 1)}",
+        "i" = "Expected ~270+ deliveries per match on average",
+        "i" = "Some match files may have failed to parse"
+      ))
+    }
+  }, error = function(e) {
+    cli::cli_alert_warning("Could not verify data integrity: {e$message}")
+  }, finally = DBI::dbDisconnect(conn, shutdown = TRUE))
 
   get_data_info(path = db_path)
 

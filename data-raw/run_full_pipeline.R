@@ -109,7 +109,7 @@ if (FRESH_START) {
 if (!is.null(STEPS_TO_RUN)) {
   cli::cli_alert_info("Steps: {paste(STEPS_TO_RUN, collapse = ', ')}")
 } else {
-  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 5b, 6, 7, 8, 9, 10, 11, 12)")
+  cli::cli_alert_info("Steps: All (1, 1b, 2, 3, 4, 5, 5b, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)")
 }
 cat("\n")
 
@@ -791,6 +791,91 @@ if (should_run(12)) {
     step_times[["12_in_match_models"]] <- difftime(Sys.time(), step_start, units = "mins")
     print_step_complete("Step 12: In-Match Models", step_times[["12_in_match_models"]])
   }
+}
+
+
+# Step 13: Build Player Game Data (Cricinfo-based) ----
+
+if (should_run(13)) {
+  cli::cli_h1("Step 13: Build Player Game Data (Cricinfo)")
+  step_start <- Sys.time()
+
+  tryCatch({
+    conn <- get_db_connection(read_only = FALSE)
+
+    for (fmt in FORMATS) {
+      cli::cli_h2("Building player game data for {toupper(fmt)}")
+      pgd <- create_player_game_data(fmt, conn = conn)
+      if (nrow(pgd) > 0) {
+        store_player_game_data(conn, pgd, fmt)
+      }
+    }
+
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["13_player_game_data"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 13: Player Game Data", step_times[["13_player_game_data"]])
+  }, error = function(e) {
+    cli::cli_alert_danger("Step 13 failed: {conditionMessage(e)}")
+  })
+}
+
+
+# Step 14: Estimate Stat Ratings ----
+
+if (should_run(14)) {
+  cli::cli_h1("Step 14: Estimate Stat Ratings")
+  step_start <- Sys.time()
+
+  tryCatch({
+    conn <- get_db_connection(read_only = FALSE)
+
+    for (fmt in FORMATS) {
+      cli::cli_h2("Estimating stat ratings for {toupper(fmt)}")
+      pgd <- load_player_game_data(fmt, source = "local")
+      if (nrow(pgd) > 0) {
+        stat_data <- prepare_stat_rating_data(pgd)
+        ratings <- estimate_player_stat_ratings(stat_data)
+        store_stat_ratings(conn, ratings, fmt)
+      }
+    }
+
+    DBI::dbDisconnect(conn, shutdown = TRUE)
+
+    step_times[["14_stat_ratings"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 14: Stat Ratings", step_times[["14_stat_ratings"]])
+  }, error = function(e) {
+    cli::cli_alert_danger("Step 14 failed: {conditionMessage(e)}")
+  })
+}
+
+
+# Step 15: Calculate Career Ratings (EPR + BOUNCER) ----
+
+if (should_run(15)) {
+  cli::cli_h1("Step 15: Career Ratings (EPR + BOUNCER)")
+  step_start <- Sys.time()
+
+  tryCatch({
+    for (fmt in FORMATS) {
+      cli::cli_h2("Career ratings for {toupper(fmt)}")
+      ratings <- bouncer_ratings(fmt)
+      cli::cli_alert_success("{toupper(fmt)}: {nrow(ratings)} players rated")
+
+      # Show top 5
+      if (nrow(ratings) >= 5) {
+        top5 <- head(ratings, 5)
+        for (i in seq_len(5)) {
+          cli::cli_alert_info("  {i}. {top5$player_id[i]}: {round(top5$bouncer_rating[i], 3)}")
+        }
+      }
+    }
+
+    step_times[["15_career_ratings"]] <- difftime(Sys.time(), step_start, units = "mins")
+    print_step_complete("Step 15: Career Ratings", step_times[["15_career_ratings"]])
+  }, error = function(e) {
+    cli::cli_alert_danger("Step 15 failed: {conditionMessage(e)}")
+  })
 }
 
 

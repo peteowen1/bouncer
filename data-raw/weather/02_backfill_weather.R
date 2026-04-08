@@ -75,10 +75,15 @@ venue_groups <- matches[, .(
 cli::cli_alert_info("Fetching weather for {nrow(venue_groups)} venues, {nrow(matches)} matches")
 cli::cli_alert_info("Open-Meteo archive API (free, no key needed)")
 
+# Circuit breaker: stop after N consecutive failures (likely rate-limited)
+CONSECUTIVE_FAIL_LIMIT <- 5
+DELAY_BETWEEN_VENUES <- 4  # seconds (conservative for free tier)
+
 # Fetch weather venue by venue
 all_weather <- list()
 venues_done <- 0
 matches_done <- 0
+consecutive_failures <- 0
 
 for (i in seq_len(nrow(venue_groups))) {
   vg <- venue_groups[i]
@@ -114,9 +119,19 @@ for (i in seq_len(nrow(venue_groups))) {
 
     all_weather[[i]] <- weather_dt
     matches_done <- matches_done + nrow(weather_dt)
+    consecutive_failures <- 0  # Reset on success
+  } else {
+    consecutive_failures <- consecutive_failures + 1
   }
 
   venues_done <- venues_done + 1
+
+  # Circuit breaker: stop if we've hit the rate limit wall
+  if (consecutive_failures >= CONSECUTIVE_FAIL_LIMIT) {
+    cli::cli_alert_danger("{CONSECUTIVE_FAIL_LIMIT} consecutive failures — likely rate-limited. Stopping gracefully.")
+    cli::cli_alert_info("Re-run this script later to resume from checkpoint.")
+    break
+  }
 
   # Save progress every 100 venues
   if (venues_done %% 100 == 0 && length(all_weather) > 0) {
@@ -126,8 +141,7 @@ for (i in seq_len(nrow(venue_groups))) {
     all_weather <- list()  # Reset to avoid double-saving
   }
 
-  # Rate limit: Open-Meteo allows ~600 req/min for free tier
-  Sys.sleep(2)  # Open-Meteo free tier: ~600 req/min, be conservative
+  Sys.sleep(DELAY_BETWEEN_VENUES)
 }
 
 # Save remaining

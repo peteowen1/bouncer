@@ -1,13 +1,23 @@
 # Tests for stat functions (player, team, venue)
-# These tests require a database connection, so they skip if unavailable
+# Uses real database when available, falls back to fixture DB for CI.
+
+# Returns a database path: real DB if available, otherwise fixture DB
+get_test_db_path <- function() {
+  real_path <- tryCatch(get_db_path(), error = function(e) NULL)
+  if (!is.null(real_path) && file.exists(real_path)) {
+    return(real_path)
+  }
+  # Fall back to fixture DB (created by helper-fixture-db.R)
+  get_fixture_db_path()
+}
 
 skip_if_no_db <- function() {
   db_path <- tryCatch(
-    get_db_path(),
+    get_test_db_path(),
     error = function(e) NULL
   )
   if (is.null(db_path) || !file.exists(db_path)) {
-    skip("Database not available")
+    skip("Database not available (real or fixture)")
   }
 }
 
@@ -26,7 +36,7 @@ test_that("player_batting_stats returns data frame for all players", {
   skip_if_no_db()
 
   # Use very low threshold to ensure we get some data if any exists
-  result <- player_batting_stats(min_balls = 1)
+  result <- player_batting_stats(min_balls = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No batting data in database")
 
   expect_s3_class(result, "data.frame")
@@ -43,7 +53,7 @@ test_that("player_batting_stats filters by match_type", {
   skip_if_no_db()
 
   # Try T20 first with low threshold
-  t20_result <- player_batting_stats(match_type = "T20", min_balls = 1)
+  t20_result <- player_batting_stats(match_type = "T20", min_balls = 1, db_path = get_test_db_path())
   skip_if_no_data(t20_result, "No T20 batting data in database")
 
   expect_s3_class(t20_result, "data.frame")
@@ -53,7 +63,7 @@ test_that("player_batting_stats filters by match_type", {
 test_that("player_bowling_stats returns data frame for all players", {
   skip_if_no_db()
 
-  result <- player_bowling_stats(min_balls = 1)
+  result <- player_bowling_stats(min_balls = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No bowling data in database")
 
   expect_s3_class(result, "data.frame")
@@ -73,7 +83,7 @@ test_that("player_bowling_stats returns data frame for all players", {
 test_that("team_batting_stats returns data frame for all teams", {
   skip_if_no_db()
 
-  result <- team_batting_stats(min_matches = 1)
+  result <- team_batting_stats(min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No team batting data in database")
 
   expect_s3_class(result, "data.frame")
@@ -90,7 +100,7 @@ test_that("team_batting_stats returns data frame for all teams", {
 test_that("team_batting_stats returns data for single team", {
   skip_if_no_db()
 
-  result <- team_batting_stats("India", min_matches = 1)
+  result <- team_batting_stats("India", min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No data for India in database")
 
   expect_s3_class(result, "data.frame")
@@ -101,7 +111,7 @@ test_that("team_batting_stats returns data for single team", {
 test_that("team_batting_stats filters by match_type", {
   skip_if_no_db()
 
-  t20_result <- team_batting_stats("India", match_type = "T20", min_matches = 1)
+  t20_result <- team_batting_stats("India", match_type = "T20", min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(t20_result, "No T20 data for India in database")
 
   expect_s3_class(t20_result, "data.frame")
@@ -111,7 +121,7 @@ test_that("team_batting_stats filters by match_type", {
 test_that("team_bowling_stats returns data frame for all teams", {
   skip_if_no_db()
 
-  result <- team_bowling_stats(min_matches = 1)
+  result <- team_bowling_stats(min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No team bowling data in database")
 
   expect_s3_class(result, "data.frame")
@@ -126,7 +136,7 @@ test_that("team_bowling_stats returns data frame for all teams", {
 test_that("team_bowling_stats returns data for single team", {
   skip_if_no_db()
 
-  result <- team_bowling_stats("Australia", min_matches = 1)
+  result <- team_bowling_stats("Australia", min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No bowling data for Australia in database")
 
   expect_s3_class(result, "data.frame")
@@ -141,7 +151,7 @@ test_that("team_bowling_stats returns data for single team", {
 test_that("head_to_head returns summary for two teams", {
   skip_if_no_db()
 
-  result <- head_to_head("India", "Australia")
+  result <- head_to_head("India", "Australia", db_path = get_test_db_path())
   skip_if_no_data(result, "No head-to-head data for India vs Australia")
 
   expect_s3_class(result, "data.frame")
@@ -156,7 +166,7 @@ test_that("head_to_head returns summary for two teams", {
 test_that("head_to_head filters by match_type", {
   skip_if_no_db()
 
-  t20_result <- head_to_head("India", "Pakistan", match_type = "T20")
+  t20_result <- head_to_head("India", "Pakistan", match_type = "T20", db_path = get_test_db_path())
   skip_if_no_data(t20_result, "No T20 data for India vs Pakistan")
 
   expect_s3_class(t20_result, "data.frame")
@@ -166,7 +176,7 @@ test_that("head_to_head filters by match_type", {
 test_that("head_to_head returns NULL for non-existent matchup", {
   skip_if_no_db()
 
-  result <- head_to_head("NonExistentTeam1", "NonExistentTeam2")
+  result <- head_to_head("NonExistentTeam1", "NonExistentTeam2", db_path = get_test_db_path())
 
   expect_null(result)
 })
@@ -178,7 +188,7 @@ test_that("head_to_head returns NULL for non-existent matchup", {
 test_that("venue_stats returns data frame for all venues", {
   skip_if_no_db()
 
-  result <- venue_stats(min_matches = 1)
+  result <- venue_stats(min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No venue data in database")
 
   expect_s3_class(result, "data.frame")
@@ -195,7 +205,7 @@ test_that("venue_stats returns data frame for all venues", {
 test_that("venue_stats returns data for single venue", {
   skip_if_no_db()
 
-  result <- venue_stats("Melbourne Cricket Ground", min_matches = 1)
+  result <- venue_stats("Melbourne Cricket Ground", min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No data for MCG in database")
 
   expect_s3_class(result, "data.frame")
@@ -206,7 +216,7 @@ test_that("venue_stats returns data for single venue", {
 test_that("venue_stats filters by match_type", {
   skip_if_no_db()
 
-  t20_result <- venue_stats(match_type = "T20", min_matches = 1)
+  t20_result <- venue_stats(match_type = "T20", min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(t20_result, "No T20 venue data in database")
 
   expect_s3_class(t20_result, "data.frame")
@@ -216,7 +226,7 @@ test_that("venue_stats filters by match_type", {
 test_that("venue_stats has no duplicate venues", {
   skip_if_no_db()
 
-  result <- venue_stats(min_matches = 1)
+  result <- venue_stats(min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No venue data in database")
 
   expect_equal(nrow(result), length(unique(result$venue)),
@@ -226,7 +236,7 @@ test_that("venue_stats has no duplicate venues", {
 test_that("venue_stats is ordered by matches descending", {
   skip_if_no_db()
 
-  result <- venue_stats(min_matches = 1)
+  result <- venue_stats(min_matches = 1, db_path = get_test_db_path())
   skip_if_no_data(result, "No venue data in database")
 
   if (nrow(result) > 1) {

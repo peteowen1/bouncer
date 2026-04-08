@@ -314,10 +314,49 @@ analyze_player <- function(name_or_id, format = NULL, db_path = NULL) {
     db_path = db_path
   )
 
+  # Get skill history if format specified and DB available
+  skill_history <- NULL
+  if (!is.null(format)) {
+    skill_history <- tryCatch({
+      conn <- get_db_connection(path = db_path, read_only = TRUE)
+      on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+      format_lower <- tolower(format)
+      skill_table <- paste0(format_lower, "_player_skill")
+
+      if (table_exists(conn, skill_table)) {
+        query <- sprintf("
+          SELECT s.delivery_id, d.match_date, d.match_id,
+                 s.batter_scoring_index, s.batter_survival_rate,
+                 s.bowler_economy_index, s.bowler_strike_rate
+          FROM %s s
+          JOIN cricsheet.deliveries d ON s.delivery_id = d.delivery_id
+          WHERE s.batter_id = ? OR s.bowler_id = ?
+          ORDER BY d.match_date ASC
+        ", skill_table)
+
+        raw <- DBI::dbGetQuery(conn, query,
+                               params = list(player$player_id, player$player_id))
+
+        if (nrow(raw) > 0) {
+          # One row per match (last delivery = final skill snapshot)
+          raw %>%
+            dplyr::group_by(match_id) %>%
+            dplyr::slice_tail(n = 1) %>%
+            dplyr::ungroup()
+        }
+      }
+    }, error = function(e) {
+      cli::cli_warn("Could not load skill history: {e$message}")
+      NULL
+    })
+  }
+
   result <- list(
     player = player,
     batting = batting,
     bowling = bowling,
+    skill_history = skill_history,
     format = format
   )
 
@@ -367,6 +406,13 @@ print.bouncer_player_analysis <- function(x, ...) {
     cli::cli_text("Batting Index: {round(x$player$skills$batter_scoring_index, 3)}")
     cli::cli_text("Survival Rate: {round(x$player$skills$batter_survival_rate * 100, 1)}%")
     cli::cli_text("Economy Index: {round(x$player$skills$bowler_economy_index, 3)}")
+  }
+
+  # Skill history summary
+  if (!is.null(x$skill_history) && nrow(x$skill_history) > 0) {
+    cli::cli_h2("Skill History")
+    cli::cli_text("{nrow(x$skill_history)} matches tracked")
+    cli::cli_text("Use plot_skill_progression(\"{x$player$player_name}\") to visualize")
   }
 
   invisible(x)

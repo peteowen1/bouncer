@@ -172,7 +172,7 @@ with_mock_cricinfo_db <- function(code) {
 
 test_that("load_cricinfo_balls loads all balls without filters", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_balls())
+    result <- suppressMessages(load_cricinfo_balls(source = "local"))
     expect_equal(nrow(result), 6)
     expect_true("match_id" %in% names(result))
     expect_true("innings_number" %in% names(result))
@@ -181,7 +181,7 @@ test_that("load_cricinfo_balls loads all balls without filters", {
 
 test_that("load_cricinfo_balls filters by match_ids", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_balls(match_ids = "1502145"))
+    result <- suppressMessages(load_cricinfo_balls(match_ids = "1502145", source = "local"))
     expect_equal(nrow(result), 4)
     expect_true(all(result$match_id == "1502145"))
   })
@@ -189,7 +189,7 @@ test_that("load_cricinfo_balls filters by match_ids", {
 
 test_that("load_cricinfo_balls filters by format", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_balls(format = "t20i"))
+    result <- suppressMessages(load_cricinfo_balls(format = "t20i", source = "local"))
     # Match 1502145 (4 balls) + 1502146 (1 ball) = 5 T20I balls
     expect_equal(nrow(result), 5)
   })
@@ -197,7 +197,7 @@ test_that("load_cricinfo_balls filters by format", {
 
 test_that("load_cricinfo_balls filters by gender", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_balls(gender = "male"))
+    result <- suppressMessages(load_cricinfo_balls(gender = "male", source = "local"))
     # All 6 balls are from male matches (4 for test are female)
     # Actually: matches 1502145, 1502146 (male T20I), 1502200 (male ODI)
     # 1502300 is female Test but has no balls in the mock
@@ -208,7 +208,7 @@ test_that("load_cricinfo_balls filters by gender", {
 test_that("load_cricinfo_balls returns empty for non-existent match", {
   with_mock_cricinfo_db({
     result <- suppressWarnings(
-      suppressMessages(load_cricinfo_balls(match_ids = "9999999"))
+      suppressMessages(load_cricinfo_balls(match_ids = "9999999", source = "local"))
     )
     expect_equal(nrow(result), 0)
   })
@@ -216,14 +216,14 @@ test_that("load_cricinfo_balls returns empty for non-existent match", {
 
 test_that("load_cricinfo_match loads all matches without filters", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_match())
+    result <- suppressMessages(load_cricinfo_match(source = "local"))
     expect_equal(nrow(result), 4)
   })
 })
 
 test_that("load_cricinfo_match filters by format", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_match(format = "t20i"))
+    result <- suppressMessages(load_cricinfo_match(format = "t20i", source = "local"))
     expect_equal(nrow(result), 2)
     expect_true(all(grepl("T20", result$format, ignore.case = TRUE)))
   })
@@ -231,7 +231,7 @@ test_that("load_cricinfo_match filters by format", {
 
 test_that("load_cricinfo_match filters by gender", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_match(gender = "female"))
+    result <- suppressMessages(load_cricinfo_match(gender = "female", source = "local"))
     expect_equal(nrow(result), 1)
     expect_equal(result$match_id, "1502300")
   })
@@ -239,7 +239,7 @@ test_that("load_cricinfo_match filters by gender", {
 
 test_that("load_cricinfo_innings loads all innings", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_innings())
+    result <- suppressMessages(load_cricinfo_innings(source = "local"))
     expect_equal(nrow(result), 3)
     expect_true("player_name" %in% names(result))
   })
@@ -247,7 +247,7 @@ test_that("load_cricinfo_innings loads all innings", {
 
 test_that("load_cricinfo_innings filters by match_ids", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_innings(match_ids = "1502145"))
+    result <- suppressMessages(load_cricinfo_innings(match_ids = "1502145", source = "local"))
     expect_equal(nrow(result), 3)
     expect_true(all(result$match_id == "1502145"))
   })
@@ -259,28 +259,28 @@ test_that("load_cricinfo_innings filters by match_ids", {
 
 test_that("load_cricinfo_fixtures loads all fixtures", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_fixtures())
+    result <- suppressMessages(load_cricinfo_fixtures(source = "local"))
     expect_equal(nrow(result), 5)
   })
 })
 
 test_that("load_cricinfo_fixtures filters by format", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_fixtures(format = "t20i"))
+    result <- suppressMessages(load_cricinfo_fixtures(format = "t20i", source = "local"))
     expect_equal(nrow(result), 3)  # 2 POST + 1 PRE
   })
 })
 
 test_that("load_cricinfo_fixtures filters by gender", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_fixtures(gender = "female"))
+    result <- suppressMessages(load_cricinfo_fixtures(gender = "female", source = "local"))
     expect_equal(nrow(result), 1)
   })
 })
 
 test_that("load_cricinfo_fixtures filters by status", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(load_cricinfo_fixtures(status = "POST"))
+    result <- suppressMessages(load_cricinfo_fixtures(status = "POST", source = "local"))
     expect_equal(nrow(result), 3)
   })
 })
@@ -288,7 +288,7 @@ test_that("load_cricinfo_fixtures filters by status", {
 test_that("load_cricinfo_fixtures combined filters work", {
   with_mock_cricinfo_db({
     result <- suppressMessages(
-      load_cricinfo_fixtures(format = "t20i", status = "POST")
+      load_cricinfo_fixtures(format = "t20i", status = "POST", source = "local")
     )
     expect_equal(nrow(result), 2)
   })
@@ -298,7 +298,7 @@ test_that("get_upcoming_matches returns future PRE matches", {
   with_mock_cricinfo_db({
     # Our future fixtures are in 2099, so days_ahead needs to be huge
     result <- suppressMessages(
-      get_upcoming_matches(days_ahead = 99999)
+      get_upcoming_matches(days_ahead = 99999, source = "local")
     )
     expect_equal(nrow(result), 2)
     expect_true(all(result$status %in% c("PRE", "LIVE")))
@@ -308,7 +308,7 @@ test_that("get_upcoming_matches returns future PRE matches", {
 test_that("get_upcoming_matches filters by format", {
   with_mock_cricinfo_db({
     result <- suppressMessages(
-      get_upcoming_matches(format = "t20i", days_ahead = 99999)
+      get_upcoming_matches(format = "t20i", days_ahead = 99999, source = "local")
     )
     expect_equal(nrow(result), 1)
   })
@@ -316,7 +316,7 @@ test_that("get_upcoming_matches filters by format", {
 
 test_that("get_unscraped_matches returns completed without ball-by-ball", {
   with_mock_cricinfo_db({
-    result <- suppressMessages(get_unscraped_matches())
+    result <- suppressMessages(get_unscraped_matches(source = "local"))
     # Match 1502146 is POST with has_ball_by_ball = FALSE
     expect_equal(nrow(result), 1)
     expect_equal(result$match_id, "1502146")
@@ -326,7 +326,7 @@ test_that("get_unscraped_matches returns completed without ball-by-ball", {
 test_that("get_unscraped_matches returns empty when all scraped", {
   with_mock_cricinfo_db({
     # Filter to format with all matches scraped
-    result <- suppressMessages(get_unscraped_matches(format = "odi"))
+    result <- suppressMessages(get_unscraped_matches(format = "odi", source = "local"))
     expect_equal(nrow(result), 0)
   })
 })
@@ -362,7 +362,7 @@ test_that("load_cricinfo_balls rejects non-numeric match_ids", {
   with_mock_cricinfo_db({
     # Non-numeric IDs should be rejected by validate_match_ids
     expect_error(
-      load_cricinfo_balls(match_ids = "1502145'; DROP TABLE cricinfo_balls; --"),
+      load_cricinfo_balls(match_ids = "1502145'; DROP TABLE cricinfo_balls; --", source = "local"),
       "Non-numeric match IDs"
     )
 
@@ -381,7 +381,7 @@ test_that("load_cricinfo_balls rejects non-numeric match_ids", {
 test_that("load_cricinfo_fixtures handles format with quotes safely", {
   with_mock_cricinfo_db({
     result <- suppressWarnings(suppressMessages(
-      load_cricinfo_fixtures(format = "t20i'; DROP TABLE cricinfo_fixtures; --")
+      load_cricinfo_fixtures(format = "t20i'; DROP TABLE cricinfo_fixtures; --", source = "local")
     ))
     # Should return 0 rows, not crash or inject
     expect_equal(nrow(result), 0)

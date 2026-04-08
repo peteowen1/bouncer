@@ -42,6 +42,7 @@ Suggests:
     future (>= 1.30.0),
     ggplot2,
     mgcv (>= 1.8-0),
+    piggyback,
     progressr (>= 0.13.0),
     RcppSimdJson,
     scales,
@@ -50,6 +51,8 @@ Suggests:
     testthat (>= 3.0.0),
     knitr,
     rmarkdown
+Remotes:
+    peteowen1/bouncermodels
 VignetteBuilder: knitr
 URL: https://peteowen1.github.io/bouncer/, https://github.com/peteowen1/bouncer
 BugReports: https://github.com/peteowen1/bouncer/issues

@@ -16,7 +16,8 @@ fox_fetch_matches(
   skip_existing = TRUE,
   refresh_key_every = 10,
   delay_between = 8,
-  max_consecutive_failures = 3
+  max_consecutive_failures = 3,
+  per_match_timeout = 300
 )
 }
 \arguments{
@@ -43,6 +44,8 @@ fox_fetch_matches(
 \item{delay_between}{Seconds to wait between matches}
 
 \item{max_consecutive_failures}{Stop and reconnect after this many failures in a row}
+
+\item{per_match_timeout}{Seconds before a single match fetch is aborted (default 300)}
 }
 \value{
 Combined data.frame of all ball-by-ball data, or NULL

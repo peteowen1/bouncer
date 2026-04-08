@@ -592,6 +592,163 @@ plot_elo_history <- function(team_name,
 }
 
 
+#' Plot Player Rankings
+#'
+#' Creates a horizontal bar chart of top-N players by ELO rating.
+#'
+#' @param rating_type Character. "batting" or "bowling".
+#' @param match_type Character. Match format: "t20", "odi", "test".
+#' @param top_n Integer. Number of players to show (default 15).
+#' @param db_path Character. Database path.
+#'
+#' @return A ggplot object.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' plot_ranking("batting", "t20")
+#' plot_ranking("bowling", "test", top_n = 10)
+#' }
+plot_ranking <- function(rating_type = "batting",
+                          match_type = "t20",
+                          top_n = 15,
+                          db_path = NULL) {
+
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cli::cli_abort("Package 'ggplot2' is required")
+  }
+
+  rankings <- rank_players(
+    rating_type = rating_type,
+    match_type = match_type,
+    top_n = top_n,
+    db_path = db_path
+  )
+
+  if (nrow(rankings) == 0) {
+    cli::cli_alert_warning("No ranking data found")
+    return(NULL)
+  }
+
+  # Order by rank (top at top of chart)
+  rankings$player_id <- factor(rankings$player_id,
+                                levels = rev(rankings$player_id))
+
+  type_label <- tools::toTitleCase(rating_type)
+
+  p <- ggplot2::ggplot(rankings, ggplot2::aes(
+    x = player_id, y = elo_rating, fill = elo_rating
+  )) +
+    ggplot2::geom_col(width = 0.7) +
+    ggplot2::geom_text(
+      ggplot2::aes(label = round(elo_rating)),
+      hjust = -0.15, size = 3
+    ) +
+    ggplot2::coord_flip() +
+    ggplot2::scale_fill_gradient(low = "#90CAF9", high = "#1565C0", guide = "none") +
+    ggplot2::labs(
+      title = paste("Top", top_n, type_label, "Rankings"),
+      subtitle = toupper(match_type),
+      x = NULL,
+      y = "ELO Rating"
+    ) +
+    theme_bouncer()
+
+  return(p)
+}
+
+
+#' Plot Team ELO Comparison
+#'
+#' Overlays ELO rating histories for multiple teams on a single chart.
+#'
+#' @param teams Character vector. Team names to compare (max 8).
+#' @param format Character. Match format: "t20", "odi", "test".
+#' @param n_matches Integer. Number of recent matches to show per team.
+#'   If NULL, shows all.
+#' @param db_path Character. Database path.
+#'
+#' @return A ggplot object.
+#' @export
+#'
+#' @examples
+#' \dontrun{
+#' plot_team_elo_comparison(c("India", "Australia", "England"), format = "t20")
+#' }
+plot_team_elo_comparison <- function(teams,
+                                      format = "t20",
+                                      n_matches = NULL,
+                                      db_path = NULL) {
+
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    cli::cli_abort("Package 'ggplot2' is required")
+  }
+
+  if (length(teams) < 2) {
+    cli::cli_abort("Provide at least 2 teams to compare")
+  }
+
+  conn <- get_db_connection(path = db_path, read_only = TRUE)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+
+  format <- tolower(format)
+  format_filter <- switch(format,
+    "t20" = "AND LOWER(match_type) IN ('t20', 'it20')",
+    "odi" = "AND LOWER(match_type) IN ('odi', 'odm')",
+    "test" = "AND LOWER(match_type) IN ('test', 'mdm')",
+    ""
+  )
+
+  all_data <- list()
+  for (team in teams) {
+    query <- sprintf("
+      SELECT match_date, elo_result
+      FROM team_elo
+      WHERE LOWER(team_id) LIKE LOWER(?)
+      %s
+      ORDER BY match_date ASC
+    ", format_filter)
+
+    elo_data <- DBI::dbGetQuery(conn, query, params = list(paste0("%", team, "%")))
+
+    if (nrow(elo_data) > 0) {
+      if (!is.null(n_matches)) {
+        elo_data <- dplyr::slice_tail(elo_data, n = n_matches)
+      }
+      elo_data$team <- team
+      all_data[[team]] <- elo_data
+    }
+  }
+
+  if (length(all_data) == 0) {
+    cli::cli_alert_warning("No ELO data found for any of the specified teams")
+    return(NULL)
+  }
+
+  plot_df <- dplyr::bind_rows(all_data)
+
+  team_colors <- c("#1E88E5", "#E53935", "#43A047", "#FB8C00",
+                   "#8E24AA", "#00ACC1", "#6D4C41", "#546E7A")
+
+  p <- ggplot2::ggplot(plot_df, ggplot2::aes(
+    x = match_date, y = elo_result, color = team
+  )) +
+    ggplot2::geom_line(linewidth = 0.8, alpha = 0.8) +
+    ggplot2::geom_hline(yintercept = 1500, linetype = "dashed", color = "#CCCCCC") +
+    ggplot2::scale_color_manual(values = team_colors[seq_along(all_data)], name = "Team") +
+    ggplot2::labs(
+      title = "Team ELO Comparison",
+      subtitle = toupper(format),
+      x = "Date",
+      y = "ELO Rating",
+      caption = "Dashed line = 1500 (average)"
+    ) +
+    theme_bouncer()
+
+  return(p)
+}
+
+
 #' Plot Team Strength Breakdown
 #'
 #' Creates a bar chart showing a team's current skill components.
