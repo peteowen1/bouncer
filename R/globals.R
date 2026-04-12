@@ -12,14 +12,10 @@
 #' @importFrom utils head tail
 #' @importFrom methods as
 #' @importFrom dplyr %>%
-#' @importFrom rlang .data
+#' @importFrom rlang .data %||%
 #' @importFrom slider slide_dbl
 #' @importFrom Matrix sparseMatrix rowSums colSums crossprod
 NULL
-
-# Null coalescing operator (like %||% in purrr)
-# Returns y if x is NULL, otherwise returns x
-`%||%` <- function(x, y) if (is.null(x)) y else x
 
 
 # ============================================================================
