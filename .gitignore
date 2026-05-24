@@ -7,7 +7,6 @@
 
 # Claude Code
 .claude/
-CLAUDE.md
 tmpclaude-*
 docs
 
