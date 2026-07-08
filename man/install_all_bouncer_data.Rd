@@ -17,8 +17,8 @@ install_all_bouncer_data(
 \arguments{
 \item{db_path}{Database path. If NULL, uses default system data directory.}
 
-\item{fresh}{Logical. If TRUE, deletes existing database and starts fresh. Default TRUE.
-Set to FALSE for incremental loading (skips already-loaded matches).}
+\item{fresh}{Logical. If TRUE, deletes existing database and starts fresh. Default FALSE.
+Set to TRUE to wipe the database and reload everything from scratch.}
 
 \item{match_types}{Optional character vector to filter match types after download.
 Examples: c("ODI", "Test", "T20"), c("IPL", "BBL"). If NULL, loads all types.}

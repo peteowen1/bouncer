@@ -62,11 +62,17 @@ bulk_write_arrow <- function(conn, table_name, df) {
   }
 
   if (has_arrow_support()) {
-    # Convert to Arrow table and use DuckDB's native Arrow support
+    # Convert to Arrow table and use DuckDB's native Arrow support.
+    # NOTE: arrow is only ever used via requireNamespace (never library()'d
+    # alongside duckdb) and the registered view is always unregistered in
+    # the tryCatch-finally below - this avoids a known DuckDB+arrow conflict.
     arrow_tbl <- arrow::as_arrow_table(df)
 
-    # Register Arrow table as a temporary view
-    temp_name <- paste0("temp_arrow_", gsub("\\.", "_", table_name), "_", as.integer(Sys.time()))
+    # Register Arrow table as a temporary view. Include a random component,
+    # not just second-resolution time, so two bulk writes in the same second
+    # (e.g. back-to-back partitions in a full rebuild) don't collide.
+    temp_name <- paste0("temp_arrow_", gsub("\\.", "_", table_name), "_",
+                        as.integer(Sys.time()), "_", sample.int(1e9, 1))
     duckdb::duckdb_register_arrow(conn, temp_name, arrow_tbl)
 
     # Build explicit column list to handle schema differences
@@ -521,10 +527,12 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  }
 
  # Get existing match IDs ONCE upfront (fast check before parsing)
+ # Disconnect immediately after - a write connection is opened below (Phase 2)
+ # and DuckDB only allows one write connection per file at a time.
  conn_check <- get_db_connection(path = path, read_only = TRUE)
- on.exit(tryCatch(DBI::dbDisconnect(conn_check, shutdown = FALSE), error = function(e) NULL), add = TRUE)
  existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
  existing_ids <- existing_matches$match_id
+ DBI::dbDisconnect(conn_check, shutdown = TRUE)
 
  # Filter to only new files (check BEFORE parsing - saves time!)
  new_mask <- !(file_match_ids %in% existing_ids)

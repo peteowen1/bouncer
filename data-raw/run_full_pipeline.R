@@ -258,7 +258,7 @@ if (should_run(2)) {
   conn <- get_db_connection(read_only = TRUE)
   skip_check <- check_smart_skip("agnostic_model", 2, conn,
                                   delivery_threshold = MODEL_RETRAIN_THRESHOLD)
-  DBI::dbDisconnect(conn, shutdown = FALSE)
+  DBI::dbDisconnect(conn, shutdown = TRUE)
 
   if (skip_check$should_skip) {
     cli::cli_alert_info("Skipped: {skip_check$reason}")

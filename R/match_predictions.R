@@ -37,45 +37,19 @@ predict_match_outcome <- function(match_id, model, conn,
       return(NULL)
     }
   }
+  features <- features[1, , drop = FALSE]
 
-  # Prepare feature matrix for model
-  feature_cols <- c(
-    "team1_elo_result", "team1_elo_roster", "team1_form_last5",
-    "team2_elo_result", "team2_elo_roster", "team2_form_last5",
-    "venue_avg_score", "venue_chase_success_rate", "venue_matches",
-    "is_knockout"
-  )
+  # Build the same 34-column feature matrix the prediction models were
+  # trained on (prepare_prediction_features() + get_prediction_feature_cols()),
+  # rather than an ad-hoc subset - xgb.DMatrix() is positional, so feeding a
+  # differently-shaped/ordered matrix silently produces wrong predictions.
+  prepared <- prepare_prediction_features(features)
+  feature_cols <- get_prediction_feature_cols()
+  feature_matrix <- prepared[, feature_cols, drop = FALSE]
 
-  # Handle derived features
-  feature_matrix <- data.frame(
-    team1_elo_result = features$team1_elo_result[1],
-    team1_elo_roster = features$team1_elo_roster[1],
-    team1_form_last5 = features$team1_form_last5[1],
-    team2_elo_result = features$team2_elo_result[1],
-    team2_elo_roster = features$team2_elo_roster[1],
-    team2_form_last5 = features$team2_form_last5[1],
-    venue_avg_score = features$venue_avg_score[1],
-    venue_chase_success_rate = features$venue_chase_success_rate[1],
-    venue_matches = features$venue_matches[1],
-    is_knockout = as.integer(features$is_knockout[1]),
-
-    # Derived features
-    elo_diff_result = features$team1_elo_result[1] - features$team2_elo_result[1],
-    elo_diff_roster = features$team1_elo_roster[1] - features$team2_elo_roster[1],
-    form_diff = (features$team1_form_last5[1] %||% 0.5) - (features$team2_form_last5[1] %||% 0.5),
-    h2h_advantage = ifelse(
-      features$team1_h2h_total[1] > 0,
-      features$team1_h2h_wins[1] / features$team1_h2h_total[1] - 0.5,
-      0
-    )
-  )
-
-  # Handle NA values - replace with defaults
-  feature_matrix$team1_form_last5[is.na(feature_matrix$team1_form_last5)] <- 0.5
-  feature_matrix$team2_form_last5[is.na(feature_matrix$team2_form_last5)] <- 0.5
-  feature_matrix$venue_avg_score[is.na(feature_matrix$venue_avg_score)] <- 160  # T20 default
-  feature_matrix$venue_chase_success_rate[is.na(feature_matrix$venue_chase_success_rate)] <- 0.5
-  feature_matrix$venue_matches[is.na(feature_matrix$venue_matches)] <- 0
+  # Handle any remaining NA values - replace with 0 (matches training-time
+  # imputation in data-raw/models/pre-match/03_train_prediction_model.R)
+  feature_matrix[is.na(feature_matrix)] <- 0
 
   # Make prediction based on model type
   if (model_type == "xgboost") {

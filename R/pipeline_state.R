@@ -97,8 +97,9 @@ update_pipeline_state <- function(step_name, conn, status = "success") {
   # Get current data stats
   stats <- get_data_stats(conn)
 
-  # Generate timestamp in R (avoids DuckDB CURRENT_TIMESTAMP issues)
-  current_time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
+  # Generate timestamp in R (avoids DuckDB CURRENT_TIMESTAMP issues).
+  # UTC for consistency with manifest.R's last_run_at/updated_at timestamps.
+  current_time <- format(Sys.time(), "%Y-%m-%d %H:%M:%S", tz = "UTC")
 
   # Upsert state
   DBI::dbExecute(conn, "
@@ -276,12 +277,22 @@ get_pipeline_summary <- function(conn) {
 
 #' Check if a pipeline step should run
 #'
-#' @param step Step number to check
+#' @param step Step number to check (e.g. `5` or a sub-step like `"5b"`)
 #' @param steps_to_run Vector of steps to run, or NULL for all
 #' @return TRUE if step should run
 #' @keywords internal
 pipeline_should_run <- function(step, steps_to_run = NULL) {
-  is.null(steps_to_run) || step %in% steps_to_run
+  if (is.null(steps_to_run)) return(TRUE)
+  if (step %in% steps_to_run) return(TRUE)
+
+  # Sub-steps like "5b" won't match a numeric range (e.g. 3:9) via %in%
+  # directly; fall back to matching on the base numeric step (5b -> 5)
+  if (is.character(step) && grepl("^[0-9]+[a-z]$", step)) {
+    base_step <- as.numeric(sub("[a-z]$", "", step))
+    return(base_step %in% steps_to_run)
+  }
+
+  FALSE
 }
 
 

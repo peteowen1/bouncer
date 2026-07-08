@@ -419,31 +419,6 @@ calculate_delivery_era <- function(deliveries, stage1_model, stage1_feature_cols
   before_matrix <- xgboost::xgb.DMatrix(data = as.matrix(before_features))
   projected_before <- stats::predict(stage1_model, before_matrix)
 
-  # Simulate neutral "after" state: pre-delivery + one dot ball (0 runs, no wicket)
-  # This equals the post-delivery state but with runs_total set to 0 and no wicket
-  neutral_after <- deliveries
-  neutral_after$total_runs <- neutral_after$total_runs - neutral_after$runs_total  # Remove actual runs
-  # total_runs now equals pre-delivery total; don't add runs (dot ball)
-  # wickets: remove actual wicket if any, don't add one
-  neutral_after$wickets_fallen <- neutral_after$wickets_fallen - as.integer(neutral_after$is_wicket)
-  neutral_after$wickets_in_hand <- 10 - neutral_after$wickets_fallen
-  # balls_bowled stays as-is (one ball has been bowled in the neutral scenario)
-  # overs_remaining/balls_remaining stay as-is (one ball consumed in neutral scenario)
-  # Update run rate for neutral delivery
-  if ("current_run_rate" %in% names(neutral_after) && "balls_bowled" %in% names(neutral_after)) {
-    overs <- neutral_after$balls_bowled / 6
-    neutral_after$current_run_rate <- ifelse(overs > 0, neutral_after$total_runs / overs, 0)
-  }
-
-  # Get "after neutral" predictions
-  neutral_features <- prepare_stage1_features(neutral_after, stage1_feature_cols)
-  neutral_matrix <- xgboost::xgb.DMatrix(data = as.matrix(neutral_features))
-  projected_neutral <- stats::predict(stage1_model, neutral_matrix)
-
-  # Expected change in projected score for a dot ball
-  # This represents the "baseline" expectation - scoring rate built into situation
-  expected_change <- projected_neutral - projected_before
-
   # For a more intuitive expected runs:
 
   # Average runs per ball in T20 is ~1.3-1.5

@@ -269,8 +269,8 @@ list_available_formats <- function(path = NULL) {
 #' - Skips already-loaded matches (incremental loading supported)
 #'
 #' @param db_path Database path. If NULL, uses default system data directory.
-#' @param fresh Logical. If TRUE, deletes existing database and starts fresh. Default TRUE.
-#'   Set to FALSE for incremental loading (skips already-loaded matches).
+#' @param fresh Logical. If TRUE, deletes existing database and starts fresh. Default FALSE.
+#'   Set to TRUE to wipe the database and reload everything from scratch.
 #' @param match_types Optional character vector to filter match types after download.
 #'   Examples: c("ODI", "Test", "T20"), c("IPL", "BBL"). If NULL, loads all types.
 #' @param genders Optional character vector to filter genders. Options: "male", "female".
@@ -1104,9 +1104,16 @@ update_bouncerdata <- function(repo = "peteowen1/bouncerdata",
 
   cli::cli_alert_info("Remote version: {remote_version}")
 
-  # Parse as dates for robust comparison (handles date-based tags like "2026-02-26")
-  local_date <- tryCatch(as.Date(local_version), error = function(e) as.Date("1970-01-01"))
-  remote_date <- tryCatch(as.Date(remote_version), error = function(e) as.Date("1970-01-01"))
+  # Parse as dates for robust comparison. Daily release tags look like
+  # "v2026.02.26" (leading "v", dot-separated %Y.%m.%d) - strip the "v" and
+  # parse explicitly, since as.Date() can't infer that format unassisted.
+  parse_release_tag_date <- function(tag) {
+    d <- tryCatch(as.Date(sub("^v", "", tag), format = "%Y.%m.%d"),
+                  error = function(e) NA)
+    if (is.na(d)) as.Date("1970-01-01") else d
+  }
+  local_date <- parse_release_tag_date(local_version)
+  remote_date <- parse_release_tag_date(remote_version)
   if (remote_date <= local_date) {
     cli::cli_alert_success("Already up to date!")
     return(invisible(FALSE))

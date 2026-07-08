@@ -429,6 +429,20 @@ get_pre_match_features <- function(match_id = NULL, event_name = NULL,
 #' @return Data frame with additional derived feature columns
 #' @keywords internal
 prepare_prediction_features <- function(df) {
+  # calculate_pre_match_features() (the single-match/slow path, used for
+  # fixtures not yet in the pre_match_features table) doesn't compute the
+  # team/venue per-delivery skill columns that calc_match_features() (the
+  # bulk/fast path used to build training data) does. Default them to NA so
+  # the mutate() below - and its existing coalesce() calls - can handle
+  # either path instead of erroring on a missing column.
+  skill_cols <- c("team1_team_runs_skill", "team2_team_runs_skill",
+                  "team1_team_wicket_skill", "team2_team_wicket_skill",
+                  "venue_run_rate_skill", "venue_wicket_rate_skill",
+                  "venue_boundary_rate", "venue_dot_rate")
+  for (col in setdiff(skill_cols, names(df))) {
+    df[[col]] <- NA_real_
+  }
+
   df %>%
     dplyr::mutate(
       # ELO differences (most important features)

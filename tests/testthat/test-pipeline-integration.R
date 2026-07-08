@@ -289,3 +289,27 @@ test_that("3-way ELO attribution weights are valid for all format-gender combos"
     }
   }
 })
+
+# ============================================================================
+# PIPELINE STEP-SKIP LOGIC
+# ============================================================================
+
+test_that("pipeline_should_run handles NULL steps_to_run (run everything)", {
+  expect_true(pipeline_should_run(2, NULL))
+  expect_true(pipeline_should_run("5b", NULL))
+})
+
+test_that("pipeline_should_run matches exact numeric and character steps", {
+  expect_true(pipeline_should_run(5, 3:9))
+  expect_false(pipeline_should_run(2, 3:9))
+  expect_true(pipeline_should_run("5b", c("3", "4", "5", "5b")))
+})
+
+test_that("pipeline_should_run matches sub-steps like '5b' against a numeric range", {
+  # Regression: "5b" %in% 3:9 is FALSE (string vs numeric coercion never
+  # matches), which silently skipped step 5b for any numeric STEPS_TO_RUN
+  # range spanning step 5.
+  expect_true(pipeline_should_run("5b", 3:9))
+  expect_true(pipeline_should_run("5b", 5:5))
+  expect_false(pipeline_should_run("5b", 6:9))
+})

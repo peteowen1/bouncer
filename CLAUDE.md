@@ -279,6 +279,6 @@ Predictions run on GHA without the full 18GB DuckDB. The pattern follows pannave
 
 1. **Local**: Run heavy pipeline (steps 1-15) → `Rscript data-raw/release/upload_prediction_caches.R` uploads ~50MB of cached aggregates to `predictions-cache` release
 2. **GHA**: `predictions-pipeline.yml` downloads caches → loads into temp DuckDB → predicts upcoming fixtures → uploads to `predictions-latest` release
-3. **Trigger**: Cricsheet daily sync dispatches `cricsheet-complete` event to bouncer after new matches are added
+3. **Trigger**: Cricinfo daily scrape dispatches `cricinfo-complete` event to bouncer after new Hawkeye data is uploaded (not the Cricsheet sync - predictions are gated on the Cricinfo Playwright scraper succeeding)
 
 Manual trigger: `gh workflow run predictions-pipeline.yml --repo peteowen1/bouncer --ref dev`
