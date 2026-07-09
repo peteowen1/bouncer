@@ -74,6 +74,7 @@ for (fmt in FORMATS) {
   download_cache(paste0(fmt, "_batter_elo_latest.parquet"))
   download_cache(paste0(fmt, "_bowler_elo_latest.parquet"))
   download_cache(paste0(fmt, "_prediction_model.ubj"))
+  download_cache(paste0(fmt, "_margin_model.ubj"))
   download_cache(paste0(fmt, "_prediction_features.rds"))
 }
 
@@ -297,8 +298,14 @@ for (i in seq_len(nrow(upcoming))) {
   if (!file.exists(model_path)) {
     cli_alert_warning("No model for format {fmt}, using ELO-based prediction")
     model <- NULL
+    margin_model <- NULL
   } else {
     model <- xgb.load(model_path)
+    # Win-probability model is two-stage - it needs predicted_margin (from
+    # the margin model) as a feature; see predict_match_outcome()'s
+    # margin_model arg.
+    margin_model_path <- file.path(cache_dir, paste0(fmt, "_margin_model.ubj"))
+    margin_model <- if (file.exists(margin_model_path)) xgb.load(margin_model_path) else NULL
   }
 
   # Try to calculate features and predict
@@ -333,7 +340,8 @@ for (i in seq_len(nrow(upcoming))) {
       match_id = as.character(match_id),
       model = model,
       conn = conn,
-      model_type = if (!is.null(model)) "xgboost" else "elo"
+      model_type = if (!is.null(model)) "xgboost" else "elo",
+      margin_model = margin_model
     )
 
     if (!is.null(pred)) {

@@ -1,7 +1,7 @@
 # Tests for Match Prediction Functions
 #
 # Regression coverage for a bug where predict_match_outcome() built an ad-hoc
-# ~14-column feature matrix instead of the 34 named columns
+# ~14-column feature matrix instead of the named columns
 # (get_prediction_feature_cols()) the pre-match models are actually trained
 # on. xgb.DMatrix() is positional, so a differently-shaped/ordered matrix
 # produces confidently wrong predictions without erroring.
@@ -9,6 +9,29 @@
 # Also covers prepare_prediction_features() erroring on the single-match
 # "slow path" (calculate_pre_match_features()), which doesn't compute the
 # team/venue per-delivery skill columns the bulk/training path does.
+#
+# Also covers a residual version of the same bug: the deployed win-probability
+# models are two-stage (data-raw/models/pre-match/03_train_prediction_model.R)
+# and are trained on get_prediction_feature_cols_full() - the base columns
+# PLUS predicted_margin from a separate margin model - not the base columns
+# alone. predict_match_outcome() must be given margin_model to reproduce that
+# extra feature; verified below by capturing the exact matrix xgboost sees.
+
+# Minimal fake model class so predict() dispatches here instead of to a real
+# xgboost model - lets us capture the exact column names/order the "xgboost"
+# branch hands to xgb.DMatrix()/predict() without needing a trained model file.
+# predict_match_outcome() calls predict() from inside the bouncer namespace,
+# so the method must be registered explicitly (registerS3method) rather than
+# relying on it being reachable via the test file's lexical/search-path scope.
+predict.bouncer_test_fake_model <- function(object, newdata, ...) {
+  object$captured$cols <- colnames(newdata)
+  rep(0.5, nrow(newdata))
+}
+registerS3method("predict", "bouncer_test_fake_model", predict.bouncer_test_fake_model)
+
+make_fake_model <- function(captured_env) {
+  structure(list(captured = captured_env), class = "bouncer_test_fake_model")
+}
 
 make_slow_path_features <- function() {
   # Shape matches calculate_pre_match_features()'s real output columns -
@@ -89,4 +112,50 @@ test_that("predict_match_outcome falls back cleanly and builds the full canonica
   expect_true(result$team1_win_prob >= 0 && result$team1_win_prob <= 1)
   expect_equal(result$team1_win_prob + result$team2_win_prob, 1, tolerance = 1e-8)
   expect_true(result$predicted_winner %in% c("India", "Australia"))
+})
+
+test_that("predict_match_outcome (xgboost) feeds the full two-stage feature set, in order, when margin_model is supplied", {
+  slow_path_row <- make_slow_path_features()
+  captured <- new.env()
+
+  local_mocked_bindings(
+    get_pre_match_features = function(...) data.frame(),
+    calculate_pre_match_features = function(match_id, conn) slow_path_row,
+    get_margin_prediction = function(features, margin_model) 7.5,
+    .package = "bouncer"
+  )
+
+  result <- predict_match_outcome(
+    "123", model = make_fake_model(captured), conn = NULL,
+    model_type = "xgboost", margin_model = list(dummy = TRUE)
+  )
+
+  full_cols <- get_prediction_feature_cols_full()
+  expect_equal(captured$cols, full_cols)
+  expect_true("predicted_margin" %in% captured$cols)
+  expect_type(result, "list")
+  expect_true(result$team1_win_prob >= 0 && result$team1_win_prob <= 1)
+})
+
+test_that("predict_match_outcome (xgboost) falls back to base columns only (no predicted_margin) and warns when margin_model is omitted", {
+  slow_path_row <- make_slow_path_features()
+  captured <- new.env()
+
+  local_mocked_bindings(
+    get_pre_match_features = function(...) data.frame(),
+    calculate_pre_match_features = function(match_id, conn) slow_path_row,
+    .package = "bouncer"
+  )
+
+  expect_message(
+    result <- predict_match_outcome(
+      "123", model = make_fake_model(captured), conn = NULL,
+      model_type = "xgboost"
+    )
+  )
+
+  base_cols <- get_prediction_feature_cols()
+  expect_equal(captured$cols, base_cols)
+  expect_false("predicted_margin" %in% captured$cols)
+  expect_type(result, "list")
 })

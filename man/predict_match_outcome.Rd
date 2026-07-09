@@ -9,7 +9,8 @@ predict_match_outcome(
   model,
   conn,
   model_version = "v1.0",
-  model_type = "xgboost"
+  model_type = "xgboost",
+  margin_model = NULL
 )
 }
 \arguments{
@@ -22,6 +23,14 @@ predict_match_outcome(
 \item{model_version}{Character. Version identifier for the model}
 
 \item{model_type}{Character. Type of model ("xgboost", "logistic", "ensemble")}
+
+\item{margin_model}{XGBoost margin model (from \code{load_margin_model()}),
+or NULL. The deployed win-probability models are two-stage
+(data-raw/models/pre-match/03_train_prediction_model.R): they are
+trained with \code{predicted_margin} - the output of a separate margin
+regression model - as an extra feature. Pass \code{margin_model} so that
+feature is reproduced at prediction time; without it, \code{model} is
+fed one feature short of what it was trained on.}
 }
 \value{
 List with prediction details
@@ -33,6 +42,7 @@ Generates a prediction for a match using a trained model and pre-match features.
 \dontrun{
 conn <- get_db_connection()
 model <- xgboost::xgb.load("path/to/model.ubj")
-prediction <- predict_match_outcome("1234567", model, conn)
+margin_model <- load_margin_model("t20")
+prediction <- predict_match_outcome("1234567", model, conn, margin_model = margin_model)
 }
 }

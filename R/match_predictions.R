@@ -12,6 +12,13 @@
 #' @param conn DBI connection. Database connection
 #' @param model_version Character. Version identifier for the model
 #' @param model_type Character. Type of model ("xgboost", "logistic", "ensemble")
+#' @param margin_model XGBoost margin model (from \code{load_margin_model()}),
+#'   or NULL. The deployed win-probability models are two-stage
+#'   (data-raw/models/pre-match/03_train_prediction_model.R): they are
+#'   trained with \code{predicted_margin} - the output of a separate margin
+#'   regression model - as an extra feature. Pass \code{margin_model} so that
+#'   feature is reproduced at prediction time; without it, \code{model} is
+#'   fed one feature short of what it was trained on.
 #'
 #' @return List with prediction details
 #' @export
@@ -20,11 +27,13 @@
 #' \dontrun{
 #' conn <- get_db_connection()
 #' model <- xgboost::xgb.load("path/to/model.ubj")
-#' prediction <- predict_match_outcome("1234567", model, conn)
+#' margin_model <- load_margin_model("t20")
+#' prediction <- predict_match_outcome("1234567", model, conn, margin_model = margin_model)
 #' }
 predict_match_outcome <- function(match_id, model, conn,
                                    model_version = "v1.0",
-                                   model_type = "xgboost") {
+                                   model_type = "xgboost",
+                                   margin_model = NULL) {
 
   # Get or calculate features
   features <- get_pre_match_features(match_id = match_id, conn = conn)
@@ -39,12 +48,27 @@ predict_match_outcome <- function(match_id, model, conn,
   }
   features <- features[1, , drop = FALSE]
 
-  # Build the same 34-column feature matrix the prediction models were
-  # trained on (prepare_prediction_features() + get_prediction_feature_cols()),
+  # Build the same feature matrix the prediction models were trained on
+  # (prepare_prediction_features() + get_prediction_feature_cols_full()),
   # rather than an ad-hoc subset - xgb.DMatrix() is positional, so feeding a
   # differently-shaped/ordered matrix silently produces wrong predictions.
   prepared <- prepare_prediction_features(features)
-  feature_cols <- get_prediction_feature_cols()
+
+  if (!is.null(margin_model)) {
+    # Two-stage models expect predicted_margin as an extra feature - compute
+    # it from the base columns before selecting the full training-time set.
+    prepared$predicted_margin <- get_margin_prediction(prepared, margin_model)
+    feature_cols <- get_prediction_feature_cols_full()
+  } else {
+    if (model_type == "xgboost") {
+      cli::cli_alert_warning(paste(
+        "No margin_model supplied to predict_match_outcome() - predicting",
+        "without the predicted_margin feature the deployed two-stage models",
+        "were trained on. Pass margin_model = load_margin_model(format)."
+      ))
+    }
+    feature_cols <- get_prediction_feature_cols()
+  }
   feature_matrix <- prepared[, feature_cols, drop = FALSE]
 
   # Handle any remaining NA values - replace with 0 (matches training-time

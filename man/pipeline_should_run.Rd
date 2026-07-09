@@ -7,7 +7,7 @@
 pipeline_should_run(step, steps_to_run = NULL)
 }
 \arguments{
-\item{step}{Step number to check}
+\item{step}{Step number to check (e.g. \code{5} or a sub-step like \code{"5b"})}
 
 \item{steps_to_run}{Vector of steps to run, or NULL for all}
 }
