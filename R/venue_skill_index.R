@@ -177,13 +177,12 @@ normalize_venues <- function(venues, conn) {
   # Create lookup
   alias_map <- stats::setNames(aliases$canonical_venue, aliases$alias)
 
-  # Apply normalization
+  # Apply normalization (vectorized - a per-element loop here is O(n*m) since
+  # every %in%/[[ lookup re-scans/re-hashes names(alias_map) from scratch)
   normalized <- venues
-  for (i in seq_along(venues)) {
-    if (venues[i] %in% names(alias_map)) {
-      normalized[i] <- alias_map[[venues[i]]]
-    }
-  }
+  match_idx <- match(venues, names(alias_map))
+  has_alias <- !is.na(match_idx)
+  normalized[has_alias] <- alias_map[match_idx[has_alias]]
 
   normalized
 }

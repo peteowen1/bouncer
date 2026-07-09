@@ -35,7 +35,7 @@ calculate_roster_elo <- function(player_ids,
 
   # Determine 3-way ELO table for this format
   format <- normalize_format(match_type)
-  elo_table <- paste0(format, "_3way_player_elo")
+  elo_table <- paste0(format, "_3way_elo")
 
   start_elo <- THREE_WAY_ELO_START
 

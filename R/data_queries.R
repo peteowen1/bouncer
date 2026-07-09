@@ -156,7 +156,8 @@ build_remote_where_clause <- function(match_type = NULL, season = NULL, team = N
 
   if (!is.null(date_range) && length(date_range) == 2) {
     where_clauses <- c(where_clauses, sprintf("match_date BETWEEN '%s' AND '%s'",
-                                               date_range[1], date_range[2]))
+                                               escape_sql_quotes(as.character(date_range[1])),
+                                               escape_sql_quotes(as.character(date_range[2]))))
   }
 
   if (!is.null(match_id)) {
@@ -406,6 +407,23 @@ query_deliveries_remote <- function(match_id = NULL, match_type = NULL,
   }
   if (!is.null(event)) {
     cli::cli_warn("event filter not available for remote queries (ignoring)")
+  }
+
+  # Validate identifiers before building the remote file name/URL - avoids
+  # a confusing 404 on malformed input (e.g. a typo'd match_type or gender)
+  valid_match_types <- unlist(get_format_groups(), use.names = FALSE)
+  if (!match_type %in% valid_match_types) {
+    cli::cli_abort(c(
+      "Invalid {.arg match_type}: {.val {match_type}}",
+      "i" = "Expected one of: {paste(valid_match_types, collapse = ', ')}"
+    ))
+  }
+  valid_genders <- unlist(get_gender_categories(), use.names = FALSE)
+  if (!gender %in% valid_genders) {
+    cli::cli_abort(c(
+      "Invalid {.arg gender}: {.val {gender}}",
+      "i" = "Expected one of: {paste(valid_genders, collapse = ', ')}"
+    ))
   }
 
   # Determine parquet file

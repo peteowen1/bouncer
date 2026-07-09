@@ -46,6 +46,41 @@ test_that("elo_win_probability handles custom divisor", {
 })
 
 # ============================================================================
+# simulate_delivery() expected-mode wicket tests
+# ============================================================================
+
+test_that("simulate_delivery expected mode draws wickets stochastically from exp_wicket", {
+  # Regression: is_wicket used to be `exp_wicket > 0.5`, which is virtually
+  # always FALSE since ball-level wicket probabilities are ~0.02-0.05 - so
+  # innings in "expected" mode never ended on a wicket. Mock a deliberately
+  # high P(wicket) = 0.3 and confirm the empirical wicket rate tracks it,
+  # rather than being permanently FALSE.
+  fixed_probs <- matrix(c(0.3, 0.3, 0.2, 0.1, 0.05, 0.03, 0.02), nrow = 1)
+  local_mocked_bindings(
+    predict_full_outcome = function(model, delivery_data, format) fixed_probs,
+    .package = "bouncer"
+  )
+
+  match_state <- list(format = "t20", innings = 1, over = 5, ball = 3,
+                       wickets_fallen = 1, runs_scored = 42)
+  player <- list(batter_scoring_index = 1.25, batter_survival_rate = 0.975,
+                 bowler_economy_index = 1.25, bowler_strike_rate = 0.025)
+  team <- list(batting_team_runs_skill = 0, batting_team_wicket_skill = 0,
+               bowling_team_runs_skill = 0, bowling_team_wicket_skill = 0)
+  venue <- list(venue_run_rate = 0, venue_wicket_rate = 0,
+                venue_boundary_rate = 0.15, venue_dot_rate = 0.35)
+
+  set.seed(42)
+  n <- 2000
+  wickets <- vapply(seq_len(n), function(i) {
+    simulate_delivery(model = NULL, match_state, player, team, venue, mode = "expected")$is_wicket
+  }, logical(1))
+
+  expect_gt(mean(wickets), 0.2)
+  expect_lt(mean(wickets), 0.4)
+})
+
+# ============================================================================
 # simulate_match_outcome() tests
 # ============================================================================
 

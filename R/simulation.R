@@ -138,11 +138,16 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     list(runs = runs, is_wicket = is_wicket, probs = probs)
 
   } else {
-    # Expected value mode
+    # Expected value mode: runs use the expected value directly (fast,
+    # deterministic), but wicket occurrence must still be drawn stochastically
+    # from exp_wicket. Thresholding at > 0.5 would almost never fire since
+    # ball-level wicket probabilities are ~0.02-0.05, so innings would never
+    # end on a wicket (they'd just run to max_balls every time).
     exp_runs <- sum(probs * c(0, 0, 1, 2, 3, 4, 6))
     exp_wicket <- probs[1]
+    is_wicket <- stats::runif(1) < exp_wicket
 
-    list(runs = exp_runs, is_wicket = exp_wicket > 0.5, exp_wicket = exp_wicket, probs = probs)
+    list(runs = exp_runs, is_wicket = is_wicket, exp_wicket = exp_wicket, probs = probs)
   }
 }
 

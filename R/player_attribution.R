@@ -58,7 +58,7 @@ calculate_player_attribution <- function(model, delivery_data, format = c("t20",
 
   # 1. Batter ablation: Set batter skills to neutral
   data_no_batter <- delivery_data
-  data_no_batter$batter_scoring_index <- skill_start$runs_per_ball
+  data_no_batter$batter_scoring_index <- skill_start$scoring_index
   data_no_batter$batter_survival_rate <- skill_start$survival_rate
   data_no_batter$batter_balls_faced <- 0
 
@@ -68,7 +68,7 @@ calculate_player_attribution <- function(model, delivery_data, format = c("t20",
 
   # 2. Bowler ablation: Set bowler skills to neutral
   data_no_bowler <- delivery_data
-  data_no_bowler$bowler_economy_index <- skill_start$runs_per_ball
+  data_no_bowler$bowler_economy_index <- skill_start$economy_index
   data_no_bowler$bowler_strike_rate <- 1 - skill_start$survival_rate
   data_no_bowler$bowler_balls_bowled <- 0
 
@@ -101,10 +101,10 @@ calculate_player_attribution <- function(model, delivery_data, format = c("t20",
   # 5. Context baseline: All skills neutral (equivalent to agnostic model)
   data_context_only <- delivery_data
   # Player skills
-  data_context_only$batter_scoring_index <- skill_start$runs_per_ball
+  data_context_only$batter_scoring_index <- skill_start$scoring_index
   data_context_only$batter_survival_rate <- skill_start$survival_rate
   data_context_only$batter_balls_faced <- 0
-  data_context_only$bowler_economy_index <- skill_start$runs_per_ball
+  data_context_only$bowler_economy_index <- skill_start$economy_index
   data_context_only$bowler_strike_rate <- 1 - skill_start$survival_rate
   data_context_only$bowler_balls_bowled <- 0
   # Team skills
@@ -161,7 +161,7 @@ calculate_wicket_attribution <- function(model, delivery_data, format = c("t20",
 
   # Batter ablation
   data_no_batter <- delivery_data
-  data_no_batter$batter_scoring_index <- skill_start$runs_per_ball
+  data_no_batter$batter_scoring_index <- skill_start$scoring_index
   data_no_batter$batter_survival_rate <- skill_start$survival_rate
   data_no_batter$batter_balls_faced <- 0
 
@@ -171,7 +171,7 @@ calculate_wicket_attribution <- function(model, delivery_data, format = c("t20",
 
   # Bowler ablation
   data_no_bowler <- delivery_data
-  data_no_bowler$bowler_economy_index <- skill_start$runs_per_ball
+  data_no_bowler$bowler_economy_index <- skill_start$economy_index
   data_no_bowler$bowler_strike_rate <- 1 - skill_start$survival_rate
   data_no_bowler$bowler_balls_bowled <- 0
 
@@ -200,14 +200,14 @@ calculate_wicket_attribution <- function(model, delivery_data, format = c("t20",
 #' @keywords internal
 summarize_player_contributions <- function(attribution_df) {
 
-  if (!"batter" %in% names(attribution_df)) {
-    cli::cli_alert_warning("No 'batter' column found")
+  if (!"batter_id" %in% names(attribution_df)) {
+    cli::cli_alert_warning("No 'batter_id' column found")
     return(NULL)
   }
 
   # Batter summary
   batter_summary <- attribution_df %>%
-    dplyr::group_by(.data$batter) %>%
+    dplyr::group_by(.data$batter_id) %>%
     dplyr::summarise(
       deliveries = dplyr::n(),
       total_runs_contribution = sum(.data$batter_contribution, na.rm = TRUE),
@@ -220,9 +220,9 @@ summarize_player_contributions <- function(attribution_df) {
     dplyr::arrange(dplyr::desc(.data$total_runs_contribution))
 
   # Bowler summary
-  if ("bowler" %in% names(attribution_df)) {
+  if ("bowler_id" %in% names(attribution_df)) {
     bowler_summary <- attribution_df %>%
-      dplyr::group_by(.data$bowler) %>%
+      dplyr::group_by(.data$bowler_id) %>%
       dplyr::summarise(
         deliveries = dplyr::n(),
         total_runs_contribution = sum(.data$bowler_contribution, na.rm = TRUE),

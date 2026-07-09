@@ -757,9 +757,12 @@ read_json_fast <- function(file_path) {
  # Allow workflows to force jsonlite via env var (avoids fragile assignInNamespace)
  force_jsonlite <- nzchar(Sys.getenv("BOUNCER_FORCE_JSONLITE"))
  if (!force_jsonlite && has_simd_json()) {
-   # simplify_to=0 prevents array-to-vector simplification, keeping structure
-   # consistent with jsonlite's simplifyVector=FALSE behavior
-   RcppSimdJson::fload(file_path, simplify_to = 0)
+   # max_simplify_lvl="list" disables array-to-data.frame/vector simplification,
+   # keeping structure consistent with jsonlite's simplifyVector=FALSE behavior.
+   # (fload()'s actual parameter is max_simplify_lvl, not simplify_to -- the old
+   # simplify_to=0 was silently swallowed by fload()'s ... and ran at the
+   # default "data_frame" level, the opposite of the intended behavior.)
+   RcppSimdJson::fload(file_path, max_simplify_lvl = "list")
  } else {
    jsonlite::fromJSON(file_path, simplifyVector = FALSE)
  }

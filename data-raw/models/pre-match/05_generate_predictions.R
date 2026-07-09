@@ -62,6 +62,10 @@ if (!file.exists(model_path)) {
 model <- xgb.load(model_path)
 cli::cli_alert_success("Loaded model from {model_path}")
 
+# Win-probability model is two-stage - it needs predicted_margin (from the
+# margin model) as a feature; see predict_match_outcome()'s margin_model arg.
+margin_model <- load_margin_model(FORMAT, model_dir = output_dir)
+
 training_results <- readRDS(file.path(output_dir, paste0(FORMAT, "_prediction_training.rds")))
 feature_cols <- training_results$feature_cols
 
@@ -138,7 +142,8 @@ for (i in seq_len(nrow(matches))) {
       model = model,
       conn = conn,
       model_version = MODEL_VERSION,
-      model_type = MODEL_TYPE
+      model_type = MODEL_TYPE,
+      margin_model = margin_model
     )
   }, error = function(e) {
     cli::cli_alert_warning("Error predicting {match_id}: {e$message}")
