@@ -33,17 +33,19 @@ get_fixture_db_path <- function() {
       balls_per_over INTEGER,
       outcome_type VARCHAR,
       outcome_winner VARCHAR,
+      outcome_by_runs INTEGER,
+      outcome_by_wickets INTEGER,
       event_name VARCHAR
     )
   ")
 
   DBI::dbExecute(conn, "
     INSERT INTO cricsheet.matches VALUES
-      ('1001', '2024', 'T20', '2024-01-15', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'India', 'Australia', 6, 'normal', 'India', 'Bilateral'),
-      ('1002', '2024', 'T20', '2024-01-17', 'Sydney Cricket Ground', 'Sydney', 'male', 'India', 'Australia', 6, 'normal', 'Australia', 'Bilateral'),
-      ('1003', '2024', 'ODI', '2024-02-01', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'India', 'England', 6, 'normal', 'India', 'Bilateral'),
-      ('1004', '2024', 'ODI', '2024-02-03', 'Lords', 'London', 'male', 'England', 'Australia', 6, 'normal', 'England', 'Bilateral'),
-      ('1005', '2024', 'Test', '2024-03-01', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'Australia', 'England', 6, 'normal', 'Australia', 'Ashes')
+      ('1001', '2024', 'T20', '2024-01-15', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'India', 'Australia', 6, 'normal', 'India', NULL, 4, 'Bilateral'),
+      ('1002', '2024', 'T20', '2024-01-17', 'Sydney Cricket Ground', 'Sydney', 'male', 'India', 'Australia', 6, 'normal', 'Australia', 25, NULL, 'Bilateral'),
+      ('1003', '2024', 'ODI', '2024-02-01', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'India', 'England', 6, 'normal', 'India', NULL, 6, 'Bilateral'),
+      ('1004', '2024', 'ODI', '2024-02-03', 'Lords', 'London', 'male', 'England', 'Australia', 6, 'normal', 'England', 40, NULL, 'Bilateral'),
+      ('1005', '2024', 'Test', '2024-03-01', 'Melbourne Cricket Ground', 'Melbourne', 'male', 'Australia', 'England', 6, 'normal', 'Australia', NULL, 8, 'Ashes')
   ")
 
   # Players table
