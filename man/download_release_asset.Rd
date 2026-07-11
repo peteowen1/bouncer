@@ -4,7 +4,13 @@
 \alias{download_release_asset}
 \title{Download Release Asset}
 \usage{
-download_release_asset(asset_url, dest_path, show_progress = TRUE)
+download_release_asset(
+  asset_url,
+  dest_path,
+  show_progress = TRUE,
+  manifest = NULL,
+  asset_name = basename(dest_path)
+)
 }
 \arguments{
 \item{asset_url}{Character. URL of the asset to download.}
@@ -12,11 +18,27 @@ download_release_asset(asset_url, dest_path, show_progress = TRUE)
 \item{dest_path}{Character. Destination file path.}
 
 \item{show_progress}{Logical. Show download progress bar. Default TRUE.}
+
+\item{manifest}{Optional \code{bus_manifest.json} (from \code{vb_read_manifest()})
+used to verify sha256 for \code{asset_name} when present.}
+
+\item{asset_name}{Character. Name to look up in \code{manifest}; defaults to
+\code{basename(dest_path)} but must be passed explicitly when \code{dest_path} is
+a tempfile that doesn't share the release asset's name (e.g. a ZIP
+downloaded to \code{tempfile(fileext = ".zip")}).}
 }
 \value{
 Invisibly returns the destination path.
 }
 \description{
-Downloads a specific asset from a GitHub release.
+Downloads a specific asset from a GitHub release. When \code{manifest} is
+supplied (see \code{\link[=vb_read_manifest]{vb_read_manifest()}}) and it has an entry for \code{asset_name},
+the download is verified by sha256 before being moved into place: temp
+file in \code{dest_path}'s directory -> verify -> atomic rename, mirroring
+\code{vb_download()}'s consumer contract (ECOSYSTEM-FIX-PLAN.md S1.5). On any
+verification failure the temp file is discarded and a pre-existing
+\code{dest_path} is left untouched; a \code{vb_error_integrity}/\code{vb_error_transient}
+condition is raised rather than silently serving a corrupt file. With no
+manifest (the default), behaviour is unchanged (legacy mode).
 }
 \keyword{internal}

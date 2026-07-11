@@ -774,25 +774,89 @@ get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
 
 #' Download Release Asset
 #'
-#' Downloads a specific asset from a GitHub release.
+#' Downloads a specific asset from a GitHub release. When `manifest` is
+#' supplied (see [vb_read_manifest()]) and it has an entry for `asset_name`,
+#' the download is verified by sha256 before being moved into place: temp
+#' file in `dest_path`'s directory -> verify -> atomic rename, mirroring
+#' `vb_download()`'s consumer contract (ECOSYSTEM-FIX-PLAN.md S1.5). On any
+#' verification failure the temp file is discarded and a pre-existing
+#' `dest_path` is left untouched; a `vb_error_integrity`/`vb_error_transient`
+#' condition is raised rather than silently serving a corrupt file. With no
+#' manifest (the default), behaviour is unchanged (legacy mode).
 #'
 #' @param asset_url Character. URL of the asset to download.
 #' @param dest_path Character. Destination file path.
 #' @param show_progress Logical. Show download progress bar. Default TRUE.
+#' @param manifest Optional `bus_manifest.json` (from `vb_read_manifest()`)
+#'   used to verify sha256 for `asset_name` when present.
+#' @param asset_name Character. Name to look up in `manifest`; defaults to
+#'   `basename(dest_path)` but must be passed explicitly when `dest_path` is
+#'   a tempfile that doesn't share the release asset's name (e.g. a ZIP
+#'   downloaded to `tempfile(fileext = ".zip")`).
 #'
 #' @return Invisibly returns the destination path.
 #' @keywords internal
-download_release_asset <- function(asset_url, dest_path, show_progress = TRUE) {
-  req <- httr2::request(asset_url) |>
-    httr2::req_headers(Accept = "application/octet-stream") |>
-    httr2::req_user_agent("bouncer R package") |>
-    httr2::req_timeout(600)  # 10 minute timeout for large files
+download_release_asset <- function(asset_url, dest_path, show_progress = TRUE,
+                                    manifest = NULL,
+                                    asset_name = basename(dest_path)) {
+  do_download <- function(dest) {
+    req <- httr2::request(asset_url) |>
+      httr2::req_headers(Accept = "application/octet-stream") |>
+      httr2::req_user_agent("bouncer R package") |>
+      httr2::req_timeout(600)  # 10 minute timeout for large files
 
-  if (show_progress) {
-    req <- req |> httr2::req_progress()
+    if (show_progress) {
+      req <- req |> httr2::req_progress()
+    }
+
+    req |> httr2::req_perform(path = dest)
   }
 
-  req |> httr2::req_perform(path = dest_path)
+  if (is.null(manifest)) {
+    # Legacy path: no manifest known for this release - unchanged behaviour.
+    do_download(dest_path)
+    return(invisible(dest_path))
+  }
+
+  # Manifest-verified path.
+  dir.create(dirname(dest_path), recursive = TRUE, showWarnings = FALSE)
+  tmp <- tempfile(pattern = paste0(".vb_dl_", asset_name, "_"),
+                   tmpdir = dirname(dest_path))
+  ok <- FALSE
+  on.exit(if (!ok && file.exists(tmp)) unlink(tmp), add = TRUE)
+
+  do_download(tmp)
+
+  if (!file.exists(tmp) || file.size(tmp) == 0L) {
+    .vb_abort("Download of {.val {asset_name}} produced no/empty file",
+              "vb_error_transient")
+  }
+
+  entry <- .vb_manifest_entry_for(manifest, asset_name)
+  strict <- isTRUE(Sys.getenv("VERSEBUS_STRICT") == "1")
+  if (is.null(entry)) {
+    cli::cli_warn("{.val {asset_name}} is on the release but not in bus_manifest.json — uncommitted asset")
+    if (strict) {
+      .vb_abort("Refusing uncommitted asset {.val {asset_name}} in strict mode",
+                "vb_error_integrity")
+    }
+  } else {
+    got <- vb_sha256(tmp)
+    if (!identical(got, entry$sha256)) {
+      .vb_abort("{.val {asset_name}}: sha256 mismatch vs bus_manifest.json
+                 (got {substr(got, 1, 12)}…, want {substr(entry$sha256, 1, 12)}…)",
+                "vb_error_integrity")
+    }
+  }
+
+  if (file.exists(dest_path)) unlink(dest_path)
+  if (!file.rename(tmp, dest_path)) {
+    if (!file.copy(tmp, dest_path, overwrite = TRUE)) {
+      .vb_abort("Could not move verified download into {.path {dest_path}}",
+                "vb_error_integrity")
+    }
+  }
+  ok <- TRUE
 
   invisible(dest_path)
 }
@@ -889,6 +953,11 @@ install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
 
   cli::cli_alert_success("Found release: {release$tag_name}")
 
+  # bus_manifest.json when present (legacy mode + one-time warning when
+  # absent - see vb_read_manifest()); each asset below is sha256-verified
+  # against it.
+  manifest <- vb_read_manifest(repo, release$tag_name)
+
   # Download requested ZIP files
   cli::cli_h2("Step 2: Downloading data")
 
@@ -920,7 +989,8 @@ install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
 
     # Use tryCatch to ensure temp file cleanup on error
     tryCatch({
-      download_release_asset(asset$browser_download_url, temp_zip)
+      download_release_asset(asset$browser_download_url, temp_zip,
+                              manifest = manifest, asset_name = zip_name)
       zip::unzip(temp_zip, exdir = folder_path)
     }, finally = {
       # Always clean up temp file
@@ -1022,6 +1092,11 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
   release <- get_latest_release(repo, type = "cricsheet")
   cli::cli_alert_success("Found release: {release$tag_name}")
 
+  # bus_manifest.json when present (legacy mode + one-time warning when
+  # absent - see vb_read_manifest()); each table below is sha256-verified
+  # against it.
+  manifest <- vb_read_manifest(repo, release$tag_name)
+
   # Download each table (use list to avoid O(n²) vector growth)
   downloaded_list <- vector("list", length(tables))
   download_idx <- 0L
@@ -1047,7 +1122,7 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
     cli::cli_alert_info("Downloading {parquet_name} ({round(size_mb, 1)} MB)...")
 
     dest_path <- file.path(data_dir, parquet_name)
-    download_release_asset(asset$browser_download_url, dest_path)
+    download_release_asset(asset$browser_download_url, dest_path, manifest = manifest)
 
     cli::cli_alert_success("Downloaded: {parquet_name}")
     download_idx <- download_idx + 1L
