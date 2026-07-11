@@ -325,3 +325,24 @@ reference:
     - print.bouncer_team
     - print.bouncer_team_comparison
     - print.bouncer_win_prob
+
+  - title: Versebus (Internal)
+    desc: Vendored data-bus helper (ECOSYSTEM-FIX-PLAN.md) - manifest-verified
+      release publish/download primitives shared across verses. Not for direct
+      end-user use.
+    contents:
+    - vb_asset_entry
+    - vb_atomic_write
+    - vb_cache_validate
+    - vb_classify_error
+    - vb_confirm_absent
+    - vb_download
+    - vb_generation
+    - vb_guard_accumulate
+    - vb_list_assets
+    - vb_producer_info
+    - vb_publish
+    - vb_read_manifest
+    - vb_read_prev_manifest
+    - vb_sha256
+    - vb_write_manifest
