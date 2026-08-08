@@ -356,8 +356,20 @@ vb_download <- function(repo, tag, name, dest,
                 "vb_error_integrity")
     }
   } else {
-    listed <- tryCatch(vb_list_assets(repo, tag), error = function(e) NULL)
-    if (!is.null(listed) && name %in% listed$name) {
+    # No manifest entry, so there is no sha256 to compare against and the size
+    # check below is the ONLY integrity guard left. A failure to LIST must not
+    # collapse to "nothing to check": that installs an unverified file while
+    # this module's header promises a bad download "is NEVER silently served".
+    # Listing failures are transient by nature (rate limit, 5xx), so raise the
+    # transient class and let the caller retry rather than accept the file.
+    listed <- tryCatch(vb_list_assets(repo, tag), error = function(e) e)
+    if (inherits(listed, "error")) {
+      msg <- conditionMessage(listed)
+      .vb_abort("{.val {name}}: cannot verify download — asset listing failed
+                 ({msg}) and the tag carries no manifest sha256",
+                "vb_error_transient")
+    }
+    if (name %in% listed$name) {
       want <- listed$size[listed$name == name][1L]
       if (!isTRUE(all.equal(as.numeric(file.size(tmp)), want))) {
         .vb_abort("{.val {name}}: size {file.size(tmp)} != listed {want}",
