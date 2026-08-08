@@ -314,6 +314,24 @@ reference:
     - get_wicket_elo_weights
     - get_wicket_k_factors
 
+  - title: Competition Units
+    desc: Normalise competition names into comparable units
+    contents:
+    - normalise_competition
+    - COMPETITION_UNIT_MAP
+    - COMPETITION_REDUCED_SEASONS
+
+  - title: Rating Validation
+    desc: Score a rating against shrunk-career and recency baselines
+    contents:
+    - build_rating_frame
+    - load_rating_pool
+    - score_rating
+    - summarise_rating_score
+    - RATING_VAL_MIN_CAREER_BALLS
+    - RATING_VAL_MIN_WINDOW_BALLS
+    - RATING_VAL_ORIGINS
+
   - title: S3 Methods
     desc: Print methods for bouncer objects
     contents:
