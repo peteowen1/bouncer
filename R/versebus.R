@@ -1,8 +1,8 @@
-# versebus vendored helper — canonical copy: torpverse/torp/R/versebus.R
+# versebus vendored helper -- canonical copy: torpverse/torp/R/versebus.R
 # VERSEBUS_VERSION below must match across verses; sync by file diff, e.g.:
 #   diff torpverse/torp/R/versebus.R pannaverse/panna/R/versebus.R
-# Pattern spec: C:\dev\ECOSYSTEM-FIX-PLAN.md §1. Repo-specific glue (repo/tag
-# resolution, cache invalidation) stays OUT of this file — callers pass
+# Pattern spec: C:\dev\ECOSYSTEM-FIX-PLAN.md S1. Repo-specific glue (repo/tag
+# resolution, cache invalidation) stays OUT of this file -- callers pass
 # repo/tag explicitly and register hooks via options() (see vb_publish).
 VERSEBUS_VERSION <- "1.0.0"
 
@@ -51,7 +51,7 @@ vb_classify_error <- function(e) {
   # gh errors carry http_error_<status> classes; trust them first.
   if (any(grepl("^http_error_404$", cls))) return("absent")
   if (any(grepl("^http_error_(5[0-9]{2}|429)$", cls))) return("transient")
-  # piggyback/curl string fallback — DEFAULT IS TRANSIENT (fail-safe).
+  # piggyback/curl string fallback -- DEFAULT IS TRANSIENT (fail-safe).
   "transient"
 }
 
@@ -128,9 +128,13 @@ vb_atomic_write <- function(write_fn, dest) {
   if (!file.exists(tmp)) {
     .vb_abort("Atomic write produced no file for {.path {dest}}", "vb_error_integrity")
   }
-  if (file.exists(dest)) unlink(dest)
-  if (!file.rename(tmp, dest)) {
-    .vb_abort("Atomic rename failed for {.path {dest}}", "vb_error_integrity")
+  # Never unlink(dest) before the swap: file.rename() replaces an existing
+  # destination in place without needing that, and if it fails (cross-device,
+  # a transient lock) file.copy(overwrite=TRUE) still swaps the CONTENT
+  # without ever leaving `dest` briefly missing. A pre-emptive unlink would
+  # destroy the previous good file the moment the swap itself fails.
+  if (!isTRUE(file.rename(tmp, dest)) && !isTRUE(file.copy(tmp, dest, overwrite = TRUE))) {
+    .vb_abort("Atomic rename/copy failed for {.path {dest}}", "vb_error_integrity")
   }
   ok <- TRUE
   invisible(dest)
@@ -140,7 +144,7 @@ vb_atomic_write <- function(write_fn, dest) {
 #'
 #' Call immediately before uploading an accumulated table over an existing
 #' one. Shrinkage beyond `floor` means the "existing" read was partial or the
-#' merge dropped history — abort rather than wipe.
+#' merge dropped history -- abort rather than wipe.
 #' @keywords internal
 #' @export
 vb_guard_accumulate <- function(existing_df, combined_df, floor = 0.9) {
@@ -150,7 +154,7 @@ vb_guard_accumulate <- function(existing_df, combined_df, floor = 0.9) {
     .vb_abort(
       c("Accumulate guard tripped: combined has {n_new} rows vs {n_old} existing
          (floor {floor * 100}%).",
-        "x" = "Refusing to overwrite — the existing read was likely partial."),
+        "x" = "Refusing to overwrite -- the existing read was likely partial."),
       "vb_error_integrity"
     )
   }
@@ -182,7 +186,13 @@ vb_list_assets <- function(repo, tag) {
   data.frame(
     name = vapply(assets, function(a) a$name, character(1)),
     size = vapply(assets, function(a) as.numeric(a$size), numeric(1)),
-    updated_at = vapply(assets, function(a) a$updated_at, character(1)),
+    # NULL-guarded: save_to_release()'s post-upload verify now decides
+    # fatal-vs-warn on this field, so one malformed OTHER asset on the release
+    # must not throw here and take down verification of the file we care about
+    # (that error would be reclassified transient and silently skip the check).
+    updated_at = vapply(assets,
+                        function(a) if (is.null(a$updated_at)) NA_character_ else a$updated_at,
+                        character(1)),
     id = vapply(assets, function(a) as.numeric(a$id), numeric(1)),
     stringsAsFactors = FALSE
   )
@@ -192,7 +202,7 @@ vb_list_assets <- function(repo, tag) {
 #'
 #' TRUE only when the asset list was fetched successfully AND the name is not
 #' in it (or the tag itself is confirmed 404). A listing failure raises
-#' `vb_error_transient` — callers MUST NOT catch that into a default. This is
+#' `vb_error_transient` -- callers MUST NOT catch that into a default. This is
 #' THE mandatory guard before any "start fresh / overwrite full-history"
 #' branch.
 #' @keywords internal
@@ -210,7 +220,11 @@ vb_confirm_absent <- function(repo, tag, name) {
 #'
 #' Applies the momentary-absence rule: if this session has previously seen a
 #' manifest on the tag and it now looks absent (piggyback delete-then-upload
-#' window), retry once after 10 s before declaring legacy mode.
+#' window), retry once after 10 s before declaring legacy mode. A tag never
+#' having a manifest is always legacy mode, never an error -- `required` is
+#' accepted for caller compatibility but does not abort on absence; a caller
+#' that needs to refuse an *uncommitted* asset checks the returned manifest
+#' itself (see `vb_download()`'s own require_manifest handling).
 #' @keywords internal
 #' @export
 vb_read_manifest <- function(repo, tag, required = FALSE) {
@@ -221,8 +235,11 @@ vb_read_manifest <- function(repo, tag, required = FALSE) {
     tmpdir <- tempfile("vb_manifest_")
     dir.create(tmpdir)
     on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
-    piggyback::pb_download("bus_manifest.json", dest = tmpdir,
-                           repo = repo, tag = tag, overwrite = TRUE)
+    .vb_retry(
+      function() piggyback::pb_download("bus_manifest.json", dest = tmpdir,
+                                        repo = repo, tag = tag, overwrite = TRUE),
+      should_retry = function(e) vb_classify_error(e) != "absent"
+    )
     jsonlite::fromJSON(file.path(tmpdir, "bus_manifest.json"),
                        simplifyVector = TRUE, simplifyDataFrame = TRUE)
   }
@@ -235,13 +252,16 @@ vb_read_manifest <- function(repo, tag, required = FALSE) {
     m <- tryCatch(fetch(), error = function(e) NULL)
   }
   if (is.null(m)) {
-    if (required) {
-      .vb_abort("tag {.val {tag}} on {.val {repo}} has no bus_manifest.json
-                 (required in strict mode)", "vb_error_absent")
-    }
+    # A tag with no manifest at all is a bootstrap/legacy state, not an
+    # integrity failure -- `required` (strict mode) only means "verify
+    # sha256 against the manifest when one exists"; it must not treat
+    # every not-yet-adopted tag as a hard error, or the very first read of
+    # any legacy tag (reference-data, stadium_data, ...) permanently
+    # deadlocks strict-mode callers, since nothing re-uploads those tags
+    # to ever produce a manifest.
     warn_key <- paste0("warned_", key)
     if (!isTRUE(.vb_state[[warn_key]])) {
-      cli::cli_warn("tag {.val {tag}} on {.val {repo}} has no bus_manifest.json — running unverified (legacy mode)")
+      cli::cli_warn("tag {.val {tag}} on {.val {repo}} has no bus_manifest.json -- running unverified (legacy mode)")
       .vb_state[[warn_key]] <- TRUE
     }
     return(NULL)
@@ -283,13 +303,41 @@ vb_read_prev_manifest <- function(repo, tag) {
   identical(rawToChar(head), "PAR1") && identical(rawToChar(tail), "PAR1")
 }
 
+#' Retry a fallible operation with short exponential backoff
+#'
+#' GitHub's release-asset CDN throws sporadic 5xx errors (torpdata#66/#68)
+#' that usually clear on a second or third attempt with no code change --
+#' this mirrors the backoff style `save_to_release()` already uses for its
+#' upload-side 404/422 retry. Retries up to `times` attempts total, sleeping
+#' `delays[i]` seconds before each retry (recycled if `times - 1` exceeds
+#' `length(delays)`). `should_retry` lets the caller exclude confirmed-absent
+#' failures (e.g. a real 404) -- those never resolve by waiting.
+#' @param fn zero-arg function to attempt
+#' @param times maximum attempts (default 3: one try + 2 retries)
+#' @param delays seconds to sleep before each retry (default 2, then 5)
+#' @param should_retry function(error) -> logical; FALSE re-raises immediately
+#' @keywords internal
+.vb_retry <- function(fn, times = 3L, delays = c(2, 5), should_retry = function(e) TRUE) {
+  last_err <- NULL
+  for (attempt in seq_len(times)) {
+    out <- tryCatch(list(ok = TRUE, value = fn()), error = function(e) list(ok = FALSE, err = e))
+    if (isTRUE(out$ok)) return(out$value)
+    last_err <- out$err
+    if (attempt >= times || !should_retry(last_err)) break
+    d <- delays[min(attempt, length(delays))]
+    cli::cli_warn("Attempt {attempt} failed ({conditionMessage(last_err)}); retrying in {d}s...")
+    Sys.sleep(d)
+  }
+  stop(last_err)
+}
+
 #' Verified, atomic release-asset download
 #'
 #' Downloads to a tempfile in `dest`'s directory, verifies (parquet magic
 #' bytes; sha256 vs manifest when available, size vs asset list otherwise),
 #' then atomically renames into place and writes a `<dest>.sha256` sidecar.
 #' ON ANY FAILURE the temp is deleted and a pre-existing `dest` is left
-#' untouched — but it is NEVER silently served as a fallback: the typed error
+#' untouched -- but it is NEVER silently served as a fallback: the typed error
 #' propagates and the caller must opt in to "serve stale + warn" explicitly.
 #' @param manifest pass a manifest to verify sha256; NULL fetches it
 #'   (legacy mode when the tag has none)
@@ -315,7 +363,7 @@ vb_download <- function(repo, tag, name, dest,
   }
   entry <- .vb_manifest_entry_for(manifest, name)
   if (!is.null(manifest) && is.null(entry)) {
-    cli::cli_warn("{.val {name}} is on {repo}@{tag} but not in bus_manifest.json — uncommitted asset")
+    cli::cli_warn("{.val {name}} is on {repo}@{tag} but not in bus_manifest.json -- uncommitted asset")
     if (require_manifest) {
       .vb_abort("Refusing uncommitted asset {.val {name}} in strict mode",
                 "vb_error_integrity")
@@ -328,8 +376,11 @@ vb_download <- function(repo, tag, name, dest,
   on.exit(unlink(tmpdir, recursive = TRUE), add = TRUE)
 
   tryCatch(
-    piggyback::pb_download(name, dest = tmpdir, repo = repo, tag = tag,
-                           overwrite = TRUE),
+    .vb_retry(
+      function() piggyback::pb_download(name, dest = tmpdir, repo = repo, tag = tag,
+                                        overwrite = TRUE),
+      should_retry = function(e) vb_classify_error(e) != "absent"
+    ),
     error = function(e) {
       .vb_abort("Download of {.val {name}} from {repo}@{tag} failed:
                  {conditionMessage(e)}",
@@ -345,31 +396,12 @@ vb_download <- function(repo, tag, name, dest,
 
   if (grepl("\\.parquet$", name, ignore.case = TRUE) &&
       !.vb_check_parquet_magic(tmp)) {
-    .vb_abort("{.val {name}}: parquet magic bytes missing — corrupt download",
+    .vb_abort("{.val {name}}: parquet magic bytes missing -- corrupt download",
               "vb_error_integrity")
   }
-  if (!is.null(entry)) {
-    got <- vb_sha256(tmp)
-    if (!identical(got, entry$sha256)) {
-      .vb_abort("{.val {name}}: sha256 mismatch vs manifest
-                 (got {substr(got, 1, 12)}…, want {substr(entry$sha256, 1, 12)}…)",
-                "vb_error_integrity")
-    }
-  } else {
-    # No manifest entry, so there is no sha256 to compare against and the size
-    # check below is the ONLY integrity guard left. A failure to LIST must not
-    # collapse to "nothing to check": that installs an unverified file while
-    # this module's header promises a bad download "is NEVER silently served".
-    # Listing failures are transient by nature (rate limit, 5xx), so raise the
-    # transient class and let the caller retry rather than accept the file.
-    listed <- tryCatch(vb_list_assets(repo, tag), error = function(e) e)
-    if (inherits(listed, "error")) {
-      msg <- conditionMessage(listed)
-      .vb_abort("{.val {name}}: cannot verify download — asset listing failed
-                 ({msg}) and the tag carries no manifest sha256",
-                "vb_error_transient")
-    }
-    if (name %in% listed$name) {
+  verify_by_size <- function() {
+    listed <- tryCatch(vb_list_assets(repo, tag), error = function(e) NULL)
+    if (!is.null(listed) && name %in% listed$name) {
       want <- listed$size[listed$name == name][1L]
       if (!isTRUE(all.equal(as.numeric(file.size(tmp)), want))) {
         .vb_abort("{.val {name}}: size {file.size(tmp)} != listed {want}",
@@ -377,20 +409,43 @@ vb_download <- function(repo, tag, name, dest,
       }
     }
   }
-
-  if (file.exists(dest)) unlink(dest)
-  if (!file.rename(tmp, dest)) {
-    # cross-device fallback (tmpdir is inside dirname(dest), so rare)
-    if (!file.copy(tmp, dest, overwrite = TRUE)) {
-      .vb_abort("Could not move verified download into {.path {dest}}",
-                "vb_error_integrity")
+  if (!is.null(entry)) {
+    got <- vb_sha256(tmp)
+    if (!identical(got, entry$sha256)) {
+      # A stale manifest entry (upload succeeded, the LAST manifest publish
+      # didn't) is indistinguishable here from real corruption, and is far
+      # more common in practice -- a hard abort would permanently brick the
+      # asset until someone manually republishes the manifest. Downgrade to
+      # a warning and fall back to the live-listing size check (the same
+      # verification an unmanifested asset already gets); only a genuine
+      # corruption signal (parquet magic bytes, checked above) still aborts.
+      cli::cli_warn("{.val {name}}: sha256 mismatch vs manifest
+                     (got {substr(got, 1, 12)}..., want {substr(entry$sha256, 1, 12)}...)
+                     -- manifest may be stale, verifying by size instead")
+      verify_by_size()
     }
+  } else {
+    verify_by_size()
+  }
+
+  # Never unlink(dest) before the swap -- see vb_atomic_write()'s comment;
+  # same reasoning applies here to avoid destroying a good cached file if
+  # the swap itself fails partway.
+  if (!isTRUE(file.rename(tmp, dest)) && !isTRUE(file.copy(tmp, dest, overwrite = TRUE))) {
+    .vb_abort("Could not move verified download into {.path {dest}}",
+              "vb_error_integrity")
   }
   writeLines(vb_sha256(dest), paste0(dest, ".sha256"))
   invisible(dest)
 }
 
 #' Cache validity = sidecar sha matches the manifest entry
+#'
+#' Trusts the `.sha256` sidecar rather than rehashing `local_path` on every
+#' call (rehashing a multi-GB model on every load would defeat the point of
+#' caching). As a cheap corroborating check, a `local_path` modified more
+#' recently than its sidecar is treated as invalid -- the sidecar can only
+#' describe content at-or-before its own write time.
 #' @keywords internal
 #' @export
 vb_cache_validate <- function(local_path, manifest_entry) {
@@ -398,6 +453,7 @@ vb_cache_validate <- function(local_path, manifest_entry) {
   if (!file.exists(local_path)) return(FALSE)
   sidecar <- paste0(local_path, ".sha256")
   sha <- if (file.exists(sidecar)) {
+    if (file.info(local_path)$mtime > file.info(sidecar)$mtime) return(FALSE)
     trimws(readLines(sidecar, n = 1L, warn = FALSE))
   } else {
     s <- vb_sha256(local_path)
@@ -421,10 +477,10 @@ vb_generation <- function(repo, tag) {
 
 #' Manifest-last atomic publish (the versebus producer pattern)
 #'
-#' Ordered: hash → floor-check → upload data assets (bounded retries, collect
-#' failures) → gate (any failure aborts BEFORE the manifest, so consumers
-#' keep the last consistent snapshot) → verify live asset list → upload
-#' bus_manifest.json LAST → fire the cache-invalidation hook
+#' Ordered: hash -> floor-check -> upload data assets (bounded retries, collect
+#' failures) -> gate (any failure aborts BEFORE the manifest, so consumers
+#' keep the last consistent snapshot) -> verify live asset list -> upload
+#' bus_manifest.json LAST -> fire the cache-invalidation hook
 #' (`options(versebus.on_publish = function(repo, tag) ...)`).
 #'
 #' @param paths character vector of local files to upload
@@ -450,7 +506,8 @@ vb_publish <- function(paths, repo, tag,
 
   # 1. Hash first.
   entries <- lapply(paths, function(p) {
-    vb_asset_entry(p, rows = if (!is.null(rows)) rows[[basename(p)]] else NULL)
+    row_n <- if (!is.null(rows) && basename(p) %in% names(rows)) rows[[basename(p)]] else NULL
+    vb_asset_entry(p, rows = row_n)
   })
   names(entries) <- vapply(entries, `[[`, character(1), "name")
 
@@ -465,7 +522,7 @@ vb_publish <- function(paths, repo, tag,
       if (!is.null(pe) && !is.na(e$rows) && !is.null(pe$rows) && !is.na(pe$rows) &&
           e$rows < min_row_frac * as.numeric(pe$rows)) {
         .vb_abort("{.val {e$name}}: {e$rows} rows < {min_row_frac * 100}% of
-                   previous {pe$rows} — refusing to publish", "vb_error_integrity")
+                   previous {pe$rows} -- refusing to publish", "vb_error_integrity")
       }
     }
   }
@@ -497,27 +554,68 @@ vb_publish <- function(paths, repo, tag,
     if (!ok) failures <- c(failures, basename(p))
   }
 
-  # 4. Gate: the manifest is NOT uploaded on any failure — the previous
+  # 4. Gate: the manifest is NOT uploaded on any failure -- the previous
   # manifest remains the commit record.
   if (length(failures) > 0L) {
     .vb_abort(c("vb_publish: {length(failures)} upload(s) failed for {repo}@{tag}:
                  {.val {failures}}",
-                "x" = "bus_manifest.json NOT updated — consumers keep the last consistent snapshot."),
+                "x" = "bus_manifest.json NOT updated -- consumers keep the last consistent snapshot."),
               "vb_error_transient")
   }
 
-  # 5. Verify the live asset list agrees before committing.
-  listed <- vb_list_assets(repo, tag)
-  for (e in entries) {
-    row <- listed[listed$name == e$name, , drop = FALSE]
-    if (nrow(row) == 0L) {
-      .vb_abort("Post-upload verify: {.val {e$name}} missing from {repo}@{tag}",
-                "vb_error_transient")
+  # 5. Verify the live asset list agrees before committing. GitHub's release
+  # API can report a stale size immediately after upload (observed in
+  # production 2026-07-16, panna: a 6-byte mismatch on predictions.parquet
+  # that resolved within 2s -- pure listing race, not corruption). A LONGER
+  # stale window was also observed same day/tag (predictions.parquet +
+  # predictions.csv BOTH still mismatched after 3 attempts / 17s total) --
+  # widened budget to 6 attempts / ~95s total. Report actual byte deltas on
+  # final failure so a persistent (not just slow-to-settle) mismatch is
+  # diagnosable, since that would indicate real corruption rather than API
+  # lag. Ported from panna R/versebus.R (39e413c/387ea96/6ddff96).
+  verify_delays <- c(2, 5, 10, 20, 30, 30)
+  missing <- character(0)
+  mismatched <- character(0)
+  verify_detail <- character(0)
+  for (verify_attempt in seq_along(c(verify_delays, NA))) {
+    listed <- vb_list_assets(repo, tag)
+    missing <- character(0)
+    mismatched <- character(0)
+    verify_detail <- character(0)
+    for (e in entries) {
+      row <- listed[listed$name == e$name, , drop = FALSE]
+      if (nrow(row) == 0L) {
+        missing <- c(missing, e$name)
+        verify_detail <- c(verify_detail, sprintf("%s: missing from listing", e$name))
+      } else if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
+        mismatched <- c(mismatched, e$name)
+        verify_detail <- c(verify_detail,
+          sprintf("%s: live=%s local=%s", e$name, row$size[1L], e$bytes))
+      }
     }
-    if (!isTRUE(all.equal(row$size[1L], e$bytes))) {
-      .vb_abort("Post-upload verify: {.val {e$name}} size {row$size[1L]} != local {e$bytes}",
-                "vb_error_integrity")
+    if (length(missing) == 0L && length(mismatched) == 0L) break
+    if (verify_attempt <= length(verify_delays)) {
+      # Build the detail text as a plain variable and reference it via {}
+      # rather than splicing raw asset names/values in as their own msg
+      # vector element -- cli glue-templates every element of a cli_*() msg,
+      # so a literal '{'/'}' in an asset name would otherwise be evaluated
+      # as R code instead of printed.
+      detail_text <- paste(verify_detail, collapse = "; ")
+      cli::cli_alert_warning(
+        "Post-upload verify race (attempt {verify_attempt}/{length(verify_delays)}): {detail_text} -- retrying in {verify_delays[verify_attempt]}s")
+      Sys.sleep(verify_delays[verify_attempt])
     }
+  }
+  if (length(missing) > 0L || length(mismatched) > 0L) {
+    # Report BOTH failure kinds together -- reporting only the first
+    # (missing before mismatched) would silently drop the byte-delta detail
+    # for a genuinely corrupted asset whenever a DIFFERENT asset in the same
+    # publish is also missing.
+    detail_text <- paste(verify_detail, collapse = "; ")
+    subclass <- if (length(mismatched) > 0L) "vb_error_integrity" else "vb_error_transient"
+    .vb_abort(c("Post-upload verify failed at {repo}@{tag} (persisted after retries)",
+               "x" = "{detail_text}"),
+              subclass)
   }
 
   # 6. Manifest last (merge for partial publishes), with one retry.
