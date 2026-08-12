@@ -52,7 +52,16 @@ cli::cli_alert_success("Loaded {nrow(train_data)} training deliveries")
 cli::cli_alert_success("Loaded {nrow(test_data)} test deliveries")
 
 # Load Stage 1 model for predictions
-stage1_results_path <- file.path("..", "bouncerdata", "models", "ipl_stage1_results.rds")
+# Format-aware: this was hardcoded to ipl_*, so training or evaluating any
+# non-IPL format silently used IPL's model -- a plausible-looking result
+# fitted against the wrong projections. Falls back to IPL only if the
+# current format has no model of its own.
+stage1_results_path <- local({
+  .f <- Sys.getenv("BOUNCER_FORMAT", unset = if (exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT else "")
+  .own <- file.path(file.path("..", "bouncerdata", "models"), paste0(.f, "_stage1_results.rds"))
+  if (nzchar(.f) && file.exists(.own)) .own
+  else file.path(file.path("..", "bouncerdata", "models"), "ipl_stage1_results.rds")
+})
 if (!file.exists(stage1_results_path)) {
   cli::cli_alert_danger("Stage 1 model not found at {stage1_results_path}")
   cli::cli_alert_info("Run 02_stage1_projected_score_model.R first")

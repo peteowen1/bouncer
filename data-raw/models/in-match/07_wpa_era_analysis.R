@@ -30,13 +30,27 @@ cli::cli_h2("Loading models and data")
 output_dir <- file.path("..", "bouncerdata", "models")
 
 # Load Stage 1 model (Projected Score)
-stage1_results <- readRDS(file.path(output_dir, "ipl_stage1_results.rds"))
+# Format-aware: this was hardcoded to ipl_*, so training or evaluating any
+# non-IPL format silently used IPL's model -- a plausible-looking result
+# fitted against the wrong projections. Falls back to IPL only if the
+# current format has no model of its own.
+stage1_results <- readRDS(local({
+  .f <- Sys.getenv("BOUNCER_FORMAT", unset = if (exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT else "")
+  .own <- file.path(output_dir, paste0(.f, "_stage1_results.rds"))
+  if (nzchar(.f) && file.exists(.own)) .own
+  else file.path(output_dir, "ipl_stage1_results.rds")
+}))
 stage1_model <- stage1_results$model
 stage1_feature_cols <- stage1_results$feature_cols
 cli::cli_alert_success("Loaded Stage 1 model ({length(stage1_feature_cols)} features)")
 
 # Load Stage 2 model (Win Probability)
-stage2_results <- readRDS(file.path(output_dir, "ipl_stage2_results.rds"))
+stage2_results <- readRDS(local({
+  .f <- Sys.getenv("BOUNCER_FORMAT", unset = if (exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT else "")
+  .own <- file.path(output_dir, paste0(.f, "_stage2_results.rds"))
+  if (nzchar(.f) && file.exists(.own)) .own
+  else file.path(output_dir, "ipl_stage2_results.rds")
+}))
 stage2_model <- stage2_results$model
 stage2_feature_cols <- stage2_results$feature_cols
 cli::cli_alert_success("Loaded Stage 2 model ({length(stage2_feature_cols)} features)")
