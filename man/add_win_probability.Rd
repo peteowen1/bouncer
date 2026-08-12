@@ -4,17 +4,30 @@
 \alias{add_win_probability}
 \title{Calculate Win Probability for All Deliveries in a Match}
 \usage{
-add_win_probability(deliveries, format = "t20", target = NULL, models = NULL)
+add_win_probability(
+  deliveries,
+  format = "t20",
+  target = NULL,
+  models = NULL,
+  wpa_failure_threshold = 0.01
+)
 }
 \arguments{
 \item{deliveries}{data.frame with delivery data. Must include:
-match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.}
+match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
+May span multiple matches; chase targets are resolved per \code{match_id}.}
 
 \item{format}{Character. Match format.}
 
-\item{target}{Integer. 2nd innings target (extracted from data if not provided).}
+\item{target}{Integer. 2nd innings target, applied to every match in
+\code{deliveries}. Leave NULL (the default) to derive a separate target for
+each match from its own first innings.}
 
 \item{models}{List. Pre-loaded models (optional).}
+
+\item{wpa_failure_threshold}{Numeric in [0, 1]. Abort if this proportion
+of deliveries or more fail to produce a win probability. Default 0.01.
+Set to 1 to warn but never abort.}
 }
 \value{
 data.frame with additional columns:

@@ -352,7 +352,7 @@ prepare_full_features <- function(df, format) {
 
   # Calculate derived features if not present
   if (!"over_ball" %in% names(df)) {
-    df$over_ball <- df$over + df$ball / 6
+    df$over_ball <- calculate_over_ball(df$over, df$ball)
   }
 
   # Fill missing skill indices with neutral values from constants
@@ -515,7 +515,7 @@ prepare_agnostic_features <- function(df, format) {
 
   # Calculate derived features if not present
   if (!"over_ball" %in% names(df)) {
-    df$over_ball <- df$over + df$ball / 6
+    df$over_ball <- calculate_over_ball(df$over, df$ball)
   }
 
   # Format-specific feature engineering

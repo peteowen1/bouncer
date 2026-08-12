@@ -907,9 +907,15 @@ calculate_chase_win_prob <- function(data, model, feature_cols) {
 #'
 #' @param deliveries data.frame with delivery data. Must include:
 #'   match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
+#'   May span multiple matches; chase targets are resolved per `match_id`.
 #' @param format Character. Match format.
-#' @param target Integer. 2nd innings target (extracted from data if not provided).
+#' @param target Integer. 2nd innings target, applied to every match in
+#'   `deliveries`. Leave NULL (the default) to derive a separate target for
+#'   each match from its own first innings.
 #' @param models List. Pre-loaded models (optional).
+#' @param wpa_failure_threshold Numeric in \[0, 1\]. Abort if this proportion
+#'   of deliveries or more fail to produce a win probability. Default 0.01.
+#'   Set to 1 to warn but never abort.
 #'
 #' @return data.frame with additional columns:
 #'   \itemize{
@@ -922,28 +928,63 @@ calculate_chase_win_prob <- function(data, model, feature_cols) {
 add_win_probability <- function(deliveries,
                                  format = "t20",
                                  target = NULL,
-                                 models = NULL) {
+                                 models = NULL,
+                                 wpa_failure_threshold = 0.01) {
 
-  # Load models if needed
+  # Records the first prediction error so the summary below can name a cause
+  # instead of just a count. Assigned to from inside the tryCatch handlers.
+  first_error <- NULL
+
+  # Load models if needed.
+  #
+  # There is no fallback projection here, despite what this branch used to
+  # claim: predict_win_probability() aborts outright on NULL models for
+  # limited-overs formats (see its "Could not load in-match models"). Warning
+  # and continuing meant looping over every delivery only to write an all-NA
+  # WPA column, which calculate_epr() then absorbed silently. Fail up front.
   if (is.null(models)) {
     models <- load_in_match_models(format)
     if (is.null(models)) {
-      cli::cli_warn("Could not load models, using fallback projection")
+      cli::cli_abort(c(
+        "Could not load in-match models for format {.val {format}}.",
+        "i" = "Run the in-match pipeline first (data-raw/models/in-match/).",
+        "i" = "Without models every delivery yields NA WPA, which biases career ratings low."
+      ))
     }
   }
 
-  # Get target from data if not provided
+  # Resolve the chase target PER MATCH. `deliveries` routinely spans many
+  # matches (the loop below detects match boundaries), so a single scalar
+  # target taken across the whole frame would score every chase against the
+  # highest first-innings total in the batch.
   if (is.null(target)) {
-    # Target is 1st innings total + 1
-    inn1 <- deliveries[deliveries$innings == 1, ]
+    inn1 <- deliveries[deliveries$innings == 1, , drop = FALSE]
     if (nrow(inn1) > 0) {
-      target <- max(inn1$total_runs, na.rm = TRUE) + 1
+      target_by_match <- tapply(inn1$total_runs, inn1$match_id,
+                                function(v) max(v, na.rm = TRUE) + 1)
+    } else {
+      target_by_match <- numeric(0)
     }
+  } else if (length(target) == 1L) {
+    # Caller-supplied scalar applies to every match in the frame.
+    target_by_match <- stats::setNames(
+      rep(as.numeric(target), length(unique(deliveries$match_id))),
+      unique(deliveries$match_id)
+    )
+  } else {
+    cli::cli_abort(c(
+      "{.arg target} must be a single value or NULL.",
+      "i" = "Per-match targets are derived from the data when {.arg target} is NULL."
+    ))
   }
 
-  # Calculate win probability for each delivery
-  # TODO: Vectorize this loop. Currently sequential because each state depends on
-  # the previous delivery's context (innings boundaries, cumulative score tracking).
+  # Calculate win probability for each delivery.
+  #
+  # This loop is NOT sequential: every quantity it reads is a lag of a column
+  # that already exists on `deliveries` (total_runs and wickets_fallen are
+  # stored cumulative). It can be replaced by data.table::shift() plus two
+  # batched predict() calls -- see docs/NEXT-STEPS.md. Left as-is here to keep
+  # this change to the correctness fixes.
   n <- nrow(deliveries)
   win_prob_before <- numeric(n)
   win_prob_after <- numeric(n)
@@ -951,13 +992,18 @@ add_win_probability <- function(deliveries,
   for (i in seq_len(n)) {
     row <- deliveries[i, ]
 
-    # Calculate overs in cricket notation
-    over_num <- row$over
-    ball_num <- row$ball
-    overs <- over_num + ball_num / 10  # Cricket notation: state after delivery
+    # Single-bracket, not [[: a match with no first innings in `deliveries`
+    # is absent from target_by_match, and [[ errors on a missing name where
+    # [ yields NA. Normalise that NA to NULL so predict_win_probability()'s
+    # own "Target is required for 2nd innings" guard fires and the delivery
+    # is counted as a failure, rather than NA flowing into the features.
+    match_target <- unname(target_by_match[as.character(row$match_id)])
+    if (length(match_target) != 1L || is.na(match_target)) match_target <- NULL
 
-    # Get win probability before this delivery
-    # Use previous ball's total_runs and wickets
+    # State AFTER this delivery, in cricket notation.
+    overs <- calculate_over_ball(row$over, row$ball)
+
+    # State BEFORE this delivery == state after delivery i-1.
     if (i == 1 || deliveries$match_id[i] != deliveries$match_id[i-1] ||
         deliveries$innings[i] != deliveries$innings[i-1]) {
       # Start of innings
@@ -967,7 +1013,11 @@ add_win_probability <- function(deliveries,
     } else {
       score_before <- deliveries$total_runs[i-1] %||% 0
       wickets_before <- deliveries$wickets_fallen[i-1] %||% 0
-      overs_before <- deliveries$over[i-1] + (deliveries$ball[i-1] - 1) / 10
+      # Must be the after-state of i-1 so that win_prob_before[i] equals
+      # win_prob_after[i-1] and WPA telescopes across the innings. The
+      # previous `(ball - 1) / 10` was the state one ball earlier still.
+      overs_before <- calculate_over_ball(deliveries$over[i-1],
+                                          deliveries$ball[i-1])
     }
 
     # Win probability before
@@ -977,11 +1027,14 @@ add_win_probability <- function(deliveries,
         wickets = wickets_before,
         overs = overs_before,
         innings = row$innings,
-        target = if (row$innings == 2) target else NULL,
+        target = if (row$innings == 2) match_target else NULL,
         format = format,
         models = models
       )$win_prob
-    }, error = function(e) NA_real_)
+    }, error = function(e) {
+      first_error <<- first_error %||% conditionMessage(e)
+      NA_real_
+    })
 
     # Win probability after (current state)
     wp_after <- tryCatch({
@@ -990,14 +1043,37 @@ add_win_probability <- function(deliveries,
         wickets = row$wickets_fallen %||% 0,
         overs = overs,
         innings = row$innings,
-        target = if (row$innings == 2) target else NULL,
+        target = if (row$innings == 2) match_target else NULL,
         format = format,
         models = models
       )$win_prob
-    }, error = function(e) NA_real_)
+    }, error = function(e) {
+      first_error <<- first_error %||% conditionMessage(e)
+      NA_real_
+    })
 
     win_prob_before[i] <- wp_before
     win_prob_after[i] <- wp_after
+  }
+
+  # A failed prediction becomes NA, and NA WPA is silently absorbed by the
+  # na.rm = TRUE sums in calculate_epr() -- the affected matches keep their
+  # weight in the denominator, so the player is quietly shrunk toward the
+  # replacement-level prior instead of the run being recognised as broken.
+  # Surface the failure rate rather than letting it reach the ratings.
+  n_failed <- sum(is.na(win_prob_before) | is.na(win_prob_after))
+  if (n_failed > 0) {
+    pct <- 100 * n_failed / max(1L, n)
+    msg <- c(
+      "Win probability failed for {n_failed} of {n} deliveries ({round(pct, 1)}%).",
+      "i" = "First error: {first_error}",
+      "!" = "WPA is NA for these rows; downstream career ratings will be biased low."
+    )
+    if (pct >= wpa_failure_threshold * 100) {
+      cli::cli_abort(c(msg,
+        "i" = "Raise {.arg wpa_failure_threshold} to proceed anyway."))
+    }
+    cli::cli_warn(msg)
   }
 
   # Add columns
@@ -1005,7 +1081,7 @@ add_win_probability <- function(deliveries,
   deliveries$win_prob_after <- win_prob_after
   deliveries$wpa <- win_prob_after - win_prob_before
 
-  return(deliveries)
+  deliveries
 }
 
 
