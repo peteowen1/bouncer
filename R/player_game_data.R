@@ -8,6 +8,32 @@
 #   - PSV/BatV/BowlV (Phase 3)
 #   - EPR career ratings (Phase 4)
 #   - BOUNCER composite (Phase 5)
+#
+# ============================================================================
+# THE WPA IN THIS FILE IS SCRAPED FROM ESPNCRICINFO. IT IS NOT OUR MODEL.
+# ============================================================================
+# batting_wpa / bowling_wpa are built from delta_wp, which is a LEAD() window
+# difference over cricinfo.balls.win_probability. That column is populated by
+# bouncerdata/scripts/cricinfo_scraper.py from ESPNcricinfo's own forecaster
+# (predictions.winProbability) -- it is a third party's number, not output
+# from bouncer's in-match models.
+#
+# Two consequences that have already caused a wrong conclusion once
+# (2026-08-12), so they are spelled out here rather than left to be rederived:
+#
+# 1. COVERAGE IS POOR AND UNEVEN. Test 0.0%, ODI 7.7%, T20 42.8%, Hundred
+#    0.0%. Missing whole-match, not scattered: 2,711 of 3,757 matches have
+#    none at all. SUM() over an all-NULL group returns NULL, so those matches
+#    reach calculate_epr() as NA. Everything downstream of here inherits that.
+#
+# 2. IMPROVING bouncer's OWN in-match models DOES NOT IMPROVE THESE NUMBERS.
+#    predict_win_probability() and the stage1/stage2 models are not in this
+#    path at all; their only production caller is plot_win_probability().
+#
+# Wiring bouncer's model in here instead of (or alongside) the scraped column
+# is open work -- see docs/DECISIONS.md D-P6. Until then, do not describe the
+# BOUNCER rating as being built on bouncer's own win probability.
+# ============================================================================
 
 
 #' Create Player Game Data from Cricinfo Ball-by-Ball

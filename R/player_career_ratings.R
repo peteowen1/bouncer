@@ -35,6 +35,38 @@ EPR_PRIOR_RATE      <- 0    # Shrink toward zero (replacement level)
 #' WPA and ERA values. Uses exponential time decay and Bayesian shrinkage
 #' toward a role-specific replacement-level prior.
 #'
+#' @section READ THIS BEFORE TRUSTING EPR — the WPA input is not ours:
+#' The WPA half of this rating does **not** come from bouncer's own in-match
+#' win-probability model. It comes from `cricinfo.balls.win_probability`,
+#' which is **scraped from ESPNcricinfo's own forecaster**
+#' (`bouncerdata/scripts/cricinfo_scraper.py`, field
+#' `predictions.winProbability`). `player_game_data.R` differences that column
+#' with a `LEAD()` window to get `delta_wp`, sums it into `batting_wpa` /
+#' `bowling_wpa`, and those land here.
+#'
+#' Coverage of that scraped column, measured 2026-08-12:
+#'
+#' | Format | Balls | With WP | Coverage |
+#' |--------|-------|---------|----------|
+#' | Test | 355,962 | 0 | **0.0%** |
+#' | ODI | 265,876 | 20,592 | **7.7%** |
+#' | T20 | 280,158 | 120,007 | 42.8% |
+#' | Hundred | 4,629 | 0 | 0.0% |
+#'
+#' It is missing **whole-match**, not scattered: 2,711 of 3,757 matches have
+#' none at all, and only 6 are partially covered. So for Test cricket the WPA
+#' component of EPR is entirely absent, and for ODIs it rests on 7.7% of
+#' matches. `calculate_epr()` warns at runtime when coverage is thin — do not
+#' silence that warning without reading this section.
+#'
+#' Meanwhile bouncer **has** its own in-match model
+#' ([predict_win_probability()], backed by the stage1/stage2 models trained in
+#' `data-raw/models/in-match/`). As of 2026-08-12 its only production caller is
+#' [plot_win_probability()]. The model in this package draws a chart; the
+#' ratings run on a third party's number. Wiring the in-match model into
+#' `player_game_data.R` in place of (or alongside) the scraped column is open
+#' work — see `docs/DECISIONS.md` D-P6.
+#'
 #' @param format Character. "t20", "odi", or "test".
 #' @param player_game_data data.table from \code{\link{load_player_game_data}}.
 #'   If NULL, loads automatically.
@@ -113,6 +145,23 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
   # Combined batting value = WPA + ERA (per match)
   dt[, bat_value := batting_wpa + batting_era]
   dt[, bowl_value := bowling_wpa + bowling_era]
+
+  # Report WPA coverage EVERY run. See the "the WPA input is not ours" section
+  # in this function's docs: batting_wpa comes from a scraped ESPNcricinfo
+  # forecaster column that is 0% populated for Tests and 7.7% for ODIs, and it
+  # is missing whole-match. Without this line the shortfall is invisible --
+  # EPR still returns a full, plausible-looking leaderboard, and the WPA half
+  # of it is simply absent for most players.
+  wpa_present <- sum(!is.na(dt$batting_wpa) | !is.na(dt$bowling_wpa))
+  wpa_pct <- 100 * wpa_present / max(1L, nrow(dt))
+  if (wpa_pct < 99) {
+    lvl <- if (wpa_pct < 50) cli::cli_warn else cli::cli_alert_info
+    lvl(c(
+      "EPR: WPA present for {round(wpa_pct, 1)}% of {nrow(dt)} player-match rows ({toupper(format)}).",
+      "!" = "The rest contribute ERA only -- their WPA component is missing, not zero.",
+      "i" = "Source is the SCRAPED cricinfo.balls.win_probability, not bouncer's own model. See ?calculate_epr."
+    ))
+  }
 
   # Exposure weighting: scale by balls to give high-exposure games more weight.
   # Normalise to a full innings' work FOR ONE PLAYER, not the innings total --

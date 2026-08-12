@@ -138,6 +138,24 @@ load_test_in_match_models <- function(models_path) {
 #' three-way probabilities (team1 win, draw, team2 win) via a decomposed
 #' two-model pipeline.
 #'
+#' @section This model does NOT feed the player ratings:
+#' Easy to assume otherwise, so stated plainly. As of 2026-08-12 the only
+#' production caller of this function is [plot_win_probability()] — it draws a
+#' chart. It is **not** an input to [calculate_epr()], [calculate_bouncer()],
+#' or anything else in the ratings chain.
+#'
+#' The WPA that reaches the career ratings comes from
+#' `cricinfo.balls.win_probability`, a column **scraped from ESPNcricinfo's own
+#' forecaster** and differenced in `player_game_data.R`. That scraped column is
+#' 0% populated for Tests and 7.7% for ODIs (see `?calculate_epr`).
+#'
+#' So this package trains an in-match win-probability model, and then rates
+#' players using somebody else's. Whether to wire this model into
+#' `player_game_data.R` is open — `docs/DECISIONS.md` D-P6. Until that is
+#' decided, do not describe BOUNCER ratings as being built on bouncer's own
+#' win probability, and do not assume improving these models improves the
+#' ratings: today it does not.
+#'
 #' @param current_score Integer. Current team score.
 #' @param wickets Integer. Wickets fallen (0-10).
 #' @param overs Numeric. Overs bowled in cricket notation (e.g., 10.3 = 10 overs + 3 balls).

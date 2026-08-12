@@ -65,6 +65,26 @@ match state. Uses scoreboard-friendly inputs. For Test matches, returns
 three-way probabilities (team1 win, draw, team2 win) via a decomposed
 two-model pipeline.
 }
+\section{This model does NOT feed the player ratings}{
+
+Easy to assume otherwise, so stated plainly. As of 2026-08-12 the only
+production caller of this function is \code{\link[=plot_win_probability]{plot_win_probability()}} — it draws a
+chart. It is \strong{not} an input to \code{\link[=calculate_epr]{calculate_epr()}}, \code{\link[=calculate_bouncer]{calculate_bouncer()}},
+or anything else in the ratings chain.
+
+The WPA that reaches the career ratings comes from
+\code{cricinfo.balls.win_probability}, a column \strong{scraped from ESPNcricinfo's own
+forecaster} and differenced in \code{player_game_data.R}. That scraped column is
+0\% populated for Tests and 7.7\% for ODIs (see \code{?calculate_epr}).
+
+So this package trains an in-match win-probability model, and then rates
+players using somebody else's. Whether to wire this model into
+\code{player_game_data.R} is open — \code{docs/DECISIONS.md} D-P6. Until that is
+decided, do not describe BOUNCER ratings as being built on bouncer's own
+win probability, and do not assume improving these models improves the
+ratings: today it does not.
+}
+
 \examples{
 \dontrun{
 # T20 first innings: India 85/2 after 10 overs

@@ -46,3 +46,37 @@ Computes rolling career value ratings for each player from per-match
 WPA and ERA values. Uses exponential time decay and Bayesian shrinkage
 toward a role-specific replacement-level prior.
 }
+\section{READ THIS BEFORE TRUSTING EPR — the WPA input is not ours}{
+
+The WPA half of this rating does \strong{not} come from bouncer's own in-match
+win-probability model. It comes from \code{cricinfo.balls.win_probability},
+which is \strong{scraped from ESPNcricinfo's own forecaster}
+(\code{bouncerdata/scripts/cricinfo_scraper.py}, field
+\code{predictions.winProbability}). \code{player_game_data.R} differences that column
+with a \code{LEAD()} window to get \code{delta_wp}, sums it into \code{batting_wpa} /
+\code{bowling_wpa}, and those land here.
+
+Coverage of that scraped column, measured 2026-08-12:\tabular{llll}{
+   Format \tab Balls \tab With WP \tab Coverage \cr
+   Test \tab 355,962 \tab 0 \tab \strong{0.0\%} \cr
+   ODI \tab 265,876 \tab 20,592 \tab \strong{7.7\%} \cr
+   T20 \tab 280,158 \tab 120,007 \tab 42.8\% \cr
+   Hundred \tab 4,629 \tab 0 \tab 0.0\% \cr
+}
+
+
+It is missing \strong{whole-match}, not scattered: 2,711 of 3,757 matches have
+none at all, and only 6 are partially covered. So for Test cricket the WPA
+component of EPR is entirely absent, and for ODIs it rests on 7.7\% of
+matches. \code{calculate_epr()} warns at runtime when coverage is thin — do not
+silence that warning without reading this section.
+
+Meanwhile bouncer \strong{has} its own in-match model
+(\code{\link[=predict_win_probability]{predict_win_probability()}}, backed by the stage1/stage2 models trained in
+\verb{data-raw/models/in-match/}). As of 2026-08-12 its only production caller is
+\code{\link[=plot_win_probability]{plot_win_probability()}}. The model in this package draws a chart; the
+ratings run on a third party's number. Wiring the in-match model into
+\code{player_game_data.R} in place of (or alongside) the scraped column is open
+work — see \code{docs/DECISIONS.md} D-P6.
+}
+
