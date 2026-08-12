@@ -71,8 +71,15 @@ calculate_dynamic_k <- function(experience, k_max, k_min, halflife) {
   # NOT ifelse(halflife <= 0, ...): ifelse() takes its result length from the
   # TEST, so a scalar halflife would truncate a vector of experiences back to
   # one element. Compute over the full length, then mask.
+  #
+  # Only halflife <= 0 is degenerate. `Inf` is NOT: exp(-experience/Inf) is
+  # exp(0) = 1, so it means "never decay" and correctly yields k_max. An
+  # earlier version of this guard tested !is.finite(halflife), which swept Inf
+  # in with the degenerate cases and silently returned k_min -- the exact
+  # opposite end of the range. NA is left to propagate to NA rather than being
+  # masked to k_min, so a missing hyperparameter stays visible.
   out <- k_min + (k_max - k_min) * exp(-experience / halflife)
-  degenerate <- rep_len(!is.finite(halflife) | halflife <= 0, length(out))
+  degenerate <- rep_len(!is.na(halflife) & halflife <= 0, length(out))
   out[degenerate] <- rep_len(k_min, length(out))[degenerate]
   out
 }

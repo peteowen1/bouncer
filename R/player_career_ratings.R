@@ -132,11 +132,20 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
 
   # Aggregate per player with Bayesian shrinkage.
   #
-  # A match whose value is NA (a failed WPA prediction, a missing ERA) must
-  # drop out of the NUMERATOR AND THE DENOMINATOR together. Summing the
-  # numerator with na.rm = TRUE while the denominator still carries that
-  # match's weight silently shrinks the player toward prior_rate, which makes
-  # a data gap indistinguishable from genuine replacement-level performance.
+  # A match whose value is NA must drop out of the NUMERATOR AND THE
+  # DENOMINATOR together. Summing the numerator with na.rm = TRUE while the
+  # denominator still carries that match's weight silently shrinks the player
+  # toward prior_rate, making a data gap indistinguishable from genuine
+  # replacement-level performance.
+  #
+  # This is not hypothetical and it is not rare. batting_wpa comes from
+  # player_game_data.R's SUM(delta_wp) over cricinfo.balls.win_probability,
+  # and as of 2026-08-12 **2,711 of 3,757 cricinfo matches (72.2%) have no
+  # win_probability at all** -- it is missing whole-match, not scattered
+  # (only 6 matches are partially covered). SUM over an all-NULL group is
+  # NULL, so those matches arrive here as NA. Before this fix, every player
+  # was shrunk toward the prior in proportion to how much of their career
+  # fell in that 72%.
   result <- dt[, {
     # Batting EPR
     bat_ok <- !is.na(bat_value) & !is.na(wt_bat) & !is.na(bat_exposure)

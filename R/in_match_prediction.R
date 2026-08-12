@@ -924,6 +924,48 @@ calculate_chase_win_prob <- function(data, model, feature_cols) {
 #'     \item wpa - Win Probability Added (change from this delivery)
 #'   }
 #'
+#' Resolve the Chase Target for Each Match in a Delivery Frame
+#'
+#' Pulled out of [add_win_probability()] so the per-match target rule can be
+#' tested without any trained model present. That matters because CI checks
+#' out only this repo — `bouncerdata/models/` is absent, so every test that
+#' needs a real in-match model skips, and the target logic would otherwise
+#' never be re-verified by a green CI run.
+#'
+#' @param deliveries data.frame with at least `match_id`, `innings` and
+#'   `total_runs` (cumulative). May span many matches.
+#' @param target NULL to derive a target per match from its own first innings,
+#'   or a single value to apply to every match in the frame.
+#'
+#' @return Named numeric vector of targets, keyed by `match_id`. Matches with
+#'   no first-innings rows are absent from it; callers must treat a missing
+#'   name as "unknown target", not as zero.
+#'
+#' @keywords internal
+resolve_targets_by_match <- function(deliveries, target = NULL) {
+  if (is.null(target)) {
+    # A single target across the whole frame would score every chase against
+    # the highest first-innings total present in the batch.
+    inn1 <- deliveries[deliveries$innings == 1, , drop = FALSE]
+    if (nrow(inn1) == 0L) return(stats::setNames(numeric(0), character(0)))
+    out <- tapply(inn1$total_runs, as.character(inn1$match_id),
+                  function(v) max(v, na.rm = TRUE) + 1)
+    return(stats::setNames(as.numeric(out), names(out)))
+  }
+
+  if (length(target) != 1L) {
+    cli::cli_abort(c(
+      "{.arg target} must be a single value or NULL, not length {length(target)}.",
+      "i" = "Per-match targets are derived from the data when {.arg target} is NULL."
+    ))
+  }
+
+  # Caller-supplied scalar applies to every match in the frame.
+  ids <- unique(as.character(deliveries$match_id))
+  stats::setNames(rep(as.numeric(target), length(ids)), ids)
+}
+
+
 #' @keywords internal
 add_win_probability <- function(deliveries,
                                  format = "t20",
@@ -948,35 +990,12 @@ add_win_probability <- function(deliveries,
       cli::cli_abort(c(
         "Could not load in-match models for format {.val {format}}.",
         "i" = "Run the in-match pipeline first (data-raw/models/in-match/).",
-        "i" = "Without models every delivery yields NA WPA, which biases career ratings low."
+        "i" = "Without models every delivery yields NA WPA and the returned frame is unusable."
       ))
     }
   }
 
-  # Resolve the chase target PER MATCH. `deliveries` routinely spans many
-  # matches (the loop below detects match boundaries), so a single scalar
-  # target taken across the whole frame would score every chase against the
-  # highest first-innings total in the batch.
-  if (is.null(target)) {
-    inn1 <- deliveries[deliveries$innings == 1, , drop = FALSE]
-    if (nrow(inn1) > 0) {
-      target_by_match <- tapply(inn1$total_runs, inn1$match_id,
-                                function(v) max(v, na.rm = TRUE) + 1)
-    } else {
-      target_by_match <- numeric(0)
-    }
-  } else if (length(target) == 1L) {
-    # Caller-supplied scalar applies to every match in the frame.
-    target_by_match <- stats::setNames(
-      rep(as.numeric(target), length(unique(deliveries$match_id))),
-      unique(deliveries$match_id)
-    )
-  } else {
-    cli::cli_abort(c(
-      "{.arg target} must be a single value or NULL.",
-      "i" = "Per-match targets are derived from the data when {.arg target} is NULL."
-    ))
-  }
+  target_by_match <- resolve_targets_by_match(deliveries, target)
 
   # Calculate win probability for each delivery.
   #
@@ -1056,11 +1075,14 @@ add_win_probability <- function(deliveries,
     win_prob_after[i] <- wp_after
   }
 
-  # A failed prediction becomes NA, and NA WPA is silently absorbed by the
-  # na.rm = TRUE sums in calculate_epr() -- the affected matches keep their
-  # weight in the denominator, so the player is quietly shrunk toward the
-  # replacement-level prior instead of the run being recognised as broken.
-  # Surface the failure rate rather than letting it reach the ratings.
+  # A failed prediction becomes NA, which the caller has no way to distinguish
+  # from a genuine 0.5 swing unless the count is surfaced.
+  #
+  # To be precise about the blast radius: this function's only production
+  # caller is plot_win_probability() (R/visualization.R). It does NOT feed
+  # calculate_epr() -- the career ratings take their WPA from
+  # player_game_data.R's SQL over cricinfo.balls.win_probability, a separate
+  # path. So an all-NA run here corrupts a chart, not the ratings.
   n_failed <- sum(is.na(win_prob_before) | is.na(win_prob_after))
   if (n_failed > 0) {
     pct <- 100 * n_failed / max(1L, n)

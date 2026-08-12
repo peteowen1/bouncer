@@ -73,6 +73,62 @@ two_match_deliveries <- function() {
   rbind(one("low_scoring", 60, 40), one("high_scoring", 220, 150))
 }
 
+# ---------------------------------------------------------------------------
+# resolve_targets_by_match() -- runs in CI, no trained model required.
+#
+# The six add_win_probability() tests below all need real in-match models,
+# which CI does not have (it checks out only this repo, so bouncerdata/models
+# is absent) -- so they skip on every CI run and a regression in the per-match
+# target rule would go green. This block covers that rule directly.
+# ---------------------------------------------------------------------------
+
+test_that("targets are derived per match, not once across the whole frame", {
+  d <- two_match_deliveries()
+  tg <- resolve_targets_by_match(d, NULL)
+
+  expect_setequal(names(tg), c("low_scoring", "high_scoring"))
+  expect_equal(unname(tg[["low_scoring"]]), 61)
+  expect_equal(unname(tg[["high_scoring"]]), 221)
+  # The bug: one global max applied to both.
+  expect_false(tg[["low_scoring"]] == tg[["high_scoring"]])
+})
+
+test_that("a scalar target is broadcast to every match", {
+  tg <- resolve_targets_by_match(two_match_deliveries(), 175)
+  expect_setequal(names(tg), c("low_scoring", "high_scoring"))
+  expect_true(all(tg == 175))
+})
+
+test_that("a match with no first innings is absent, not zero", {
+  d <- two_match_deliveries()
+  d <- d[!(d$match_id == "low_scoring" & d$innings == 1L), , drop = FALSE]
+  tg <- resolve_targets_by_match(d, NULL)
+
+  expect_false("low_scoring" %in% names(tg))
+  expect_true(is.na(tg["low_scoring"]))   # `[` yields NA; `[[` would error
+  expect_equal(unname(tg[["high_scoring"]]), 221)
+})
+
+test_that("a frame with no first innings at all yields an empty named vector", {
+  d <- two_match_deliveries()
+  d <- d[d$innings == 2L, , drop = FALSE]
+  tg <- resolve_targets_by_match(d, NULL)
+  expect_length(tg, 0)
+  expect_type(names(tg), "character")
+})
+
+test_that("a vector target is rejected by the resolver itself", {
+  expect_error(resolve_targets_by_match(two_match_deliveries(), c(100, 200)),
+               "single value")
+})
+
+test_that("targets survive a factor match_id", {
+  d <- two_match_deliveries()
+  d$match_id <- factor(d$match_id)
+  tg <- resolve_targets_by_match(d, NULL)
+  expect_equal(unname(tg[["low_scoring"]]), 61)
+})
+
 test_that("a match scores identically alone and inside a multi-match batch", {
   skip_without_models()
   # The invariant the per-match target fix exists to restore. Previously the

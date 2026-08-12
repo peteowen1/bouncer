@@ -124,7 +124,20 @@ get_db_connection <- function(path = NULL, read_only = FALSE) {
 with_db_connection <- function(fn, path = NULL, read_only = FALSE) {
   conn <- get_db_connection(path = path, read_only = read_only)
   on.exit(
-    tryCatch(DBI::dbDisconnect(conn, shutdown = TRUE), error = function(e) NULL),
+    # The tryCatch is deliberate -- a failing disconnect must not clobber a
+    # more informative error thrown by fn(). But it must not be SILENT: a
+    # disconnect that throws can leave the write lock held, which is the exact
+    # failure this function exists to prevent. Swallowing it would hide the
+    # disease one layer down, and worse than the original bare call, which at
+    # least raised. Warn, always.
+    tryCatch(
+      DBI::dbDisconnect(conn, shutdown = TRUE),
+      error = function(e) cli::cli_warn(c(
+        "Failed to close the database connection cleanly: {conditionMessage(e)}",
+        "!" = "A write lock may still be held for the rest of this session.",
+        "i" = "If later writes fail with {.q Could not set lock}, this is why."
+      ))
+    ),
     add = TRUE
   )
   fn(conn)
