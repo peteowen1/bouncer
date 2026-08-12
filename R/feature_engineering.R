@@ -126,6 +126,18 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
 
   match_type <- tolower(match_type)
 
+  # fcase() requires EVERY output branch to have the same type, and it is
+  # strict about integer vs double. `over` arrives as integer from DuckDB, so
+  # a bare `over` branch is integer while `over - 6` is double (6 is a double
+  # literal), and fcase aborts with "Argument #4 is of type double, however
+  # argument #2 is of type integer".
+  #
+  # The ODI branch below already carried an `as.double(over)` fix for exactly
+  # this, but it was never applied to the T20 branch -- so T20 preparation
+  # died on the first run against integer overs while ODI worked. Coerce once,
+  # here, for every branch, so the three cannot drift apart again.
+  over_dbl <- as.double(over)
+
   # Use data.table::fcase for vectorized conditionals (faster than case_when)
   if (match_type == "t20") {
     phase <- data.table::fcase(
@@ -135,9 +147,9 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
     )
 
     overs_into_phase <- data.table::fcase(
-      over < 6,  over,
-      over < 16, over - 6,
-      default = over - 16
+      over < 6,  over_dbl,
+      over < 16, over_dbl - 6,
+      default = over_dbl - 16
     )
 
     total_overs <- 20
@@ -149,7 +161,6 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
       default = "death"
     )
 
-    over_dbl <- as.double(over)
     overs_into_phase <- data.table::fcase(
       over < 10, over_dbl,
       over < 40, over_dbl - 10,
@@ -161,7 +172,7 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
   } else {
     # Test match - no phases
     phase <- rep("test", length(over))
-    overs_into_phase <- over
+    overs_into_phase <- over_dbl   # double, matching the other branches
     total_overs <- NA_real_
   }
 
