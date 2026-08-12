@@ -28,29 +28,59 @@ calculate_bouncer <- function(epr, psr, weight_epr = 0.5) {
   epr_dt <- data.table::as.data.table(epr)
   psr_dt <- data.table::as.data.table(psr)
 
+  # calculate_epr() returns a zero-column data.table when no matches fall
+  # before ref_date. Say so here rather than letting the column selection
+  # below fail with "column(s) not found".
+  needed <- c("player_id", "role_group", "total_epr", "batting_epr",
+              "bowling_epr", "n_matches", "wt_matches")
+  missing_cols <- setdiff(needed, names(epr_dt))
+  if (nrow(epr_dt) == 0L || length(missing_cols) > 0L) {
+    cli::cli_abort(c(
+      "{.arg epr} has no usable rows.",
+      "i" = if (nrow(epr_dt) == 0L) "It is empty -- check ref_date and the format filter."
+            else "Missing column{?s}: {.field {missing_cols}}."
+    ))
+  }
+
   # Merge on player_id
   result <- merge(
-    epr_dt[, .(player_id, role_group, total_epr, batting_epr, bowling_epr,
-               n_matches, wt_matches)],
+    epr_dt[, .SD, .SDcols = needed],
     psr_dt[, .(player_id, psr)],
     by = "player_id",
     all = FALSE  # inner join: only players with both
   )
 
-  # Standardize both components to same scale before blending
+  if (nrow(result) == 0L) {
+    cli::cli_abort("No players appear in both {.arg epr} and {.arg psr}.")
+  }
+
+  # Put PSR on EPR's scale before blending. Note this divides by the SD
+  # WITHOUT centring, so these are ratio-scaled values, not z-scores -- the
+  # blend is a scale match, and bouncer_rating stays in EPR units.
   epr_sd <- stats::sd(result$total_epr, na.rm = TRUE)
   psr_sd <- stats::sd(result$psr, na.rm = TRUE)
 
-  if (epr_sd > 0 && psr_sd > 0) {
-    result[, epr_z := total_epr / epr_sd]
-    result[, psr_z := psr / psr_sd]
-    result[, bouncer_z := weight_epr * epr_z + (1 - weight_epr) * psr_z]
-    # Scale back to interpretable units (use EPR scale)
-    result[, bouncer_rating := bouncer_z * epr_sd]
-    result[, c("epr_z", "psr_z", "bouncer_z") := NULL]
+  # sd() is NA for a single row and for an all-NA column, and `if (NA)` is an
+  # error, not FALSE -- so isTRUE(), not a bare comparison.
+  scalable <- isTRUE(epr_sd > 0) && isTRUE(psr_sd > 0)
+
+  if (scalable) {
+    result[, epr_scaled := total_epr / epr_sd]
+    result[, psr_scaled := psr / psr_sd]
+    result[, bouncer_rating :=
+             (weight_epr * epr_scaled + (1 - weight_epr) * psr_scaled) * epr_sd]
+    result[, c("epr_scaled", "psr_scaled") := NULL]
   } else {
+    # Unscaled blend: a DIFFERENT quantity in different units, because EPR and
+    # PSR are no longer comparable. Flagged so a caller can tell them apart.
+    cli::cli_warn(c(
+      "Cannot scale EPR and PSR to a common spread; blending them unscaled.",
+      "i" = "EPR sd = {.val {epr_sd}}, PSR sd = {.val {psr_sd}} over {nrow(result)} player{?s}.",
+      "!" = "bouncer_rating is not comparable with a scaled run."
+    ))
     result[, bouncer_rating := weight_epr * total_epr + (1 - weight_epr) * psr]
   }
+  data.table::setattr(result, "bouncer_scaled", scalable)
 
   data.table::setorder(result, -bouncer_rating)
   result
@@ -65,6 +95,8 @@ calculate_bouncer <- function(epr, psr, weight_epr = 0.5) {
 #' @param format Character. "t20", "odi", or "test".
 #' @param player_game_data Optional pre-loaded player game data.
 #' @param stat_ratings Optional pre-loaded stat ratings.
+#' @param weight_epr Numeric. Weight for the EPR component, passed to
+#'   \code{\link{calculate_bouncer}}. Ignored in EPR-only mode.
 #' @param n_top Integer. Number of top players to show (NULL = all).
 #'
 #' @return data.table with BOUNCER ratings, sorted by bouncer_rating.
@@ -72,6 +104,7 @@ calculate_bouncer <- function(epr, psr, weight_epr = 0.5) {
 bouncer_ratings <- function(format = c("t20", "odi", "test"),
                              player_game_data = NULL,
                              stat_ratings = NULL,
+                             weight_epr = 0.5,
                              n_top = NULL) {
   format <- match.arg(format)
 
@@ -89,26 +122,26 @@ bouncer_ratings <- function(format = c("t20", "odi", "test"),
     )
   }
 
-  if (is.null(stat_ratings)) {
-    # EPR-only mode (no PSR coefficients available yet)
-    result <- epr[, .(player_id, role_group, bouncer_rating = total_epr,
-                       total_epr, batting_epr, bowling_epr,
-                       psr = NA_real_, n_matches, wt_matches)]
-    data.table::setorder(result, -bouncer_rating)
+  # EPR-only leaderboard: bouncer_rating IS total_epr, psr unavailable.
+  epr_only <- function() {
+    out <- epr[, .(player_id, role_group, bouncer_rating = total_epr,
+                   total_epr, batting_epr, bowling_epr,
+                   psr = NA_real_, n_matches, wt_matches)]
+    data.table::setorder(out, -bouncer_rating)
+    out
+  }
+
+  coef_path <- system.file("extdata", "psr_coefficients.csv", package = "bouncer")
+
+  result <- if (is.null(stat_ratings)) {
+    epr_only()
+  } else if (coef_path == "" || !file.exists(coef_path)) {
+    cli::cli_warn("PSR coefficient file not found. Using EPR only.")
+    epr_only()
   } else {
-    # Load PSR coefficients
-    coef_path <- system.file("extdata", "psr_coefficients.csv", package = "bouncer")
-    if (coef_path == "" || !file.exists(coef_path)) {
-      cli::cli_warn("PSR coefficient file not found. Using EPR only.")
-      result <- epr[, .(player_id, role_group, bouncer_rating = total_epr,
-                         total_epr, batting_epr, bowling_epr,
-                         psr = NA_real_, n_matches, wt_matches)]
-      data.table::setorder(result, -bouncer_rating)
-    } else {
-      coef_df <- utils::read.csv(coef_path, stringsAsFactors = FALSE)
-      psr <- calculate_psr(stat_ratings, coef_df)
-      result <- calculate_bouncer(epr, psr)
-    }
+    coef_df <- utils::read.csv(coef_path, stringsAsFactors = FALSE)
+    psr <- calculate_psr(stat_ratings, coef_df)
+    calculate_bouncer(epr, psr, weight_epr = weight_epr)
   }
 
   if (!is.null(n_top)) {

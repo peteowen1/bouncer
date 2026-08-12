@@ -201,7 +201,7 @@ ingest_cricinfo_matches <- function(conn, match_files) {
         INSERT OR IGNORE INTO cricinfo.matches
         SELECT * REPLACE (COALESCE(CAST(match_id AS VARCHAR), '%s') AS match_id)
         FROM read_parquet('%s')
-      ", escape_sql_quotes(file_match_id), fp))
+      ", escape_sql_quotes(file_match_id), sql_quote_path(fp)))
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load match {basename(f)}: {e$message}")
@@ -277,7 +277,7 @@ ingest_cricinfo_balls <- function(conn, ball_files, match_ids) {
           \"title\" AS title,
           \"timestamp\" AS timestamp
         FROM read_parquet('%s')
-      ", escape_sql_quotes(mid), fp))
+      ", escape_sql_quotes(mid), sql_quote_path(fp)))
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load balls for match {mid}: {e$message}")
@@ -314,7 +314,7 @@ ingest_cricinfo_innings <- function(conn, innings_files, match_ids) {
         INSERT OR IGNORE INTO cricinfo.innings
         SELECT '%s' AS match_id, *
         FROM read_parquet('%s')
-      ", escape_sql_quotes(mid), fp))
+      ", escape_sql_quotes(mid), sql_quote_path(fp)))
       n_inserted <- n_inserted + n
     }, error = function(e) {
       cli::cli_alert_warning("Failed to load innings for match {mid}: {e$message}")
@@ -352,7 +352,7 @@ ingest_cricinfo_fixtures <- function(conn, cricinfo_dir, verbose = TRUE) {
   n <- DBI::dbExecute(conn, sprintf("
     INSERT INTO cricinfo.fixtures
     SELECT * FROM read_parquet('%s')
-  ", fp))
+  ", sql_quote_path(fp)))
 
   if (verbose) cli::cli_alert_success("Loaded {format(n, big.mark=',')} fixtures")
   n

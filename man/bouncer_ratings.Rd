@@ -8,6 +8,7 @@ bouncer_ratings(
   format = c("t20", "odi", "test"),
   player_game_data = NULL,
   stat_ratings = NULL,
+  weight_epr = 0.5,
   n_top = NULL
 )
 }
@@ -17,6 +18,9 @@ bouncer_ratings(
 \item{player_game_data}{Optional pre-loaded player game data.}
 
 \item{stat_ratings}{Optional pre-loaded stat ratings.}
+
+\item{weight_epr}{Numeric. Weight for the EPR component, passed to
+\code{\link{calculate_bouncer}}. Ignored in EPR-only mode.}
 
 \item{n_top}{Integer. Number of top players to show (NULL = all).}
 }

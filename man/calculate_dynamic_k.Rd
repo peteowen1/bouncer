@@ -7,16 +7,18 @@
 calculate_dynamic_k(experience, k_max, k_min, halflife)
 }
 \arguments{
-\item{experience}{Numeric. Player/entity experience count (deliveries, matches, etc.)}
+\item{experience}{Numeric vector. Player/entity experience count
+(deliveries, matches, etc.). NA and negative values are treated as 0.}
 
 \item{k_max}{Numeric. Maximum K-factor for new players.}
 
 \item{k_min}{Numeric. Minimum K-factor for experienced players.}
 
-\item{halflife}{Numeric. Experience value at which K is halfway between max and min.}
+\item{halflife}{Numeric. Exponential decay constant -- see the section
+above. Non-finite or non-positive values yield \code{k_min}.}
 }
 \value{
-Numeric. The calculated K-factor.
+Numeric vector, the same length as the recycled inputs.
 }
 \description{
 Computes a K-factor that decays exponentially with experience.
@@ -29,16 +31,34 @@ Formula: K = k_min + (k_max - k_min) * exp(-experience / halflife)
 This function consolidates the K-factor decay pattern that was repeated
 in team_elo_optimization.R and three_way_elo.R.
 }
+\section{The \code{halflife} argument is not a half-life}{
+
+It is the exponential decay constant (tau) in \code{exp(-experience / halflife)}.
+At \code{experience == halflife}, K has fallen to \code{exp(-1)} = \strong{36.8\%} of the
+\code{k_max - k_min} range, not to the halfway point. The true half-life is
+\code{halflife * log(2)}, about 69\% of it.
+
+The name and the documented examples both previously claimed "halfway",
+which is wrong by a factor of \code{log(2)} and matters to anyone tuning it. The
+argument keeps its name because callers pass it positionally and every
+fitted rating in the package was produced with this formula; only the
+description is corrected. All example values below are computed, not
+estimated.
+}
+
 \examples{
 \dontrun{
 # Player K-factors (using T20 defaults)
-calculate_dynamic_k(0, k_max = 200, k_min = 15, halflife = 500)    # 200 (new)
-calculate_dynamic_k(500, k_max = 200, k_min = 15, halflife = 500)  # ~107.5 (half)
-calculate_dynamic_k(5000, k_max = 200, k_min = 15, halflife = 500) # ~15 (experienced)
+calculate_dynamic_k(0, k_max = 200, k_min = 15, halflife = 500)    # 200.00 (new)
+calculate_dynamic_k(500, k_max = 200, k_min = 15, halflife = 500)  # 83.06 (exp(-1))
+calculate_dynamic_k(5000, k_max = 200, k_min = 15, halflife = 500) # 15.01 (experienced)
 
 # Team K-factors
-calculate_dynamic_k(0, k_max = 60, k_min = 20, halflife = 50)      # 60 (new team)
-calculate_dynamic_k(100, k_max = 60, k_min = 20, halflife = 50)    # ~26.5
+calculate_dynamic_k(0, k_max = 60, k_min = 20, halflife = 50)      # 60.00 (new team)
+calculate_dynamic_k(100, k_max = 60, k_min = 20, halflife = 50)    # 25.41
+
+# Vectorised over experience
+calculate_dynamic_k(c(0, 500, 5000), k_max = 200, k_min = 15, halflife = 500)
 }
 
 }

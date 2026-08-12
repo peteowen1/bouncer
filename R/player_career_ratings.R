@@ -114,8 +114,13 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
   dt[, bat_value := batting_wpa + batting_era]
   dt[, bowl_value := bowling_wpa + bowling_era]
 
-  # Exposure weighting: scale by balls to give high-exposure games more weight
-  # Normalize to a "full match" equivalent (e.g., 120 balls faced in T20)
+  # Exposure weighting: scale by balls to give high-exposure games more weight.
+  # Normalise to a full innings' work FOR ONE PLAYER, not the innings total --
+  # a T20 innings is 120 balls, but they are shared out, so ~60 is what a
+  # batter who bats deep actually faces. (This comment previously said 120,
+  # contradicting the value below; the values are the intended ones, since
+  # halving the denominator would double every bat_exposure and therefore
+  # every EPR.)
   full_match_balls <- switch(format,
     t20 = 60,    # ~60 balls faced per batter in a full T20 innings
     odi = 100,   # ~100 balls in a full ODI innings
@@ -125,16 +130,24 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
   dt[, bat_exposure := pmin(batting_balls_faced / full_match_balls, 1)]
   dt[, bowl_exposure := pmin(bowling_balls_bowled / (full_match_balls * 0.4), 1)]
 
-  # Aggregate per player with Bayesian shrinkage
+  # Aggregate per player with Bayesian shrinkage.
+  #
+  # A match whose value is NA (a failed WPA prediction, a missing ERA) must
+  # drop out of the NUMERATOR AND THE DENOMINATOR together. Summing the
+  # numerator with na.rm = TRUE while the denominator still carries that
+  # match's weight silently shrinks the player toward prior_rate, which makes
+  # a data gap indistinguishable from genuine replacement-level performance.
   result <- dt[, {
     # Batting EPR
-    bat_sum <- sum(bat_value * wt_bat * bat_exposure, na.rm = TRUE)
-    bat_denom <- sum(wt_bat * bat_exposure, na.rm = TRUE) + prior_matches
+    bat_ok <- !is.na(bat_value) & !is.na(wt_bat) & !is.na(bat_exposure)
+    bat_sum <- sum((bat_value * wt_bat * bat_exposure)[bat_ok])
+    bat_denom <- sum((wt_bat * bat_exposure)[bat_ok]) + prior_matches
     batting_epr_val <- (bat_sum + prior_matches * prior_rate) / bat_denom
 
     # Bowling EPR
-    bowl_sum <- sum(bowl_value * wt_bowl * bowl_exposure, na.rm = TRUE)
-    bowl_denom <- sum(wt_bowl * bowl_exposure, na.rm = TRUE) + prior_matches
+    bowl_ok <- !is.na(bowl_value) & !is.na(wt_bowl) & !is.na(bowl_exposure)
+    bowl_sum <- sum((bowl_value * wt_bowl * bowl_exposure)[bowl_ok])
+    bowl_denom <- sum((wt_bowl * bowl_exposure)[bowl_ok]) + prior_matches
     bowling_epr_val <- (bowl_sum + prior_matches * prior_rate) / bowl_denom
 
     # Match counts
@@ -148,11 +161,30 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
       wt_matches = round(wt_m, 2))
   }, by = player_id]
 
-  # Assign role from most recent data
-  roles <- dt[, .(role_group = data.table::last(role)), by = player_id]
-  roles[role_group == "batter", role_group := "BATTER"]
-  roles[role_group == "bowler", role_group := "BOWLER"]
-  roles[role_group == "all_rounder", role_group := "ALL_ROUNDER"]
+  # Assign role from most recent data. data.table::last() takes the last ROW,
+  # which is only the most recent match if dt happens to be date-sorted --
+  # order explicitly rather than relying on how the caller loaded it.
+  roles <- dt[order(match_date), .(role_raw = data.table::last(role)),
+              by = player_id]
+
+  # Map to canonical upper-case groups. Equality tests left anything else
+  # (wicketkeeper, NA, a trailing space) unmapped, which split every
+  # downstream `by = role_group` into two silent buckets for the same role.
+  role_map <- c(batter = "BATTER", bowler = "BOWLER",
+                all_rounder = "ALL_ROUNDER")
+  roles[, role_key := tolower(trimws(as.character(role_raw)))]
+  roles[, role_group := unname(role_map[role_key])]
+
+  unmapped <- roles[is.na(role_group) & !is.na(role_key) & nzchar(role_key)]
+  if (nrow(unmapped) > 0) {
+    cli::cli_warn(c(
+      "{nrow(unmapped)} player{?s} have a role outside {.val {names(role_map)}}.",
+      "i" = "Unrecognised: {.val {sort(unique(unmapped$role_key))}}",
+      "i" = "Recorded as {.val UNKNOWN} rather than passed through unmapped."
+    ))
+  }
+  roles[is.na(role_group), role_group := "UNKNOWN"]
+
   result[roles, role_group := i.role_group, on = "player_id"]
 
   result[, ref_date := ref_date]

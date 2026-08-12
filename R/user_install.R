@@ -393,9 +393,10 @@ install_all_bouncer_data <- function(db_path = NULL,
   # For fresh installs, indexes weren't created yet (skip_indexes=TRUE above)
   # ============================================================================
   if (!fresh) {
-    conn_for_index <- get_db_connection(path = db_path, read_only = FALSE)
-    drop_bulk_load_indexes(conn_for_index, verbose = TRUE)
-    DBI::dbDisconnect(conn_for_index, shutdown = TRUE)
+    with_db_connection(
+      function(conn) drop_bulk_load_indexes(conn, verbose = TRUE),
+      path = db_path, read_only = FALSE
+    )
   }
 
   t_load_start <- Sys.time()
@@ -424,9 +425,7 @@ install_all_bouncer_data <- function(db_path = NULL,
   # Recreate indexes after bulk load
   cli::cli_alert_info("Rebuilding indexes...")
   t_index_start <- Sys.time()
-  conn_for_index <- get_db_connection(path = db_path, read_only = FALSE)
-  create_indexes(conn_for_index)
-  DBI::dbDisconnect(conn_for_index, shutdown = TRUE)
+  with_db_connection(create_indexes, path = db_path, read_only = FALSE)
   t_index <- as.numeric(difftime(Sys.time(), t_index_start, units = "secs"))
 
   # Clean up downloads if requested
