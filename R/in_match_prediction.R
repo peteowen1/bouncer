@@ -73,11 +73,31 @@ load_in_match_models <- function(format = "t20",
 
   stage2_results <- readRDS(stage2_file)
 
+  # Innings-1 win probability model, produced by
+  # data-raw/models/in-match/04_win_probability_innings1.R.
+  #
+  # This loader previously ignored it entirely, so predict_win_probability()
+  # always saw models$innings1_model as NULL and fell back to its logistic
+  # heuristic for the first innings -- for every format, including any format
+  # that had the model trained and sitting on disk. Optional by design: a
+  # format without one still gets the heuristic rather than an error.
+  innings1_file <- file.path(models_path,
+                             paste0(format, "_innings1_results.rds"))
+  innings1_model <- NULL
+  innings1_features <- NULL
+  if (file.exists(innings1_file)) {
+    innings1_results <- readRDS(innings1_file)
+    innings1_model <- innings1_results$model
+    innings1_features <- innings1_results$feature_cols
+  }
+
   result <- list(
     stage1_model = stage1_results$model,
     stage2_model = stage2_results$model,
     stage1_features = stage1_results$feature_cols,
     stage2_features = stage2_results$feature_cols,
+    innings1_model = innings1_model,
+    innings1_features = innings1_features,
     format = format
   )
 
