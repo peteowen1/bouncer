@@ -50,6 +50,10 @@ test_that("every over_ball reconstruction site agrees with the helper", {
 # in bouncerdata/models/. Skips cleanly where they are absent (e.g. CI).
 WPA_FORMAT <- "odi"
 
+# The momentum-imputation warning is correct and useful in production but
+# fires once per delivery here, drowning the output.
+withr::local_options(bouncer.warn_momentum_impute = FALSE, .local_envir = teardown_env())
+
 skip_without_models <- function() {
   skip_if_not(!is.null(load_in_match_models(WPA_FORMAT)),
               "in-match models unavailable")

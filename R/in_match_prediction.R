@@ -194,6 +194,14 @@ load_test_in_match_models <- function(models_path) {
 #' @param skill_adjustments List. Team/player skill adjustments (optional).
 #' @param models List. Pre-loaded models from load_in_match_models().
 #'   If NULL, models are loaded automatically.
+#' @param recent_balls Named list of momentum features for the last few overs
+#'   (`runs_last_12_balls`, `dots_last_24_balls`, `rr_last_6_overs`, ...) as
+#'   produced by [calculate_rolling_features()] over the delivery sequence. The
+#'   trained models use 14 of these. A scoreboard state cannot supply them, so
+#'   when this is NULL they are imputed from the current run rate and a warning
+#'   is emitted. They are never zero-filled -- zero means "no runs and no
+#'   wickets in the last N balls", an extreme real state, and substituting it is
+#'   what made the chase model return ~0.9 regardless of situation.
 #'
 #' @return A `bouncer_win_prob` object. For limited-overs formats:
 #'   \itemize{
@@ -239,7 +247,8 @@ predict_win_probability <- function(current_score,
                                      venue_stats = NULL,
                                      match_state = NULL,
                                      skill_adjustments = NULL,
-                                     models = NULL) {
+                                     models = NULL,
+                                     recent_balls = NULL) {
 
   format <- tolower(format)
 
@@ -318,10 +327,54 @@ predict_win_probability <- function(current_score,
   feature_data$phase_middle <- as.integer(feature_data$phase == "middle")
   feature_data$phase_death <- as.integer(feature_data$phase == "death")
 
+  # overs_into_phase, from the same helper the training pipeline uses, so the
+  # definition cannot drift between train and serve.
+  feature_data$overs_into_phase <- calculate_phase_features(
+    over = as.double(current_over),
+    ball = as.double(balls_bowled - current_over * 6),
+    match_type = format
+  )$overs_into_phase
+
+  # Momentum windows. These need recent ball history, which a scoreboard state
+  # does not carry, and the training pipeline computes them with
+  # calculate_rolling_features() over the delivery sequence.
+  #
+  # They are NOT zero-filled. Zero means "no runs and no wickets in the last N
+  # balls", a real and extreme state; substituting it made the chase model
+  # return ~0.9 regardless of situation. Absent history, they are imputed from
+  # the current run rate -- an approximation, but one that sits inside the
+  # training distribution instead of at its edge. Callers with the ball
+  # sequence should pass `recent_balls` and get the real values.
+  crr <- feature_data$current_run_rate
+  if (is.null(recent_balls)) {
+    if (isTRUE(getOption("bouncer.warn_momentum_impute", TRUE))) {
+      cli::cli_warn(c(
+        "No {.arg recent_balls} supplied: the 14 momentum features are imputed from the current run rate.",
+        "i" = "Pass {.arg recent_balls} for the real values; silence with {.code options(bouncer.warn_momentum_impute = FALSE)}."
+      ))
+    }
+    recent_balls <- list()
+  }
+  mom_default <- list(
+    runs_last_12_balls = crr * 2, runs_last_24_balls = crr * 4,
+    dots_last_12_balls = 12 * 0.35, dots_last_24_balls = 24 * 0.35,
+    boundaries_last_12_balls = 12 * 0.12, boundaries_last_24_balls = 24 * 0.12,
+    wickets_last_12_balls = 0.4, wickets_last_24_balls = 0.8,
+    runs_last_3_overs = crr * 3, runs_last_6_overs = crr * 6,
+    wickets_last_3_overs = 0.6, wickets_last_6_overs = 1.2,
+    rr_last_3_overs = crr, rr_last_6_overs = crr
+  )
+  for (nm in names(mom_default)) {
+    feature_data[[nm]] <- recent_balls[[nm]] %||% mom_default[[nm]]
+  }
+
   # Add venue stats (use defaults if not provided)
   if (is.null(venue_stats)) {
     venue_stats <- get_default_venue_stats(format)
   }
+  # Names the trained models use, alongside the legacy ones set below.
+  feature_data$venue_avg_score <- venue_stats$avg_first_innings
+  feature_data$venue_chase_success_rate <- venue_stats$chase_win_rate %||% 0.45
   feature_data$venue_avg_first_innings <- venue_stats$avg_first_innings
   feature_data$venue_avg_second_innings <- venue_stats$avg_second_innings %||% venue_stats$avg_first_innings
   feature_data$venue_chase_win_rate <- venue_stats$chase_win_rate %||% 0.45
@@ -335,32 +388,41 @@ predict_win_probability <- function(current_score,
   feature_data$is_dls <- 0L
   feature_data$is_ko <- 0L
 
-  # For 2nd innings, add chase features
+  # For 2nd innings, add chase features.
+  #
+  # These now come from the SAME helpers the training pipeline uses --
+  # calculate_pressure_metrics() and calculate_tail_calibration_features(), both
+  # in R/feature_engineering.R -- rather than being re-derived here. That is the
+  # whole point: this function previously hand-rolled four of the chase features
+  # and simply never produced the other nineteen, so
+  # calculate_chase_win_prob() zero-filled them and the model returned ~0.9 for
+  # every state. Calling the shared helpers makes train/serve parity structural
+  # instead of something to be maintained by hand in two places.
   if (innings == 2) {
     feature_data$target_runs <- target
-    feature_data$runs_needed <- target - current_score
-    feature_data$required_run_rate <- if (overs_remaining > 0) {
-      feature_data$runs_needed / overs_remaining
-    } else {
-      if (feature_data$runs_needed <= 0) 0 else MAX_REQUIRED_RUN_RATE
-    }
-    # Clamp required_run_rate to reasonable maximum
-    feature_data$required_run_rate <- min(feature_data$required_run_rate, MAX_REQUIRED_RUN_RATE)
 
-    feature_data$rr_differential <- feature_data$required_run_rate - feature_data$current_run_rate
-    feature_data$balls_per_run_needed <- if (feature_data$runs_needed > 0) {
-      balls_remaining / feature_data$runs_needed
-    } else {
-      INF_FEATURE_PLACEHOLDER  # Effectively infinite (already won)
-    }
-    # Clamp balls_per_run_needed to reasonable maximum
-    feature_data$balls_per_run_needed <- min(feature_data$balls_per_run_needed, INF_FEATURE_PLACEHOLDER)
+    pm <- calculate_pressure_metrics(
+      target           = target,
+      current_runs     = current_score,
+      current_wickets  = wickets,
+      balls_remaining  = balls_remaining,
+      current_run_rate = feature_data$current_run_rate
+    )
+    for (nm in names(pm)) feature_data[[nm]] <- pm[[nm]]
 
-    feature_data$balls_per_wicket_available <- if (feature_data$wickets_in_hand > 0) {
-      balls_remaining / feature_data$wickets_in_hand
-    } else {
-      0
-    }
+    tc <- calculate_tail_calibration_features(
+      runs_needed     = feature_data$runs_needed,
+      balls_remaining = balls_remaining,
+      wickets_in_hand = feature_data$wickets_in_hand
+    )
+    for (nm in names(tc)) feature_data[[nm]] <- tc[[nm]]
+
+    # First-innings context. target is innings-1 total + 1 by construction, so
+    # the total is recoverable; wickets are not, and 10 is the common case for
+    # a completed innings.
+    feature_data$innings1_total    <- target - 1
+    feature_data$innings1_run_rate <- (target - 1) / (max_balls / 6)
+    feature_data$innings1_wickets  <- 10
   }
 
   # Calculate projected score using Stage 1 model
