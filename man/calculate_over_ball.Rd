@@ -14,6 +14,10 @@ counting extras.}
 }
 \value{
 Numeric vector of the same length as the recycled inputs.
+
+Worked values: over 10 ball 3 gives \code{10.3}; over 0 ball 1 gives \code{0.1}; over 5
+ball 12 gives \code{6.2} -- see "Known defect" above for why that last one
+collides with over 6 ball 2.
 }
 \description{
 The single definition of \code{over_ball}, the within-innings position feature
@@ -50,10 +54,4 @@ written to remove. Correcting it requires a coordinated parser change, a
 full re-parse, and a retrain — see \code{docs/NEXT-STEPS.md}.
 }
 
-\examples{
-calculate_over_ball(10, 3)   # 10.3
-calculate_over_ball(0, 1)    # 0.1
-calculate_over_ball(5, 12)   # 6.2 -- see "Known defect"
-
-}
 \keyword{internal}

@@ -262,10 +262,9 @@ get_max_overs <- function(format) {
 #'
 #' @return Numeric vector of the same length as the recycled inputs.
 #'
-#' @examples
-#' calculate_over_ball(10, 3)   # 10.3
-#' calculate_over_ball(0, 1)    # 0.1
-#' calculate_over_ball(5, 12)   # 6.2 -- see "Known defect"
+#' Worked values: over 10 ball 3 gives `10.3`; over 0 ball 1 gives `0.1`; over 5
+#' ball 12 gives `6.2` -- see "Known defect" above for why that last one
+#' collides with over 6 ball 2.
 #'
 #' @keywords internal
 calculate_over_ball <- function(over, ball) {

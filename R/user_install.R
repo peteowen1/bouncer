@@ -677,7 +677,7 @@ load_filtered_matches <- function(file_paths,
     cli::cli_alert_warning("{error_count} matches failed to load")
   }
 
-  # Warn if all/most files failed — likely a systematic issue
+  # Warn if all/most files failed -- likely a systematic issue
 
   if (n_new > 0 && success_count == 0) {
     cli::cli_warn("All {n_new} matches failed to load. Check file format and directory path.")
@@ -834,7 +834,7 @@ download_release_asset <- function(asset_url, dest_path, show_progress = TRUE,
   entry <- .vb_manifest_entry_for(manifest, asset_name)
   strict <- isTRUE(Sys.getenv("VERSEBUS_STRICT") == "1")
   if (is.null(entry)) {
-    cli::cli_warn("{.val {asset_name}} is on the release but not in bus_manifest.json — uncommitted asset")
+    cli::cli_warn("{.val {asset_name}} is on the release but not in bus_manifest.json -- uncommitted asset")
     if (strict) {
       .vb_abort("Refusing uncommitted asset {.val {asset_name}} in strict mode",
                 "vb_error_integrity")
@@ -843,7 +843,7 @@ download_release_asset <- function(asset_url, dest_path, show_progress = TRUE,
     got <- vb_sha256(tmp)
     if (!identical(got, entry$sha256)) {
       .vb_abort("{.val {asset_name}}: sha256 mismatch vs bus_manifest.json
-                 (got {substr(got, 1, 12)}…, want {substr(entry$sha256, 1, 12)}…)",
+                 (got {substr(got, 1, 12)}..., want {substr(entry$sha256, 1, 12)}...)",
                 "vb_error_integrity")
     }
   }
@@ -1069,7 +1069,7 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
   }
   dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
 
-  # All available tables (partitioned by match_type × gender × team_type)
+  # All available tables (partitioned by match_type x gender x team_type)
   all_tables <- c(
     # Unified tables
     "players", "team_elo",
@@ -1096,7 +1096,7 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
   # against it.
   manifest <- vb_read_manifest(repo, release$tag_name)
 
-  # Download each table (use list to avoid O(n²) vector growth)
+  # Download each table (use list to avoid O(n^2) vector growth)
   downloaded_list <- vector("list", length(tables))
   download_idx <- 0L
 

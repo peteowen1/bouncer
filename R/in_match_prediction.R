@@ -987,29 +987,6 @@ calculate_chase_win_prob <- function(data, model, feature_cols) {
 }
 
 
-#' Calculate Win Probability for All Deliveries in a Match
-#'
-#' Adds win probability columns to a data frame of deliveries.
-#'
-#' @param deliveries data.frame with delivery data. Must include:
-#'   match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
-#'   May span multiple matches; chase targets are resolved per `match_id`.
-#' @param format Character. Match format.
-#' @param target Integer. 2nd innings target, applied to every match in
-#'   `deliveries`. Leave NULL (the default) to derive a separate target for
-#'   each match from its own first innings.
-#' @param models List. Pre-loaded models (optional).
-#' @param wpa_failure_threshold Numeric in \[0, 1\]. Abort if this proportion
-#'   of deliveries or more fail to produce a win probability. Default 0.01.
-#'   Set to 1 to warn but never abort.
-#'
-#' @return data.frame with additional columns:
-#'   \itemize{
-#'     \item win_prob_before - Win probability before this delivery
-#'     \item win_prob_after - Win probability after this delivery
-#'     \item wpa - Win Probability Added (change from this delivery)
-#'   }
-#'
 #' Resolve the Chase Target for Each Match in a Delivery Frame
 #'
 #' Pulled out of [add_win_probability()] so the per-match target rule can be
@@ -1052,6 +1029,29 @@ resolve_targets_by_match <- function(deliveries, target = NULL) {
 }
 
 
+#' Calculate Win Probability for All Deliveries in a Match
+#'
+#' Adds win probability columns to a data frame of deliveries.
+#'
+#' @param deliveries data.frame with delivery data. Must include:
+#'   match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
+#'   May span multiple matches; chase targets are resolved per `match_id`.
+#' @param format Character. Match format.
+#' @param target Integer. 2nd innings target, applied to every match in
+#'   `deliveries`. Leave NULL (the default) to derive a separate target for
+#'   each match from its own first innings.
+#' @param models List. Pre-loaded models (optional).
+#' @param wpa_failure_threshold Numeric in \[0, 1\]. Abort if this proportion
+#'   of deliveries or more fail to produce a win probability. Default 0.01.
+#'   Set to 1 to warn but never abort.
+#'
+#' @return data.frame with additional columns:
+#'   \itemize{
+#'     \item win_prob_before - Win probability before this delivery
+#'     \item win_prob_after - Win probability after this delivery
+#'     \item wpa - Win Probability Added (change from this delivery)
+#'   }
+#'
 #' @keywords internal
 add_win_probability <- function(deliveries,
                                  format = "t20",
