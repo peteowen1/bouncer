@@ -657,9 +657,7 @@ predict_test_win_probability <- function(current_score,
 #' @return Numeric prediction (0-1)
 #' @keywords internal
 predict_with_features <- function(model, data, feature_cols) {
-  for (col in feature_cols) {
-    if (!col %in% names(data)) data[[col]] <- 0
-  }
+  data <- fill_model_features(data, feature_cols)
   features <- as.matrix(data[, feature_cols, drop = FALSE])
   features[is.na(features)] <- 0
   features[is.infinite(features)] <- 999
@@ -804,11 +802,7 @@ get_default_venue_stats <- function(format) {
 calculate_projected_score_from_model <- function(data, model, feature_cols, format) {
 
   # Ensure all feature columns exist
-  for (col in feature_cols) {
-    if (!col %in% names(data)) {
-      data[[col]] <- 0
-    }
-  }
+  data <- fill_model_features(data, feature_cols)
 
   # Extract features
   features <- as.matrix(data[, feature_cols, drop = FALSE])
@@ -855,11 +849,7 @@ calculate_projected_score_from_model <- function(data, model, feature_cols, form
 #' @keywords internal
 calculate_innings1_win_prob <- function(data, model, feature_cols) {
   # Ensure all feature columns exist
-  for (col in feature_cols) {
-    if (!col %in% names(data)) {
-      data[[col]] <- 0
-    }
-  }
+  data <- fill_model_features(data, feature_cols)
 
   features <- as.matrix(data[, feature_cols, drop = FALSE])
   features[is.na(features)] <- 0
@@ -878,11 +868,7 @@ calculate_innings1_win_prob <- function(data, model, feature_cols) {
 calculate_chase_win_prob <- function(data, model, feature_cols) {
 
   # Ensure all feature columns exist
-  for (col in feature_cols) {
-    if (!col %in% names(data)) {
-      data[[col]] <- 0
-    }
-  }
+  data <- fill_model_features(data, feature_cols)
 
   # Extract features
   features <- as.matrix(data[, feature_cols, drop = FALSE])
@@ -1134,3 +1120,54 @@ clear_in_match_cache <- function() {
   rm(list = ls(envir = .inmatch_model_cache), envir = .inmatch_model_cache)
   cli::cli_alert_success("In-match model cache cleared")
 }
+
+#' Fill Missing Model Features, Loudly
+#'
+#' Every in-match predictor used to do `for (col in feature_cols) if (!col %in%
+#' names(data)) data[[col]] <- 0` -- silently substituting zero for any feature
+#' the caller failed to supply.
+#'
+#' That is how bouncer's ODI chase model came to be useless in production
+#' without anyone noticing. `predict_win_probability()` builds 12 features; the
+#' stage-2 model was trained on 44. The other 32 -- `runs_needed`-derived chase
+#' features, every momentum window, `innings1_total` -- were zero-filled on
+#' every call, so the model saw a nonsense vector and returned a near-constant
+#' answer: 0.883 when the chase needed 5 runs off 60 balls, 0.947 when it needed
+#' 200 off 30. Benchmarked against 20,326 real ODI deliveries it scored a Brier
+#' of 0.312, worse than predicting 0.5 every ball (0.250), while the scraped
+#' ESPNcricinfo number scored 0.221.
+#'
+#' Zero is not a neutral value for a tree model. It is a real point in feature
+#' space, usually far outside the training distribution, and the model answers
+#' confidently from it. Missing features must therefore be loud.
+#'
+#' @param data data.frame of features supplied by the caller.
+#' @param feature_cols Character vector the model was trained on.
+#' @param what Character. Model name, for the message.
+#' @param max_missing_frac Numeric. Abort above this proportion missing.
+#'   Default 0.1 -- a tenth of the feature space silently zeroed is already
+#'   enough to make the output meaningless.
+#'
+#' @return `data` with any missing columns added as 0.
+#' @keywords internal
+fill_model_features <- function(data, feature_cols, what = "model",
+                                max_missing_frac = 0.1) {
+  missing <- setdiff(feature_cols, names(data))
+  if (length(missing) > 0) {
+    frac <- length(missing) / max(1L, length(feature_cols))
+    msg <- c(
+      "{what}: {length(missing)} of {length(feature_cols)} features were not supplied and would be zero-filled.",
+      "!" = "Zero is a real point in feature space, not a neutral one -- the model will answer confidently from it.",
+      "i" = "Missing: {.field {utils::head(missing, 12)}}{if (length(missing) > 12) ' ...' else ''}"
+    )
+    if (frac > max_missing_frac) {
+      cli::cli_abort(c(msg,
+        "i" = "This is {round(100*frac)}% of the feature space. Supply them, or retrain on the features the caller can actually provide."))
+    }
+    cli::cli_warn(msg)
+    for (col in missing) data[[col]] <- 0
+  }
+  data
+}
+
+
