@@ -241,3 +241,52 @@ test_that("manifest merge carries forward previous entries on partial publish", 
   nms <- vapply(merged, `[[`, character(1), "name")
   expect_setequal(nms, c("new.parquet", "old.parquet"))
 })
+
+# ---------------------------------------------------------------------------
+# .vb_check_parquet_magic
+# ---------------------------------------------------------------------------
+
+.write_bytes <- function(bytes, name) {
+  p <- file.path(withr::local_tempdir(.local_envir = parent.frame()), name)
+  con <- file(p, "wb")
+  on.exit(close(con), add = TRUE)
+  writeBin(as.raw(bytes), con)
+  p
+}
+
+test_that("parquet magic check returns FALSE on a nul byte instead of aborting", {
+  # Regression: the check used rawToChar(), which raises "embedded nul in
+  # string" the moment a byte is 0x00 -- so it ABORTED on exactly the
+  # truncated/garbage downloads it exists to catch, and the abort surfaced as
+  # an unclassified error rather than a clean integrity failure.
+  par1 <- as.integer(charToRaw("PAR1"))
+  nul_head <- .write_bytes(c(0x50, 0x00, 0x52, 0x31, 0, 0, 0, 0, par1),
+                           "nul.parquet")
+  expect_false(.vb_check_parquet_magic(nul_head))
+
+  all_zero <- .write_bytes(rep(0, 32), "zeros.parquet")
+  expect_false(.vb_check_parquet_magic(all_zero))
+})
+
+test_that("parquet magic check accepts valid framing and rejects the rest", {
+  par1 <- as.integer(charToRaw("PAR1"))
+
+  expect_true(.vb_check_parquet_magic(
+    .write_bytes(c(par1, rep(0, 24), par1), "ok.parquet")))
+
+  expect_false(.vb_check_parquet_magic(
+    .write_bytes(c(par1, rep(0, 24), 1, 2, 3, 4), "badtail.parquet")))
+  expect_false(.vb_check_parquet_magic(
+    .write_bytes(c(1, 2, 3, 4, rep(0, 24), par1), "badhead.parquet")))
+})
+
+test_that("parquet magic check rejects files too short to frame, without reading", {
+  # Size is tested before the first readBin now; previously four bytes were
+  # read and only then was sz < 8L checked.
+  expect_false(.vb_check_parquet_magic(
+    .write_bytes(as.integer(charToRaw("PAR1")), "short.parquet")))
+  expect_false(.vb_check_parquet_magic(
+    .write_bytes(integer(0), "empty.parquet")))
+  expect_false(.vb_check_parquet_magic(
+    file.path(tempdir(), "definitely-not-here.parquet")))
+})
