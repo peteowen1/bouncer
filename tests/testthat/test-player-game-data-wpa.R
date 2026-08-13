@@ -11,20 +11,22 @@
 # without the 18GB database.
 
 bat_row <- function(match_id = "m1", player_id = "p1", balls = 30,
-                    wpa = 0.05, era = 4, ...) {
+                    wpa = 0.05, era = 4, raa = era, ...) {
   data.table::data.table(
     match_id = match_id, player_id = player_id, match_date = as.Date("2026-01-01"),
     batting_balls_faced = balls, batting_runs = 40, batting_wpa = wpa,
-    batting_max_wpa = 0.1, batting_positive_wpa_pct = 0.5, batting_era = era, ...
+    batting_max_wpa = 0.1, batting_positive_wpa_pct = 0.5, batting_era = era,
+    batting_raa = raa, batting_raa_balls = balls, ...
   )
 }
 
 bowl_row <- function(match_id = "m1", player_id = "p2", balls = 24,
-                     wpa = 0.03, era = 3, ...) {
+                     wpa = 0.03, era = 3, raa = era, ...) {
   data.table::data.table(
     match_id = match_id, player_id = player_id, match_date = as.Date("2026-01-01"),
     bowling_balls_bowled = balls, bowling_wickets = 2, bowling_wpa = wpa,
-    bowling_max_wpa = 0.08, bowling_era = era, ...
+    bowling_max_wpa = 0.08, bowling_era = era,
+    bowling_raa = raa, bowling_raa_balls = balls, ...
   )
 }
 
@@ -35,6 +37,7 @@ test_that("a player who did not bat gets zero batting WPA, not NA", {
   expect_equal(nrow(bowler), 1L)
   expect_equal(bowler$batting_wpa, 0)
   expect_equal(bowler$batting_era, 0)
+  expect_equal(bowler$batting_raa, 0)
   expect_equal(bowler$batting_runs, 0)
   expect_false(is.na(bowler$batting_wpa))
 })
@@ -77,6 +80,7 @@ test_that("total_wpa propagates NA rather than treating an unmeasured innings as
   expect_equal(ar$role, "all_rounder")
   expect_true(is.na(ar$total_wpa))
   expect_true(is.na(ar$total_era))
+  expect_true(is.na(ar$total_raa))
 })
 
 test_that("an all-rounder with both halves measured still totals normally", {
@@ -88,6 +92,7 @@ test_that("an all-rounder with both halves measured still totals normally", {
   ar <- pgd[player_id == "ar"]
   expect_equal(ar$total_wpa, 0.08)
   expect_equal(ar$total_era, 7)
+  expect_equal(ar$total_raa, 7)
 })
 
 test_that("the win probability source is chosen in one place and both options are valid SQL shapes", {

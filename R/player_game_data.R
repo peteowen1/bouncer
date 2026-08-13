@@ -68,7 +68,8 @@
 #'   bat and bowl get a single row with both batting and bowling columns.
 #'   Key columns: match_id, player_id, player_name, team, match_date, role,
 #'   batting_runs, batting_wpa, batting_era, batting_raa, bowling_wickets,
-#'   bowling_wpa, bowling_era, total_wpa, total_era, plus Hawkeye features.
+#'   bowling_wpa, bowling_era, bowling_raa, total_wpa, total_era, total_raa,
+#'   plus Hawkeye features.
 #'
 #' @export
 create_player_game_data <- function(format = c("t20", "odi", "test"),
@@ -411,6 +412,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   match_filter <- .build_match_filter(match_ids)
   gender_filter <- .build_gender_filter(gender)
   wp <- .wp_source_sql(wp_source)
+  raa <- .raa_sql(conn)
 
   query <- sprintf("
     WITH deliveries_with_delta AS (
@@ -442,10 +444,19 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         -- ERA delta (bowler perspective = negated)
         %s AS delta_ps,
 
+        -- RAA per ball (batting perspective; negated in the outer SELECT).
+        -- Wides carry no RAA row -- the batter never faced them -- so a
+        -- bowler's RAA prices batter-run suppression and wickets, not
+        -- extras conceded (those stay in bowling_economy). is_wicket in the
+        -- baseline includes run-outs, so they pass through here too; see
+        -- bouncerverse#20 for both divergences from scorecard convention.
+        %s AS raa,
+
         m.start_date AS match_date
 
       FROM cricinfo.balls b
       JOIN cricinfo.matches m ON b.match_id = m.match_id
+      %s
       %s
       WHERE %s
         AND b.bowler_player_id IS NOT NULL
@@ -481,6 +492,11 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
       -- ERA (negated: conceding fewer than expected = positive bowler ERA)
       -SUM(delta_ps) AS bowling_era,
 
+      -- RAA (negated: the per-ball value is batting-perspective, and every
+      -- run below expectation or wicket above it is the bowler's credit)
+      -SUM(raa) AS bowling_raa,
+      SUM(CASE WHEN raa IS NOT NULL THEN 1 ELSE 0 END) AS bowling_raa_balls,
+
       -- Hawkeye bowling features (per-match)
       AVG(CASE WHEN LOWER(pitch_length) IN ('good', 'good length') THEN 1.0
           WHEN pitch_length IS NOT NULL THEN 0.0
@@ -496,7 +512,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, bowling_wickets DESC
-  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, wp$join,
+  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, raa$col, wp$join, raa$join,
      format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
@@ -563,7 +579,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   value_cols <- c(
     "batting_wpa", "batting_max_wpa", "batting_positive_wpa_pct", "batting_era",
     "batting_raa",
-    "bowling_wpa", "bowling_max_wpa", "bowling_era"
+    "bowling_wpa", "bowling_max_wpa", "bowling_era", "bowling_raa"
   )
 
   batting_cols <- grep("^batting_", names(pgd), value = TRUE)
@@ -584,12 +600,13 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   # treating an unmeasured innings as zero is not a total.
   pgd[, total_wpa := batting_wpa + bowling_wpa]
   pgd[, total_era := batting_era + bowling_era]
+  pgd[, total_raa := batting_raa + bowling_raa]
 
   # Reorder columns: identifiers first, then batting, bowling, combined
   id_cols <- c("match_id", "player_id", "match_date", "role")
   bat_cols <- sort(grep("^batting_", names(pgd), value = TRUE))
   bowl_cols <- sort(grep("^bowling_", names(pgd), value = TRUE))
-  value_cols <- c("total_wpa", "total_era")
+  value_cols <- c("total_wpa", "total_era", "total_raa")
   other_cols <- setdiff(names(pgd), c(id_cols, bat_cols, bowl_cols, value_cols))
   data.table::setcolorder(pgd, c(id_cols, bat_cols, bowl_cols, value_cols, other_cols))
 
