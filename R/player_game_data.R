@@ -67,8 +67,8 @@
 #' @return data.table with one row per player per match. Players who both
 #'   bat and bowl get a single row with both batting and bowling columns.
 #'   Key columns: match_id, player_id, player_name, team, match_date, role,
-#'   batting_runs, batting_wpa, batting_era, bowling_wickets, bowling_wpa,
-#'   bowling_era, total_wpa, total_era, plus Hawkeye features.
+#'   batting_runs, batting_wpa, batting_era, batting_raa, bowling_wickets,
+#'   bowling_wpa, bowling_era, total_wpa, total_era, plus Hawkeye features.
 #'
 #' @export
 create_player_game_data <- function(format = c("t20", "odi", "test"),
@@ -201,6 +201,34 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 }
 
 
+#' SQL Fragments Selecting Per-Ball RAA
+#'
+#' Runs Above Average is produced per delivery by [build_cricinfo_raa()] into
+#' `main.cricinfo_ball_raa`. Formats whose lambda is not fitted yet (and any
+#' database where the builder has not run) have no rows there -- and possibly
+#' no table -- so the fragment degrades to a NULL column rather than a broken
+#' join, and `batting_raa` arrives as NA exactly like an unscored WPA.
+#'
+#' @param conn DBI connection, used to check the table exists.
+#'
+#' @return List with `col` (per-ball RAA expression) and `join` (FROM-clause
+#'   join, possibly empty).
+#'
+#' @keywords internal
+.raa_sql <- function(conn) {
+  has_table <- nrow(DBI::dbGetQuery(conn, "
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'main' AND table_name = 'cricinfo_ball_raa'
+  ")) > 0
+
+  if (has_table) {
+    list(col = "r.raa", join = "LEFT JOIN main.cricinfo_ball_raa r ON r.id = b.id")
+  } else {
+    list(col = "CAST(NULL AS DOUBLE)", join = "")
+  }
+}
+
+
 # ============================================================================
 # BATTING AGGREGATION
 # ============================================================================
@@ -221,6 +249,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   match_filter <- .build_match_filter(match_ids)
   gender_filter <- .build_gender_filter(gender)
   wp <- .wp_source_sql(wp_source)
+  raa <- .raa_sql(conn)
 
   query <- sprintf("
     WITH deliveries_with_delta AS (
@@ -254,6 +283,9 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         -- ERA: change in projected score caused by this delivery
         %s AS delta_ps,
 
+        -- RAA: per-ball runs above the agnostic (state-only) expectation
+        %s AS raa,
+
         -- Match metadata
         m.start_date AS match_date,
         COALESCE(
@@ -267,6 +299,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 
       FROM cricinfo.balls b
       JOIN cricinfo.matches m ON b.match_id = m.match_id
+      %s
       %s
       WHERE %s
         AND b.batsman_player_id IS NOT NULL
@@ -298,6 +331,11 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
       -- ERA (from Cricinfo predicted_score for 1st innings)
       SUM(delta_ps) AS batting_era,
 
+      -- RAA (agnostic-baseline runs above average; NA when the match is
+      -- unscored, partial-coverage visible via batting_raa_balls)
+      SUM(raa) AS batting_raa,
+      SUM(CASE WHEN raa IS NOT NULL THEN 1 ELSE 0 END) AS batting_raa_balls,
+
       -- Hawkeye batting features (per-match)
       AVG(CASE WHEN shot_control = 'controlled' THEN 1.0
           WHEN shot_control IS NOT NULL THEN 0.0
@@ -314,7 +352,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, batting_runs DESC
-  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, wp$join,
+  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, raa$col, wp$join, raa$join,
      format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
@@ -489,6 +527,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   # match", not "no contribution". These stay NA for a player who did perform.
   value_cols <- c(
     "batting_wpa", "batting_max_wpa", "batting_positive_wpa_pct", "batting_era",
+    "batting_raa",
     "bowling_wpa", "bowling_max_wpa", "bowling_era"
   )
 

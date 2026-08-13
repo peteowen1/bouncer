@@ -31,8 +31,8 @@ benchmark that settled the default, and D-P6 in \code{docs/DECISIONS.md}.}
 data.table with one row per player per match. Players who both
 bat and bowl get a single row with both batting and bowling columns.
 Key columns: match_id, player_id, player_name, team, match_date, role,
-batting_runs, batting_wpa, batting_era, bowling_wickets, bowling_wpa,
-bowling_era, total_wpa, total_era, plus Hawkeye features.
+batting_runs, batting_wpa, batting_era, batting_raa, bowling_wickets,
+bowling_wpa, bowling_era, total_wpa, total_era, plus Hawkeye features.
 }
 \description{
 Aggregates Cricinfo delivery data into one row per player per match,
