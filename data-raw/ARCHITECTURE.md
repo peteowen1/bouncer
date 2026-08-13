@@ -1,6 +1,6 @@
 # Bouncer Analytics Architecture
 
-This document explains the complete data flow from raw data acquisition through the 5-component prediction and simulation pipeline to distribution.
+This document explains the complete data flow from raw data acquisition through the 15-step prediction and analytics pipeline to distribution.
 
 ## Architecture Overview
 
@@ -15,7 +15,7 @@ This document explains the complete data flow from raw data acquisition through 
                                │ download from releases
                                ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  DuckDB (bouncerdata/bouncer.duckdb ~17GB)                             │
+│  DuckDB (bouncerdata/bouncer.duckdb ~18GB)                             │
 │                                                                         │
 │  cricsheet.* (5) │ cricinfo.* (4) │ foxsports.* (3) │ main.* (~50)       │
 └──────────────────────────────┬──────────────────────────────────────────┘
@@ -25,44 +25,49 @@ This document explains the complete data flow from raw data acquisition through 
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           5-COMPONENT PIPELINE                              │
+│                           15-STEP PIPELINE                                  │
 │                                                                             │
-│  1. AGNOSTIC MODEL ──> 2. SKILL INDICES ──> 3. FULL MODEL ──> 4. SIMULATIONS│
+│  Steps 1-11: AGNOSTIC → SKILLS → ELO → FULL MODEL → PRE-MATCH → PROJECTIONS│
 │          │                    │                   │                         │
 │          └── baseline ────────┴── residuals ──────┴── predictions           │
-│                                                          │                  │
-│                                              5. PRE-GAME PREDICTIONS        │
-│                                                 (Team ELO + Skills)         │
+│                                                                             │
+│  Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → BOUNCER │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Data Flow
 
 ```
-STEP 1: install_all_bouncer_data()
-           │
-STEP 2: Train Agnostic Model ──────────────────────┐
-           │                                        │
-           ├──> STEP 3: Player Skill Indices ───────┤
-           │           (uses agnostic baseline)     │
-           ├──> STEP 4: Team Skill Indices ─────────┼──> STEP 7: Full Model
-           │           (uses agnostic baseline)     │
-           └──> STEP 5: Venue Skill Indices ────────┤
-                       (uses agnostic baseline)     │
-                                                    │
-STEP 6: Team ELO (game-level, unchanged) ───────────┤
-                                                    │
-                                    ┌───────────────┘
-                                    v
-                    STEP 8: Pre-Match Features (add team skills)
-                                    │
-                    STEP 9: Pre-Match Model Training
-                                    │
-                    STEP 10: Optimize Projection Parameters
-                                    │
-                    STEP 11: Calculate Per-Delivery Projections
-                                    │
-                    Ready for Simulations & Predictions
+STEP 1:  install_all_bouncer_data()
+STEP 1b: Backfill Unified Margin
+            │
+STEP 2:  Train Agnostic Model ──────────────────────┐
+            │                                        │
+            ├──> STEP 3:  Player Skill Indices ──────┤
+            │            (uses agnostic baseline)    │
+            ├──> STEP 4:  Team Skill Indices ────────┼──> STEP 7: Full Model
+            │            (uses agnostic baseline)    │
+            ├──> STEP 5:  Venue Skill Indices ───────┤
+            │            (uses agnostic baseline)    │
+            └──> STEP 5b: 3-Way Player ELO ──────────┤
+                         (batter+bowler+venue)       │
+                                                     │
+STEP 6:  Team ELO (game-level) ─────────────────────┤
+                                                     │
+                                     ┌───────────────┘
+                                     v
+                     STEP 8:  Pre-Match Features (add team skills)
+                     STEP 9:  Pre-Match Model Training
+                     STEP 10: Optimize Projection Parameters
+                     STEP 11: Calculate Per-Delivery Projections
+                     STEP 12: Train In-Match Models (projected score + win prob)
+                                     │
+                     ┌───────────────┘
+                     v (uses Cricinfo data)
+                     STEP 13: Build Player Game Data (per-innings from Cricinfo)
+                     STEP 14: Estimate Stat Ratings (Bayesian per-game)
+                     STEP 15: Career Ratings (EPR + BOUNCER composite)
 ```
 
 ---
@@ -488,6 +493,16 @@ source("data-raw/models/pre-match/03_train_prediction_model.R")
 # Step 10-11: Score Projection
 source("data-raw/ratings/projection/01_optimize_projection_params.R")
 source("data-raw/ratings/projection/02_calculate_projections.R")
+
+# Step 12: In-Match Models
+source("data-raw/models/in-match/01_prepare_all_formats.R")
+source("data-raw/models/in-match/03_projected_score_model.R")
+source("data-raw/models/in-match/05_win_probability_innings2.R")
+
+# Step 13-15: Player Game Data → Stat Ratings → BOUNCER
+source("data-raw/ratings/player/stat-ratings/01_build_player_game_data.R")
+source("data-raw/ratings/player/stat-ratings/02_estimate_stat_ratings.R")
+source("data-raw/ratings/player/stat-ratings/03_calculate_career_ratings.R")
 ```
 
 ### Usage Examples
@@ -532,18 +547,77 @@ calculate_unified_margin(
 
 ---
 
+## Step 12: In-Match Models
+
+**Purpose:** Projected score and chase win probability for live prediction
+
+**Location:** `data-raw/models/in-match/`
+
+Two-stage architecture:
+- **Stage 1:** Projected score model (T20/ODI/Test) — predicts final innings total from current game state
+- **Stage 2:** Chase win probability (T20/ODI only) — predicts win probability given projected scores
+
+**Key scripts:**
+- `01_prepare_all_formats.R` — Prepare training data per format
+- `03_projected_score_model.R` — Train Stage 1 projected score XGBoost
+- `05_win_probability_innings2.R` — Train Stage 2 chase win probability
+- `07_test_win_probability.R` / `08_test_win_probability_v3.R` — Test match decomposed P(result) × P(team1|result)
+
+**Output:** `{format}_projected_score_stage1.ubj`, `{format}_win_prob_stage2.ubj`
+
+---
+
+## Steps 13-15: Player Game Data → Stat Ratings → BOUNCER
+
+### Step 13: Player Game Data (Cricinfo)
+
+**Purpose:** Build per-innings player stats from Cricinfo ball-by-ball data
+
+**Location:** `R/player_game_data.R`, `R/player_game_data_storage.R`
+
+**Key functions:** `create_player_game_data(format, conn)`, `store_player_game_data(conn, pgd, format)`
+
+Creates per-game batting and bowling records for each player, using Cricinfo as the primary source (richer than Cricsheet for this purpose — includes Hawkeye features, title-parsed player names).
+
+### Step 14: Stat Ratings
+
+**Purpose:** Bayesian per-game stat ratings (batting average/SR, bowling economy/SR, etc.)
+
+**Location:** `R/stat_ratings.R`, `R/stat_rating_config.R`, `R/stat_rating_data.R`
+
+**Key functions:** `prepare_stat_rating_data(pgd)`, `estimate_player_stat_ratings(stat_data)`, `store_stat_ratings(conn, ratings, format)`
+
+Uses Bayesian shrinkage to produce stable per-game ratings that account for sample size.
+
+### Step 15: Career Ratings (EPR + BOUNCER)
+
+**Purpose:** Composite player value metric combining stat ratings into a single rating
+
+**Location:** `R/bouncer_rating.R`, `R/player_stat_value.R`, `R/player_career_ratings.R`, `R/player_career_display.R`
+
+**Key function:** `bouncer_ratings(format)` — produces final BOUNCER composite ratings
+
+**Pipeline:** Stat ratings → PSV (Player Stat Value) / BatV / BowlV → EPR (Expected Performance Rating) → BOUNCER composite
+
+---
+
 ## Dependency Matrix
 
-| Component | agnostic_model | player_skill | team_skill | venue_skill | team_elo |
-|-----------|----------------|--------------|------------|-------------|----------|
-| Player Skill | REQUIRED | - | - | - | - |
-| Team Skill | REQUIRED | - | - | - | - |
-| Venue Skill | REQUIRED | - | - | - | - |
-| Full Model | - | REQUIRED | REQUIRED | REQUIRED | - |
-| Pre-Match | - | REQUIRED | Optional | Optional | REQUIRED |
-| Projection | - | - | - | - | - |
-| Simulation | Full Model | REQUIRED | REQUIRED | REQUIRED | - |
-| Attribution | Full Model | REQUIRED | Optional | Optional | - |
+| Component | agnostic_model | player_skill | team_skill | venue_skill | team_elo | full_model | cricinfo_data |
+|-----------|----------------|--------------|------------|-------------|----------|------------|---------------|
+| Player Skill | REQUIRED | - | - | - | - | - | - |
+| Team Skill | REQUIRED | - | - | - | - | - | - |
+| Venue Skill | REQUIRED | - | - | - | - | - | - |
+| 3-Way ELO | REQUIRED | - | - | - | - | - | - |
+| Full Model | - | REQUIRED | REQUIRED | REQUIRED | - | - | - |
+| Pre-Match | - | REQUIRED | Optional | Optional | REQUIRED | - | - |
+| Projection | - | - | - | - | - | - | - |
+| In-Match | - | - | - | - | - | REQUIRED | - |
+| Simulation | - | REQUIRED | REQUIRED | REQUIRED | - | REQUIRED | - |
+| Attribution | - | REQUIRED | Optional | Optional | - | REQUIRED | - |
+| Player Game Data | - | - | - | - | - | - | REQUIRED |
+| Stat Ratings | - | - | - | - | - | - | Player Game Data |
+| Career Ratings | - | - | - | - | - | - | Stat Ratings |
 
 ---
 
@@ -588,14 +662,16 @@ wrangler r2 object put → inthegame-data bucket
 ```
 Cricsheet data ─→ Step 2 (Agnostic Model)
                       │
-                      ├──→ Steps 3,4,5 (Skill Indices) ──→ Step 7 (Full Model)
-                      │                                          │
-                      └──→ Step 6 (Team ELO) ─────────→ Step 8 (Pre-Match Features)
-                                                              │
-                                                         Steps 9-11 (Predictions + Projections)
+                      ├──→ Steps 3,4,5,5b (Skill Indices + 3-Way ELO) ──→ Step 7 (Full Model)
+                      │                                                          │
+                      └──→ Step 6 (Team ELO) ───────────────────────────→ Step 8 (Pre-Match Features)
+                                                                              │
+                                                                    Steps 9-12 (Predictions + In-Match)
+
+Cricinfo data ──→ Step 13 (Player Game Data) ──→ Step 14 (Stat Ratings) ──→ Step 15 (BOUNCER)
 ```
 
-Steps 3, 4, 5 can conceptually run in parallel (all depend on Step 2's agnostic baseline). Steps 8+ require all prior steps.
+Steps 3, 4, 5, 5b can conceptually run in parallel (all depend on Step 2's agnostic baseline). Steps 8+ require all prior steps. Steps 13-15 depend on Cricinfo data but are independent of Steps 1-12.
 
 ---
 
