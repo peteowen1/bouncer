@@ -487,6 +487,225 @@ predict_win_probability <- function(current_score,
 }
 
 
+#' Score Many Delivery States for Win Probability in One Pass
+#'
+#' The batched twin of [predict_win_probability()]. Same features, same models,
+#' same answer -- but assembled as columns and handed to XGBoost in three
+#' `predict()` calls instead of three per row.
+#'
+#' @section Why this exists:
+#' `predict_win_probability()` builds a one-row data.frame and calls
+#' `predict()` on it. That costs ~32 ms per delivery, which is fine for a chart
+#' and unusable for a pipeline: `cricinfo.balls` holds 940,985 deliveries, so
+#' scoring the corpus one ball at a time takes about 8.3 hours. The model calls
+#' were never the problem -- `calculate_projected_score_from_model()`,
+#' `calculate_innings1_win_prob()` and `calculate_chase_win_prob()` already
+#' accept N rows and build a single `xgb.DMatrix`. The cost was entirely in the
+#' scalar feature assembly around them, so this function reproduces that
+#' assembly with vectorised equivalents (`fcase` for the phase and run-rate
+#' branches, the innings split done by subsetting rather than by `if`).
+#'
+#' @section Parity with the scalar path:
+#' The two are checked against each other in
+#' `tests/testthat/test-in-match-batch.R`, which scores the same states both
+#' ways and requires agreement to within 1e-8. Any feature added to one must be
+#' added to the other or that test fails -- which is the point, given that the
+#' original serving bug was a train/serve feature mismatch nothing detected.
+#'
+#' @param states data.frame or data.table, one row per delivery state, with
+#'   columns `current_score`, `wickets`, `overs` (cricket notation) and
+#'   `innings` (1 or 2). Rows with `innings == 2` also need `target`. The 14
+#'   momentum columns produced by [calculate_rolling_features()]
+#'   (`runs_last_12_balls`, `rr_last_6_overs`, ...) are used when present and
+#'   imputed from the current run rate, with one warning, when absent -- never
+#'   zero-filled, for the reason given in [predict_win_probability()].
+#' @param format Character. Limited-overs format. Test/MDM are not supported
+#'   here; they run through the decomposed `predict_test_win_probability()`.
+#' @param models List from [load_in_match_models()]. Loaded if NULL.
+#' @param venue_stats List of venue statistics, or NULL for format defaults.
+#'
+#' @return Numeric vector of P(batting-first team wins), one element per row of
+#'   `states`, in input order. Rows that cannot be scored are `NA_real_`.
+#'
+#' @keywords internal
+predict_win_probability_batch <- function(states,
+                                          format = "t20",
+                                          models = NULL,
+                                          venue_stats = NULL) {
+
+  format <- tolower(format)
+  if (format %in% c("test", "mdm")) {
+    cli::cli_abort(c(
+      "{.fn predict_win_probability_batch} does not handle {.val {format}}.",
+      "i" = "Test win probability is decomposed into result/conditional models -- use {.fn predict_test_win_probability}."
+    ))
+  }
+
+  states <- as.data.frame(states)
+  n <- nrow(states)
+  if (n == 0L) return(numeric(0))
+
+  required <- c("current_score", "wickets", "overs", "innings")
+  absent <- setdiff(required, names(states))
+  if (length(absent) > 0) {
+    cli::cli_abort("{.arg states} is missing required column{?s}: {.field {absent}}.")
+  }
+
+  if (is.null(models)) {
+    models <- load_in_match_models(format)
+    if (is.null(models)) cli::cli_abort("Could not load in-match models for {.val {format}}.")
+  }
+  if (is.null(venue_stats)) venue_stats <- get_default_venue_stats(format)
+
+  innings <- as.integer(states$innings)
+  if (any(!innings %in% c(1L, 2L), na.rm = TRUE)) {
+    cli::cli_abort("{.field innings} must be 1 or 2; found {.val {setdiff(unique(innings), c(1L, 2L))}}.")
+  }
+  if (any(innings == 2L, na.rm = TRUE) && !"target" %in% names(states)) {
+    cli::cli_abort("{.field target} is required when any row has {.code innings == 2}.")
+  }
+
+  balls_bowled <- overs_to_balls(states$overs)
+  max_balls <- get_max_balls(format)
+  balls_remaining <- max_balls - balls_bowled
+
+  # Scalar `if (balls_bowled > 0)` in the row-at-a-time path. pmax keeps the
+  # division defined so no Inf is ever produced and then discarded.
+  crr <- ifelse(balls_bowled > 0, states$current_score / (pmax(balls_bowled, 1L) / 6), 0)
+
+  fd <- data.frame(
+    total_runs       = states$current_score,
+    wickets_fallen   = states$wickets,
+    wickets_in_hand  = 10 - states$wickets,
+    balls_bowled     = balls_bowled,
+    balls_remaining  = balls_remaining,
+    overs_completed  = balls_bowled / 6,
+    overs_remaining  = balls_remaining / 6,
+    current_run_rate = crr,
+    innings          = innings,
+    stringsAsFactors = FALSE
+  )
+
+  phase_bounds <- get_phase_boundaries(format)
+  current_over <- floor(balls_bowled / 6)
+  fd$phase <- data.table::fcase(
+    current_over <  phase_bounds$powerplay_end, "powerplay",
+    current_over >= phase_bounds$middle_end,    "death",
+    default = "middle"
+  )
+  fd$phase_powerplay <- as.integer(fd$phase == "powerplay")
+  fd$phase_middle    <- as.integer(fd$phase == "middle")
+  fd$phase_death     <- as.integer(fd$phase == "death")
+
+  fd$overs_into_phase <- calculate_phase_features(
+    over       = as.double(current_over),
+    ball       = as.double(balls_bowled - current_over * 6),
+    match_type = format
+  )$overs_into_phase
+
+  # Momentum. Same contract as the scalar path: real values when the caller
+  # has the ball sequence, otherwise imputed from the run rate with a warning.
+  mom_default <- list(
+    runs_last_12_balls = crr * 2, runs_last_24_balls = crr * 4,
+    dots_last_12_balls = 12 * 0.35, dots_last_24_balls = 24 * 0.35,
+    boundaries_last_12_balls = 12 * 0.12, boundaries_last_24_balls = 24 * 0.12,
+    wickets_last_12_balls = 0.4, wickets_last_24_balls = 0.8,
+    runs_last_3_overs = crr * 3, runs_last_6_overs = crr * 6,
+    wickets_last_3_overs = 0.6, wickets_last_6_overs = 1.2,
+    rr_last_3_overs = crr, rr_last_6_overs = crr
+  )
+  supplied <- intersect(names(mom_default), names(states))
+  if (length(supplied) < length(mom_default) &&
+      isTRUE(getOption("bouncer.warn_momentum_impute", TRUE))) {
+    cli::cli_warn(c(
+      "{length(mom_default) - length(supplied)} of {length(mom_default)} momentum features were not supplied and are imputed from the current run rate.",
+      "i" = "Pass them via {.fn calculate_rolling_features} output; silence with {.code options(bouncer.warn_momentum_impute = FALSE)}."
+    ))
+  }
+  for (nm in names(mom_default)) {
+    fd[[nm]] <- if (nm %in% supplied) states[[nm]] else mom_default[[nm]]
+  }
+
+  fd$venue_avg_score           <- venue_stats$avg_first_innings
+  fd$venue_chase_success_rate  <- venue_stats$chase_win_rate %||% 0.45
+  fd$venue_avg_first_innings   <- venue_stats$avg_first_innings
+  fd$venue_avg_second_innings  <- venue_stats$avg_second_innings %||% venue_stats$avg_first_innings
+  fd$venue_chase_win_rate      <- venue_stats$chase_win_rate %||% 0.45
+
+  fd$gender      <- "male"
+  fd$gender_male <- 1L
+  fd$is_knockout <- 0L
+  fd$event_tier  <- 1
+  fd$is_dls_match <- FALSE
+  fd$is_dls      <- 0L
+  fd$is_ko       <- 0L
+
+  # Stage 1 runs over every row: both branches consume the projected score.
+  fd$projected_final_score <- calculate_projected_score_from_model(
+    fd, models$stage1_model, models$stage1_features, format
+  )
+
+  out <- rep(NA_real_, n)
+  i1 <- which(innings == 1L)
+  i2 <- which(innings == 2L)
+
+  if (length(i1) > 0) {
+    f1 <- fd[i1, , drop = FALSE]
+    f1$projected_vs_baseline <- f1$projected_final_score - f1$venue_avg_first_innings
+
+    wp1 <- NULL
+    if (!is.null(models$innings1_model) && !is.null(models$innings1_features)) {
+      wp1 <- tryCatch(
+        calculate_innings1_win_prob(f1, models$innings1_model, models$innings1_features),
+        error = function(e) NULL
+      )
+    }
+    # Same logistic fallback, and the same reason it is not a weak link: on the
+    # ODI benchmark it scored 0.216 against the scraped column's 0.387.
+    if (is.null(wp1)) {
+      above_par <- f1$projected_final_score - f1$venue_avg_first_innings
+      wp1 <- 1 / (1 + exp(-above_par / 40))
+    }
+    out[i1] <- pmax(0.05, pmin(0.95, wp1))
+  }
+
+  if (length(i2) > 0) {
+    f2 <- fd[i2, , drop = FALSE]
+    target2 <- states$target[i2]
+    f2$target_runs <- target2
+
+    pm <- calculate_pressure_metrics(
+      target           = target2,
+      current_runs     = f2$total_runs,
+      current_wickets  = f2$wickets_fallen,
+      balls_remaining  = f2$balls_remaining,
+      current_run_rate = f2$current_run_rate
+    )
+    for (nm in names(pm)) f2[[nm]] <- pm[[nm]]
+
+    tc <- calculate_tail_calibration_features(
+      runs_needed     = f2$runs_needed,
+      balls_remaining = f2$balls_remaining,
+      wickets_in_hand = f2$wickets_in_hand
+    )
+    for (nm in names(tc)) f2[[nm]] <- tc[[nm]]
+
+    f2$innings1_total    <- target2 - 1
+    f2$innings1_run_rate <- (target2 - 1) / (max_balls / 6)
+    f2$innings1_wickets  <- 10
+
+    f2$projected_vs_target   <- f2$projected_final_score - target2
+    f2$projected_win_margin  <- f2$projected_final_score - (target2 - 1)
+
+    # calculate_chase_win_prob() answers for the chasing team; the scalar path
+    # inverts to batting-first and so does this one.
+    out[i2] <- 1 - calculate_chase_win_prob(f2, models$stage2_model, models$stage2_features)
+  }
+
+  out
+}
+
+
 #' Predict Test Match Win Probability (Decomposed Pipeline)
 #'
 #' Uses two binary models: P(result) and P(team1_win | result) to produce
