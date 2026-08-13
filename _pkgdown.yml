@@ -244,6 +244,8 @@ reference:
     desc: Innings score projection utilities
     contents:
     - calculate_projection_resource
+    - fit_resource_surface
+    - resource_runs
     - calculate_test_projected_score
     - calculate_test_overs_remaining
     - estimate_test_innings_overs_remaining
