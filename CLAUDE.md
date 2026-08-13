@@ -38,27 +38,43 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 
 3-Way ELO + centrality feed the delivery-level models. Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glicko is deprecated and archived in `data-raw/_deprecated/`.
 
-> ### ⚠️ The WPA in the player ratings is SCRAPED from ESPNcricinfo — it is not our model
+> ### ⚠️ The WPA feeding the ratings is now OURS (D-P6, 2026-08-13) — but it barely matters
 >
-> Established 2026-08-12 after this was assumed the other way round and a wrong
-> conclusion was published. Do not re-derive it; do not describe BOUNCER ratings
-> as running on bouncer's own win probability.
+> Two corrections live here. The first replaced the WPA source. The second is
+> the one that changes what you should work on.
 >
-> **Two separate win-probability systems exist in this repo:**
+> **1. Source: `batting_wpa`/`bowling_wpa` now come from bouncer's own models.**
+> `build_cricinfo_win_probability()` scores every T20 and ODI delivery into
+> `main.cricinfo_ball_win_probability`; `player_game_data.R` joins it. The old
+> scraped `cricinfo.balls.win_probability` is still selectable via
+> `wp_source = "cricinfo"` for comparison. Ours won on evidence — Brier
+> **0.1354 vs 0.2208** over 20,326 ODI deliveries where both exist — and on
+> coverage, which went from **8.6% → 100%** (ODI) and **42.9% → 100%** (T20)
+> among rows where the player actually batted.
 >
-> | | What it is | Where it goes |
-> |---|---|---|
-> | `predict_win_probability()` + `data-raw/models/in-match/` stage1/stage2 | **Ours.** Trained here. | Only caller is `plot_win_probability()`. **Draws a chart. Feeds no rating.** |
-> | `cricinfo.balls.win_probability` | **Theirs.** Scraped by `bouncerdata/scripts/cricinfo_scraper.py` from `predictions.winProbability`. | `player_game_data.R` `LEAD()`-differences it → `batting_wpa`/`bowling_wpa` → `calculate_epr()` → **BOUNCER composite**. |
+> **2. WPA contributes ~0.009% of the EPR that feeds BOUNCER.**
+> `calculate_epr()` computes `bat_value = batting_wpa + batting_era`, adding a
+> probability to a run count:
 >
-> **Coverage of the scraped column is poor and uneven** (2026-08-12): Test **0.0%**,
-> ODI **7.7%**, T20 42.8%, Hundred 0.0%. Missing *whole-match*, not scattered —
-> 2,711 of 3,757 matches have none. `SUM()` over an all-NULL group is `NULL`, so
-> those arrive at `calculate_epr()` as `NA`. `calculate_epr()` now warns at
-> runtime when coverage is thin; **do not silence that warning.**
+> | | WPA sd | ERA sd | corr(bat_value, ERA) | WPA share of variance |
+> |---|---|---|---|---|
+> | T20 | 0.126 | 13.05 | +0.99995 | 0.0094% |
+> | ODI | 0.133 | 25.88 | +0.99999 | 0.0026% |
 >
-> **Practical consequence:** improving the in-match models does **not** improve the
-> player ratings today. Wiring ours in is open — `docs/DECISIONS.md` **D-P6**.
+> **EPR is ERA.** Do not expect any WPA improvement to move a rating until this
+> is resolved. And do not "fix" it by standardising the two components — that was
+> tested and made the anchor checks worse (Root 14/98 → 98/98 in ODI), so ERA is
+> genuinely the stronger player-value signal and WPA is not simply mis-scaled.
+>
+> **Test format still has no WPA from any source.** The scraped column is 0.0%
+> populated for it and `build_cricinfo_win_probability()` is limited-overs only;
+> Test runs through the decomposed `predict_test_win_probability()`, which is not
+> batched yet. 355,962 deliveries.
+>
+> **`calculate_epr()`'s coverage warning is still load-bearing** — do not silence
+> it. Matches with no win probability still reach it as `NA`, and
+> `.merge_batting_bowling()` no longer launders those into zeros (it did, for
+> 13,668 of 15,012 ODI player-match rows, until 2026-08-13).
 
 **Key Formula (residual-based skill updates):**
 ```r
