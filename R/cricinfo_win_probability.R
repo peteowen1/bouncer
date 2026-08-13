@@ -419,3 +419,114 @@ store_cricinfo_win_probability <- function(conn, data, format,
   )
   invisible(n)
 }
+
+
+#' Parse a Cricinfo Match Result From Its Status Text
+#'
+#' Turns `cricinfo.matches.status_text` into a usable outcome. This is the
+#' correct label for any win-probability evaluation in this package.
+#'
+#' @section Do not derive the result from the scores:
+#' `innings2_total <= innings1_total` looks like the obvious label and is wrong
+#' for every rain-affected match, where the chase wins on a reduced target and
+#' therefore reads as a batting-first win. Measured on cricsheet ODI male
+#' 2014-2026, which carries a trustworthy `outcome_method`:
+#'
+#' | | matches | true bf rate | score-derived bf rate |
+#' |---|---|---|---|
+#' | normal | 1,143 | 0.4829 | 0.4838 |
+#' | D/L | 108 | 0.4815 | **0.8148** |
+#'
+#' D/L is 8.6% of matches and the derived label is 33 points wrong on them,
+#' which was enough to make a correctly-calibrated model look badly
+#' miscalibrated (ODI male chase ECE 0.1064 against a true 0.0781).
+#'
+#' @section Do not use `winner_team_id` either:
+#' That column names a team which is not in the match for most rows — 71.7% of
+#' T20, 56.5% of ODI, and every Hundred match. Match `1513717` is India U19
+#' (`1803`) against UAE U19 (`3675`) with `winner_team_id` `1854`.
+#'
+#' @param status_text Character vector of `cricinfo.matches.status_text`.
+#'
+#' @return A data.frame with one row per input:
+#'   \itemize{
+#'     \item `result` — "batting_first", "chasing", "tied", "drawn",
+#'       "no_result", or NA when the text is absent or unrecognised
+#'     \item `bf_won` — 1 if the side batting first won, 0 if the chasing side
+#'       won, NA otherwise. Ties are NA even when a Super Over decided them:
+#'       the innings themselves were level.
+#'     \item `margin`, `margin_type` — "runs", "wickets" or "innings_and_runs"
+#'     \item `is_dls` — TRUE when the result was reached by DLS/D-L
+#'     \item `super_over` — TRUE when a Super Over or one-over eliminator
+#'       decided a tie
+#'   }
+#'
+#' @export
+cricinfo_match_outcome <- function(status_text) {
+
+  n <- length(status_text)
+  st <- as.character(status_text)
+
+  result      <- rep(NA_character_, n)
+  bf_won      <- rep(NA_integer_, n)
+  margin      <- rep(NA_real_, n)
+  margin_type <- rep(NA_character_, n)
+
+  is_dls <- grepl("DLS|D/L|Duckworth", st, ignore.case = TRUE) & !is.na(st)
+  super_over <- grepl("super over|one-over eliminator", st, ignore.case = TRUE) & !is.na(st)
+
+  # A tie is a tie whatever settled it afterwards, so this is checked before
+  # the margin patterns -- "Match tied (India won the Super Over)" contains no
+  # margin, but the guard keeps the intent explicit.
+  tied  <- grepl("^\\s*Match tied", st, ignore.case = TRUE) & !is.na(st)
+  drawn <- grepl("^\\s*Match drawn", st, ignore.case = TRUE) & !is.na(st)
+  nores <- grepl("^\\s*No result|abandoned", st, ignore.case = TRUE) & !is.na(st)
+
+  result[tied]  <- "tied"
+  result[drawn] <- "drawn"
+  result[nores] <- "no_result"
+
+  undecided <- tied | drawn | nores | is.na(st)
+
+  # "won by an innings and 47 runs" -- the side that batted once won, which is
+  # the side that batted first. Checked before the plain runs pattern, which
+  # would otherwise match the same text.
+  RE_INNS <- "won by an innings and\\s+(\\d+)\\s+runs?"
+  RE_RUNS <- "won by\\s+(\\d+)\\s+runs?"
+  RE_WKTS <- "won by\\s+(\\d+)\\s+wickets?"
+  grab <- function(x, re) as.numeric(sub(paste0(".*", re, ".*"), "\\1", x, ignore.case = TRUE))
+
+  inns <- grepl(RE_INNS, st, ignore.case = TRUE) & !undecided
+  if (any(inns)) {
+    result[inns] <- "batting_first"
+    bf_won[inns] <- 1L
+    margin_type[inns] <- "innings_and_runs"
+    margin[inns] <- grab(st[inns], RE_INNS)
+  }
+
+  runs <- grepl(RE_RUNS, st, ignore.case = TRUE) & !undecided & !inns
+  if (any(runs)) {
+    result[runs] <- "batting_first"
+    bf_won[runs] <- 1L
+    margin_type[runs] <- "runs"
+    margin[runs] <- grab(st[runs], RE_RUNS)
+  }
+
+  wkts <- grepl(RE_WKTS, st, ignore.case = TRUE) & !undecided
+  if (any(wkts)) {
+    result[wkts] <- "chasing"
+    bf_won[wkts] <- 0L
+    margin_type[wkts] <- "wickets"
+    margin[wkts] <- grab(st[wkts], RE_WKTS)
+  }
+
+  data.frame(
+    result = result,
+    bf_won = bf_won,
+    margin = margin,
+    margin_type = margin_type,
+    is_dls = is_dls,
+    super_over = super_over,
+    stringsAsFactors = FALSE
+  )
+}

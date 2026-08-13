@@ -119,6 +119,7 @@ reference:
     desc: Per-game and career player value ratings (WPA, ERA, PSV, BOUNCER)
     contents:
     - build_cricinfo_win_probability
+    - cricinfo_match_outcome
     - create_player_game_data
     - load_player_game_data
     - player_game_ratings
