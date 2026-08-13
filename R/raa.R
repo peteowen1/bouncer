@@ -38,16 +38,18 @@
 #'
 #' Returns lambda, the run cost of a dismissal in the RAA formula.
 #'
-#' Fitted, not assumed (see the RAA plan, "The wicket value, fitted"): both the
-#' WP cost of a wicket and the WP value of a run were estimated from actual
-#' match outcomes with over-by-wickets state controls, and lambda is their
-#' ratio. T20 came out at 10.2 runs in a chase and 7.8 in the first innings; a
-#' single 9.0 midpoint is used so that identical acts score identically in
-#' both innings. The naive state-difference estimator also lands near 9 but by
-#' luck -- it is selection-biased and must not be used to refit this number.
+#' Fitted, not assumed (see the RAA plan, "The wicket value, fitted"): both
+#' the WP cost of a wicket and the WP value of a run are estimated from actual
+#' match outcomes with within-state controls (runs needed / score, balls left,
+#' wickets in hand), and lambda is their ratio, averaged across the two
+#' innings so identical acts score identically in both. T20 fitted 7.8-10.2
+#' by innings (9.0 in use); ODI fitted 22.5 (innings 1) and 23.4 (chase) on
+#' 2026-08-14 over 227,628 male deliveries -- a wicket is worth ~2.5x more
+#' runs in a 300-ball innings (bouncerverse#19). The naive state-difference
+#' estimator is selection-biased and must never be used to refit these.
 #'
-#' @param format Character. "t20" is fitted. "odi" and "test" abort until
-#'   their lambdas are fitted from actual outcomes (bouncerverse#19).
+#' @param format Character. "t20" and "odi" are fitted. "test" aborts until
+#'   its lambda is fitted from actual outcomes.
 #'
 #' @return Numeric scalar, runs per wicket.
 #'
@@ -56,9 +58,10 @@ get_raa_lambda <- function(format = c("t20", "odi", "test")) {
   format <- match.arg(format)
   switch(format,
     t20 = 9.0,
+    odi = 23.0,
     cli::cli_abort(c(
       "RAA lambda is not fitted for {.val {format}} yet.",
-      "i" = "Fit it from actual outcomes as bouncerverse#19 specifies; do not reuse the T20 value."
+      "i" = "Fit it from actual outcomes as the RAA plan specifies; do not reuse another format's value."
     ))
   )
 }

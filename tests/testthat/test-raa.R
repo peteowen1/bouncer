@@ -5,9 +5,11 @@
 # lives in the ticket record for bouncerverse#11; what is pinned here is the
 # arithmetic and the guardrails that do not need data.
 
-test_that("get_raa_lambda returns the fitted T20 value and refuses unfitted formats", {
+test_that("get_raa_lambda returns the fitted values and refuses unfitted formats", {
   expect_equal(get_raa_lambda("t20"), 9.0)
-  expect_error(get_raa_lambda("odi"), "not fitted")
+  # ODI fitted 22.5/23.4 by innings from actual outcomes (bouncerverse#19);
+  # a wicket in a 300-ball innings is worth ~2.5x its T20 value.
+  expect_equal(get_raa_lambda("odi"), 23.0)
   expect_error(get_raa_lambda("test"), "not fitted")
 })
 
