@@ -257,66 +257,67 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
 
   # --- Pre-delivery state, and the delta that follows from it ---------------
   #
-  # The scored number is the state AFTER the delivery: it is built from
+  # The scored number above is the state AFTER the delivery: it is built from
   # total_innings_runs and total_innings_wickets, both of which already include
   # the current ball (verified: on the first ball of an innings the cumulative
   # total equals that ball's runs, and total_innings_wickets jumps by 0.993 on
   # wicket balls and 0.000 otherwise).
   #
-  # So the swing a delivery CAUSED is wp_after(i) - wp_after(i-1), not
-  # LEAD(wp) - wp. The latter is the swing of the NEXT delivery, credited to
-  # this one's batter and bowler. Measured over 133,431 ODI second-innings
-  # deliveries: a wicket's own row carries a mean absolute delta of 0.0507
-  # under the correct definition against 0.0082 for non-wicket balls, but only
-  # 0.0104 under LEAD -- indistinguishable from an ordinary ball. That is the
-  # off-by-one made visible.
+  # The "before" number is the model evaluated at THIS ball's own pre-delivery
+  # state -- score minus this ball's runs, wickets minus this ball's wicket,
+  # one ball earlier on the clock -- the same epv_delta construction torp and
+  # panna use. It is NOT the previous row's "after". Differencing adjacent
+  # rows looks equivalent and is not: cricinfo ball data has gaps (match
+  # 1384429 is missing overs 31-32 of its chase), and a LAG across a gap
+  # charges every unrecorded ball's drift to whoever bowls next -- one dot
+  # ball there carried a -0.537 delta and put an ICC top-10 bowler 94th of 98
+  # on the impact rating (bouncerverse#28). Under the own-pre-state
+  # construction a gap's drift lands on no delivery at all.
   #
-  # Computing before/after/delta here rather than as a window function in
-  # player_game_data.R keeps the definition in one place and makes the
-  # telescoping property (win_prob_before[i] == win_prob_after[i-1]) explicit
-  # instead of implied.
+  # LEAD(wp) - wp is more wrong still -- it credits each swing to the previous
+  # delivery's batter and bowler (the 2026-08-13 off-by-one, d7ffbf5).
+  #
+  # Momentum for the pre-state is the previous ball's window (lagged one ball,
+  # zero at innings start, matching calculate_rolling_features() there). Across
+  # a data gap the lagged window is stale by the gap's length -- bounded and
+  # in-distribution, unlike the state, which is exact from the ball's own row.
   data.table::setorder(balls, match_id, innings, over, ball, id)
 
-  # Ball 1 of an innings has no previous delivery. Its "before" state is the
-  # innings start: nothing scored, nobody out, no overs bowled. Momentum is
-  # zero there, which is what calculate_rolling_features() also produces for
-  # the start of an innings, so this sits inside the training distribution.
-  starts <- unique(balls[, .(match_id, innings, target, gender_male, venue_avg_score,
-                             venue_chase_success_rate, venue_avg_second_innings,
-                             innings1_wickets)])
-  start_states <- data.frame(
-    current_score = 0,
-    wickets       = 0,
-    overs         = 0,
-    innings       = starts$innings,
-    target        = starts$target,
-    gender_male   = starts$gender_male,
-    venue_avg_score          = starts$venue_avg_score,
-    venue_chase_success_rate = starts$venue_chase_success_rate,
-    venue_avg_second_innings = starts$venue_avg_second_innings,
-    innings1_wickets         = starts$innings1_wickets
-  )
-  for (nm in mom_cols) start_states[[nm]] <- 0
-  start_scoreable <- starts$innings == 1L | !is.na(starts$target)
-
-  starts[, `:=`(wp_start = NA_real_, ps_start = NA_real_)]
-  if (any(start_scoreable)) {
-    s0 <- predict_win_probability_batch(
-      start_states[start_scoreable, , drop = FALSE], format = format,
-      models = models, detail = TRUE
-    )
-    starts[start_scoreable, `:=`(wp_start = s0$win_prob, ps_start = s0$projected_score)]
+  pre_mom_cols <- paste0(mom_cols, "_pre")
+  for (nm in mom_cols) {
+    balls[, (paste0(nm, "_pre")) := data.table::shift(get(nm), 1L, type = "lag", fill = 0),
+          by = .(match_id, innings)]
   }
-  balls <- merge(balls, starts[, .(match_id, innings, wp_start, ps_start)],
-                 by = c("match_id", "innings"), all.x = TRUE)
-  data.table::setorder(balls, match_id, innings, over, ball, id)
-
   balls[, `:=`(
-    win_prob_before  = data.table::shift(win_prob_after, 1L, type = "lag"),
-    proj_score_before = data.table::shift(proj_score_after, 1L, type = "lag")
-  ), by = .(match_id, innings)]
-  balls[is.na(win_prob_before),   win_prob_before   := wp_start]
-  balls[is.na(proj_score_before), proj_score_before := ps_start]
+    score_pre   = score - runs_total,
+    wickets_pre = pmax(wickets - as.integer(is_wicket), 0L),
+    # overs in cricket notation, one ball earlier; ball 1 of an over rolls
+    # back to the completed previous over
+    overs_pre   = (over - 1) + (pmin(ball, 6) - 1) / 10
+  )]
+
+  pre_states <- data.frame(
+    current_score = balls$score_pre[scoreable],
+    wickets       = balls$wickets_pre[scoreable],
+    overs         = balls$overs_pre[scoreable],
+    innings       = balls$innings[scoreable],
+    target        = balls$target[scoreable],
+    gender_male   = balls$gender_male[scoreable],
+    venue_avg_score          = balls$venue_avg_score[scoreable],
+    venue_chase_success_rate = balls$venue_chase_success_rate[scoreable],
+    venue_avg_second_innings = balls$venue_avg_second_innings[scoreable],
+    innings1_wickets         = balls$innings1_wickets[scoreable]
+  )
+  pre_mom <- as.data.frame(balls[scoreable, ..pre_mom_cols])
+  names(pre_mom) <- mom_cols
+  pre_states <- cbind(pre_states, pre_mom)
+
+  pre_scored <- predict_win_probability_batch(pre_states, format = format,
+                                              models = models, detail = TRUE)
+
+  balls[, `:=`(win_prob_before = NA_real_, proj_score_before = NA_real_)]
+  balls[scoreable, `:=`(win_prob_before   = pre_scored$win_prob,
+                        proj_score_before = pre_scored$projected_score)]
 
   balls[, delta_wp := win_prob_after - win_prob_before]
   balls[, delta_ps := proj_score_after - proj_score_before]
