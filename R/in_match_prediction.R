@@ -821,9 +821,11 @@ predict_test_win_probability <- function(current_score,
     completed_wickets <- completed_wickets + inn_wickets
   }
 
-  # Current innings state
-  current_over <- overs  # overs bowled in current innings
-  current_run_rate <- if (current_over > 0) current_score / current_over else 0
+  # Current innings state. Training computed current_run_rate as 0 anywhere in
+  # the first over (its condition was on the 0-indexed whole over), so the
+  # serving path does the same -- diverging here was a train/serve skew.
+  current_over <- overs  # overs bowled in current innings (decimal)
+  current_run_rate <- if (current_over >= 1) current_score / current_over else 0
   wickets_in_hand <- 10 - wickets
 
   # Team1 lead
@@ -833,8 +835,9 @@ predict_test_win_probability <- function(current_score,
     team1_lead <- as.integer(team1_completed - (team2_completed + current_score))
   }
 
-  # Cumulative match overs
-  cum_overs <- completed_overs + current_over
+  # Cumulative match overs. Training added the WHOLE 0-indexed over, not the
+  # decimal, so the sub-over part is dropped to match it.
+  cum_overs <- completed_overs + floor(current_over)
   MAX_OVERS <- 450
   overs_remaining <- max(0, MAX_OVERS - cum_overs)
   match_progress <- min(1, cum_overs / MAX_OVERS)
@@ -902,10 +905,18 @@ predict_test_win_probability <- function(current_score,
     overs_per_wicket_val <- if (wickets_in_hand > 0) overs_remaining / wickets_in_hand else 0
   }
 
-  # Projected lead and innings total
-  projected_innings_total <- if (current_over > 0) current_score * (90 / current_over) else venue_avg
-  projected_lead <- if (batting_is_team1) {
+  # Projected lead and innings total, exactly as training built them: the
+  # projection's denominator is clamped at one over (an unclamped divide gave
+  # a 6-ball innings a 5,400-run projection), and an innings-2 side gets a
+  # projected lead rather than the raw one. Both were train/serve skews until
+  # 2026-08-13 (bouncerverse#14).
+  projected_innings_total <- current_score * (90 / max(current_over, 1))
+  projected_lead <- if (batting_is_team1 && innings == 1) {
+    projected_innings_total - venue_avg
+  } else if (batting_is_team1) {
     team1_completed + projected_innings_total - team2_completed - venue_avg
+  } else if (innings == 2) {
+    team1_completed - (team2_completed + projected_innings_total)
   } else {
     as.double(team1_lead)
   }
