@@ -149,7 +149,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   wp_source <- match.arg(wp_source)
 
   col <- switch(wp_source,
-    bouncer  = "w.win_probability",
+    bouncer  = "w.win_prob_after",
     cricinfo = "b.win_probability"
   )
 
@@ -158,13 +158,24 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     cricinfo = ""
   )
 
-  # Ordering stays on (over_number, ball_number) regardless of source: it is
-  # the delivery sequence, not the win probability, that defines "next ball".
-  delta <- sprintf(
-    "LEAD(%s) OVER (
+  # The delta a delivery CAUSED is wp_after(i) - wp_after(i-1). Both columns
+  # are post-delivery states, so the LEAD form this code used until 2026-08-13
+  # computed the NEXT delivery's swing and credited it to this delivery's
+  # batter and bowler -- an off-by-one across every WPA-derived rating. See
+  # build_cricinfo_win_probability() for the measurement that established it.
+  #
+  # For our source the delta is precomputed in the table, including the
+  # innings-start "before" state that a LAG cannot supply for ball 1. For the
+  # scraped column there is no such table, so the LAG is taken here and ball 1
+  # of each innings is necessarily NA.
+  delta <- switch(wp_source,
+    bouncer  = "w.delta_wp",
+    cricinfo = sprintf(
+      "%s - LAG(%s) OVER (
           PARTITION BY b.match_id, b.innings_number
           ORDER BY b.over_number, b.ball_number
-        ) - %s", col, col)
+        )", col, col)
+  )
 
   list(col = col, delta = delta, join = join)
 }

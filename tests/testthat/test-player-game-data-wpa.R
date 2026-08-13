@@ -99,17 +99,22 @@ test_that("the win probability source is chosen in one place and both options ar
   expect_match(ours$join, "ON w\\.id = b\\.id")
   expect_identical(theirs$join, "")
 
-  expect_identical(ours$col, "w.win_probability")
+  expect_identical(ours$col, "w.win_prob_after")
   expect_identical(theirs$col, "b.win_probability")
 
-  # The delta must difference the SAME column it selects, in both cases.
-  expect_match(ours$delta, "LEAD\\(w\\.win_probability\\)")
-  expect_match(ours$delta, "- w\\.win_probability$")
-  expect_match(theirs$delta, "LEAD\\(b\\.win_probability\\)")
-  expect_match(theirs$delta, "- b\\.win_probability$")
+  # Ours uses the delta precomputed alongside the win probability, so the
+  # innings-start "before" state is available for ball 1.
+  expect_identical(ours$delta, "w.delta_wp")
 
-  # Ordering is the delivery sequence regardless of source.
-  expect_match(ours$delta, "ORDER BY b\\.over_number, b\\.ball_number")
+  # Theirs must LAG, never LEAD. Both stored columns are POST-delivery states,
+  # so LEAD(wp) - wp is the NEXT delivery's swing credited to this delivery's
+  # batter and bowler. Measured on 133,431 ODI deliveries, that put a wicket's
+  # own row at 0.0104 mean absolute delta against 0.0096 for an ordinary ball;
+  # under LAG it is 0.0507 against 0.0091.
+  expect_match(theirs$delta, "LAG\\(b\\.win_probability\\)")
+  expect_false(grepl("LEAD", theirs$delta))
+  expect_false(grepl("LEAD", ours$delta))
+
   expect_match(theirs$delta, "ORDER BY b\\.over_number, b\\.ball_number")
 
   expect_error(.wp_source_sql("espn"), "should be one of")

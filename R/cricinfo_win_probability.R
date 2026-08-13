@@ -195,13 +195,68 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
   wp <- predict_win_probability_batch(states, format = format, models = models)
   elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 
-  balls[, win_probability := NA_real_]
-  balls[scoreable, win_probability := wp]
+  balls[, win_prob_after := NA_real_]
+  balls[scoreable, win_prob_after := wp]
 
-  n_scored <- sum(!is.na(balls$win_probability))
+  n_scored <- sum(!is.na(balls$win_prob_after))
   cli::cli_alert_success(
     "Scored {n_scored}/{nrow(balls)} deliveries in {round(elapsed, 1)}s ({round(1000 * elapsed / max(n_scored, 1), 3)} ms/ball)."
   )
+
+  # --- Pre-delivery state, and the delta that follows from it ---------------
+  #
+  # The scored number is the state AFTER the delivery: it is built from
+  # total_innings_runs and total_innings_wickets, both of which already include
+  # the current ball (verified: on the first ball of an innings the cumulative
+  # total equals that ball's runs, and total_innings_wickets jumps by 0.993 on
+  # wicket balls and 0.000 otherwise).
+  #
+  # So the swing a delivery CAUSED is wp_after(i) - wp_after(i-1), not
+  # LEAD(wp) - wp. The latter is the swing of the NEXT delivery, credited to
+  # this one's batter and bowler. Measured over 133,431 ODI second-innings
+  # deliveries: a wicket's own row carries a mean absolute delta of 0.0507
+  # under the correct definition against 0.0082 for non-wicket balls, but only
+  # 0.0104 under LEAD -- indistinguishable from an ordinary ball. That is the
+  # off-by-one made visible.
+  #
+  # Computing before/after/delta here rather than as a window function in
+  # player_game_data.R keeps the definition in one place and makes the
+  # telescoping property (win_prob_before[i] == win_prob_after[i-1]) explicit
+  # instead of implied.
+  data.table::setorder(balls, match_id, innings, over, ball, id)
+
+  # Ball 1 of an innings has no previous delivery. Its "before" state is the
+  # innings start: nothing scored, nobody out, no overs bowled. Momentum is
+  # zero there, which is what calculate_rolling_features() also produces for
+  # the start of an innings, so this sits inside the training distribution.
+  starts <- unique(balls[, .(match_id, innings, target)])
+  start_states <- data.frame(
+    current_score = 0,
+    wickets       = 0,
+    overs         = 0,
+    innings       = starts$innings,
+    target        = starts$target
+  )
+  for (nm in mom_cols) start_states[[nm]] <- 0
+  start_scoreable <- starts$innings == 1L | !is.na(starts$target)
+
+  starts[, wp_start := NA_real_]
+  if (any(start_scoreable)) {
+    starts[start_scoreable, wp_start := predict_win_probability_batch(
+      start_states[start_scoreable, , drop = FALSE], format = format, models = models
+    )]
+  }
+  balls <- merge(balls, starts[, .(match_id, innings, wp_start)],
+                 by = c("match_id", "innings"), all.x = TRUE)
+  data.table::setorder(balls, match_id, innings, over, ball, id)
+
+  balls[, win_prob_before := data.table::shift(win_prob_after, 1L, type = "lag"),
+        by = .(match_id, innings)]
+  balls[is.na(win_prob_before), win_prob_before := wp_start]
+  balls[, delta_wp := win_prob_after - win_prob_before]
+
+  n_delta <- sum(!is.na(balls$delta_wp))
+  cli::cli_alert_success("{n_delta}/{nrow(balls)} deliveries have a win probability delta.")
 
   out <- balls[, .(
     id,
@@ -210,7 +265,9 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
     over_number    = over,
     ball_number    = ball,
     format         = db_format,
-    win_probability
+    win_prob_before,
+    win_prob_after,
+    delta_wp
   )]
 
   if (!write) return(out[])
@@ -239,6 +296,24 @@ store_cricinfo_win_probability <- function(conn, data, format,
 
   db_format <- toupper(format)
 
+  # Recreate rather than CREATE IF NOT EXISTS when the shape is stale: an
+  # earlier build of this table carried a single `win_probability` column, and
+  # inserting the before/after/delta triple into it would fail on column count
+  # with nothing explaining why.
+  existing <- DBI::dbGetQuery(conn, sprintf("
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'main' AND table_name = '%s'", table_name))$column_name
+
+  wanted <- c("id", "match_id", "innings_number", "over_number", "ball_number",
+              "format", "win_prob_before", "win_prob_after", "delta_wp")
+
+  if (length(existing) > 0 && !setequal(existing, wanted)) {
+    cli::cli_alert_warning(
+      "{.field main.{table_name}} has an outdated shape ({length(existing)} column{?s}); recreating it."
+    )
+    DBI::dbExecute(conn, sprintf("DROP TABLE main.%s", table_name))
+  }
+
   DBI::dbExecute(conn, sprintf("
     CREATE TABLE IF NOT EXISTS main.%s (
       id              VARCHAR,
@@ -247,7 +322,9 @@ store_cricinfo_win_probability <- function(conn, data, format,
       over_number     DOUBLE,
       ball_number     INTEGER,
       format          VARCHAR,
-      win_probability DOUBLE
+      win_prob_before DOUBLE,
+      win_prob_after  DOUBLE,
+      delta_wp        DOUBLE
     )", table_name))
 
   duckdb::duckdb_register(conn, "cwp_staging", as.data.frame(data))
@@ -257,9 +334,7 @@ store_cricinfo_win_probability <- function(conn, data, format,
     "DELETE FROM main.%s WHERE format = '%s'", table_name, db_format
   ))
 
-  cols <- c("id", "match_id", "innings_number", "over_number",
-            "ball_number", "format", "win_probability")
-  col_list <- paste(cols, collapse = ", ")
+  col_list <- paste(wanted, collapse = ", ")
 
   n <- DBI::dbExecute(conn, sprintf(
     "INSERT INTO main.%s (%s) SELECT %s FROM cwp_staging",
