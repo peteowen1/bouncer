@@ -8,7 +8,8 @@ create_player_game_data(
   format = c("t20", "odi", "test"),
   conn = NULL,
   match_ids = NULL,
-  gender = NULL
+  gender = NULL,
+  wp_source = c("bouncer", "cricinfo")
 )
 }
 \arguments{
@@ -19,6 +20,12 @@ create_player_game_data(
 \item{match_ids}{Character vector. Specific match IDs to process (NULL = all).}
 
 \item{gender}{Character. Filter by gender: "male", "female", or NULL for all.}
+
+\item{wp_source}{Character. Which win probability \code{batting_wpa} /
+\code{bowling_wpa} are differenced from. \code{"bouncer"} (default) uses our own
+models via \code{main.cricinfo_ball_win_probability}; \code{"cricinfo"} uses the
+scraped \code{cricinfo.balls.win_probability}. See the file header for the
+benchmark that settled the default, and D-P6 in \code{docs/DECISIONS.md}.}
 }
 \value{
 data.table with one row per player per match. Players who both

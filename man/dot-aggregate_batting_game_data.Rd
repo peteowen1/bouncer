@@ -4,7 +4,13 @@
 \alias{.aggregate_batting_game_data}
 \title{Aggregate Batting Stats Per Player Per Match}
 \usage{
-.aggregate_batting_game_data(conn, format, match_ids = NULL, gender = NULL)
+.aggregate_batting_game_data(
+  conn,
+  format,
+  match_ids = NULL,
+  gender = NULL,
+  wp_source = "bouncer"
+)
 }
 \arguments{
 \item{conn}{DBI connection}

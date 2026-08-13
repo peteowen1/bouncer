@@ -10,29 +10,41 @@
 #   - BOUNCER composite (Phase 5)
 #
 # ============================================================================
-# THE WPA IN THIS FILE IS SCRAPED FROM ESPNCRICINFO. IT IS NOT OUR MODEL.
+# THE WPA IN THIS FILE IS NOW BOUNCER'S OWN MODEL, BY DEFAULT (D-P6)
 # ============================================================================
-# batting_wpa / bowling_wpa are built from delta_wp, which is a LEAD() window
-# difference over cricinfo.balls.win_probability. That column is populated by
-# bouncerdata/scripts/cricinfo_scraper.py from ESPNcricinfo's own forecaster
-# (predictions.winProbability) -- it is a third party's number, not output
-# from bouncer's in-match models.
+# batting_wpa / bowling_wpa are built from delta_wp, a LEAD() window difference
+# over a win probability. WHICH win probability is the `wp_source` argument:
 #
-# Two consequences that have already caused a wrong conclusion once
-# (2026-08-12), so they are spelled out here rather than left to be rederived:
+#   "bouncer"  (default) main.cricinfo_ball_win_probability -- our in-match
+#              models, written by build_cricinfo_win_probability().
+#   "cricinfo"           cricinfo.balls.win_probability -- ESPNcricinfo's own
+#              forecaster, scraped by bouncerdata/scripts/cricinfo_scraper.py.
+#              Kept so the two can be compared, not because it is preferred.
 #
-# 1. COVERAGE IS POOR AND UNEVEN. Test 0.0%, ODI 7.7%, T20 42.8%, Hundred
-#    0.0%. Missing whole-match, not scattered: 2,711 of 3,757 matches have
-#    none at all. SUM() over an all-NULL group returns NULL, so those matches
-#    reach calculate_epr() as NA. Everything downstream of here inherits that.
+# The switch happened on evidence, not preference. Benchmarked over 20,326 ODI
+# deliveries where both numbers exist (docs/NEXT-STEPS.md, 2026-08-13):
 #
-# 2. IMPROVING bouncer's OWN in-match models DOES NOT IMPROVE THESE NUMBERS.
-#    predict_win_probability() and the stage1/stage2 models are not in this
-#    path at all; their only production caller is plot_win_probability().
+#     ours     Brier 0.1354   skill +45.8% vs base rate
+#     scraped  Brier 0.2208   skill +11.5%
 #
-# Wiring bouncer's model in here instead of (or alongside) the scraped column
-# is open work -- see docs/DECISIONS.md D-P6. Until then, do not describe the
-# BOUNCER rating as being built on bouncer's own win probability.
+# and coverage improves in the same direction rather than trading against it:
+#
+#     ball-level   ODI 259,894 vs 20,592   T20 261,677 vs 120,007
+#     match-level  ODI 898/977 vs 96/977   T20 1,685/1,977 vs 895/1,977
+#
+# TWO THINGS THAT ARE STILL TRUE AND STILL BITE:
+#
+# 1. TEST IS NOT COVERED BY EITHER. The scraped column is 0.0% populated for
+#    Test, and build_cricinfo_win_probability() handles limited-overs only --
+#    Test win probability runs through the decomposed
+#    predict_test_win_probability(), which is not batched yet. 355,962 Test
+#    deliveries therefore still produce no WPA at all.
+#
+# 2. SUM() OVER AN ALL-NULL GROUP RETURNS NULL. Matches with no win
+#    probability still reach calculate_epr() as NA, so its coverage warning is
+#    still load-bearing -- do not silence it. 371 T20/ODI matches have a second
+#    innings but no first in cricinfo.balls, so no chase target can be derived
+#    and their second innings is deliberately left unscored.
 # ============================================================================
 
 
@@ -46,6 +58,11 @@
 #' @param conn DBI connection to DuckDB. If NULL, opens a read-only connection.
 #' @param match_ids Character vector. Specific match IDs to process (NULL = all).
 #' @param gender Character. Filter by gender: "male", "female", or NULL for all.
+#' @param wp_source Character. Which win probability `batting_wpa` /
+#'   `bowling_wpa` are differenced from. `"bouncer"` (default) uses our own
+#'   models via `main.cricinfo_ball_win_probability`; `"cricinfo"` uses the
+#'   scraped `cricinfo.balls.win_probability`. See the file header for the
+#'   benchmark that settled the default, and D-P6 in `docs/DECISIONS.md`.
 #'
 #' @return data.table with one row per player per match. Players who both
 #'   bat and bowl get a single row with both batting and bowling columns.
@@ -57,24 +74,38 @@
 create_player_game_data <- function(format = c("t20", "odi", "test"),
                                     conn = NULL,
                                     match_ids = NULL,
-                                    gender = NULL) {
+                                    gender = NULL,
+                                    wp_source = c("bouncer", "cricinfo")) {
 
   format <- match.arg(format)
+  wp_source <- match.arg(wp_source)
   own_conn <- is.null(conn)
   if (own_conn) {
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
   }
 
-  cli::cli_alert_info("Building player game data for {toupper(format)}...")
+  # Our WP is limited-overs only. Falling back silently would hand Test a
+  # column of NA that looks like thin coverage rather than an unsupported path.
+  if (wp_source == "bouncer" && format == "test") {
+    cli::cli_warn(c(
+      "Test win probability is not produced by {.fn build_cricinfo_win_probability}.",
+      "!" = "{.field batting_wpa}/{.field bowling_wpa} will be NA for every Test match.",
+      "i" = "The scraped column is 0.0% populated for Test too, so neither source has it."
+    ))
+  }
+
+  cli::cli_alert_info(
+    "Building player game data for {toupper(format)} (WPA source: {.val {wp_source}})..."
+  )
 
 
   # --- Batting aggregation ---
-  batting <- .aggregate_batting_game_data(conn, format, match_ids, gender)
+  batting <- .aggregate_batting_game_data(conn, format, match_ids, gender, wp_source)
   cli::cli_alert_success("Batting: {nrow(batting)} player-match rows")
 
   # --- Bowling aggregation ---
-  bowling <- .aggregate_bowling_game_data(conn, format, match_ids, gender)
+  bowling <- .aggregate_bowling_game_data(conn, format, match_ids, gender, wp_source)
   cli::cli_alert_success("Bowling: {nrow(bowling)} player-match rows")
 
   # --- Merge batting and bowling ---
@@ -85,6 +116,57 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   pgd <- .join_player_names(pgd, conn, format)
 
   pgd
+}
+
+
+# ============================================================================
+# WIN PROBABILITY SOURCE
+# ============================================================================
+
+#' SQL Fragments Selecting the Win Probability Source
+#'
+#' Both aggregations difference a win probability across consecutive
+#' deliveries. Which number gets differenced is the whole of D-P6, so it is
+#' chosen in exactly one place rather than duplicated into two near-identical
+#' queries.
+#'
+#' The join is on `b.id`, not `(match_id, innings_number, over_number,
+#' ball_number)`. That composite is **not** unique in `cricinfo.balls` -- six
+#' T20/ODI rows share one, all in match `1099000` innings 1 over 30 -- and
+#' joining on it would duplicate those deliveries inside the `SUM()`s below.
+#'
+#' @param wp_source Character. `"bouncer"` for our model's number from
+#'   `main.cricinfo_ball_win_probability` (built by
+#'   [build_cricinfo_win_probability()]), `"cricinfo"` for the scraped
+#'   `cricinfo.balls.win_probability`.
+#'
+#' @return List with `col` (the win probability expression), `delta` (the
+#'   LEAD-difference expression) and `join` (any extra FROM-clause join).
+#'
+#' @keywords internal
+.wp_source_sql <- function(wp_source = c("bouncer", "cricinfo")) {
+
+  wp_source <- match.arg(wp_source)
+
+  col <- switch(wp_source,
+    bouncer  = "w.win_probability",
+    cricinfo = "b.win_probability"
+  )
+
+  join <- switch(wp_source,
+    bouncer  = "LEFT JOIN main.cricinfo_ball_win_probability w ON w.id = b.id",
+    cricinfo = ""
+  )
+
+  # Ordering stays on (over_number, ball_number) regardless of source: it is
+  # the delivery sequence, not the win probability, that defines "next ball".
+  delta <- sprintf(
+    "LEAD(%s) OVER (
+          PARTITION BY b.match_id, b.innings_number
+          ORDER BY b.over_number, b.ball_number
+        ) - %s", col, col)
+
+  list(col = col, delta = delta, join = join)
 }
 
 
@@ -102,11 +184,12 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #' @return data.table with batting stats per batter per match.
 #' @keywords internal
 .aggregate_batting_game_data <- function(conn, format, match_ids = NULL,
-                                         gender = NULL) {
+                                         gender = NULL, wp_source = "bouncer") {
 
   format_filter <- cricinfo_format_sql("m.format", format)
   match_filter <- .build_match_filter(match_ids)
   gender_filter <- .build_gender_filter(gender)
+  wp <- .wp_source_sql(wp_source)
 
   query <- sprintf("
     WITH deliveries_with_delta AS (
@@ -130,15 +213,12 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         b.pitch_length,
         b.shot_type,
         b.shot_control,
-        b.win_probability,
+        %s AS win_probability,
         b.predicted_score,
         b.total_innings_runs,
 
         -- WPA: change in win probability caused by this delivery
-        LEAD(b.win_probability) OVER (
-          PARTITION BY b.match_id, b.innings_number
-          ORDER BY b.over_number, b.ball_number
-        ) - b.win_probability AS delta_wp,
+        %s AS delta_wp,
 
         -- ERA: change in projected score caused by this delivery
         LEAD(b.predicted_score) OVER (
@@ -159,6 +239,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 
       FROM cricinfo.balls b
       JOIN cricinfo.matches m ON b.match_id = m.match_id
+      %s
       WHERE %s
         AND b.batsman_player_id IS NOT NULL
         AND (b.wides IS NULL OR b.wides = 0)
@@ -205,7 +286,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, batting_runs DESC
-  ", format_filter, match_filter, gender_filter)
+  ", wp$col, wp$delta, wp$join, format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
   data.table::as.data.table(result)
@@ -222,11 +303,12 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #' @return data.table with bowling stats per bowler per match.
 #' @keywords internal
 .aggregate_bowling_game_data <- function(conn, format, match_ids = NULL,
-                                          gender = NULL) {
+                                          gender = NULL, wp_source = "bouncer") {
 
   format_filter <- cricinfo_format_sql("m.format", format)
   match_filter <- .build_match_filter(match_ids)
   gender_filter <- .build_gender_filter(gender)
+  wp <- .wp_source_sql(wp_source)
 
   query <- sprintf("
     WITH deliveries_with_delta AS (
@@ -249,14 +331,11 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         b.pitch_line,
         b.pitch_length,
         b.shot_control,
-        b.win_probability,
+        %s AS win_probability,
         b.predicted_score,
 
         -- WPA delta (bowler perspective = negated batting delta)
-        LEAD(b.win_probability) OVER (
-          PARTITION BY b.match_id, b.innings_number
-          ORDER BY b.over_number, b.ball_number
-        ) - b.win_probability AS delta_wp,
+        %s AS delta_wp,
 
         -- ERA delta (bowler perspective = negated)
         LEAD(b.predicted_score) OVER (
@@ -268,6 +347,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 
       FROM cricinfo.balls b
       JOIN cricinfo.matches m ON b.match_id = m.match_id
+      %s
       WHERE %s
         AND b.bowler_player_id IS NOT NULL
         %s
@@ -317,7 +397,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, bowling_wickets DESC
-  ", format_filter, match_filter, gender_filter)
+  ", wp$col, wp$delta, wp$join, format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
   data.table::as.data.table(result)
@@ -358,17 +438,49 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     default = "unknown"
   )]
 
-  # Fill NA value columns with 0 for the missing role
+  # Fill NA value columns with 0 for the missing role.
+  #
+  # NA here has TWO causes and they do not deserve the same treatment:
+  #
+  #   (a) the player did not bat (or did not bowl) in this match. Zero is the
+  #       right answer -- they contributed no runs, no wickets, no WPA.
+  #   (b) the player DID bat, but the match has no win probability, so
+  #       SUM(delta_wp) came back NULL over an all-NULL group.
+  #
+  # Filling (b) with zero fabricates a neutral performance. Measured on the
+  # scraped source, that was 13,668 of 15,012 ODI player-match rows -- 91% of
+  # the format carrying an invented 0 WPA that calculate_epr() then consumed as
+  # real. It also silently disarms that function's coverage warning, which can
+  # only fire on NA and by this point never sees one.
+  #
+  # So the role mask is captured BEFORE any filling, and value columns are
+  # zeroed only for the role the player did not perform.
+  did_bat  <- !is.na(pgd$batting_balls_faced)
+  did_bowl <- !is.na(pgd$bowling_balls_bowled)
+
+  # Columns whose NA means "no win probability / no projected score for this
+  # match", not "no contribution". These stay NA for a player who did perform.
+  value_cols <- c(
+    "batting_wpa", "batting_max_wpa", "batting_positive_wpa_pct", "batting_era",
+    "bowling_wpa", "bowling_max_wpa", "bowling_era"
+  )
+
   batting_cols <- grep("^batting_", names(pgd), value = TRUE)
   bowling_cols <- grep("^bowling_", names(pgd), value = TRUE)
+
   for (col in batting_cols) {
-    data.table::set(pgd, which(is.na(pgd[[col]])), col, 0)
+    na_rows <- which(is.na(pgd[[col]]))
+    if (col %in% value_cols) na_rows <- na_rows[!did_bat[na_rows]]
+    data.table::set(pgd, na_rows, col, 0)
   }
   for (col in bowling_cols) {
-    data.table::set(pgd, which(is.na(pgd[[col]])), col, 0)
+    na_rows <- which(is.na(pgd[[col]]))
+    if (col %in% value_cols) na_rows <- na_rows[!did_bowl[na_rows]]
+    data.table::set(pgd, na_rows, col, 0)
   }
 
-  # Combined value metrics
+  # Combined value metrics. NA propagates deliberately: a total_wpa built by
+  # treating an unmeasured innings as zero is not a total.
   pgd[, total_wpa := batting_wpa + bowling_wpa]
   pgd[, total_era := batting_era + bowling_era]
 
