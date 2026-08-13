@@ -327,6 +327,7 @@ reference:
     contents:
     - build_rating_frame
     - load_rating_pool
+    - rating_reliability
     - score_rating
     - summarise_rating_score
     - RATING_VAL_MIN_CAREER_BALLS

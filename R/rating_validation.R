@@ -233,3 +233,89 @@ summarise_rating_score <- function(scored, label = "rating") {
     out$rho_rating, out$rho_b1))
   invisible(out)
 }
+
+
+#' Reliability of a Per-Observation Rating Input
+#'
+#' One-way random-effects decomposition (ICC(1)) of a per-innings quantity into
+#' between-player signal and within-player noise, plus the Spearman-Brown
+#' reliability of a player mean over `n` observations.
+#'
+#' @section Why this is here:
+#' A leaderboard built from a noisy per-innings statistic orders sampling error,
+#' not players, and nothing in the output looks wrong when it does. Measured on
+#' `batting_era` (the term that dominates EPR) in 2026-08-13:
+#'
+#' | | within sd | between sd | reliability at n |
+#' |---|---|---|---|
+#' | T20 batting | 14.16 | 2.03 | 0.403 at n=33 |
+#' | ODI batting | 27.86 | 4.93 | 0.467 at n=28 |
+#'
+#' Roughly half of the observed spread between players was sampling error, which
+#' is why the T20 leaderboard put Shreyas Iyer first on a mean of 7.66 with a
+#' median of -0.39. Run this before trusting, tuning against, or publishing any
+#' ranking built from a per-innings value.
+#'
+#' @param value Numeric vector, one element per observation (e.g. per innings).
+#' @param player Grouping vector of the same length identifying the player.
+#' @param min_obs Integer. Players with fewer observations than this are dropped
+#'   before the decomposition. Default 2, the minimum for a within-player
+#'   variance to exist at all.
+#'
+#' @return A list with `within_sd`, `between_sd` (sampling-error corrected),
+#'   `icc` (single-observation reliability), `n_players`, `n_obs`,
+#'   `mean_obs_per_player`, `reliability` (of a mean over
+#'   `mean_obs_per_player`), and `obs_for(target)`, the number of observations
+#'   needed to reach a given reliability. `between_sd` is floored at zero: a
+#'   negative variance estimate means the data cannot distinguish players at all.
+#'
+#' @export
+rating_reliability <- function(value, player, min_obs = 2L) {
+
+  if (length(value) != length(player)) {
+    cli::cli_abort("{.arg value} and {.arg player} must be the same length.")
+  }
+
+  keep <- !is.na(value) & !is.na(player)
+  value <- value[keep]
+  player <- as.character(player[keep])
+
+  counts <- table(player)
+  eligible <- names(counts)[counts >= min_obs]
+  if (length(eligible) < 2L) {
+    cli::cli_abort("Need at least 2 players with {min_obs}+ observations; found {length(eligible)}.")
+  }
+  sel <- player %in% eligible
+  value <- value[sel]
+  player <- player[sel]
+
+  k <- length(eligible)
+  N <- length(value)
+  n_i <- as.numeric(table(player)[eligible])
+  means <- vapply(split(value, player), mean, numeric(1))[eligible]
+  grand <- mean(value)
+
+  # Standard one-way ANOVA, unbalanced. n0 is the effective group size; using
+  # mean(n_i) instead biases the between-player variance when sizes differ.
+  MSB <- sum(n_i * (means - grand)^2) / (k - 1)
+  MSW <- sum((value - means[player])^2) / (N - k)
+  n0  <- (N - sum(n_i^2) / N) / (k - 1)
+
+  s2_between <- max(0, (MSB - MSW) / n0)
+  icc <- if (s2_between + MSW > 0) s2_between / (s2_between + MSW) else 0
+  nbar <- N / k
+
+  list(
+    within_sd  = sqrt(MSW),
+    between_sd = sqrt(s2_between),
+    icc = icc,
+    n_players = k,
+    n_obs = N,
+    mean_obs_per_player = nbar,
+    reliability = if (icc > 0) nbar * icc / (1 + (nbar - 1) * icc) else 0,
+    obs_for = function(target) {
+      if (icc <= 0 || target >= 1) return(Inf)
+      target * (1 - icc) / (icc * (1 - target))
+    }
+  )
+}
