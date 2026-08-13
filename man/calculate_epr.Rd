@@ -2,7 +2,7 @@
 % Please edit documentation in R/player_career_ratings.R
 \name{calculate_epr}
 \alias{calculate_epr}
-\title{Calculate Expected Performance Rating (EPR)}
+\title{Calculate Expected Performance Rating (EPR) -- Deprecated}
 \usage{
 calculate_epr(
   format = c("t20", "odi", "test"),
@@ -10,17 +10,18 @@ calculate_epr(
   ref_date = NULL,
   decay_batting = NULL,
   decay_bowling = NULL,
-  prior_matches = EPR_PRIOR_MATCHES,
-  prior_rate = EPR_PRIOR_RATE
+  prior_matches = IMPACT_PRIOR_MATCHES,
+  prior_rate = IMPACT_PRIOR_RATE
 )
 }
 \arguments{
-\item{format}{Character. "t20", "odi", or "test".}
+\item{format}{Character. "t20", "odi", or "test". Test aborts until its
+inputs exist (\code{\link[=get_impact_kappa]{get_impact_kappa()}}).}
 
 \item{player_game_data}{data.table from \code{\link{load_player_game_data}}.
 If NULL, loads automatically.}
 
-\item{ref_date}{Date. Compute EPR as of this date (NULL = latest + 1 day).}
+\item{ref_date}{Date. Compute the rating as of this date (NULL = latest + 1).}
 
 \item{decay_batting}{Numeric. Decay constant in days for batting component.}
 
@@ -31,52 +32,14 @@ If NULL, loads automatically.}
 \item{prior_rate}{Numeric. Prior rate (typically 0 = replacement level).}
 }
 \value{
-data.table with one row per player:
-\describe{
-\item{player_id}{Player identifier}
-\item{role_group}{BATTER, BOWLER, ALL_ROUNDER}
-\item{batting_epr}{Career batting value rating}
-\item{bowling_epr}{Career bowling value rating}
-\item{total_epr}{batting_epr + bowling_epr}
-\item{n_matches, wt_matches}{Match count and weighted count}
-}
+As \code{\link[=calculate_impact]{calculate_impact()}}, with the impact columns renamed to
+\code{batting_epr}, \code{bowling_epr}, \code{total_epr}.
 }
 \description{
-Computes rolling career value ratings for each player from per-match
-WPA and ERA values. Uses exponential time decay and Bayesian shrinkage
-toward a role-specific replacement-level prior.
+Deprecated alias for \code{\link[=calculate_impact]{calculate_impact()}}. The \code{wpa + era} engine this name
+referred to is retired (D-P8, D-P11): ERA left the rating and WPA enters at
+the fitted run-unit exchange rate. This wrapper returns
+\code{\link[=calculate_impact]{calculate_impact()}}'s result with the columns renamed to the old
+\code{batting_epr}/\code{bowling_epr}/\code{total_epr} names so existing callers keep
+working while they migrate.
 }
-\section{READ THIS BEFORE TRUSTING EPR — the WPA input is not ours}{
-
-The WPA half of this rating does \strong{not} come from bouncer's own in-match
-win-probability model. It comes from \code{cricinfo.balls.win_probability},
-which is \strong{scraped from ESPNcricinfo's own forecaster}
-(\code{bouncerdata/scripts/cricinfo_scraper.py}, field
-\code{predictions.winProbability}). \code{player_game_data.R} differences that column
-with a \code{LEAD()} window to get \code{delta_wp}, sums it into \code{batting_wpa} /
-\code{bowling_wpa}, and those land here.
-
-Coverage of that scraped column, measured 2026-08-12:\tabular{llll}{
-   Format \tab Balls \tab With WP \tab Coverage \cr
-   Test \tab 355,962 \tab 0 \tab \strong{0.0\%} \cr
-   ODI \tab 265,876 \tab 20,592 \tab \strong{7.7\%} \cr
-   T20 \tab 280,158 \tab 120,007 \tab 42.8\% \cr
-   Hundred \tab 4,629 \tab 0 \tab 0.0\% \cr
-}
-
-
-It is missing \strong{whole-match}, not scattered: 2,711 of 3,757 matches have
-none at all, and only 6 are partially covered. So for Test cricket the WPA
-component of EPR is entirely absent, and for ODIs it rests on 7.7\% of
-matches. \code{calculate_epr()} warns at runtime when coverage is thin — do not
-silence that warning without reading this section.
-
-Meanwhile bouncer \strong{has} its own in-match model
-(\code{\link[=predict_win_probability]{predict_win_probability()}}, backed by the stage1/stage2 models trained in
-\verb{data-raw/models/in-match/}). As of 2026-08-12 its only production caller is
-\code{\link[=plot_win_probability]{plot_win_probability()}}. The model in this package draws a chart; the
-ratings run on a third party's number. Wiring the in-match model into
-\code{player_game_data.R} in place of (or alongside) the scraped column is open
-work — see \code{docs/DECISIONS.md} D-P6.
-}
-

@@ -12,7 +12,7 @@ for (fmt in FORMATS) {
   cli::cli_h2("Calculating career ratings for {toupper(fmt)}")
 
   # EPR
-  epr <- calculate_epr(fmt)
+  epr <- calculate_impact(fmt)
   cli::cli_alert_info("  EPR: {nrow(epr)} players")
 
   # BOUNCER (includes PSR if coefficients available)

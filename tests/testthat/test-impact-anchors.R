@@ -1,9 +1,9 @@
-# Anchor checks for the EPR leaderboards.
+# Anchor checks for the impact rating leaderboards (RAA + kappa*WPA, D-P11).
 #
-# These are the checks that caught the 2026-08-13 finding, and they lived in a
-# scratch file that would have been deleted. A statistic computed across a
-# population is unfalsifiable-looking until you locate a few points on it that
-# you already understand, so the points are committed here.
+# A statistic computed across a population is unfalsifiable-looking until you
+# locate a few points on it that you already understand, so the points are
+# committed here. These caught the original EPR findings (2026-08-13) and now
+# guard the replacement engine.
 #
 # Anchors chosen by Pete BEFORE any leaderboard was produced:
 #   batting  Joe Root, Virat Kohli, Kane Williamson
@@ -20,80 +20,112 @@ ANCHOR_BOWL <- c("70640" = "Jasprit Bumrah")
 ANCHOR_MIN_MATCHES <- 20L
 ANCHOR_TOP_N <- 20L
 
-anchor_epr <- function(format) {
+.anchor_pool_cache <- new.env(parent = emptyenv())
+
+anchor_pool <- function(format) {
+  if (!is.null(.anchor_pool_cache[[format]])) return(.anchor_pool_cache[[format]])
   conn <- tryCatch(get_db_connection(read_only = TRUE), error = function(e) NULL)
   skip_if(is.null(conn), "database not available")
   on.exit(try(DBI::dbDisconnect(conn, shutdown = TRUE), silent = TRUE), add = TRUE)
 
-  has_wp <- tryCatch(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM main.cricinfo_ball_win_probability")$n,
-    error = function(e) 0
-  )
-  skip_if(has_wp == 0,
-          "main.cricinfo_ball_win_probability is empty -- run build_cricinfo_win_probability()")
+  for (tb in c("cricinfo_ball_win_probability", "cricinfo_ball_raa")) {
+    n <- tryCatch(
+      DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM main.%s", tb))$n,
+      error = function(e) 0
+    )
+    skip_if(n == 0, sprintf("main.%s is empty -- run its builder", tb))
+  }
 
   pgd <- create_player_game_data(format, conn = conn)
-  epr <- calculate_epr(format, player_game_data = pgd)
+  imp <- calculate_impact(format, player_game_data = pgd)
   nm <- unique(pgd[!is.na(player_name), c("player_id", "player_name")])
-  epr <- merge(epr, nm, by = "player_id", all.x = TRUE)
-  epr <- epr[epr$n_matches >= ANCHOR_MIN_MATCHES, ]
-  skip_if(nrow(epr) < 30, "too few qualifying players to rank")
+  imp <- merge(imp, nm, by = "player_id", all.x = TRUE)
+  imp <- imp[imp$n_matches >= ANCHOR_MIN_MATCHES, ]
+  skip_if(nrow(imp) < 30, "too few qualifying players to rank")
 
-  epr <- epr[order(-epr$batting_epr), ]
-  epr$bat_rank <- seq_len(nrow(epr))
-  epr <- epr[order(-epr$bowling_epr), ]
-  epr$bowl_rank <- seq_len(nrow(epr))
-  epr
+  imp <- imp[order(-imp$batting_impact), ]
+  imp$bat_rank <- seq_len(nrow(imp))
+  imp <- imp[order(-imp$bowling_impact), ]
+  imp$bowl_rank <- seq_len(nrow(imp))
+  .anchor_pool_cache[[format]] <- imp
+  imp
 }
 
 test_that("ODI batting anchors rank in the top 20", {
-  epr <- anchor_epr("odi")
+  pool <- anchor_pool("odi")
 
   for (id in names(ANCHOR_BAT)) {
-    row <- epr[epr$player_id == id, ]
+    row <- pool[pool$player_id == id, ]
     expect_equal(nrow(row), 1L,
                  info = paste(ANCHOR_BAT[[id]], "missing from the ODI pool"))
     expect_lte(row$bat_rank, ANCHOR_TOP_N,
                label = sprintf("%s ODI batting rank (%d of %d)",
-                               ANCHOR_BAT[[id]], row$bat_rank, nrow(epr)))
+                               ANCHOR_BAT[[id]], row$bat_rank, nrow(pool)))
   }
 })
 
 test_that("ODI bowling anchor ranks in the top 20", {
-  epr <- anchor_epr("odi")
+  pool <- anchor_pool("odi")
 
   for (id in names(ANCHOR_BOWL)) {
-    row <- epr[epr$player_id == id, ]
+    row <- pool[pool$player_id == id, ]
     expect_equal(nrow(row), 1L)
     expect_lte(row$bowl_rank, ANCHOR_TOP_N,
                label = sprintf("%s ODI bowling rank (%d of %d)",
-                               ANCHOR_BOWL[[id]], row$bowl_rank, nrow(epr)))
+                               ANCHOR_BOWL[[id]], row$bowl_rank, nrow(pool)))
   }
 })
 
-test_that("the T20 leaderboard is still too noisy to rank -- remove this test when it is not", {
-  # Deliberately asserts the BROKEN state. T20 batting EPR had reliability 0.403
-  # at 33 innings per player on 2026-08-13, so ~60% of the observed spread was
-  # sampling error and the anchors landed at Kohli 99/365 and Williamson
-  # 349/365. Asserting "anchors pass" would be a permanently red test; asserting
-  # nothing would let the finding rot.
-  #
-  # When someone fixes the reliability, this test FAILS. That is the signal to
-  # delete it and enable the real anchor assertions above for T20.
-  conn <- tryCatch(get_db_connection(read_only = TRUE), error = function(e) NULL)
-  skip_if(is.null(conn), "database not available")
-  on.exit(try(DBI::dbDisconnect(conn, shutdown = TRUE), silent = TRUE), add = TRUE)
+test_that("the ICC soft-reference sweep runs and reports, without hard-failing", {
+  # Pete's rule (2026-08-14): ICC rankings are a SOFT reference, not a hard
+  # anchor -- their pool, window and weighting all differ from ours, and the
+  # impact rating's leverage term (kappa*WPA) legitimately demotes players ICC
+  # rates highly (D-P11 accepted that trade-off with eyes open; Theekshana at
+  # 92/98 vs ICC #6 is the canonical case, bouncerverse#27). So this sweep
+  # PRINTS every ICC top-10 player sitting in the bottom half of our pooled
+  # list for a human to read, and only asserts that the sweep itself ran on
+  # real data. Harden it into a floor only with a deliberate decision.
+  icc_path <- file.path("..", "..", "..", "docs", "reference",
+                        "icc-rankings-2026-08.csv")
+  skip_if(!file.exists(icc_path), "ICC reference CSV not available")
+  icc <- utils::read.csv(icc_path, stringsAsFactors = FALSE)
+  surname <- function(x) tolower(vapply(strsplit(x, " "), function(p) p[length(p)], ""))
 
-  has_wp <- tryCatch(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM main.cricinfo_ball_win_probability")$n,
-    error = function(e) 0
-  )
-  skip_if(has_wp == 0, "win probability table not built")
+  checked <- 0L
+  for (fmt in c("odi", "t20")) {
+    pool <- anchor_pool(fmt)
+    pool_sn <- surname(ifelse(is.na(pool$player_name), "", pool$player_name))
+    band <- ceiling(nrow(pool) / 2)
 
-  pgd <- create_player_game_data("t20", conn = conn)
-  b <- pgd[pgd$batting_balls_faced > 0 & !is.na(pgd$batting_era), ]
-  rel <- rating_reliability(b$batting_era, b$player_id, min_obs = ANCHOR_MIN_MATCHES)
+    for (disc in c("batting", "bowling")) {
+      icc_fmt <- if (fmt == "t20") "t20i" else "odi"
+      top10 <- icc[icc$format == icc_fmt & icc$discipline == disc & icc$rank <= 10, ]
+      rank_col <- if (disc == "batting") "bat_rank" else "bowl_rank"
+      for (nm in top10$player_name) {
+        hits <- which(pool_sn == surname(nm))
+        if (length(hits) != 1) next  # absent from pool, or ambiguous surname
+        checked <- checked + 1L
+        if (pool[[rank_col]][hits] > band) {
+          cli::cli_inform(
+            "ICC soft-reference flag: {nm} ({toupper(fmt)} ICC top-10 {disc}) ranks {pool[[rank_col]][hits]}/{nrow(pool)} on impact."
+          )
+        }
+      }
+    }
+  }
+  expect_gt(checked, 10)  # the sweep matched real players, so it actually ran
+})
 
-  expect_lt(rel$reliability, 0.6)
-  expect_gt(rel$obs_for(0.7), 60)
+test_that("the T20 pooled leaderboard is still unstratified -- remove this when #21 lands", {
+  # Deliberately asserts the KNOWN state. The pooled T20 list mixes genders
+  # and minor leagues, so the named anchors fail there under EVERY engine
+  # measured on 2026-08-14 (bouncerverse#18: Kohli 65-116/365 depending on
+  # option). The fix is pool stratification (#21), not the metric. When
+  # stratification lands and Kohli enters the top 20 of the appropriate pool,
+  # this test FAILS -- that is the signal to enable real T20 anchor
+  # assertions.
+  pool <- anchor_pool("t20")
+  row <- pool[pool$player_id == "49752", ]  # Kohli
+  skip_if(nrow(row) != 1, "Kohli not in the T20 pool")
+  expect_gt(row$bat_rank, ANCHOR_TOP_N)
 })

@@ -19,8 +19,8 @@ bouncer_ratings(
 
 \item{stat_ratings}{Optional pre-loaded stat ratings.}
 
-\item{weight_epr}{Numeric. Weight for the EPR component, passed to
-\code{\link{calculate_bouncer}}. Ignored in EPR-only mode.}
+\item{weight_epr}{Numeric. Weight for the impact component, passed to
+\code{\link{calculate_bouncer}}. Ignored in impact-only mode.}
 
 \item{n_top}{Integer. Number of top players to show (NULL = all).}
 }
@@ -28,6 +28,6 @@ bouncer_ratings(
 data.table with BOUNCER ratings, sorted by bouncer_rating.
 }
 \description{
-Loads EPR and PSR, computes BOUNCER composite, and returns a
+Loads impact and PSR, computes the BOUNCER composite, and returns a
 user-friendly leaderboard.
 }

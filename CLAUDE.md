@@ -76,7 +76,13 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 > runs) was **−0.43 in innings 2**. The flip lives in `.wp_source_sql()`; do not
 > difference either WP column directly without it.
 >
-> **`calculate_epr()`'s coverage warning is still load-bearing** — do not silence
+> **SUPERSEDED BY D-P11 (2026-08-14):** the rating engine is now
+> `calculate_impact()` — per-match `raa + kappa*wpa` (kappa fitted: 150 T20,
+> 272 ODI) through the same decay/shrinkage/exposure aggregation.
+> `calculate_epr()` survives only as a deprecated alias. The history below
+> explains why the old engine died; the numbers describe THAT engine.
+>
+> **`calculate_impact()`'s coverage warning is still load-bearing** — do not silence
 > it. Matches with no win probability still reach it as `NA`, and
 > `.merge_batting_bowling()` no longer launders those into zeros (it did, for
 > 13,668 of 15,012 ODI player-match rows, until 2026-08-13).

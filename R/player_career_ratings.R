@@ -1,76 +1,98 @@
-# Player Career Ratings (EPR)
-# ============================
-# Rolling Bayesian-shrunk career value ratings from per-match
-# WPA and ERA values. Cricket equivalent of torp's EPR.
+# Player Career Ratings (Impact)
+# ==============================
+# Rolling Bayesian-shrunk career value ratings from per-match RAA and WPA:
 #
-# Two components:
-#   - batting_epr: career batting value (WPA + ERA when batting)
-#   - bowling_epr: career bowling value (WPA + ERA when bowling)
-#   - total_epr: batting_epr + bowling_epr
+#   per-match value = raa + kappa * wpa        (D-P11, bouncerverse#18)
 #
-# Each uses exponential time decay and Bayesian shrinkage
-# toward a role-specific prior.
+# RAA is runs above the state-only (agnostic) expectation; WPA is win
+# probability added to the player's own team, converted to run units by the
+# fitted exchange rate kappa, so leverage counts at an honest scale instead of
+# the raw-probability scale that made it 0.009% of the old EPR. Aggregation is
+# exponential time decay + Bayesian shrinkage toward replacement level +
+# exposure weighting, applied per component.
+#
+# The previous engine (`wpa + era`) is retired: ERA had three structural
+# defects (D-P8) and the raw-scale sum was ERA in a costume (D-P7). The
+# calculate_epr() name survives only as a deprecated alias.
 
 
 # ============================================================================
-# EPR Constants (reasonable defaults, tunable per format)
+# Impact Constants (reasonable defaults, tunable per format)
 # ============================================================================
 
-# Decay in days (half-life ≈ 0.693 / lambda)
-EPR_DECAY_BATTING_T20  <- 365
-EPR_DECAY_BOWLING_T20  <- 365
-EPR_DECAY_BATTING_ODI  <- 500
-EPR_DECAY_BOWLING_ODI  <- 500
-EPR_DECAY_BATTING_TEST <- 730
-EPR_DECAY_BOWLING_TEST <- 730
+# Decay in days (half-life ~ 0.693 * decay)
+IMPACT_DECAY_BATTING_T20  <- 365
+IMPACT_DECAY_BOWLING_T20  <- 365
+IMPACT_DECAY_BATTING_ODI  <- 500
+IMPACT_DECAY_BOWLING_ODI  <- 500
+IMPACT_DECAY_BATTING_TEST <- 730
+IMPACT_DECAY_BOWLING_TEST <- 730
 
 # Prior pseudo-matches and prior rates
-EPR_PRIOR_MATCHES   <- 10
-EPR_PRIOR_RATE      <- 0    # Shrink toward zero (replacement level)
+IMPACT_PRIOR_MATCHES <- 10
+IMPACT_PRIOR_RATE    <- 0    # Shrink toward zero (replacement level)
+
+# Deprecated aliases -- the EPR names, kept so old callers and scripts do not
+# break silently. New code uses the IMPACT_* names.
+EPR_DECAY_BATTING_T20  <- IMPACT_DECAY_BATTING_T20
+EPR_DECAY_BOWLING_T20  <- IMPACT_DECAY_BOWLING_T20
+EPR_DECAY_BATTING_ODI  <- IMPACT_DECAY_BATTING_ODI
+EPR_DECAY_BOWLING_ODI  <- IMPACT_DECAY_BOWLING_ODI
+EPR_DECAY_BATTING_TEST <- IMPACT_DECAY_BATTING_TEST
+EPR_DECAY_BOWLING_TEST <- IMPACT_DECAY_BOWLING_TEST
+EPR_PRIOR_MATCHES      <- IMPACT_PRIOR_MATCHES
+EPR_PRIOR_RATE         <- IMPACT_PRIOR_RATE
 
 
-#' Calculate Expected Performance Rating (EPR)
+#' The Runs-per-Win-Probability Exchange Rate (kappa)
 #'
-#' Computes rolling career value ratings for each player from per-match
-#' WPA and ERA values. Uses exponential time decay and Bayesian shrinkage
-#' toward a role-specific replacement-level prior.
+#' Converts WPA into run units for the impact rating. Fitted from ACTUAL match
+#' outcomes as 1 / (WP value of one run) with within-state controls (runs
+#' needed / score, balls left, wickets in hand), 2026-08-14 (bouncerverse#18):
+#' one unit of win probability is worth ~150 runs in T20 and ~272 in ODI.
+#' Never refit from the WP model's own marginal effects -- the model is an
+#' estimate of the thing, not the thing.
 #'
-#' @section READ THIS BEFORE TRUSTING EPR — the WPA input is not ours:
-#' The WPA half of this rating does **not** come from bouncer's own in-match
-#' win-probability model. It comes from `cricinfo.balls.win_probability`,
-#' which is **scraped from ESPNcricinfo's own forecaster**
-#' (`bouncerdata/scripts/cricinfo_scraper.py`, field
-#' `predictions.winProbability`). `player_game_data.R` differences that column
-#' with a `LEAD()` window to get `delta_wp`, sums it into `batting_wpa` /
-#' `bowling_wpa`, and those land here.
+#' @param format Character. "t20" and "odi" are fitted; "test" aborts until
+#'   Test WP is trustworthy (bouncerverse#24) and a Test RAA lambda exists.
 #'
-#' Coverage of that scraped column, measured 2026-08-12:
+#' @return Numeric scalar, runs per unit of win probability.
 #'
-#' | Format | Balls | With WP | Coverage |
-#' |--------|-------|---------|----------|
-#' | Test | 355,962 | 0 | **0.0%** |
-#' | ODI | 265,876 | 20,592 | **7.7%** |
-#' | T20 | 280,158 | 120,007 | 42.8% |
-#' | Hundred | 4,629 | 0 | 0.0% |
+#' @keywords internal
+get_impact_kappa <- function(format = c("t20", "odi", "test")) {
+  format <- match.arg(format)
+  switch(format,
+    t20 = 150,
+    odi = 272,
+    cli::cli_abort(c(
+      "Impact kappa is not fitted for {.val {format}} yet.",
+      "i" = "Blocked on trustworthy Test WP (bouncerverse#24) and a Test RAA lambda."
+    ))
+  )
+}
+
+
+#' Calculate Player Impact Ratings
 #'
-#' It is missing **whole-match**, not scattered: 2,711 of 3,757 matches have
-#' none at all, and only 6 are partially covered. So for Test cricket the WPA
-#' component of EPR is entirely absent, and for ODIs it rests on 7.7% of
-#' matches. `calculate_epr()` warns at runtime when coverage is thin — do not
-#' silence that warning without reading this section.
+#' Computes rolling career value ratings for each player from per-match RAA
+#' and WPA: `value = raa + kappa * wpa`, where kappa is the fitted
+#' runs-per-win-probability exchange rate ([get_impact_kappa()]). Uses
+#' exponential time decay, Bayesian shrinkage toward replacement level, and
+#' exposure weighting -- per component, so batting and bowling decay
+#' independently.
 #'
-#' Meanwhile bouncer **has** its own in-match model
-#' ([predict_win_probability()], backed by the stage1/stage2 models trained in
-#' `data-raw/models/in-match/`). As of 2026-08-12 its only production caller is
-#' [plot_win_probability()]. The model in this package draws a chart; the
-#' ratings run on a third party's number. Wiring the in-match model into
-#' `player_game_data.R` in place of (or alongside) the scraped column is open
-#' work — see `docs/DECISIONS.md` D-P6.
+#' Both inputs are bouncer's own: RAA from [build_cricinfo_raa()] (agnostic
+#' baseline, fitted wicket value) and WPA from
+#' [build_cricinfo_win_probability()] via `player_game_data.R`, own-team
+#' signed (bouncerverse#25). A match with either component missing stays NA
+#' and drops out of numerator AND denominator together -- the coverage warning
+#' below is load-bearing, do not silence it.
 #'
-#' @param format Character. "t20", "odi", or "test".
+#' @param format Character. "t20", "odi", or "test". Test aborts until its
+#'   inputs exist ([get_impact_kappa()]).
 #' @param player_game_data data.table from \code{\link{load_player_game_data}}.
 #'   If NULL, loads automatically.
-#' @param ref_date Date. Compute EPR as of this date (NULL = latest + 1 day).
+#' @param ref_date Date. Compute the rating as of this date (NULL = latest + 1).
 #' @param decay_batting Numeric. Decay constant in days for batting component.
 #' @param decay_bowling Numeric. Decay constant in days for bowling component.
 #' @param prior_matches Numeric. Prior pseudo-matches for shrinkage.
@@ -80,40 +102,39 @@ EPR_PRIOR_RATE      <- 0    # Shrink toward zero (replacement level)
 #'   \describe{
 #'     \item{player_id}{Player identifier}
 #'     \item{role_group}{BATTER, BOWLER, ALL_ROUNDER}
-#'     \item{batting_epr}{Career batting value rating}
-#'     \item{bowling_epr}{Career bowling value rating}
-#'     \item{total_epr}{batting_epr + bowling_epr}
+#'     \item{batting_impact}{Career batting value rating (run units)}
+#'     \item{bowling_impact}{Career bowling value rating (run units)}
+#'     \item{total_impact}{batting_impact + bowling_impact}
 #'     \item{n_matches, wt_matches}{Match count and weighted count}
 #'   }
 #'
 #' @export
-calculate_epr <- function(format = c("t20", "odi", "test"),
-                           player_game_data = NULL,
-                           ref_date = NULL,
-                           decay_batting = NULL,
-                           decay_bowling = NULL,
-                           prior_matches = EPR_PRIOR_MATCHES,
-                           prior_rate = EPR_PRIOR_RATE) {
+calculate_impact <- function(format = c("t20", "odi", "test"),
+                             player_game_data = NULL,
+                             ref_date = NULL,
+                             decay_batting = NULL,
+                             decay_bowling = NULL,
+                             prior_matches = IMPACT_PRIOR_MATCHES,
+                             prior_rate = IMPACT_PRIOR_RATE) {
 
   format <- match.arg(format)
+  kappa <- get_impact_kappa(format)
 
-  # Format-specific decay defaults
   if (is.null(decay_batting)) {
     decay_batting <- switch(format,
-      t20 = EPR_DECAY_BATTING_T20,
-      odi = EPR_DECAY_BATTING_ODI,
-      test = EPR_DECAY_BATTING_TEST
+      t20 = IMPACT_DECAY_BATTING_T20,
+      odi = IMPACT_DECAY_BATTING_ODI,
+      test = IMPACT_DECAY_BATTING_TEST
     )
   }
   if (is.null(decay_bowling)) {
     decay_bowling <- switch(format,
-      t20 = EPR_DECAY_BOWLING_T20,
-      odi = EPR_DECAY_BOWLING_ODI,
-      test = EPR_DECAY_BOWLING_TEST
+      t20 = IMPACT_DECAY_BOWLING_T20,
+      odi = IMPACT_DECAY_BOWLING_ODI,
+      test = IMPACT_DECAY_BOWLING_TEST
     )
   }
 
-  # Load data if not provided
   if (is.null(player_game_data)) {
     player_game_data <- load_player_game_data(format)
   }
@@ -129,110 +150,77 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
   }
   ref_date <- as.Date(ref_date)
 
-  # Filter to matches before ref_date
   dt <- dt[match_date < ref_date]
   if (nrow(dt) == 0) {
-    cli::cli_warn("No matches before ref_date for EPR calculation")
+    cli::cli_warn("No matches before ref_date for impact calculation")
     return(data.table::data.table())
   }
 
   dt[, days_diff := as.numeric(ref_date - match_date)]
-
-  # Decay weights per component
   dt[, wt_bat := exp(-days_diff / decay_batting)]
   dt[, wt_bowl := exp(-days_diff / decay_bowling)]
 
-  # Combined batting value = WPA + ERA (per match)
-  dt[, bat_value := batting_wpa + batting_era]
-  dt[, bowl_value := bowling_wpa + bowling_era]
+  # The rating's per-match value (D-P11)
+  dt[, bat_value := batting_raa + kappa * batting_wpa]
+  dt[, bowl_value := bowling_raa + kappa * bowling_wpa]
 
-  # Report WPA coverage EVERY run. See the "the WPA input is not ours" section
-  # in this function's docs: batting_wpa comes from a scraped ESPNcricinfo
-  # forecaster column that is 0% populated for Tests and 7.7% for ODIs, and it
-  # is missing whole-match. Without this line the shortfall is invisible --
-  # EPR still returns a full, plausible-looking leaderboard, and the WPA half
-  # of it is simply absent for most players.
-  wpa_present <- sum(!is.na(dt$batting_wpa) | !is.na(dt$bowling_wpa))
-  wpa_pct <- 100 * wpa_present / max(1L, nrow(dt))
-  if (wpa_pct < 99) {
-    lvl <- if (wpa_pct < 50) cli::cli_warn else cli::cli_alert_info
+  # Coverage EVERY run. A missing component means the match contributes
+  # nothing (correct), but a SHORTFALL means an upstream table is stale --
+  # main.cricinfo_ball_raa or main.cricinfo_ball_win_probability needs
+  # rebuilding -- and without this warning the rating still looks complete.
+  ok_pct <- 100 * sum(!is.na(dt$bat_value) | !is.na(dt$bowl_value)) / max(1L, nrow(dt))
+  if (ok_pct < 99) {
+    lvl <- if (ok_pct < 50) cli::cli_warn else cli::cli_alert_info
     lvl(c(
-      "EPR: WPA present for {round(wpa_pct, 1)}% of {nrow(dt)} player-match rows ({toupper(format)}).",
-      "!" = "The rest contribute ERA only -- their WPA component is missing, not zero.",
-      "i" = "Source is the SCRAPED cricinfo.balls.win_probability, not bouncer's own model. See ?calculate_epr."
+      "Impact: a usable value exists for {round(ok_pct, 1)}% of {nrow(dt)} player-match rows ({toupper(format)}).",
+      "!" = "The rest have RAA or WPA missing -- absent, not zero.",
+      "i" = "Rebuild main.cricinfo_ball_raa / main.cricinfo_ball_win_probability if this is unexpected."
     ))
   }
 
-  # Exposure weighting: scale by balls to give high-exposure games more weight.
-  # Normalise to a full innings' work FOR ONE PLAYER, not the innings total --
-  # a T20 innings is 120 balls, but they are shared out, so ~60 is what a
-  # batter who bats deep actually faces. (This comment previously said 120,
-  # contradicting the value below; the values are the intended ones, since
-  # halving the denominator would double every bat_exposure and therefore
-  # every EPR.)
+  # Exposure weighting: scale by balls, normalised to one player's share of a
+  # full innings (~60 balls for a T20 batter who bats deep, not the innings'
+  # 120).
   full_match_balls <- switch(format,
-    t20 = 60,    # ~60 balls faced per batter in a full T20 innings
-    odi = 100,   # ~100 balls in a full ODI innings
-    test = 150   # ~150 balls in a full Test innings
+    t20 = 60,
+    odi = 100,
+    test = 150
   )
-
   dt[, bat_exposure := pmin(batting_balls_faced / full_match_balls, 1)]
   dt[, bowl_exposure := pmin(bowling_balls_bowled / (full_match_balls * 0.4), 1)]
 
-  # Aggregate per player with Bayesian shrinkage.
-  #
-  # A match whose value is NA must drop out of the NUMERATOR AND THE
-  # DENOMINATOR together. Summing the numerator with na.rm = TRUE while the
-  # denominator still carries that match's weight silently shrinks the player
-  # toward prior_rate, making a data gap indistinguishable from genuine
-  # replacement-level performance.
-  #
-  # This is not hypothetical and it is not rare. batting_wpa comes from
-  # player_game_data.R's SUM(delta_wp) over cricinfo.balls.win_probability,
-  # and as of 2026-08-12 **2,711 of 3,757 cricinfo matches (72.2%) have no
-  # win_probability at all** -- it is missing whole-match, not scattered
-  # (only 6 matches are partially covered). SUM over an all-NULL group is
-  # NULL, so those matches arrive here as NA. Before this fix, every player
-  # was shrunk toward the prior in proportion to how much of their career
-  # fell in that 72%.
+  # Aggregate per player with Bayesian shrinkage. A match whose value is NA
+  # drops out of the NUMERATOR AND THE DENOMINATOR together -- summing the
+  # numerator with na.rm while the denominator keeps the weight would shrink
+  # the player toward the prior, making a data gap look like mediocrity.
   result <- dt[, {
-    # Batting EPR
     bat_ok <- !is.na(bat_value) & !is.na(wt_bat) & !is.na(bat_exposure)
     bat_sum <- sum((bat_value * wt_bat * bat_exposure)[bat_ok])
     bat_denom <- sum((wt_bat * bat_exposure)[bat_ok]) + prior_matches
-    batting_epr_val <- (bat_sum + prior_matches * prior_rate) / bat_denom
+    batting_val <- (bat_sum + prior_matches * prior_rate) / bat_denom
 
-    # Bowling EPR
     bowl_ok <- !is.na(bowl_value) & !is.na(wt_bowl) & !is.na(bowl_exposure)
     bowl_sum <- sum((bowl_value * wt_bowl * bowl_exposure)[bowl_ok])
     bowl_denom <- sum((wt_bowl * bowl_exposure)[bowl_ok]) + prior_matches
-    bowling_epr_val <- (bowl_sum + prior_matches * prior_rate) / bowl_denom
+    bowling_val <- (bowl_sum + prior_matches * prior_rate) / bowl_denom
 
-    # Match counts
     n_m <- data.table::uniqueN(match_id)
     wt_m <- sum(wt_bat[!duplicated(match_id)], na.rm = TRUE)
 
-    .(batting_epr = batting_epr_val,
-      bowling_epr = bowling_epr_val,
-      total_epr = batting_epr_val + bowling_epr_val,
+    .(batting_impact = batting_val,
+      bowling_impact = bowling_val,
+      total_impact = batting_val + bowling_val,
       n_matches = n_m,
       wt_matches = round(wt_m, 2))
   }, by = player_id]
 
-  # Assign role from most recent data. data.table::last() takes the last ROW,
-  # which is only the most recent match if dt happens to be date-sorted --
-  # order explicitly rather than relying on how the caller loaded it.
+  # Role from most recent data, ordered explicitly.
   roles <- dt[order(match_date), .(role_raw = data.table::last(role)),
               by = player_id]
-
-  # Map to canonical upper-case groups. Equality tests left anything else
-  # (wicketkeeper, NA, a trailing space) unmapped, which split every
-  # downstream `by = role_group` into two silent buckets for the same role.
   role_map <- c(batter = "BATTER", bowler = "BOWLER",
                 all_rounder = "ALL_ROUNDER")
   roles[, role_key := tolower(trimws(as.character(role_raw)))]
   roles[, role_group := unname(role_map[role_key])]
-
   unmapped <- roles[is.na(role_group) & !is.na(role_key) & nzchar(role_key)]
   if (nrow(unmapped) > 0) {
     cli::cli_warn(c(
@@ -242,13 +230,50 @@ calculate_epr <- function(format = c("t20", "odi", "test"),
     ))
   }
   roles[is.na(role_group), role_group := "UNKNOWN"]
-
   result[roles, role_group := i.role_group, on = "player_id"]
 
   result[, ref_date := ref_date]
+  data.table::setorder(result, -total_impact)
 
-  data.table::setorder(result, -total_epr)
-
-  cli::cli_alert_success("Calculated EPR for {nrow(result)} players (format={toupper(format)})")
+  cli::cli_alert_success("Calculated impact for {nrow(result)} players (format={toupper(format)})")
   result
+}
+
+
+#' Calculate Expected Performance Rating (EPR) -- Deprecated
+#'
+#' Deprecated alias for [calculate_impact()]. The `wpa + era` engine this name
+#' referred to is retired (D-P8, D-P11): ERA left the rating and WPA enters at
+#' the fitted run-unit exchange rate. This wrapper returns
+#' [calculate_impact()]'s result with the columns renamed to the old
+#' `batting_epr`/`bowling_epr`/`total_epr` names so existing callers keep
+#' working while they migrate.
+#'
+#' @inheritParams calculate_impact
+#' @return As [calculate_impact()], with the impact columns renamed to
+#'   `batting_epr`, `bowling_epr`, `total_epr`.
+#'
+#' @export
+calculate_epr <- function(format = c("t20", "odi", "test"),
+                          player_game_data = NULL,
+                          ref_date = NULL,
+                          decay_batting = NULL,
+                          decay_bowling = NULL,
+                          prior_matches = IMPACT_PRIOR_MATCHES,
+                          prior_rate = IMPACT_PRIOR_RATE) {
+  cli::cli_warn(c(
+    "{.fn calculate_epr} is deprecated; use {.fn calculate_impact}.",
+    "i" = "The rating is now RAA + kappa*WPA (D-P11); the returned *_epr columns carry impact values."
+  ))
+  out <- calculate_impact(
+    format = format, player_game_data = player_game_data, ref_date = ref_date,
+    decay_batting = decay_batting, decay_bowling = decay_bowling,
+    prior_matches = prior_matches, prior_rate = prior_rate
+  )
+  if (nrow(out) > 0) {
+    data.table::setnames(out,
+      c("batting_impact", "bowling_impact", "total_impact"),
+      c("batting_epr", "bowling_epr", "total_epr"))
+  }
+  out[]
 }

@@ -5,7 +5,7 @@
 
 #' Player Career Ratings Leaderboard
 #'
-#' Returns a leaderboard of player career ratings combining EPR, PSR,
+#' Returns a leaderboard of player career ratings combining impact, PSR,
 #' and BOUNCER composite ratings.
 #'
 #' @param format Character. "t20", "odi", or "test".
@@ -40,7 +40,7 @@ player_career_ratings <- function(format = c("t20", "odi", "test"),
   # Select display columns
   display_cols <- intersect(
     c("player_id", "role_group", "bouncer_rating",
-      "total_epr", "batting_epr", "bowling_epr",
+      "total_impact", "batting_impact", "bowling_impact",
       "psr", "n_matches", "wt_matches"),
     names(result)
   )

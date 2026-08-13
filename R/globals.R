@@ -788,8 +788,13 @@ utils::globalVariables(c(
   "psr",
   # EPR
   "batting_epr",
+  "batting_impact",
   "bowling_epr",
+  "bowling_impact",
   "total_epr",
+  "total_impact",
+  "imp_scaled",
+  "psr_scaled",
   # BOUNCER
   "bouncer_rating"
 ))

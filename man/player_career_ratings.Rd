@@ -25,6 +25,6 @@ or "ALL_ROUNDER". Default "all".}
 data.table with career ratings sorted by BOUNCER rating.
 }
 \description{
-Returns a leaderboard of player career ratings combining EPR, PSR,
+Returns a leaderboard of player career ratings combining impact, PSR,
 and BOUNCER composite ratings.
 }

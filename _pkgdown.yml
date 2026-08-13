@@ -126,6 +126,7 @@ reference:
     - load_player_game_data
     - player_game_ratings
     - match_mvp
+    - calculate_impact
     - player_career_ratings
     - player_career_summary
     - bouncer_ratings
