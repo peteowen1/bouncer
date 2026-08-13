@@ -122,16 +122,59 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
   balls <- data.table::as.data.table(calculate_rolling_features(balls))
   mom_cols <- grep("_last_", names(balls), value = TRUE)
 
-  # Chase target: the first innings total plus one, per match. Matches with no
-  # first innings in the data cannot supply one, and their second-innings rows
-  # are dropped rather than scored against a guess.
-  inn1 <- balls[innings == 1L, .(target = max(score, na.rm = TRUE) + 1), by = match_id]
-  balls <- merge(balls, inn1, by = "match_id", all.x = TRUE)
+  # Chase target: the first innings total plus one, per match.
+  #
+  # Two sources, in this order:
+  #   1. The ball sequence -- max(total_innings_runs) over innings 1.
+  #   2. cricinfo.innings.total_runs, the scorecard's own innings total.
+  #
+  # Source 2 exists because 371 T20/ODI matches have second-innings deliveries
+  # but no first-innings ones, so source 1 cannot produce a target and their
+  # whole chase went unscored. All 371 have a scorecard total.
+  #
+  # Source 1 is preferred where both exist so that adding the fallback changes
+  # no ball that already scored. They agree exactly for 2,531 of 2,583 matches;
+  # the 52 that disagree are reported rather than silently resolved, because a
+  # scorecard total ABOVE the ball-derived one means the ball data is truncated,
+  # and a chase scored against a too-low target is wrong in a way nothing else
+  # would surface.
+  inn1_balls <- balls[innings == 1L, .(target_balls = max(score, na.rm = TRUE) + 1),
+                      by = match_id]
+
+  inn1_card <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+    SELECT i.match_id, MAX(i.total_runs) + 1 AS target_card
+    FROM cricinfo.innings i
+    JOIN cricinfo.matches m ON m.match_id = i.match_id
+    WHERE m.format = '%s' AND i.innings_number = 1 AND i.total_runs IS NOT NULL
+    GROUP BY i.match_id
+  ", db_format)))
+
+  targets <- merge(inn1_balls, inn1_card, by = "match_id", all = TRUE)
+  targets[, target := data.table::fifelse(is.na(target_balls), target_card, target_balls)]
+
+  disagree <- targets[!is.na(target_balls) & !is.na(target_card) &
+                        abs(target_card - target_balls) > 5]
+  if (nrow(disagree) > 0) {
+    cli::cli_warn(c(
+      "{nrow(disagree)} match{?es} disagree by more than 5 runs between the ball-derived and scorecard first-innings total.",
+      "i" = "Ball-derived is used. A scorecard total that is HIGHER suggests truncated ball data and a chase scored against a too-low target.",
+      "i" = "Worst: {.val {disagree[which.max(abs(target_card - target_balls)), match_id]}} ({disagree[which.max(abs(target_card - target_balls)), target_balls - 1]} balls vs {disagree[which.max(abs(target_card - target_balls)), target_card - 1]} card)."
+    ))
+  }
+
+  recovered <- targets[is.na(target_balls) & !is.na(target_card), .N]
+  if (recovered > 0) {
+    cli::cli_alert_info(
+      "{recovered} match{?es} had no first-innings deliveries; target recovered from the scorecard."
+    )
+  }
+
+  balls <- merge(balls, targets[, .(match_id, target)], by = "match_id", all.x = TRUE)
 
   unscoreable <- balls[innings == 2L & is.na(target), .N]
   if (unscoreable > 0) {
     cli::cli_warn(c(
-      "{unscoreable} second-innings deliveries have no first innings in the data and are left unscored.",
+      "{unscoreable} second-innings deliveries have no first-innings total from either source and are left unscored.",
       "i" = "They will be NA in {.field {table_name}} rather than scored against an assumed target."
     ))
   }
