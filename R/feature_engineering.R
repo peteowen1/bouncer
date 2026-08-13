@@ -411,6 +411,13 @@ calculate_era <- function(actual_runs, expected_runs) {
 #' @param runs_needed Integer. Runs still required to win
 #' @param balls_remaining Integer. Balls left in innings
 #' @param wickets_in_hand Integer. Wickets remaining (10 - wickets_fallen)
+#' @param resource_surface A `bouncer_resource_surface` from
+#'   [fit_resource_surface()], or NULL for the legacy
+#'   `balls_remaining + wickets_in_hand * 6` formula. This changes the SCALE of
+#'   `resources_per_run` (expected remaining runs per run needed, versus balls
+#'   per run needed), so a model trained with one must be served the other.
+#'   [load_in_match_models()] carries the surface alongside the model so the two
+#'   cannot drift apart.
 #'
 #' @return Data frame with columns:
 #'   \itemize{
@@ -428,7 +435,8 @@ calculate_era <- function(actual_runs, expected_runs) {
 #'   }
 #'
 #' @keywords internal
-calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wickets_in_hand) {
+calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wickets_in_hand,
+                                                resource_surface = NULL) {
 
   # Binary indicators for game decided
   chase_completed <- as.integer(runs_needed <= 0)
@@ -452,12 +460,31 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
     default = pmin(balls_remaining / runs_needed, 20)
   )
 
-  # Combined resources: balls + wickets * 6 (each wicket worth ~6 balls)
-  # This captures that having wickets in hand is like having extra balls
-  total_resources <- balls_remaining + (wickets_in_hand * 6)
+  # Combined resources.
+  #
+  # With a fitted surface this is expected remaining RUNS over runs needed, so
+  # the feature reads directly as "how much more than enough do we expect to
+  # score". Without one it falls back to the original balls + wickets * 6, which
+  # asserts that a wicket is worth exactly six balls in every state. Measured
+  # over 13,358 T20 matches the run cost of a wicket runs from 0.5 (20 balls
+  # left, 9 in hand) to 22.7 (100 balls left, 7 in hand) -- a factor of 45
+  # behind one constant, and it is the single largest input to the ODI chase
+  # model at 57% of its gain.
+  #
+  # The two are on different scales and are NOT interchangeable at scoring time:
+  # a model trained on one and served the other is a train/serve skew of exactly
+  # the kind this codebase has been bitten by. The surface travels with the
+  # model via load_in_match_models() so both paths get the same one.
+  if (is.null(resource_surface)) {
+    total_resources <- balls_remaining + (wickets_in_hand * 6)
+    resources_cap <- 30
+  } else {
+    total_resources <- resource_runs(balls_remaining, wickets_in_hand, resource_surface)
+    resources_cap <- 10   # runs-over-runs, so 10x what you need is already won
+  }
   resources_per_run <- data.table::fcase(
-    runs_needed <= 0, 30,  # Cap for completed chase
-    default = pmin(total_resources / pmax(runs_needed, 1), 30)
+    runs_needed <= 0, resources_cap,
+    default = pmin(total_resources / pmax(runs_needed, 1), resources_cap)
   )
 
   # Chase buffer: how many "spare" balls beyond what's strictly needed

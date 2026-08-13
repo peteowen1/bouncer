@@ -148,13 +148,30 @@ cli::cli_alert_info("Mean projected vs target (train): {round(mean(train_data$pr
 # Prepare Stage 2 Features ----
 cli::cli_h2("Preparing Stage 2 features")
 
+# The fitted resource surface, if one has been built for this format. It must
+# be the SAME surface the serving path loads via load_in_match_models(), or
+# resources_per_run is on a different scale at train and score time. Both sides
+# read it from the models directory for that reason.
+RESOURCE_SURFACE_PATH <- file.path(dirname(get_db_path()), "models",
+                                   paste0(IN_MATCH_FORMAT, "_resource_surface.rds"))
+RESOURCE_SURFACE <- if (file.exists(RESOURCE_SURFACE_PATH)) {
+  cli::cli_alert_info("Using fitted resource surface: {.path {basename(RESOURCE_SURFACE_PATH)}}")
+  readRDS(RESOURCE_SURFACE_PATH)
+} else {
+  cli::cli_alert_warning(
+    "No resource surface for {IN_MATCH_FORMAT}; falling back to balls + wickets * 6."
+  )
+  NULL
+}
+
 prepare_stage2_features <- function(data) {
 
   # Calculate tail calibration features first
   tail_features <- calculate_tail_calibration_features(
     runs_needed = data$runs_needed,
     balls_remaining = data$balls_remaining,
-    wickets_in_hand = 10 - data$wickets_fallen
+    wickets_in_hand = 10 - data$wickets_fallen,
+    resource_surface = RESOURCE_SURFACE
   )
 
   # Bind tail features to data

@@ -91,6 +91,15 @@ load_in_match_models <- function(format = "t20",
     innings1_features <- innings1_results$feature_cols
   }
 
+  # The resource surface must travel with the model. `resources_per_run` is
+  # built from it, and a model trained on the fitted surface but served the
+  # legacy balls + wickets * 6 formula sees a feature on a completely different
+  # scale -- the same class of train/serve skew as the over_ball and
+  # zero-fill bugs. Absent surface means legacy formula on BOTH paths, which is
+  # consistent even if worse.
+  surface_file <- file.path(models_path, paste0(format, "_resource_surface.rds"))
+  resource_surface <- if (file.exists(surface_file)) readRDS(surface_file) else NULL
+
   result <- list(
     stage1_model = stage1_results$model,
     stage2_model = stage2_results$model,
@@ -98,6 +107,7 @@ load_in_match_models <- function(format = "t20",
     stage2_features = stage2_results$feature_cols,
     innings1_model = innings1_model,
     innings1_features = innings1_features,
+    resource_surface = resource_surface,
     format = format
   )
 
@@ -411,9 +421,10 @@ predict_win_probability <- function(current_score,
     for (nm in names(pm)) feature_data[[nm]] <- pm[[nm]]
 
     tc <- calculate_tail_calibration_features(
-      runs_needed     = feature_data$runs_needed,
-      balls_remaining = balls_remaining,
-      wickets_in_hand = feature_data$wickets_in_hand
+      runs_needed      = feature_data$runs_needed,
+      balls_remaining  = balls_remaining,
+      wickets_in_hand  = feature_data$wickets_in_hand,
+      resource_surface = models$resource_surface
     )
     for (nm in names(tc)) feature_data[[nm]] <- tc[[nm]]
 
@@ -710,9 +721,10 @@ predict_win_probability_batch <- function(states,
     for (nm in names(pm)) f2[[nm]] <- pm[[nm]]
 
     tc <- calculate_tail_calibration_features(
-      runs_needed     = f2$runs_needed,
-      balls_remaining = f2$balls_remaining,
-      wickets_in_hand = f2$wickets_in_hand
+      runs_needed      = f2$runs_needed,
+      balls_remaining  = f2$balls_remaining,
+      wickets_in_hand  = f2$wickets_in_hand,
+      resource_surface = models$resource_surface
     )
     for (nm in names(tc)) f2[[nm]] <- tc[[nm]]
 

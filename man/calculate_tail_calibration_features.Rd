@@ -7,7 +7,8 @@
 calculate_tail_calibration_features(
   runs_needed,
   balls_remaining,
-  wickets_in_hand
+  wickets_in_hand,
+  resource_surface = NULL
 )
 }
 \arguments{
@@ -16,6 +17,14 @@ calculate_tail_calibration_features(
 \item{balls_remaining}{Integer. Balls left in innings}
 
 \item{wickets_in_hand}{Integer. Wickets remaining (10 - wickets_fallen)}
+
+\item{resource_surface}{A \code{bouncer_resource_surface} from
+\code{\link[=fit_resource_surface]{fit_resource_surface()}}, or NULL for the legacy
+\code{balls_remaining + wickets_in_hand * 6} formula. This changes the SCALE of
+\code{resources_per_run} (expected remaining runs per run needed, versus balls
+per run needed), so a model trained with one must be served the other.
+\code{\link[=load_in_match_models]{load_in_match_models()}} carries the surface alongside the model so the two
+cannot drift apart.}
 }
 \value{
 Data frame with columns:
