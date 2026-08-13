@@ -224,6 +224,13 @@ prepare_stage2_features <- function(data) {
     "runs_per_ball_needed",
     "balls_per_run_available",
     "resources_per_run",
+    # Resource state as a difference in runs, giving wickets a route into the
+    # model that does not pass through the Stage 1 projection. Added 2026-08-13
+    # after the T20 chase model was found to take 74% of its gain from
+    # projected_vs_target / projected_win_margin and to price wickets 2.5x too
+    # cheaply as a result.
+    "resource_margin",
+    "resource_margin_per_ball",
     "chase_buffer",
     "chase_buffer_ratio",
     "is_easy_chase",

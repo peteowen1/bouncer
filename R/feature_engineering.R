@@ -425,7 +425,13 @@ calculate_era <- function(actual_runs, expected_runs) {
 #'     \item chase_impossible: Binary. 1 if balls/wickets exhausted with runs still needed
 #'     \item runs_per_ball_needed: runs_needed / balls_remaining (Inf capped at 6)
 #'     \item balls_per_run_available: balls_remaining / runs_needed (capped at 20)
-#'     \item resources_per_run: (balls + wickets*6) / runs_needed (capped at 30)
+#'     \item resources_per_run: expected remaining runs (or, without a surface,
+#'       balls + wickets*6) divided by runs_needed
+#'     \item resource_margin: the same comparison as a difference in runs --
+#'       expected remaining runs minus runs needed. Positive means expected to
+#'       win. This is the wicket-sensitive counterpart to
+#'       `projected_win_margin`, which reaches the model only via Stage 1.
+#'     \item resource_margin_per_ball: resource_margin / balls_remaining
 #'     \item chase_buffer: balls_remaining - runs_needed (how many "spare" balls)
 #'     \item chase_buffer_ratio: chase_buffer / balls_remaining
 #'     \item is_easy_chase: Binary. < 1 run per ball needed with 5+ wickets
@@ -487,6 +493,25 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
     default = pmin(total_resources / pmax(runs_needed, 1), resources_cap)
   )
 
+  # The same resource information as a DIFFERENCE in runs, not a ratio.
+  #
+  # `resources_per_run` is a ratio, and the T20 chase model barely used it: 74%
+  # of its gain came from `projected_vs_target` and `projected_win_margin`,
+  # which are differences in runs from the Stage 1 projection. Wickets reached
+  # the model only through that projection, and the route compressed them --
+  # measured win probability moved 2.5x less per wicket than reality.
+  #
+  # These give the model the same comparison in the units it already prefers,
+  # built from the fitted surface instead of the projection, so wickets have a
+  # direct path in. With a surface they are in runs; without one they inherit
+  # the legacy balls-based scale and mean something different, which is another
+  # reason the surface must travel with the model.
+  resource_margin <- total_resources - runs_needed
+  resource_margin_per_ball <- data.table::fcase(
+    balls_remaining <= 0, 0,
+    default = resource_margin / balls_remaining
+  )
+
   # Chase buffer: how many "spare" balls beyond what's strictly needed
   chase_buffer <- balls_remaining - runs_needed
 
@@ -517,6 +542,8 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
     runs_per_ball_needed = runs_per_ball_needed,
     balls_per_run_available = balls_per_run_available,
     resources_per_run = resources_per_run,
+    resource_margin = resource_margin,
+    resource_margin_per_ball = resource_margin_per_ball,
     chase_buffer = chase_buffer,
     chase_buffer_ratio = chase_buffer_ratio,
     is_easy_chase = is_easy_chase,

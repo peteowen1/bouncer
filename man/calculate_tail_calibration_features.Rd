@@ -33,7 +33,13 @@ Data frame with columns:
 \item chase_impossible: Binary. 1 if balls/wickets exhausted with runs still needed
 \item runs_per_ball_needed: runs_needed / balls_remaining (Inf capped at 6)
 \item balls_per_run_available: balls_remaining / runs_needed (capped at 20)
-\item resources_per_run: (balls + wickets*6) / runs_needed (capped at 30)
+\item resources_per_run: expected remaining runs (or, without a surface,
+balls + wickets*6) divided by runs_needed
+\item resource_margin: the same comparison as a difference in runs --
+expected remaining runs minus runs needed. Positive means expected to
+win. This is the wicket-sensitive counterpart to
+\code{projected_win_margin}, which reaches the model only via Stage 1.
+\item resource_margin_per_ball: resource_margin / balls_remaining
 \item chase_buffer: balls_remaining - runs_needed (how many "spare" balls)
 \item chase_buffer_ratio: chase_buffer / balls_remaining
 \item is_easy_chase: Binary. < 1 run per ball needed with 5+ wickets
