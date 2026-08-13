@@ -66,10 +66,15 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 > tested and made the anchor checks worse (Root 14/98 → 98/98 in ODI), so ERA is
 > genuinely the stronger player-value signal and WPA is not simply mis-scaled.
 >
-> **Test format still has no WPA from any source.** The scraped column is 0.0%
-> populated for it and `build_cricinfo_win_probability()` is limited-overs only;
-> Test runs through the decomposed `predict_test_win_probability()`, which is not
-> batched yet. 355,962 deliveries.
+> **Test WPA exists since 2026-08-13** — `build_cricinfo_test_win_probability()`
+> scores all 355,962 Test deliveries (quality honestly weak until the #24
+> retrain; strong only in innings 4).
+>
+> **The WPA delta is flipped to the batter's own team's perspective** (2026-08-13,
+> bouncerverse#25). Both stored win probabilities are single-perspective numbers,
+> and summing raw deltas docked chasing batters for scoring — corr(batting_wpa,
+> runs) was **−0.43 in innings 2**. The flip lives in `.wp_source_sql()`; do not
+> difference either WP column directly without it.
 >
 > **`calculate_epr()`'s coverage warning is still load-bearing** — do not silence
 > it. Matches with no win probability still reach it as `NA`, and

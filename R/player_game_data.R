@@ -140,8 +140,23 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #'   [build_cricinfo_win_probability()]), `"cricinfo"` for the scraped
 #'   `cricinfo.balls.win_probability`.
 #'
+#' @section The delta is flipped to the batting team's perspective:
+#' Both stored win probabilities are single-perspective numbers -- ours is
+#' P(the side batting FIRST wins), the scraped column is P(the CHASING side
+#' wins) -- so summing raw deltas credits half of all batters with their
+#' opponents' fortunes. Measured before the 2026-08-13 fix (bouncerverse#25):
+#' corr(batting_wpa, runs) was +0.45 in innings 1 and **-0.43** in innings 2
+#' for T20 male -- a chasing batter was docked for scoring, and under the
+#' scraped source it was innings-1 batters instead. The flip resolves the
+#' batting side per innings from `cricinfo.innings.team_id` against the
+#' innings-1 team (so a Test follow-on flips innings 3, not innings 4),
+#' falling back to innings parity where the scorecard is missing. `delta_ps`
+#' needs no flip: the projected score is always the current batting innings'
+#' own, so its delta is already batting-perspective.
+#'
 #' @return List with `col` (the win probability expression), `delta` (the
-#'   LEAD-difference expression) and `join` (any extra FROM-clause join).
+#'   batting-perspective delta expression) and `join` (extra FROM-clause
+#'   joins, including the innings-team lookup the flip needs).
 #'
 #' @keywords internal
 .wp_source_sql <- function(wp_source = c("bouncer", "cricinfo")) {
@@ -153,9 +168,27 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     cricinfo = "b.win_probability"
   )
 
+  # +1 when the striker's team is the side batting first, -1 otherwise.
+  team_sign <- "CASE
+      WHEN ti.team_id IS NOT NULL AND t1.team_id IS NOT NULL THEN
+        CASE WHEN ti.team_id = t1.team_id THEN 1 ELSE -1 END
+      WHEN b.innings_number IN (1, 3) THEN 1
+      ELSE -1
+    END"
+
+  team_join <- "LEFT JOIN (
+        SELECT match_id, innings_number, MAX(team_id) AS team_id
+        FROM cricinfo.innings GROUP BY match_id, innings_number
+      ) ti ON ti.match_id = b.match_id AND ti.innings_number = b.innings_number
+      LEFT JOIN (
+        SELECT match_id, MAX(team_id) AS team_id
+        FROM cricinfo.innings WHERE innings_number = 1 GROUP BY match_id
+      ) t1 ON t1.match_id = b.match_id"
+
   join <- switch(wp_source,
-    bouncer  = "LEFT JOIN main.cricinfo_ball_win_probability w ON w.id = b.id",
-    cricinfo = ""
+    bouncer  = paste("LEFT JOIN main.cricinfo_ball_win_probability w ON w.id = b.id",
+                     team_join, sep = "\n      "),
+    cricinfo = team_join
   )
 
   # The delta a delivery CAUSED is wp_after(i) - wp_after(i-1). Both columns
@@ -168,13 +201,15 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   # innings-start "before" state that a LAG cannot supply for ball 1. For the
   # scraped column there is no such table, so the LAG is taken here and ball 1
   # of each innings is necessarily NA.
+  # Our stored delta is on P(batting first); the scraped column is on
+  # P(chasing), so its batting-perspective sign is the OPPOSITE of team_sign.
   delta <- switch(wp_source,
-    bouncer  = "w.delta_wp",
+    bouncer  = sprintf("(%s) * w.delta_wp", team_sign),
     cricinfo = sprintf(
-      "%s - LAG(%s) OVER (
+      "-(%s) * (%s - LAG(%s) OVER (
           PARTITION BY b.match_id, b.innings_number
           ORDER BY b.over_number, b.ball_number
-        )", col, col)
+        ))", team_sign, col, col)
   )
 
   # ERA differences a projected score and must follow the SAME source. It is

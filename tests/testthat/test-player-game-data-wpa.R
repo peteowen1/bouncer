@@ -94,17 +94,27 @@ test_that("the win probability source is chosen in one place and both options ar
   ours <- .wp_source_sql("bouncer")
   theirs <- .wp_source_sql("cricinfo")
 
-  # Ours must join; theirs must not.
+  # Ours must join the WP table; both must join the innings-team lookup the
+  # perspective flip needs (bouncerverse#25).
   expect_match(ours$join, "cricinfo_ball_win_probability")
   expect_match(ours$join, "ON w\\.id = b\\.id")
-  expect_identical(theirs$join, "")
+  for (j in list(ours$join, theirs$join)) {
+    expect_match(j, "FROM cricinfo\\.innings GROUP BY match_id, innings_number")
+    expect_match(j, "WHERE innings_number = 1")
+  }
 
   expect_identical(ours$col, "w.win_prob_after")
   expect_identical(theirs$col, "b.win_probability")
 
-  # Ours uses the delta precomputed alongside the win probability, so the
-  # innings-start "before" state is available for ball 1.
-  expect_identical(ours$delta, "w.delta_wp")
+  # Ours uses the delta precomputed alongside the win probability (so the
+  # innings-start "before" state is available for ball 1), flipped to the
+  # batting team's perspective. The scraped column is P(chasing wins), so its
+  # flip is NEGATED relative to ours -- if these two ever match in sign
+  # structure, one of them is crediting the wrong team.
+  expect_match(ours$delta, "w\\.delta_wp")
+  expect_match(ours$delta, "WHEN ti\\.team_id = t1\\.team_id THEN 1 ELSE -1")
+  expect_match(theirs$delta, "^-\\(")
+  expect_false(grepl("^-\\(", ours$delta))
 
   # Theirs must LAG, never LEAD. Both stored columns are POST-delivery states,
   # so LEAD(wp) - wp is the NEXT delivery's swing credited to this delivery's

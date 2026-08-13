@@ -14,7 +14,8 @@
 }
 \value{
 List with \code{col} (the win probability expression), \code{delta} (the
-LEAD-difference expression) and \code{join} (any extra FROM-clause join).
+batting-perspective delta expression) and \code{join} (extra FROM-clause
+joins, including the innings-team lookup the flip needs).
 }
 \description{
 Both aggregations difference a win probability across consecutive
@@ -27,4 +28,20 @@ The join is on \code{b.id}, not \verb{(match_id, innings_number, over_number, ba
 T20/ODI rows share one, all in match \code{1099000} innings 1 over 30 -- and
 joining on it would duplicate those deliveries inside the \code{SUM()}s below.
 }
+\section{The delta is flipped to the batting team's perspective}{
+
+Both stored win probabilities are single-perspective numbers -- ours is
+P(the side batting FIRST wins), the scraped column is P(the CHASING side
+wins) -- so summing raw deltas credits half of all batters with their
+opponents' fortunes. Measured before the 2026-08-13 fix (bouncerverse#25):
+corr(batting_wpa, runs) was +0.45 in innings 1 and \strong{-0.43} in innings 2
+for T20 male -- a chasing batter was docked for scoring, and under the
+scraped source it was innings-1 batters instead. The flip resolves the
+batting side per innings from \code{cricinfo.innings.team_id} against the
+innings-1 team (so a Test follow-on flips innings 3, not innings 4),
+falling back to innings parity where the scorecard is missing. \code{delta_ps}
+needs no flip: the projected score is always the current batting innings'
+own, so its delta is already batting-perspective.
+}
+
 \keyword{internal}
