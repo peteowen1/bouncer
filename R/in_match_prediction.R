@@ -524,14 +524,21 @@ predict_win_probability <- function(current_score,
 #' @param models List from [load_in_match_models()]. Loaded if NULL.
 #' @param venue_stats List of venue statistics, or NULL for format defaults.
 #'
+#' @param detail Logical. `FALSE` (default) returns the win probability vector.
+#'   `TRUE` returns a data.frame with `win_prob` and `projected_score` — the
+#'   Stage 1 output, which is computed for every row regardless and is what
+#'   ERA is differenced from. Exposing it avoids scoring the same states twice.
+#'
 #' @return Numeric vector of P(batting-first team wins), one element per row of
-#'   `states`, in input order. Rows that cannot be scored are `NA_real_`.
+#'   `states`, in input order. Rows that cannot be scored are `NA_real_`. With
+#'   `detail = TRUE`, a data.frame of `win_prob` and `projected_score`.
 #'
 #' @keywords internal
 predict_win_probability_batch <- function(states,
                                           format = "t20",
                                           models = NULL,
-                                          venue_stats = NULL) {
+                                          venue_stats = NULL,
+                                          detail = FALSE) {
 
   format <- tolower(format)
   if (format %in% c("test", "mdm")) {
@@ -543,7 +550,13 @@ predict_win_probability_batch <- function(states,
 
   states <- as.data.frame(states)
   n <- nrow(states)
-  if (n == 0L) return(numeric(0))
+  if (n == 0L) {
+    return(if (detail) {
+      data.frame(win_prob = numeric(0), projected_score = numeric(0))
+    } else {
+      numeric(0)
+    })
+  }
 
   required <- c("current_score", "wickets", "overs", "innings")
   absent <- setdiff(required, names(states))
@@ -700,6 +713,10 @@ predict_win_probability_batch <- function(states,
     # calculate_chase_win_prob() answers for the chasing team; the scalar path
     # inverts to batting-first and so does this one.
     out[i2] <- 1 - calculate_chase_win_prob(f2, models$stage2_model, models$stage2_features)
+  }
+
+  if (detail) {
+    return(data.frame(win_prob = out, projected_score = fd$projected_final_score))
   }
 
   out

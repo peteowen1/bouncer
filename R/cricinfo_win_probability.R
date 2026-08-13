@@ -192,11 +192,13 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
 
   cli::cli_alert_info("Scoring...")
   t0 <- Sys.time()
-  wp <- predict_win_probability_batch(states, format = format, models = models)
+  scored <- predict_win_probability_batch(states, format = format, models = models,
+                                          detail = TRUE)
   elapsed <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 
-  balls[, win_prob_after := NA_real_]
-  balls[scoreable, win_prob_after := wp]
+  balls[, `:=`(win_prob_after = NA_real_, proj_score_after = NA_real_)]
+  balls[scoreable, `:=`(win_prob_after   = scored$win_prob,
+                        proj_score_after = scored$projected_score)]
 
   n_scored <- sum(!is.na(balls$win_prob_after))
   cli::cli_alert_success(
@@ -240,20 +242,27 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
   for (nm in mom_cols) start_states[[nm]] <- 0
   start_scoreable <- starts$innings == 1L | !is.na(starts$target)
 
-  starts[, wp_start := NA_real_]
+  starts[, `:=`(wp_start = NA_real_, ps_start = NA_real_)]
   if (any(start_scoreable)) {
-    starts[start_scoreable, wp_start := predict_win_probability_batch(
-      start_states[start_scoreable, , drop = FALSE], format = format, models = models
-    )]
+    s0 <- predict_win_probability_batch(
+      start_states[start_scoreable, , drop = FALSE], format = format,
+      models = models, detail = TRUE
+    )
+    starts[start_scoreable, `:=`(wp_start = s0$win_prob, ps_start = s0$projected_score)]
   }
-  balls <- merge(balls, starts[, .(match_id, innings, wp_start)],
+  balls <- merge(balls, starts[, .(match_id, innings, wp_start, ps_start)],
                  by = c("match_id", "innings"), all.x = TRUE)
   data.table::setorder(balls, match_id, innings, over, ball, id)
 
-  balls[, win_prob_before := data.table::shift(win_prob_after, 1L, type = "lag"),
-        by = .(match_id, innings)]
-  balls[is.na(win_prob_before), win_prob_before := wp_start]
+  balls[, `:=`(
+    win_prob_before  = data.table::shift(win_prob_after, 1L, type = "lag"),
+    proj_score_before = data.table::shift(proj_score_after, 1L, type = "lag")
+  ), by = .(match_id, innings)]
+  balls[is.na(win_prob_before),   win_prob_before   := wp_start]
+  balls[is.na(proj_score_before), proj_score_before := ps_start]
+
   balls[, delta_wp := win_prob_after - win_prob_before]
+  balls[, delta_ps := proj_score_after - proj_score_before]
 
   n_delta <- sum(!is.na(balls$delta_wp))
   cli::cli_alert_success("{n_delta}/{nrow(balls)} deliveries have a win probability delta.")
@@ -267,7 +276,10 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
     format         = db_format,
     win_prob_before,
     win_prob_after,
-    delta_wp
+    delta_wp,
+    proj_score_before,
+    proj_score_after,
+    delta_ps
   )]
 
   if (!write) return(out[])
@@ -305,7 +317,8 @@ store_cricinfo_win_probability <- function(conn, data, format,
     WHERE table_schema = 'main' AND table_name = '%s'", table_name))$column_name
 
   wanted <- c("id", "match_id", "innings_number", "over_number", "ball_number",
-              "format", "win_prob_before", "win_prob_after", "delta_wp")
+              "format", "win_prob_before", "win_prob_after", "delta_wp",
+              "proj_score_before", "proj_score_after", "delta_ps")
 
   if (length(existing) > 0 && !setequal(existing, wanted)) {
     cli::cli_alert_warning(
@@ -324,7 +337,10 @@ store_cricinfo_win_probability <- function(conn, data, format,
       format          VARCHAR,
       win_prob_before DOUBLE,
       win_prob_after  DOUBLE,
-      delta_wp        DOUBLE
+      delta_wp        DOUBLE,
+      proj_score_before DOUBLE,
+      proj_score_after  DOUBLE,
+      delta_ps          DOUBLE
     )", table_name))
 
   duckdb::duckdb_register(conn, "cwp_staging", as.data.frame(data))

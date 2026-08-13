@@ -177,7 +177,27 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         )", col, col)
   )
 
-  list(col = col, delta = delta, join = join)
+  # ERA differences a projected score and must follow the SAME source. It is
+  # not cosmetic: calculate_epr() computes bat_value = batting_wpa +
+  # batting_era, so an NA in either kills the pair. cricinfo.predicted_score
+  # has exactly the sparse coverage the scraped win probability had -- 7.7% of
+  # ODI deliveries, 42.8% of T20 -- so leaving ERA on it would drag EPR back
+  # to that level however complete the WPA became.
+  ps_col <- switch(wp_source,
+    bouncer  = "w.proj_score_after",
+    cricinfo = "b.predicted_score"
+  )
+  ps_delta <- switch(wp_source,
+    bouncer  = "w.delta_ps",
+    cricinfo = sprintf(
+      "%s - LAG(%s) OVER (
+          PARTITION BY b.match_id, b.innings_number
+          ORDER BY b.over_number, b.ball_number
+        )", ps_col, ps_col)
+  )
+
+  list(col = col, delta = delta, join = join,
+       ps_col = ps_col, ps_delta = ps_delta)
 }
 
 
@@ -225,17 +245,14 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         b.shot_type,
         b.shot_control,
         %s AS win_probability,
-        b.predicted_score,
+        %s AS predicted_score,
         b.total_innings_runs,
 
         -- WPA: change in win probability caused by this delivery
         %s AS delta_wp,
 
         -- ERA: change in projected score caused by this delivery
-        LEAD(b.predicted_score) OVER (
-          PARTITION BY b.match_id, b.innings_number
-          ORDER BY b.over_number, b.ball_number
-        ) - b.predicted_score AS delta_ps,
+        %s AS delta_ps,
 
         -- Match metadata
         m.start_date AS match_date,
@@ -297,7 +314,8 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, batting_runs DESC
-  ", wp$col, wp$delta, wp$join, format_filter, match_filter, gender_filter)
+  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, wp$join,
+     format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
   data.table::as.data.table(result)
@@ -343,16 +361,13 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
         b.pitch_length,
         b.shot_control,
         %s AS win_probability,
-        b.predicted_score,
+        %s AS predicted_score,
 
         -- WPA delta (bowler perspective = negated batting delta)
         %s AS delta_wp,
 
         -- ERA delta (bowler perspective = negated)
-        LEAD(b.predicted_score) OVER (
-          PARTITION BY b.match_id, b.innings_number
-          ORDER BY b.over_number, b.ball_number
-        ) - b.predicted_score AS delta_ps,
+        %s AS delta_ps,
 
         m.start_date AS match_date
 
@@ -408,7 +423,8 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
     FROM deliveries_with_delta
     GROUP BY match_id, player_id
     ORDER BY match_id, bowling_wickets DESC
-  ", wp$col, wp$delta, wp$join, format_filter, match_filter, gender_filter)
+  ", wp$col, wp$ps_col, wp$delta, wp$ps_delta, wp$join,
+     format_filter, match_filter, gender_filter)
 
   result <- DBI::dbGetQuery(conn, query)
   data.table::as.data.table(result)

@@ -8,7 +8,8 @@ predict_win_probability_batch(
   states,
   format = "t20",
   models = NULL,
-  venue_stats = NULL
+  venue_stats = NULL,
+  detail = FALSE
 )
 }
 \arguments{
@@ -26,10 +27,16 @@ here; they run through the decomposed \code{predict_test_win_probability()}.}
 \item{models}{List from \code{\link[=load_in_match_models]{load_in_match_models()}}. Loaded if NULL.}
 
 \item{venue_stats}{List of venue statistics, or NULL for format defaults.}
+
+\item{detail}{Logical. \code{FALSE} (default) returns the win probability vector.
+\code{TRUE} returns a data.frame with \code{win_prob} and \code{projected_score} — the
+Stage 1 output, which is computed for every row regardless and is what
+ERA is differenced from. Exposing it avoids scoring the same states twice.}
 }
 \value{
 Numeric vector of P(batting-first team wins), one element per row of
-\code{states}, in input order. Rows that cannot be scored are \code{NA_real_}.
+\code{states}, in input order. Rows that cannot be scored are \code{NA_real_}. With
+\code{detail = TRUE}, a data.frame of \code{win_prob} and \code{projected_score}.
 }
 \description{
 The batched twin of \code{\link[=predict_win_probability]{predict_win_probability()}}. Same features, same models,
