@@ -639,19 +639,32 @@ predict_win_probability_batch <- function(states,
     fd[[nm]] <- if (nm %in% supplied) states[[nm]] else mom_default[[nm]]
   }
 
-  fd$venue_avg_score           <- venue_stats$avg_first_innings
-  fd$venue_chase_success_rate  <- venue_stats$chase_win_rate %||% 0.45
-  fd$venue_avg_first_innings   <- venue_stats$avg_first_innings
-  fd$venue_avg_second_innings  <- venue_stats$avg_second_innings %||% venue_stats$avg_first_innings
-  fd$venue_chase_win_rate      <- venue_stats$chase_win_rate %||% 0.45
+  # Per-row context where the caller has it, format defaults otherwise.
+  #
+  # These were unconditional constants until 2026-08-13, which is a train/serve
+  # mismatch wearing a different hat: training saw a real per-venue average and
+  # a real gender flag, serving saw 260 runs and "male" for every delivery.
+  # Measured on cricinfo deliveries, women's T20 chase ECE was 0.2299 against
+  # 0.0423 for men's -- while the model's own held-out ECE is 0.0282. Supplying
+  # the truth beats calibrating over the lie.
+  take <- function(nm, default) {
+    if (nm %in% names(states)) states[[nm]] else default
+  }
 
-  fd$gender      <- "male"
-  fd$gender_male <- 1L
-  fd$is_knockout <- 0L
-  fd$event_tier  <- 1
+  fd$venue_avg_score          <- take("venue_avg_score", venue_stats$avg_first_innings)
+  fd$venue_chase_success_rate <- take("venue_chase_success_rate", venue_stats$chase_win_rate %||% 0.45)
+  fd$venue_avg_first_innings  <- take("venue_avg_score", venue_stats$avg_first_innings)
+  fd$venue_avg_second_innings <- take("venue_avg_second_innings",
+                                      venue_stats$avg_second_innings %||% venue_stats$avg_first_innings)
+  fd$venue_chase_win_rate     <- take("venue_chase_success_rate", venue_stats$chase_win_rate %||% 0.45)
+
+  fd$gender_male <- as.integer(take("gender_male", 1L))
+  fd$gender      <- ifelse(fd$gender_male == 1L, "male", "female")
+  fd$is_knockout <- as.integer(take("is_knockout", 0L))
+  fd$event_tier  <- take("event_tier", 1)
   fd$is_dls_match <- FALSE
-  fd$is_dls      <- 0L
-  fd$is_ko       <- 0L
+  fd$is_dls      <- as.integer(take("is_dls", 0L))
+  fd$is_ko       <- as.integer(take("is_knockout", 0L))
 
   # Stage 1 runs over every row: both branches consume the projected score.
   fd$projected_final_score <- calculate_projected_score_from_model(
@@ -705,7 +718,14 @@ predict_win_probability_batch <- function(states,
 
     f2$innings1_total    <- target2 - 1
     f2$innings1_run_rate <- (target2 - 1) / (max_balls / 6)
-    f2$innings1_wickets  <- 10
+    # 10 is the common case for a completed innings but not the truth: a side
+    # bowled out is a different first innings from one that closed on 6 down.
+    # Callers with the ball sequence know which, and training did.
+    f2$innings1_wickets  <- if ("innings1_wickets" %in% names(states)) {
+      states$innings1_wickets[i2]
+    } else {
+      10
+    }
 
     f2$projected_vs_target   <- f2$projected_final_score - target2
     f2$projected_win_margin  <- f2$projected_final_score - (target2 - 1)

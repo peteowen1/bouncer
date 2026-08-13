@@ -96,7 +96,9 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
              AS runs_total,
            COALESCE(b.is_four,   FALSE) AS is_four,
            COALESCE(b.is_six,    FALSE) AS is_six,
-           COALESCE(b.is_wicket, FALSE) AS is_wicket
+           COALESCE(b.is_wicket, FALSE) AS is_wicket,
+           CASE WHEN m.gender = 'female' THEN 0 ELSE 1 END AS gender_male,
+           m.ground_name
     FROM cricinfo.balls b
     JOIN cricinfo.matches m ON m.match_id = b.match_id
     WHERE m.format = '%s'
@@ -181,12 +183,60 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
 
   scoreable <- balls[innings == 1L | !is.na(target), which = TRUE]
 
+  # Real per-venue statistics, computed from cricinfo's own history rather than
+  # joined to the training-side venue table: only 74 of 232 cricinfo ODI ground
+  # names match those 170 venues, so the join would silently default two thirds
+  # of grounds back to the format average. Computing them here keeps the
+  # identifier space consistent at the cost of being cricinfo-only.
+  venue <- balls[innings == 1L, .(inn1_total = max(score, na.rm = TRUE)),
+                 by = .(ground_name, match_id)][
+                   , .(venue_avg_score = mean(inn1_total, na.rm = TRUE),
+                       venue_matches = .N), by = ground_name]
+
+  outcomes <- merge(
+    balls[innings == 1L, .(i1 = max(score, na.rm = TRUE)), by = .(ground_name, match_id)],
+    balls[innings == 2L, .(i2 = max(score, na.rm = TRUE)), by = .(ground_name, match_id)],
+    by = c("ground_name", "match_id"))
+  chase_rate <- outcomes[i1 != i2, .(venue_chase_success_rate = mean(i2 > i1),
+                                     venue_avg_second_innings = mean(i2)), by = ground_name]
+  venue <- merge(venue, chase_rate, by = "ground_name", all.x = TRUE)
+
+  # A ground with a handful of matches gives a chase rate of 0 or 1, which is a
+  # confident lie. Shrink toward the format default by match count.
+  defaults <- get_default_venue_stats(format)
+  PRIOR <- 10
+  venue[, w := venue_matches / (venue_matches + PRIOR)]
+  venue[, venue_avg_score := w * venue_avg_score + (1 - w) * defaults$avg_first_innings]
+  venue[, venue_chase_success_rate := data.table::fifelse(
+    is.na(venue_chase_success_rate), defaults$chase_win_rate %||% 0.45,
+    w * venue_chase_success_rate + (1 - w) * (defaults$chase_win_rate %||% 0.45))]
+  venue[, venue_avg_second_innings := data.table::fifelse(
+    is.na(venue_avg_second_innings), defaults$avg_second_innings %||% defaults$avg_first_innings,
+    w * venue_avg_second_innings + (1 - w) * (defaults$avg_second_innings %||% defaults$avg_first_innings))]
+
+  balls <- merge(balls, venue[, .(ground_name, venue_avg_score,
+                                  venue_chase_success_rate, venue_avg_second_innings)],
+                 by = "ground_name", all.x = TRUE)
+  data.table::setorder(balls, match_id, innings, over, ball, id)
+
+  # Real first-innings wickets, not the assumed 10.
+  i1w <- balls[innings == 1L, .(innings1_wickets = max(wickets, na.rm = TRUE)), by = match_id]
+  balls <- merge(balls, i1w, by = "match_id", all.x = TRUE)
+  balls[is.na(innings1_wickets), innings1_wickets := 10]
+  data.table::setorder(balls, match_id, innings, over, ball, id)
+  scoreable <- balls[innings == 1L | !is.na(target), which = TRUE]
+
   states <- data.frame(
     current_score = balls$score[scoreable],
     wickets       = balls$wickets[scoreable],
     overs         = balls$overs_actual[scoreable],
     innings       = balls$innings[scoreable],
-    target        = balls$target[scoreable]
+    target        = balls$target[scoreable],
+    gender_male   = balls$gender_male[scoreable],
+    venue_avg_score          = balls$venue_avg_score[scoreable],
+    venue_chase_success_rate = balls$venue_chase_success_rate[scoreable],
+    venue_avg_second_innings = balls$venue_avg_second_innings[scoreable],
+    innings1_wickets         = balls$innings1_wickets[scoreable]
   )
   states <- cbind(states, as.data.frame(balls[scoreable, ..mom_cols]))
 
@@ -231,13 +281,20 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
   # innings start: nothing scored, nobody out, no overs bowled. Momentum is
   # zero there, which is what calculate_rolling_features() also produces for
   # the start of an innings, so this sits inside the training distribution.
-  starts <- unique(balls[, .(match_id, innings, target)])
+  starts <- unique(balls[, .(match_id, innings, target, gender_male, venue_avg_score,
+                             venue_chase_success_rate, venue_avg_second_innings,
+                             innings1_wickets)])
   start_states <- data.frame(
     current_score = 0,
     wickets       = 0,
     overs         = 0,
     innings       = starts$innings,
-    target        = starts$target
+    target        = starts$target,
+    gender_male   = starts$gender_male,
+    venue_avg_score          = starts$venue_avg_score,
+    venue_chase_success_rate = starts$venue_chase_success_rate,
+    venue_avg_second_innings = starts$venue_avg_second_innings,
+    innings1_wickets         = starts$innings1_wickets
   )
   for (nm in mom_cols) start_states[[nm]] <- 0
   start_scoreable <- starts$innings == 1L | !is.na(starts$target)
