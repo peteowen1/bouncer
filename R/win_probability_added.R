@@ -427,10 +427,14 @@ calculate_delivery_era <- function(deliveries, stage1_model, stage1_feature_cols
   # But this can be negative late in innings when projected score is catching up to actual
 
   # Simpler approach: use the model's implied run rate for the situation
-  # Expected runs per ball = (projected_final - current_runs) / balls_remaining
+  # Expected runs per ball = (projected_final - runs_so_far) / balls_remaining
+  # Frame note: deliveries$total_runs is POST-delivery, so pairing it with the
+  # PRE-delivery projection would subtract the ball's own outcome from its
+  # expectation (a six deflated its own baseline). Both terms must sit in the
+  # pre-delivery frame, which before_data already is.
   balls_remaining <- deliveries$balls_remaining
   balls_remaining[balls_remaining <= 0] <- 1  # Avoid division by zero
-  current_runs <- deliveries$total_runs
+  current_runs <- before_data$total_runs
   expected_runs_per_ball <- (projected_before - current_runs) / balls_remaining
   expected_runs_per_ball <- pmax(0, pmin(expected_runs_per_ball, 6))  # Cap at 0-6
 

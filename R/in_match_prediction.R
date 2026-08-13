@@ -1387,22 +1387,24 @@ add_win_probability <- function(deliveries,
     # State AFTER this delivery, in cricket notation.
     overs <- calculate_over_ball(row$over, row$ball)
 
-    # State BEFORE this delivery == state after delivery i-1.
-    if (i == 1 || deliveries$match_id[i] != deliveries$match_id[i-1] ||
-        deliveries$innings[i] != deliveries$innings[i-1]) {
-      # Start of innings
-      score_before <- 0
-      wickets_before <- 0
-      overs_before <- 0
+    # State BEFORE this delivery, derived from THIS row's own columns --
+    # total_runs and wickets_fallen are POST-delivery cumulatives, so
+    # subtracting the ball's own contribution gives its pre-state exactly.
+    # Never take it from row i-1: the data can have gaps (cricinfo match
+    # 1384429 is missing two whole overs), and an adjacent-row read charges
+    # every unrecorded ball's drift to the next delivery. Same epv_delta
+    # construction as build_cricinfo_win_probability() (bouncerverse#27).
+    runs_this_ball <- if (!is.null(deliveries$runs_total)) {
+      deliveries$runs_total[i] %||% 0
     } else {
-      score_before <- deliveries$total_runs[i-1] %||% 0
-      wickets_before <- deliveries$wickets_fallen[i-1] %||% 0
-      # Must be the after-state of i-1 so that win_prob_before[i] equals
-      # win_prob_after[i-1] and WPA telescopes across the innings. The
-      # previous `(ball - 1) / 10` was the state one ball earlier still.
-      overs_before <- calculate_over_ball(deliveries$over[i-1],
-                                          deliveries$ball[i-1])
+      (deliveries$runs_batter[i] %||% 0) + (deliveries$runs_extras[i] %||% 0)
     }
+    score_before <- max(0, (row$total_runs %||% 0) - runs_this_ball)
+    wickets_before <- max(0, (row$wickets_fallen %||% 0) -
+                            as.integer(isTRUE(row$is_wicket)))
+    # One ball earlier on the clock; ball 1 rolls back to the whole over
+    # (cricsheet over is 0-indexed, so that IS the innings clock pre-ball).
+    overs_before <- calculate_over_ball(row$over, max(0L, row$ball - 1L))
 
     # Win probability before
     wp_before <- tryCatch({

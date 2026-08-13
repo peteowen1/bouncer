@@ -183,30 +183,60 @@ test_that("per-match targets differ from a single global target", {
   expect_false(isTRUE(all.equal(low_per_match, low_global)))
 })
 
-test_that("win_prob_before telescopes from the previous delivery's after-state", {
+test_that("win_prob_before is the model at the ball's OWN pre-delivery state", {
   skip_without_models()
-  # overs_before used (ball - 1)/10, one ball earlier than the after-state of
-  # delivery i-1, so WPA did not sum to the innings win-probability swing.
-  res <- add_win_probability(two_match_deliveries(), format = WPA_FORMAT)
+  # The epv_delta construction (bouncerverse#27): the before-state is derived
+  # from THIS row's own post-delivery cumulatives minus its own contribution,
+  # never read from row i-1 -- adjacent-row reads charge data gaps' drift to
+  # the next delivery. Exact telescoping is deliberately retired with it (the
+  # /10 clock convention makes over boundaries differ slightly between "own
+  # pre-state" and "previous after-state"); what must hold exactly is that
+  # each row's before equals a fresh prediction at its own pre-state.
+  d <- two_match_deliveries()
+  res <- add_win_probability(d, format = WPA_FORMAT)
 
-  by_innings <- split(res, list(res$match_id, res$innings), drop = TRUE)
-  for (grp in by_innings) {
-    if (nrow(grp) < 2) next
-    expect_equal(grp$win_prob_before[-1],
-                 grp$win_prob_after[-nrow(grp)],
-                 tolerance = 1e-9)
+  idx <- unique(c(1L, 3L, nrow(res) %/% 2L, nrow(res)))
+  tg <- resolve_targets_by_match(d, NULL)
+  for (i in idx) {
+    row <- res[i, ]
+    runs_this <- (row$runs_batter %||% 0) + (row$runs_extras %||% 0)
+    expected_before <- predict_win_probability(
+      current_score = max(0, row$total_runs - runs_this),
+      wickets = max(0, row$wickets_fallen - as.integer(isTRUE(row$is_wicket))),
+      overs = calculate_over_ball(row$over, max(0L, row$ball - 1L)),
+      innings = row$innings,
+      target = if (row$innings == 2) unname(tg[[as.character(row$match_id)]]) else NULL,
+      format = WPA_FORMAT
+    )
+    expect_equal(row$win_prob_before, as.numeric(expected_before$win_prob),
+                 tolerance = 1e-9,
+                 label = sprintf("row %d win_prob_before", i))
   }
 })
 
-test_that("WPA sums to the total win probability swing across an innings", {
+test_that("gaps between recorded deliveries are attributed to NO ONE", {
   skip_without_models()
+  # The fixture is sparse by construction -- one recorded ball per over, ~10
+  # unrecorded runs between rows -- which makes it the Theekshana artefact in
+  # miniature (bouncerverse#27: a real match missing two overs put -0.537 of
+  # WP on one dot ball under adjacent-row differencing). Under the epv_delta
+  # construction each row's wpa covers only its own ball, so the inter-row
+  # drift is deliberately unattributed and the innings' wpa sum falls SHORT
+  # of the end-to-end swing here. If this test ever finds them equal again on
+  # this sparse fixture, someone has reverted before-states to adjacent-row
+  # reads -- the exact regression this guards.
   res <- add_win_probability(two_match_deliveries(), format = WPA_FORMAT)
 
   by_innings <- split(res, list(res$match_id, res$innings), drop = TRUE)
-  for (grp in by_innings) {
+  gaps <- vapply(by_innings, function(grp) {
     swing <- grp$win_prob_after[nrow(grp)] - grp$win_prob_before[1]
-    expect_equal(sum(grp$wpa), swing, tolerance = 1e-9)
-  }
+    abs(sum(grp$wpa) - swing)
+  }, numeric(1))
+
+  # Every wpa is still each ball's own bounded swing...
+  expect_true(all(abs(res$wpa) <= 1))
+  # ...and at least one innings shows unattributed inter-row drift.
+  expect_gt(max(gaps), 0.01)
 })
 
 test_that("a chase with no first innings in the frame fails loudly, not as NA", {
