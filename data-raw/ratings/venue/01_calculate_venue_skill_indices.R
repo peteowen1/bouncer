@@ -45,7 +45,7 @@ FORMAT_GROUPS <- list(
   test = c("Test", "MDM")
 )
 
-FORMAT_FILTER <- NULL    # NULL = all formats, or "t20", "odi", "test" for single format
+if (!exists("FORMAT_FILTER")) FORMAT_FILTER <- NULL  # NULL = all formats, or "t20", "odi", "test" (pre-set before sourcing to override)
 BATCH_SIZE <- 10000      # Deliveries per batch insert
 MATCH_LIMIT <- NULL      # Set to integer to limit matches (for testing)
 if (!exists("FORCE_FULL")) FORCE_FULL <- FALSE  # If TRUE, always recalculate everything (pre-set before sourcing to override)
