@@ -355,6 +355,11 @@ prepare_full_features <- function(df, format) {
     df$over_ball <- calculate_over_ball(df$over, df$ball)
   }
 
+  # Trailing ELO columns the trained models carry (see the select below).
+  for (nm in c("elo_run_diff", "elo_wicket_diff", "elo_venue_run")) {
+    if (!nm %in% names(df)) df[[nm]] <- 0
+  }
+
   # Fill missing skill indices with neutral values from constants
   # Player skills - use starting values if missing
   player_start_vals <- get_skill_start_values(format)
@@ -420,8 +425,17 @@ prepare_full_features <- function(df, format) {
         bowler_experience = log1p(bowler_balls_bowled)
       )
 
-    # Select features in the correct order (must match training)
+    # Select features in the correct order (must match training). The trained
+    # models carry three trailing ELO columns (zero-filled at training when
+    # INCLUDE_ELO_FEATURES is off); this xgboost build silently default-routes
+    # absent columns instead of erroring, so they are supplied explicitly --
+    # same hazard class as the agnostic league features (2026-08-13).
     result <- result %>%
+      dplyr::mutate(
+        elo_run_diff = dplyr::coalesce(elo_run_diff, 0),
+        elo_wicket_diff = dplyr::coalesce(elo_wicket_diff, 0),
+        elo_venue_run = dplyr::coalesce(elo_venue_run, 0)
+      ) %>%
       dplyr::select(
         # Context features
         format_t20, format_odi,
@@ -439,7 +453,9 @@ prepare_full_features <- function(df, format) {
         bowling_team_runs_skill, bowling_team_wicket_skill,
         # Venue skills
         venue_run_rate, venue_wicket_rate,
-        venue_boundary_rate, venue_dot_rate
+        venue_boundary_rate, venue_dot_rate,
+        # ELO features, trailing (zeroed unless the caller supplies them)
+        elo_run_diff, elo_wicket_diff, elo_venue_run
       )
 
   } else {
@@ -486,7 +502,9 @@ prepare_full_features <- function(df, format) {
         bowling_team_runs_skill, bowling_team_wicket_skill,
         # Venue skills
         venue_run_rate, venue_wicket_rate,
-        venue_boundary_rate, venue_dot_rate
+        venue_boundary_rate, venue_dot_rate,
+        # ELO features, trailing (zeroed unless the caller supplies them)
+        elo_run_diff, elo_wicket_diff, elo_venue_run
       )
   }
 
