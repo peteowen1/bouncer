@@ -14,9 +14,10 @@
 # so the two paths now agree. Known remaining gaps vs training, accepted and
 # documented:
 #
-#   - innings-1 projected_innings_total: training used the Stage 1 XGBoost
-#     projection where available; serving uses the rate projection everywhere
-#     (as the scalar path always has).
+#   - innings-1 projected_innings_total: CLOSED in bouncerverse#24. Training
+#     used the Stage 1 XGBoost projection where available; it was worth 0.0004
+#     of holdout mlogloss, so training dropped it and both paths now use the
+#     rate projection everywhere.
 #   - rain_days_so_far is 0 at serving (no weather join for cricinfo matches);
 #     the Tier-1 derived rain proxies are still supplied.
 #   - "team1" is defined as the side batting innings 1, and innings 1/3 are
@@ -76,6 +77,8 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
            b.ball_number,
            b.total_innings_runs    AS score,
            b.total_innings_wickets AS wickets,
+           b.total_runs            AS ball_runs,
+           b.is_wicket,
            m.ground_name
     FROM cricinfo.balls b
     JOIN cricinfo.matches m ON m.match_id = b.match_id
@@ -189,28 +192,45 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
     "Scored {nrow(balls)} deliveries in {round(elapsed, 1)}s ({round(1000 * elapsed / nrow(balls), 3)} ms/ball)."
   )
 
-  # ---- Innings-start states, before/after and the delta ---------------------
-  starts <- unique(balls[, .(match_id, innings, ground_name, venue_avg,
-                             venue_result_rate, runs_1, runs_2, runs_3,
-                             wkts_1, wkts_2, wkts_3,
-                             overs_1, overs_2, overs_3)])
-  starts[, `:=`(over_number = 1, ball_number = 0, overs_frac = 0,
-                score = 0L, wickets = 0L)]
-  sf <- .test_wp_features(starts)
-  s_res <- predict_with_features(models$result_model, sf, models$result_features)
-  s_t1 <- predict_with_features(models$conditional_model, sf, models$conditional_features)
-  starts[, `:=`(wp_start = s_res * s_t1, ps_start = sf$projected_innings_total)]
-
-  balls <- merge(balls, starts[, .(match_id, innings, wp_start, ps_start)],
-                 by = c("match_id", "innings"), all.x = TRUE)
+  # ---- The "before" state: each ball's OWN pre-delivery state ---------------
+  # The scored number above is the state AFTER the delivery -- score and
+  # wickets both come from cumulative columns that already include this ball
+  # (verified empirically: on the first ball of an innings the cumulative
+  # total equals that ball's runs, and total_innings_wickets equals is_wicket).
+  #
+  # So "before" is this ball's own row rolled back one delivery -- score minus
+  # this ball's runs, wickets minus this ball's wicket, one ball earlier on the
+  # clock -- the epv_delta construction the limited-overs builder moved to in
+  # 0e802dc. It is NOT the previous row's "after". Differencing adjacent rows
+  # looks equivalent and is not: cricinfo Test ball data has gaps (1511663 is
+  # missing a whole innings), and a LAG across a gap charges every unrecorded
+  # ball's drift to whoever bowls next. Under the own-pre-state construction a
+  # gap's drift lands on no delivery at all.
+  #
+  # This also retires the separate innings-start scoring: the first ball of an
+  # innings rolls back to score 0, wickets 0, 0 overs, which IS the innings
+  # start, so it now falls out of the same construction.
   data.table::setorder(balls, match_id, innings, over_number, ball_number, id)
 
+  pre <- data.table::copy(balls)
+  # ball_runs/is_wicket are not in the WHERE clause's NOT NULL set; a missing
+  # one means "we do not know what this ball did", and the honest roll-back is
+  # then no roll-back at all rather than an NA that would poison the features.
+  pre[, `:=`(
+    score      = pmax(score - data.table::fifelse(is.na(ball_runs), 0L, ball_runs), 0L),
+    wickets    = pmax(wickets - data.table::fifelse(is.na(is_wicket), 0L,
+                                                   as.integer(is_wicket)), 0L),
+    overs_frac = (over_number - 1) + (pmin(ball_number, 6) - 1) / 6
+  )]
+  pf <- .test_wp_features(pre)
+  b_res <- predict_with_features(models$result_model, pf, models$result_features)
+  b_t1  <- predict_with_features(models$conditional_model, pf,
+                                 models$conditional_features)
+
   balls[, `:=`(
-    win_prob_before  = data.table::shift(p_team1_win, 1L, type = "lag"),
-    proj_score_before = data.table::shift(proj_innings_total, 1L, type = "lag")
-  ), by = .(match_id, innings)]
-  balls[is.na(win_prob_before),   win_prob_before   := wp_start]
-  balls[is.na(proj_score_before), proj_score_before := ps_start]
+    win_prob_before   = b_res * b_t1,
+    proj_score_before = pf$projected_innings_total
+  )]
   balls[, delta_wp := p_team1_win - win_prob_before]
   balls[, delta_ps := proj_innings_total - proj_score_before]
 
@@ -354,13 +374,12 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
   lead_per_over_remaining <- data.table::fifelse(
     overs_remaining > 0, abs_lead / overs_remaining, abs_lead)
 
-  # Training computed this from the innings-2 FINAL total, which for
-  # innings-2 rows is future information -- it encodes "this side finished
-  # 200+ behind", and model A leans on it (one worst-case ball moved 0.67 of
-  # win probability on this feature alone). Serving refuses to reproduce the
-  # leak: 0 until innings 2 is complete, honest from innings 3 on -- the same
-  # semantics the scalar path has always had. The training-side fix is
-  # bouncerverse#24.
+  # 0 until innings 2 is complete, honest from innings 3 on. Training used to
+  # compute this from the innings-2 FINAL total, which on an innings-2 row is
+  # future information ("this side finished 200+ behind"), and Model A leaned
+  # on it -- serving refused to reproduce the leak, which is most of why the
+  # two paths scored so differently. Training was brought to these semantics
+  # in bouncerverse#24; the two now agree, and this is the reference.
   follow_on_possible <- as.integer(
     innings >= 3 & !is.na(dt$runs_1) & !is.na(dt$runs_2) &
       (z(dt$runs_1) - z(dt$runs_2)) >= 200

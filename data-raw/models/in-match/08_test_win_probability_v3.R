@@ -35,18 +35,10 @@ cli::cli_h2("Loading data")
 output_dir <- file.path(find_bouncerdata_dir(), "models")
 conn <- get_db_connection(read_only = TRUE)
 
-# Load stage 1 model for projected scores
-stage1_path <- file.path(output_dir, "test_stage1_results.rds")
-if (!file.exists(stage1_path)) stop("Run 03_projected_score_model.R with IN_MATCH_FORMAT='test' first")
-stage1_results <- readRDS(stage1_path)
-stage1_model <- stage1_results$model
-stage1_features <- stage1_results$feature_cols
-cli::cli_alert_success("Loaded Stage 1 projected score model")
-
-# Load prepared stage 1 data (has rolling features)
-stage1_data_path <- file.path(output_dir, "test_stage1_data.rds")
-if (!file.exists(stage1_data_path)) stop("Run 01_prepare_all_formats.R with FORMATS_TO_PREPARE='test' first")
-stage1_data <- readRDS(stage1_data_path)
+# The Stage 1 projected-score model used to be loaded here and applied to
+# innings-1 deliveries. #24 removed that: serving never had it, and it was
+# worth 0.0004 of holdout mlogloss. This script no longer depends on
+# 03_projected_score_model.R or 01_prepare_all_formats.R.
 
 # Load all Test deliveries with outcomes
 deliveries <- DBI::dbGetQuery(conn, "
@@ -55,7 +47,13 @@ deliveries <- DBI::dbGetQuery(conn, "
     d.venue, d.gender, d.batting_team, d.bowling_team,
     d.innings, d.over, d.ball,
     d.total_runs,
-    (d.wickets_fallen - CAST(d.is_wicket AS INT)) AS wickets_fallen,
+    -- POST-delivery, deliberately. total_runs is POST (verified: on the first
+    -- ball of an innings it equals that ball's runs, 100% of 10,691 rows), so
+    -- shifting wickets to PRE with `- is_wicket` put the two halves of the
+    -- state in different frames. Serving reads cricinfo's total_innings_runs
+    -- and total_innings_wickets, both POST, so POST/POST is also the frame
+    -- that matches what the models are asked at serving time (#24).
+    d.wickets_fallen,
     m.outcome_type, m.outcome_winner, m.team1, m.team2
   FROM cricsheet.deliveries d
   JOIN cricsheet.matches m ON d.match_id = m.match_id
@@ -320,9 +318,18 @@ deliveries[, lead_per_over_remaining := fifelse(
   overs_remaining > 0, abs_lead / overs_remaining, as.double(abs_lead)
 )]
 
-# Follow-on possible (team1 lead >= 200 after 1st innings)
+# Follow-on possible (team1 lead >= 200 after the 2nd innings is COMPLETE).
+#
+# This fired from innings 2 until #24. innings_total_inn2 is that innings'
+# FINAL total, so on an innings-2 ball it is future information -- it says
+# "this side finished 200+ behind" while they are still batting. It was not a
+# harmless extra: 167,786 innings-2 deliveries (10.2% of them) were flagged,
+# and P(result) among them was 0.709 against 0.625 for the rest, so Model A
+# had a genuine label signal to lean on. Serving always refused to reproduce
+# it, which is most of why honest serving scored so far off the holdout.
+# Honest semantics, matching .test_wp_features(): only from innings 3.
 deliveries[, follow_on_possible := as.integer(
-  innings >= 2 &
+  innings >= 3 &
   !is.na(innings_total_inn1) & !is.na(innings_total_inn2) &
   (innings_total_inn1 - innings_total_inn2) >= 200
 )]
@@ -359,41 +366,18 @@ deliveries[, `:=`(
   )
 )]
 
-# Generate projected scores using Stage 1 model ----
+# Generate projected scores ----
 cli::cli_h2("Generating projected scores")
 
-stage1_all <- rbind(stage1_data$train, stage1_data$test)
-setDT(stage1_all)
-
-# Simple rate projection as default
+# Rate projection, everywhere.
+#
+# Training used the Stage 1 XGBoost projection for innings 1 while serving has
+# only ever had the rate projection -- a train/serve divergence on the single
+# most-used feature of Model B. Measured before removing it (#24): dropping the
+# XGBoost arm costs 0.0004 of holdout mlogloss. It was buying nothing, so the
+# divergence closes for free and the Stage 1 model is no longer a dependency
+# of this script.
 deliveries[, projected_innings_total := total_runs * (90 / pmax(over + ball/6, 1))]
-
-# Use XGBoost for 1st innings where possible
-if (!is.null(stage1_model)) {
-  tryCatch({
-    inn1_idx <- which(deliveries$innings == 1)
-    if (length(inn1_idx) > 0) {
-      inn1_delivery_ids <- deliveries$delivery_id[inn1_idx]
-      matched <- stage1_all[delivery_id %in% inn1_delivery_ids]
-      if (nrow(matched) > 0) {
-        for (feat in stage1_features) {
-          if (!feat %in% names(matched)) matched[, (feat) := 0]
-        }
-        matched_features <- as.matrix(matched[, ..stage1_features])
-        matched_features[is.na(matched_features)] <- 0
-        dmat <- xgb.DMatrix(data = matched_features)
-        preds <- predict(stage1_model, dmat)
-        pred_dt <- data.table(delivery_id = matched$delivery_id, projected_xgb = preds)
-        deliveries <- merge(deliveries, pred_dt, by = "delivery_id", all.x = TRUE)
-        deliveries[!is.na(projected_xgb), projected_innings_total := projected_xgb]
-        deliveries[, projected_xgb := NULL]
-        cli::cli_alert_success("Applied Stage 1 model to {sum(!is.na(preds))} 1st innings deliveries")
-      }
-    }
-  }, error = function(e) {
-    cli::cli_alert_warning("Stage 1 prediction failed: {conditionMessage(e)}")
-  })
-}
 
 # Projected lead
 deliveries[, projected_lead := fcase(
@@ -417,20 +401,34 @@ cat(sprintf("  team1_win: %d, draw: %d, team2_win: %d\n",
 cat(sprintf("  result matches: %d, draw matches: %d\n",
             uniqueN(sampled[is_result == 1]$match_id), uniqueN(sampled[is_result == 0]$match_id)))
 
-# Fill remaining NAs
-for (col in names(sampled)) {
-  if (is.numeric(sampled[[col]])) {
-    sampled[is.na(get(col)), (col) := 0]
+# Fill remaining NAs. set() rather than `[is.na(get(col)), (col) := 0]` --
+# get() inside [ breaks data.table's fast column-reference path and leaks RSS
+# that gc() cannot see, which matters at 5.3M rows.
+fill_na_zero <- function(dt) {
+  for (col in names(dt)) {
+    if (is.numeric(dt[[col]])) {
+      na_i <- which(is.na(dt[[col]]))
+      if (length(na_i)) set(dt, na_i, col, 0)
+    }
   }
+  invisible(dt)
 }
+fill_na_zero(sampled)
+fill_na_zero(deliveries)
 
 # Train/test split
 TEST_SEASONS <- c("2024", "2025", "2023/24", "2024/25")
 train_dt <- sampled[!season %in% TEST_SEASONS]
 test_dt <- sampled[season %in% TEST_SEASONS]
 
+# Ball-level holdout: every delivery of the test seasons, not 1 per over.
+# Serving scores every ball, so this is the number comparable to the serving
+# evaluation; the sampled one stays for continuity with the historic figure.
+ball_test <- deliveries[season %in% TEST_SEASONS]
+
 cli::cli_alert_info("Train: {nrow(train_dt)} samples ({uniqueN(train_dt$match_id)} matches)")
 cli::cli_alert_info("Test: {nrow(test_dt)} samples ({uniqueN(test_dt$match_id)} matches)")
+cli::cli_alert_info("Test (ball-level): {nrow(ball_test)} deliveries")
 
 # ============================================================
 # MODEL A: P(result) — Binary: will this match have a winner?
@@ -714,6 +712,83 @@ if (sum(idx80) > 10) {
               mean(draw_probs_vec[idx80])*100, mean(actual_draw[idx80])*100, sum(idx80)))
 }
 
+# ============================================================
+# BALL-LEVEL EVALUATION + ANCHORS (#24)
+# ============================================================
+# The sampled number above is 1-per-over; serving scores every delivery, so
+# the ball-level number is the one comparable to the serving evaluation.
+# Baseline throughout is the ball-frequency base rate of the same rows -- not
+# -log(1/3), which flatters everything by ignoring that draws are common.
+cli::cli_h1("Ball-level evaluation")
+
+eps <- 1e-7
+mlog3 <- function(P, y) -mean(log(pmax(P[cbind(seq_along(y), y + 1L)], eps)))
+freq_base <- function(y) {
+  p <- as.numeric(table(factor(y, levels = 0:2)) / length(y))
+  mlog3(matrix(p, nrow = length(y), ncol = 3, byrow = TRUE), y)
+}
+
+p_res_ball <- predict(model_A, xgb.DMatrix(as.matrix(ball_test[, ..result_features])))
+p_t1_ball <- predict(model_B, xgb.DMatrix(as.matrix(ball_test[, ..conditional_features])))
+P_ball <- cbind(team1_win = p_res_ball * p_t1_ball,
+                draw = 1 - p_res_ball,
+                team2_win = p_res_ball * (1 - p_t1_ball))
+y_ball <- ball_test$match_outcome
+
+ball_ml <- mlog3(P_ball, y_ball)
+ball_base <- freq_base(y_ball)
+ball_acc <- mean(max.col(P_ball) - 1 == y_ball)
+cat(sprintf("\n  BALL-LEVEL: mlogloss=%.4f (ball-frequency baseline=%.4f), accuracy=%.1f%%\n",
+            ball_ml, ball_base, 100 * ball_acc))
+
+inn_ml <- inn_base <- rep(NA_real_, 4)
+for (i in 1:4) {
+  k <- ball_test$innings == i
+  if (sum(k) < 50) next
+  inn_ml[i] <- mlog3(P_ball[k, , drop = FALSE], y_ball[k])
+  inn_base[i] <- freq_base(y_ball[k])
+  cat(sprintf("  Innings %d: %.4f vs baseline %.4f  [%s]  n=%d\n",
+              i, inn_ml[i], inn_base[i],
+              if (inn_ml[i] < inn_base[i]) "beats" else "WORSE THAN", sum(k)))
+}
+
+draw_p <- P_ball[, "draw"]
+k80 <- draw_p >= 0.8
+draw80_actual <- if (sum(k80) > 20) mean(y_ball[k80] == 1) else NA_real_
+cat(sprintf("  P(draw)>=0.8 -> actual draw rate %.1f%% (n=%d)\n",
+            100 * draw80_actual, sum(k80)))
+
+fo_gain <- {
+  r <- match("follow_on_possible", imp_A$Feature)
+  if (is.na(r)) 0 else imp_A$Gain[r]
+}
+
+# Anchors, declared in bouncerverse#24 before any model was fitted. These are
+# assertions, not prints: a check that lives in a log nobody reads does not run.
+cli::cli_h3("Anchor checks")
+anchor <- function(label, ok) {
+  cat(sprintf("  [%s] %s\n", if (isTRUE(ok)) "PASS" else "FAIL", label))
+  isTRUE(ok)
+}
+a3 <- anchor("A3a ball-level beats the ball-frequency baseline", ball_ml < ball_base)
+a3b <- anchor("A3b innings 2 and 3 each beat their own baseline",
+              inn_ml[2] < inn_base[2] && inn_ml[3] < inn_base[3])
+# Raw mlogloss, which is how A4 was declared and how #24 states the figure it
+# is anchored against (innings 4 = 0.6893). Note it is NOT the lowest
+# ratio-to-baseline -- innings 3 edges innings 4 on that -- because innings-4
+# rows have a much lower baseline to beat.
+a4 <- anchor("A4  innings 4 is the strongest innings (lowest mlogloss)",
+             which.min(inn_ml) == 4L)
+a5 <- anchor("A5  P(draw)>=0.8 bucket is >= 70% actual draws",
+             !is.na(draw80_actual) && draw80_actual >= 0.70)
+a2 <- anchor("A2  follow_on_possible is no longer a top-5 feature of A",
+             is.na(match("follow_on_possible", imp_A$Feature)) ||
+               match("follow_on_possible", imp_A$Feature) > 5)
+if (!all(a3, a3b, a4, a5, a2)) {
+  stop("Anchor check failed -- the method is wrong, not the anchor. ",
+       "Do not ship these models until it is understood (bouncerverse#24).")
+}
+
 # Comparison with v2 (single model)
 cli::cli_h3("Comparison with v2 (single 3-class model)")
 v2_path <- file.path(output_dir, "test_winprob_results.rds")
@@ -755,7 +830,16 @@ saveRDS(list(
     test_accuracy_A = acc_A,
     test_accuracy_B = acc_B,
     baseline = baseline_random,
-    improvement = (baseline_random - overall_mlogloss) / baseline_random * 100
+    improvement = (baseline_random - overall_mlogloss) / baseline_random * 100,
+    # #24: ball-level is the figure comparable to serving; the baseline is the
+    # ball-frequency base rate of the same rows, not -log(1/3).
+    ball_mlogloss = ball_ml,
+    ball_baseline = ball_base,
+    ball_accuracy = ball_acc,
+    ball_mlogloss_by_innings = inn_ml,
+    ball_baseline_by_innings = inn_base,
+    draw80_actual = draw80_actual,
+    follow_on_gain_A = fo_gain
   ),
   importance_A = imp_A,
   importance_B = imp_B,
