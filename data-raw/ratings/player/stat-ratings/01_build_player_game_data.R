@@ -4,6 +4,7 @@
 # This is the foundation for all value metrics.
 
 library(cli)
+library(data.table)
 devtools::load_all()
 
 conn <- get_db_connection(read_only = FALSE)

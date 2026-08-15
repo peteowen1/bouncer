@@ -1181,6 +1181,12 @@ create_player_game_data_tables <- function(conn, verbose = TRUE) {
         batting_max_wpa DOUBLE DEFAULT 0,
         batting_positive_wpa_pct DOUBLE,
         batting_era DOUBLE DEFAULT 0,
+        -- RAA: no DEFAULT 0. An unscored match must arrive as NULL, not as a
+        -- neutral performance -- the same rule .merge_batting_bowling() learned
+        -- the hard way (bouncer 96df524). batting_raa_balls carries the
+        -- partial-coverage signal.
+        batting_raa DOUBLE,
+        batting_raa_balls INTEGER,
 
         -- Batting Hawkeye
         batting_pct_controlled DOUBLE,
@@ -1205,6 +1211,8 @@ create_player_game_data_tables <- function(conn, verbose = TRUE) {
         bowling_wpa DOUBLE DEFAULT 0,
         bowling_max_wpa DOUBLE DEFAULT 0,
         bowling_era DOUBLE DEFAULT 0,
+        bowling_raa DOUBLE,
+        bowling_raa_balls INTEGER,
 
         -- Bowling Hawkeye
         bowling_pct_good_length DOUBLE,
@@ -1215,6 +1223,7 @@ create_player_game_data_tables <- function(conn, verbose = TRUE) {
         -- Combined value
         total_wpa DOUBLE DEFAULT 0,
         total_era DOUBLE DEFAULT 0,
+        total_raa DOUBLE,
 
         PRIMARY KEY (match_id, player_id)
       )
