@@ -140,6 +140,7 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       d.match_id,
       d.match_date,
       d.batter_id,
+      d.bowler_id,
       d.innings,
       d.over,
       d.ball,
@@ -167,6 +168,7 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       AND d.runs_batter <> 5
       AND d.runs_batter <= 6
       AND d.batter_id IS NOT NULL
+      AND d.bowler_id IS NOT NULL
   ", type_list, short_over_filter, max_innings)))
 
   if (nrow(balls) == 0) {
@@ -210,7 +212,7 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
   out <- balls[, .(
     delivery_id, match_id, match_date,
     innings_number = innings, over_number = over, ball_number = ball,
-    format = db_format, gender, batter_id,
+    format = db_format, gender, batter_id, bowler_id,
     exp_runs, exp_wicket, actual_runs, is_wicket, raa_run, raa_wicket, raa
   )]
 
@@ -236,6 +238,7 @@ store_cricsheet_raa <- function(conn, data, format,
   db_format <- toupper(format)
   wanted <- c("delivery_id", "match_id", "match_date", "innings_number",
               "over_number", "ball_number", "format", "gender", "batter_id",
+              "bowler_id",
               "exp_runs", "exp_wicket", "actual_runs", "is_wicket",
               "raa_run", "raa_wicket", "raa")
 
@@ -259,6 +262,7 @@ store_cricsheet_raa <- function(conn, data, format,
       format         VARCHAR,
       gender         VARCHAR,
       batter_id      VARCHAR,
+      bowler_id      VARCHAR,
       exp_runs       DOUBLE,
       exp_wicket     DOUBLE,
       actual_runs    INTEGER,
