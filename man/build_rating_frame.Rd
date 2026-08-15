@@ -10,7 +10,8 @@ build_rating_frame(pool, ratings, rating_cols, origins = RATING_VAL_ORIGINS)
 \item{pool}{Output of \code{\link[=load_rating_pool]{load_rating_pool()}}.}
 
 \item{ratings}{A table with player_id, match_date and one or more rating columns.
-The rating used at an origin is the last row strictly before that origin.}
+The rating used at an origin is the chronologically last row strictly before
+that origin. Sorted internally, so the caller need not pre-sort.}
 
 \item{rating_cols}{Character vector of rating column names to carry through.}
 

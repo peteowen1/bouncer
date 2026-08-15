@@ -44,7 +44,7 @@ conn <- get_db_connection(read_only = TRUE)
 deliveries <- DBI::dbGetQuery(conn, "
   SELECT
     d.delivery_id, d.match_id, d.season, d.match_date,
-    d.venue, d.gender, d.batting_team, d.bowling_team,
+    d.venue, d.gender, d.batting_team, d.bowling_team, d.match_type,
     d.innings, d.over, d.ball,
     d.total_runs,
     -- POST-delivery, deliberately. total_runs is POST (verified: on the first
@@ -110,10 +110,45 @@ DBI::dbDisconnect(conn, shutdown = TRUE)
 # Feature Engineering ----
 cli::cli_h2("Engineering features")
 
-# Match outcome labels
+# "team1" means THE SIDE BATTING FIRST -- everywhere (#30).
+#
+# This used cricsheet's listed `matches.team1` for both the label and
+# batting_is_team1, while team1_completed/team2_completed (below) attribute
+# innings 1+3 to one side and 2+4 to the other -- the batting-order
+# alternation. Those are the same team only when the listed team1 happens to
+# bat first, which is true for just 73.7% of Tests (899 matches; MDM is 96.6%).
+# For the other quarter the label named one side while team1_lead described the
+# other. Serving has always meant "the side batting first"
+# (.test_wp_features() sets batting_is_team1 = innings %in% c(1,3)), so this
+# also removes a train/serve difference in what p_team1_win denotes.
+inn1_bat <- deliveries[innings == 1L,
+                       .(inn1_batting = data.table::first(batting_team)),
+                       by = match_id]
+deliveries <- merge(deliveries, inn1_bat, by = "match_id", all.x = TRUE)
+n_no_inn1 <- deliveries[is.na(inn1_batting), uniqueN(match_id)]
+if (n_no_inn1 > 0) {
+  # No innings-1 deliveries means we cannot say who batted first, and the label
+  # would be a guess. Drop them loudly rather than fall back to the listed team.
+  cli::cli_alert_warning(
+    "{n_no_inn1} match{?es} have no innings-1 deliveries -- dropped, cannot identify who batted first")
+  deliveries <- deliveries[!is.na(inn1_batting)]
+}
+stopifnot("every retained match must know who batted first" =
+            !anyNA(deliveries$inn1_batting))
+
+# Report the size of what this fixes: how often the listed team1 was NOT the
+# side batting first, which is exactly how much label noise the old code carried.
+mis <- unique(deliveries[, .(match_id, match_type, team1, inn1_batting)])
+mis[, aligned := team1 == inn1_batting]
+cli::cli_alert_info(
+  "team1 convention: listed team1 batted first in {round(100 * mean(mis$aligned), 1)}% of {nrow(mis)} matches")
+print(mis[, .(matches = .N, pct_listed_team1_batted_first = round(100 * mean(aligned), 1)),
+          by = match_type])
+
+# Match outcome labels, relative to the side batting first
 deliveries[, match_outcome := fcase(
   outcome_type == "draw", 1L,
-  outcome_winner == team1, 0L,
+  outcome_winner == inn1_batting, 0L,
   default = 2L
 )]
 deliveries[, is_result := as.integer(outcome_type != "draw")]
@@ -123,7 +158,12 @@ deliveries[, `:=`(
   balls_bowled = as.integer(over * 6L + ball),
   wickets_in_hand = 10L - wickets_fallen,
   current_run_rate = fifelse(over > 0, total_runs / (over + ball/6), 0),
-  batting_is_team1 = as.integer(batting_team == team1)
+  # The alternation, matching .test_wp_features() exactly. NOT
+  # `batting_team == inn1_batting`, which would be follow-on-aware and so would
+  # trade one train/serve divergence for another -- serving cannot see who
+  # batted first, only the innings number. Follow-on matches keep the same
+  # approximation on both sides, as they always have.
+  batting_is_team1 = as.integer(innings %in% c(1L, 3L))
 )]
 
 # Innings totals (wide format) — including declared flag
