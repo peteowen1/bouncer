@@ -86,7 +86,8 @@ load_rating_pool <- function(con, role = c("batter", "bowler")) {
 #'
 #' @param pool Output of [load_rating_pool()].
 #' @param ratings A table with player_id, match_date and one or more rating columns.
-#'   The rating used at an origin is the last row strictly before that origin.
+#'   The rating used at an origin is the chronologically last row strictly before
+#'   that origin. Sorted internally, so the caller need not pre-sort.
 #' @param rating_cols Character vector of rating column names to carry through.
 #' @param origins Evaluation origins. Defaults to [RATING_VAL_ORIGINS].
 #' @return A `data.table`, one row per (origin, qualifying player).
@@ -114,7 +115,12 @@ build_rating_frame <- function(pool, ratings, rating_cols,
       data.table::setnames(f, c("b", "r", "v"),
                            paste0(c("ew_b_", "ew_r_", "ew_v_"), h_days))
     }
-    rt <- ratings[match_date < T0][, .SD[.N], by = player_id, .SDcols = rating_cols]
+    # .SD[.N] takes the last row in TABLE order, so "the last rating strictly
+    # before this origin" is only true if `ratings` is sorted by match_date.
+    # Sort here rather than document a precondition callers must remember
+    # (bouncer#30); a no-op when the caller already sorted.
+    rt <- data.table::setorder(ratings[match_date < T0], match_date)[
+      , .SD[.N], by = player_id, .SDcols = rating_cols]
     f <- merge(f, rt, by = "player_id", all.x = TRUE)
     f[, origin := T0][]
   }))
@@ -199,14 +205,26 @@ score_rating <- function(frame, target = c("runs", "events"), rating_col,
     realised <- function(d) {
       if (target == "runs") d$win_runs / d$win_balls else d$win_events / d$win_balls
     }
+    # Every number that goes into a ratio is scored on `cc`, the players who
+    # have a pre-origin rating. Scoring the baselines on `cur` instead judged
+    # them on the HARDER population -- it includes debutants nobody can predict
+    # -- while the rating was judged only on the previously-rated subset, so
+    # skill_vs_career and skill_vs_recency flattered the rating for a reason
+    # unrelated to its quality (bouncer#30). The full-population baselines are
+    # still reported, as clearly-labelled `_all` columns, never as denominators.
+    # When n == n_rated these are identical by construction.
     res[[length(res) + 1]] <- data.table::data.table(
       origin = T0, n = nrow(cur), n_rated = nrow(cc), k = k, h = h,
-      loss_b1 = lossf(cur, shrunk(cur, k)),
-      loss_b2 = lossf(cur, ewma(cur, h)),
+      loss_b1 = if (nrow(cc)) lossf(cc, shrunk(cc, k)) else NA_real_,
+      loss_b2 = if (nrow(cc)) lossf(cc, ewma(cc, h)) else NA_real_,
       loss_rating = if (length(pm) > 1) lossf(cc, pm) else NA_real_,
       rho_rating = if (nrow(cc) > 2)
         stats::cor(cc[[rating_col]], realised(cc), method = "spearman") else NA_real_,
-      rho_b1 = stats::cor(shrunk(cur, k), realised(cur), method = "spearman"))
+      rho_b1 = if (nrow(cc) > 2)
+        stats::cor(shrunk(cc, k), realised(cc), method = "spearman") else NA_real_,
+      loss_b1_all = lossf(cur, shrunk(cur, k)),
+      loss_b2_all = lossf(cur, ewma(cur, h)),
+      rho_b1_all = stats::cor(shrunk(cur, k), realised(cur), method = "spearman"))
   }
   data.table::rbindlist(res)
 }
@@ -220,17 +238,25 @@ score_rating <- function(frame, target = c("runs", "events"), rating_col,
 summarise_rating_score <- function(scored, label = "rating") {
   out <- data.table::data.table(
     label = label,
-    loss_b1 = mean(scored$loss_b1),
-    loss_b2 = mean(scored$loss_b2),
+    loss_b1 = mean(scored$loss_b1, na.rm = TRUE),
+    loss_b2 = mean(scored$loss_b2, na.rm = TRUE),
     loss_rating = mean(scored$loss_rating, na.rm = TRUE),
     rho_rating = mean(scored$rho_rating, na.rm = TRUE),
-    rho_b1 = mean(scored$rho_b1, na.rm = TRUE))
+    rho_b1 = mean(scored$rho_b1, na.rm = TRUE),
+    # Coverage: how much of the qualifying population the rating actually
+    # covers. The ratio columns are computed on the rated subset only, so this
+    # is the number that says how far that subset is from the whole.
+    n = sum(scored$n), n_rated = sum(scored$n_rated),
+    loss_b1_all = mean(scored$loss_b1_all, na.rm = TRUE),
+    loss_b2_all = mean(scored$loss_b2_all, na.rm = TRUE),
+    rho_b1_all = mean(scored$rho_b1_all, na.rm = TRUE))
+  out[, rated_share := n_rated / n]
   out[, skill_vs_career := 1 - loss_rating / loss_b1]
   out[, skill_vs_recency := 1 - loss_rating / loss_b2]
   cat(sprintf(
-    "%-34s skill vs career %+7.1f%%  vs recency %+7.1f%%  rho %+.3f (baseline %+.3f)\n",
+    "%-34s skill vs career %+7.1f%%  vs recency %+7.1f%%  rho %+.3f (baseline %+.3f)  [rated %d/%d = %.1f%%]\n",
     label, 100 * out$skill_vs_career, 100 * out$skill_vs_recency,
-    out$rho_rating, out$rho_b1))
+    out$rho_rating, out$rho_b1, out$n_rated, out$n, 100 * out$rated_share))
   invisible(out)
 }
 

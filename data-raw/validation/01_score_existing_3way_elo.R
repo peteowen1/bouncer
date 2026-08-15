@@ -47,6 +47,14 @@ for (role in c("batter", "bowler")) {
   frame <- build_rating_frame(pool, rts, c("run_elo", "wkt_elo"))
   cat(sprintf("\n%s: %d evaluation rows across %d origins, %d rated\n",
               role, nrow(frame), uniqueN(frame$origin), sum(!is.na(frame$run_elo))))
+  # The diagnostic above used to be the only signal: an empty frame produced an
+  # all-NA summary and a clean exit, which reads as "the rating scored badly"
+  # rather than "nothing was scored" (bouncer#30).
+  stopifnot(
+    "no evaluation rows -- check the rating pool and origins" = nrow(frame) > 0,
+    "no rated players -- the ratings table did not join" =
+      sum(!is.na(frame$run_elo)) > 0
+  )
   runs_label <- if (role == "batter") "batting: runs per ball" else "bowling: runs conceded per ball"
   evt_label  <- if (role == "batter") "batting: dismissals per ball" else "bowling: wickets per ball"
   results[[length(results) + 1]] <-
