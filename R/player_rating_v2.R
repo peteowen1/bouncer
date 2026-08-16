@@ -351,6 +351,20 @@ calculate_player_rating_v2 <- function(format = "t20",
 #' @param bat_prior,bowl_prior Quality shrinkage, in population-average matches.
 #' @param opp_prior Opportunity shrinkage. See the note above before raising it.
 #' @param min_balls Integer. Career balls, both roles combined.
+#' @param min_calibrated Numeric 0-1. Minimum share of a player's career spent
+#'   in competitions rated DIRECTLY against the reference set (5+ bridge
+#'   players), as opposed to reached by chaining. Players below it are reported
+#'   and dropped; set to 0 to keep everyone.
+#'
+#'   This exists because the associate-league residue is not estimable, and
+#'   three attempts to estimate through it failed (D-P28). A player whose entire
+#'   career is in one weak league offers nothing that separates "he is good"
+#'   from "that league is easy" — the 2026-08-06 identifiability constraint —
+#'   and the harness cannot adjudicate it either, because his next match is in
+#'   that same league, which his inflated rating predicts perfectly well.
+#'   Measuring the uncertainty is honest where estimating it is not: the
+#'   population median share is 100% and only 130 of 1,127 players fall below
+#'   50%, so this is a narrow exclusion, not a blunt one.
 #'
 #' @return data.table of `player_id`, `player_name`, `total_value`,
 #'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls`,
@@ -366,7 +380,8 @@ calculate_player_value_v2 <- function(format = "t20",
                                       opp_prior = 2,
                                       prior_balls = 60,
                                       iterations = 20L,
-                                      min_balls = 1000L) {
+                                      min_balls = 1000L,
+                                      min_calibrated = 0.5) {
 
   own <- is.null(conn)
   if (own) {
@@ -427,6 +442,26 @@ calculate_player_value_v2 <- function(format = "t20",
   out[, total_value := bat_value + bowl_value]
   out <- out[bat_balls + bowl_balls >= min_balls]
 
+  # How much of each career is in cricket we can actually calibrate. A chained
+  # factor inherits its neighbour's error at every hop, so only competitions
+  # rated directly against the reference set count.
+  solid <- c(factors[step == 0L & n_bridges >= 5L, comp],
+             intersect(factors$comp, COMPETITION_REFERENCE_T20))
+  cal <- data.table::rbindlist(list(
+    b[, .(player_id = batter_id, ok = comp %in% solid)],
+    b[, .(player_id = bowler_id, ok = comp %in% solid)]
+  ))[, .(calibrated = mean(ok)), by = player_id]
+  out <- merge(out, cal, by = "player_id", all.x = TRUE)
+  out[is.na(calibrated), calibrated := 0]
+  if (min_calibrated > 0) {
+    drop <- out[calibrated < min_calibrated]
+    if (nrow(drop)) {
+      cli::cli_alert_info(
+        "Dropped {nrow(drop)} player{?s} with under {round(100*min_calibrated)}% of their career in directly-rated competitions (e.g. {drop[order(-total_value)][seq_len(min(2, .N))]$player_name}).")
+    }
+    out <- out[calibrated >= min_calibrated]
+  }
+
   nm <- data.table::as.data.table(DBI::dbGetQuery(conn,
     "SELECT player_id, ANY_VALUE(player_name) AS player_name
      FROM cricsheet.players GROUP BY player_id"))
@@ -436,5 +471,5 @@ calculate_player_value_v2 <- function(format = "t20",
   cli::cli_alert_success(
     "Valued {nrow(out)} {gender} {toupper(format)} players as at {ref_date}.")
   out[, .(rank, player_id, player_name, total_value, bat_value, bowl_value,
-          matches, bat_balls, bowl_balls)][]
+          matches, bat_balls, bowl_balls, calibrated)][]
 }

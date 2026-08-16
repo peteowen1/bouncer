@@ -15,7 +15,8 @@ calculate_player_value_v2(
   opp_prior = 2,
   prior_balls = 60,
   iterations = 20L,
-  min_balls = 1000L
+  min_balls = 1000L,
+  min_calibrated = 0.5
 )
 }
 \arguments{
@@ -27,6 +28,21 @@ calculate_player_value_v2(
 \item{opp_prior}{Opportunity shrinkage. See the note above before raising it.}
 
 \item{min_balls}{Integer. Career balls, both roles combined.}
+
+\item{min_calibrated}{Numeric 0-1. Minimum share of a player's career spent
+in competitions rated DIRECTLY against the reference set (5+ bridge
+players), as opposed to reached by chaining. Players below it are reported
+and dropped; set to 0 to keep everyone.
+
+This exists because the associate-league residue is not estimable, and
+three attempts to estimate through it failed (D-P28). A player whose entire
+career is in one weak league offers nothing that separates "he is good"
+from "that league is easy" — the 2026-08-06 identifiability constraint —
+and the harness cannot adjudicate it either, because his next match is in
+that same league, which his inflated rating predicts perfectly well.
+Measuring the uncertainty is honest where estimating it is not: the
+population median share is 100\% and only 130 of 1,127 players fall below
+50\%, so this is a narrow exclusion, not a blunt one.}
 }
 \value{
 data.table of \code{player_id}, \code{player_name}, \code{total_value},
