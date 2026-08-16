@@ -278,7 +278,10 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
 #'   0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
 #'   Shorter decays are worse at every horizon for both roles.
-#' @param prior_matches Numeric shrinkage toward the population mean.
+#' @param prior_matches Numeric shrinkage toward the population mean, in
+#'   matches. NULL derives it per bucket via [derive_shrinkage_prior()], which
+#'   is the default because the old hand-set 20 was a men's-T20 number reused
+#'   everywhere and is roughly half what that bucket actually wants.
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
 #' @param factors Output of [fit_competition_factors()]; NULL fits them.
 #' @param min_balls Integer. Career balls required to appear in the result.
@@ -303,7 +306,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        conn = NULL,
                                        as_at = NULL,
                                        decay_days = NULL,
-                                       prior_matches = 20,
+                                       prior_matches = NULL,
                                        prior_balls = 60,
                                        iterations = 20L,
                                        factors = NULL,
@@ -394,6 +397,12 @@ calculate_player_rating_v2 <- function(format = "t20",
   ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
   pm <- pm[match_date <= ref_date]
   pop <- pm[, mean(v)]
+  if (is.null(prior_matches)) {
+    est <- derive_shrinkage_prior(pm)
+    prior_matches <- est$k
+    cli::cli_alert_info(
+      "Derived shrinkage prior {round(prior_matches, 1)} match{?es} ({round(100 * est$share, 2)}% of single-match variance is the player).")
+  }
   pm[, w := exp(-as.numeric(ref_date - match_date) / decay_days)]
 
   r <- pm[, .(rating = (sum(v * w) + prior_matches * pop) / (sum(w) + prior_matches),
@@ -654,4 +663,57 @@ player_career_context <- function(conn, format = "t20", gender = "male",
   tot <- x[, .(runs = sum(runs), outs = sum(outs)), by = player_id]
   tot[, average := ifelse(outs > 0L, runs / outs, NA_real_)]
   merge(main, tot[, .(player_id, average)], by = "player_id")[]
+}
+
+#' Derive the Shrinkage Prior from the Data
+#'
+#' How many matches of a player's own record it takes to outweigh the
+#' population. In the standard empirical-Bayes form an estimate is shrunk by
+#' `n / (n + k)` with `k = sigma^2_within / sigma^2_between` — so `k` is
+#' exactly what `prior_matches` means, and it is derivable rather than a free
+#' parameter.
+#'
+#' Deriving it matters because the hand-set 20 was tuned on men's T20 and
+#' applied unchanged to ODI and to women's cricket, which carry different
+#' information per match. For men's T20 batting the derivation returns **39.9**
+#' where the next-match harness independently prefers **40** — two unrelated
+#' lines of evidence agreeing, and both saying the shipped 20 was half what it
+#' should be.
+#'
+#' Estimated by unbalanced one-way ANOVA (method of moments). The tempting
+#' shortcut — `var(player means) - sigma^2_within / harmonic_n` — is badly
+#' biased when group sizes are skewed: it drove `sigma^2_between` to zero in
+#' every bucket, implying players do not differ at all, and produced a "prior"
+#' of 145 billion matches. The sanity check that catches this is the implied
+#' player share of single-match variance, which comes out 2.4–5.5% here against
+#' the 2.2% measured independently in D-P17.
+#'
+#' Note the harness prefers a much SMALLER prior in ODI and women's buckets
+#' (usually 5, the edge of the grid). That is not a contradiction: the harness
+#' only scores players with 10+ prior matches, so it sees established players
+#' for whom shrinkage is pure bias, while this minimises error across all
+#' players including thin ones. An optimum sitting on a grid boundary is a
+#' warning, not a result.
+#'
+#' @param pm data.table of per-match values with `player_id` and `v`.
+#' @param min_matches Integer. Players below this are ignored for estimation
+#'   only; they are still rated.
+#' @return list with `k`, `s2_within`, `s2_between`, `players`, `share`.
+#' @export
+derive_shrinkage_prior <- function(pm, min_matches = 5L) {
+  s <- pm[, .(n = .N, m = mean(v), ss = sum((v - mean(v))^2)), by = player_id]
+  s <- s[n >= min_matches]
+  if (nrow(s) < 30L) {
+    cli::cli_warn("Only {nrow(s)} player{?s} clear {min_matches} matches; falling back to 20.")
+    return(list(k = 20, s2_within = NA_real_, s2_between = NA_real_,
+                players = nrow(s), share = NA_real_))
+  }
+  N <- sum(s$n); K <- nrow(s)
+  grand <- sum(s$n * s$m) / N
+  msw <- sum(s$ss) / (N - K)
+  msb <- sum(s$n * (s$m - grand)^2) / (K - 1)
+  n0 <- (N - sum(s$n^2) / N) / (K - 1)
+  s2b <- max((msb - msw) / n0, 1e-9)
+  list(k = msw / s2b, s2_within = msw, s2_between = s2b,
+       players = K, share = s2b / (s2b + msw))
 }

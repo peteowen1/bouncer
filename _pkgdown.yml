@@ -131,6 +131,7 @@ reference:
     - canonicalise_player_ids
     - calculate_player_rating_v2
     - player_career_context
+    - derive_shrinkage_prior
     - calculate_player_value_v2
     - store_player_rating_v2
     - store_player_value_v2

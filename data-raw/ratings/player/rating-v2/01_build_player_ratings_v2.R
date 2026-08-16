@@ -21,7 +21,18 @@
 
 suppressPackageStartupMessages({
   library(data.table)
-  devtools::load_all(here::here(), quiet = TRUE)
+  # here::here() walks up to the nearest project root, which from the verse
+  # directory is bouncerverse and NOT the package -- the run then dies on a
+  # missing DESCRIPTION. Resolve the package root from this script's own path
+  # so it works from any working directory.
+  .self <- tryCatch(normalizePath(sys.frame(1)$ofile), error = function(e) NA_character_)
+  if (is.na(.self)) {
+    a <- commandArgs(trailingOnly = FALSE)
+    .self <- sub("^--file=", "", a[grepl("^--file=", a)])[1]
+  }
+  .pkg <- normalizePath(file.path(dirname(.self), "..", "..", "..", ".."))
+  stopifnot(file.exists(file.path(.pkg, "DESCRIPTION")))
+  devtools::load_all(.pkg, quiet = TRUE)
 })
 
 BUCKETS <- list(
