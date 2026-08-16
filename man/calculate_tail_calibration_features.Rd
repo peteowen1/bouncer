@@ -7,7 +7,8 @@
 calculate_tail_calibration_features(
   runs_needed,
   balls_remaining,
-  wickets_in_hand
+  wickets_in_hand,
+  resource_surface = NULL
 )
 }
 \arguments{
@@ -16,6 +17,14 @@ calculate_tail_calibration_features(
 \item{balls_remaining}{Integer. Balls left in innings}
 
 \item{wickets_in_hand}{Integer. Wickets remaining (10 - wickets_fallen)}
+
+\item{resource_surface}{A \code{bouncer_resource_surface} from
+\code{\link[=fit_resource_surface]{fit_resource_surface()}}, or NULL for the legacy
+\code{balls_remaining + wickets_in_hand * 6} formula. This changes the SCALE of
+\code{resources_per_run} (expected remaining runs per run needed, versus balls
+per run needed), so a model trained with one must be served the other.
+\code{\link[=load_in_match_models]{load_in_match_models()}} carries the surface alongside the model so the two
+cannot drift apart.}
 }
 \value{
 Data frame with columns:
@@ -24,7 +33,13 @@ Data frame with columns:
 \item chase_impossible: Binary. 1 if balls/wickets exhausted with runs still needed
 \item runs_per_ball_needed: runs_needed / balls_remaining (Inf capped at 6)
 \item balls_per_run_available: balls_remaining / runs_needed (capped at 20)
-\item resources_per_run: (balls + wickets*6) / runs_needed (capped at 30)
+\item resources_per_run: expected remaining runs (or, without a surface,
+balls + wickets*6) divided by runs_needed
+\item resource_margin: the same comparison as a difference in runs --
+expected remaining runs minus runs needed. Positive means expected to
+win. This is the wicket-sensitive counterpart to
+\code{projected_win_margin}, which reaches the model only via Stage 1.
+\item resource_margin_per_ball: resource_margin / balls_remaining
 \item chase_buffer: balls_remaining - runs_needed (how many "spare" balls)
 \item chase_buffer_ratio: chase_buffer / balls_remaining
 \item is_easy_chase: Binary. < 1 run per ball needed with 5+ wickets

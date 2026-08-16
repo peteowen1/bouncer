@@ -4,25 +4,27 @@
 \alias{calculate_bouncer}
 \title{Calculate BOUNCER Composite Rating}
 \usage{
-calculate_bouncer(epr, psr, weight_epr = 0.5)
+calculate_bouncer(impact, psr, weight_epr = 0.5)
 }
 \arguments{
-\item{epr}{data.table from \code{\link{calculate_epr}} with columns
-\code{player_id}, \code{total_epr}, \code{batting_epr}, \code{bowling_epr}.}
+\item{impact}{data.table from \code{\link{calculate_impact}} with columns
+\code{player_id}, \code{total_impact}, \code{batting_impact},
+\code{bowling_impact}.}
 
 \item{psr}{data.table from \code{\link{calculate_psr}} with columns
 \code{player_id}, \code{psr}.}
 
-\item{weight_epr}{Numeric. Weight for EPR component (default 0.5).
-PSR weight = 1 - weight_epr.}
+\item{weight_epr}{Numeric. Weight for the impact component (default 0.5).
+PSR weight = 1 - weight_epr. (Name kept from the EPR era for API
+stability.)}
 }
 \value{
 data.table with columns:
 \code{player_id}, \code{role_group}, \code{bouncer_rating},
-\code{total_epr}, \code{psr}, \code{batting_epr}, \code{bowling_epr},
-\code{n_matches}, \code{wt_matches}.
+\code{total_impact}, \code{psr}, \code{batting_impact},
+\code{bowling_impact}, \code{n_matches}, \code{wt_matches}.
 }
 \description{
-Blends EPR (delivery-level career value) with PSR (stat-based career value)
-into a single composite player rating.
+Blends impact (delivery-level career value, \code{\link[=calculate_impact]{calculate_impact()}}) with PSR
+(stat-based career value) into a single composite player rating.
 }

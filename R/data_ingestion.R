@@ -427,10 +427,10 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
    full_glob <- gsub("\\\\", "/", full_glob)  # Windows path fix
 
    if (is.null(col_list)) {
-     sql <- sprintf("INSERT INTO %s SELECT * FROM read_parquet('%s')", table_name, full_glob)
+     sql <- sprintf("INSERT INTO %s SELECT * FROM read_parquet('%s')", table_name, sql_quote_path(full_glob))
    } else {
      sql <- sprintf("INSERT INTO %s (%s) SELECT %s FROM read_parquet('%s')",
-                    table_name, col_list, col_list, full_glob)
+                    table_name, col_list, col_list, sql_quote_path(full_glob))
    }
 
    DBI::dbExecute(conn, sql)
@@ -469,7 +469,7 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
      ) deduped
      WHERE rn = 1
        AND player_id NOT IN (SELECT player_id FROM cricsheet.players)
-   ", full_glob)
+   ", sql_quote_path(full_glob))
    DBI::dbExecute(conn, sql)
  }
 
@@ -529,10 +529,9 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  # Get existing match IDs ONCE upfront (fast check before parsing)
  # Disconnect immediately after - a write connection is opened below (Phase 2)
  # and DuckDB only allows one write connection per file at a time.
- conn_check <- get_db_connection(path = path, read_only = TRUE)
- existing_matches <- DBI::dbGetQuery(conn_check, "SELECT match_id FROM cricsheet.matches")
- existing_ids <- existing_matches$match_id
- DBI::dbDisconnect(conn_check, shutdown = TRUE)
+ existing_ids <- with_db_connection(function(conn) {
+   DBI::dbGetQuery(conn, "SELECT match_id FROM cricsheet.matches")$match_id
+ }, path = path, read_only = TRUE)
 
  # Filter to only new files (check BEFORE parsing - saves time!)
  new_mask <- !(file_match_ids %in% existing_ids)

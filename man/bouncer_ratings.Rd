@@ -8,6 +8,7 @@ bouncer_ratings(
   format = c("t20", "odi", "test"),
   player_game_data = NULL,
   stat_ratings = NULL,
+  weight_epr = 0.5,
   n_top = NULL
 )
 }
@@ -18,12 +19,15 @@ bouncer_ratings(
 
 \item{stat_ratings}{Optional pre-loaded stat ratings.}
 
+\item{weight_epr}{Numeric. Weight for the impact component, passed to
+\code{\link{calculate_bouncer}}. Ignored in impact-only mode.}
+
 \item{n_top}{Integer. Number of top players to show (NULL = all).}
 }
 \value{
 data.table with BOUNCER ratings, sorted by bouncer_rating.
 }
 \description{
-Loads EPR and PSR, computes BOUNCER composite, and returns a
+Loads impact and PSR, computes the BOUNCER composite, and returns a
 user-friendly leaderboard.
 }

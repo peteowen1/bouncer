@@ -192,12 +192,12 @@ ingest_fox_table <- function(conn, parquet_path, table_name, format,
   tryCatch({
     n <- DBI::dbExecute(conn, sprintf(
       "INSERT INTO %s SELECT *, %s FROM read_parquet('%s')%s",
-      table_name, extra_cols, fp, where_clause
+      table_name, extra_cols, sql_quote_path(fp), where_clause
     ))
 
     if (verbose) {
       total_in_file <- DBI::dbGetQuery(conn, sprintf(
-        "SELECT COUNT(*) AS n FROM read_parquet('%s')", fp
+        "SELECT COUNT(*) AS n FROM read_parquet('%s')", sql_quote_path(fp)
       ))$n
       skipped <- total_in_file - n
       cli::cli_alert_info(

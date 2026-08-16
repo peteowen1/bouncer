@@ -1,3 +1,52 @@
+# bouncer 0.4.0
+
+## Player Rating v2
+
+A rebuilt player rating, running off Cricsheet rather than Cricinfo, adjusted
+for the opponent faced and the competition played in, and covering men's and
+women's T20 and ODI. Decisions D-P16 to D-P29.
+
+* `calculate_player_rating_v2()` rates batters and bowlers on per-ball runs
+  above average, net of the opponent (a two-way alternating-ridge fit) and
+  divided by a competition difficulty factor. Selected throughout by
+  out-of-sample next-match Spearman, never by leaderboard appearance.
+* `calculate_player_value_v2()` combines batting and bowling into one
+  per-match-played value, built as quality x opportunity so a specialist's
+  batting term reads near zero rather than inheriting an average batter's.
+* `fit_competition_factors()` derives competition strength from bridge players
+  — the only construction that identifies it, since players and competitions
+  are not crossed — anchored on a per-bucket reference set and chained outward.
+* `fit_two_way_effects()` exposes the crossed batter/bowler fit.
+* `build_player_id_map()` / `canonicalise_player_ids()` merge careers split
+  across a bare-name id and a registry hash id.
+* `store_player_rating_v2()`, `store_player_value_v2()` and
+  `load_player_rating_v2()` persist and read the results.
+
+## Win probability and match state
+
+* `build_cricsheet_win_probability()`, `build_cricinfo_win_probability()` and
+  `build_cricinfo_test_win_probability()` score win probability from bouncer's
+  own models.
+* `fit_resource_surface()` replaces the assumption that a wicket is worth
+  exactly six balls with a fitted expected-remaining-runs surface.
+* `build_cricsheet_raa()` writes per-ball runs above average.
+* `calculate_impact()` supersedes `calculate_epr()`, which remains as a
+  deprecated alias.
+
+## Bug fixes
+
+* Player careers split across two ids are merged before rating; 3,775 registry
+  ids were the player's name rather than a hash, affecting 2,903 players.
+* `download_release_asset()` no longer deletes the destination before the
+  swap, which on a failed swap destroyed both the old and the new file.
+* Rating writes run in a transaction, so a failed insert cannot leave a bucket
+  empty.
+* Competition-factor chaining no longer counts a bridge player once per
+  neighbouring competition, and clamps at each step rather than only at the end.
+* Several silent failures in the versebus download path now raise or warn.
+* WPA deltas come from each ball's own pre-delivery state, and are credited to
+  the batter's own team.
+
 # bouncer 0.3.0
 
 ## Major Changes

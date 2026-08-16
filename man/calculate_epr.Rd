@@ -2,7 +2,7 @@
 % Please edit documentation in R/player_career_ratings.R
 \name{calculate_epr}
 \alias{calculate_epr}
-\title{Calculate Expected Performance Rating (EPR)}
+\title{Calculate Expected Performance Rating (EPR) -- Deprecated}
 \usage{
 calculate_epr(
   format = c("t20", "odi", "test"),
@@ -10,17 +10,18 @@ calculate_epr(
   ref_date = NULL,
   decay_batting = NULL,
   decay_bowling = NULL,
-  prior_matches = EPR_PRIOR_MATCHES,
-  prior_rate = EPR_PRIOR_RATE
+  prior_matches = IMPACT_PRIOR_MATCHES,
+  prior_rate = IMPACT_PRIOR_RATE
 )
 }
 \arguments{
-\item{format}{Character. "t20", "odi", or "test".}
+\item{format}{Character. "t20", "odi", or "test". Test aborts until its
+inputs exist (\code{\link[=get_impact_kappa]{get_impact_kappa()}}).}
 
 \item{player_game_data}{data.table from \code{\link{load_player_game_data}}.
 If NULL, loads automatically.}
 
-\item{ref_date}{Date. Compute EPR as of this date (NULL = latest + 1 day).}
+\item{ref_date}{Date. Compute the rating as of this date (NULL = latest + 1).}
 
 \item{decay_batting}{Numeric. Decay constant in days for batting component.}
 
@@ -31,18 +32,14 @@ If NULL, loads automatically.}
 \item{prior_rate}{Numeric. Prior rate (typically 0 = replacement level).}
 }
 \value{
-data.table with one row per player:
-\describe{
-\item{player_id}{Player identifier}
-\item{role_group}{BATTER, BOWLER, ALL_ROUNDER}
-\item{batting_epr}{Career batting value rating}
-\item{bowling_epr}{Career bowling value rating}
-\item{total_epr}{batting_epr + bowling_epr}
-\item{n_matches, wt_matches}{Match count and weighted count}
-}
+As \code{\link[=calculate_impact]{calculate_impact()}}, with the impact columns renamed to
+\code{batting_epr}, \code{bowling_epr}, \code{total_epr}.
 }
 \description{
-Computes rolling career value ratings for each player from per-match
-WPA and ERA values. Uses exponential time decay and Bayesian shrinkage
-toward a role-specific replacement-level prior.
+Deprecated alias for \code{\link[=calculate_impact]{calculate_impact()}}. The \code{wpa + era} engine this name
+referred to is retired (D-P8, D-P11): ERA left the rating and WPA enters at
+the fitted run-unit exchange rate. This wrapper returns
+\code{\link[=calculate_impact]{calculate_impact()}}'s result with the columns renamed to the old
+\code{batting_epr}/\code{bowling_epr}/\code{total_epr} names so existing callers keep
+working while they migrate.
 }

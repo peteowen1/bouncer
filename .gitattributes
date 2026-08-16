@@ -1,0 +1,14 @@
+# Ensure consistent line endings (matches bouncerdata/.gitattributes).
+#
+# R/versebus.R is vendored from torpverse/torp and kept in sync by a plain
+# file diff (see the header of that file). Without this, a working tree that
+# checks out CRLF makes `diff` report all 652 lines as changed against an LF
+# sibling, so the drift check reports 100% drift every time and gets ignored.
+*.csv text eol=lf
+*.py text eol=lf
+*.R text eol=lf
+*.Rd text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sh text eol=lf
+*.md text eol=lf

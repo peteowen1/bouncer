@@ -36,7 +36,21 @@ store_player_game_data <- function(conn, data, format = c("t20", "odi", "test"))
     cli::cli_warn("Columns in DB schema but not in data (will be NULL): {paste(missing_in_data, collapse = ', ')}")
   }
   if (length(extra_in_data) > 0) {
-    cli::cli_warn("Columns in data but not in DB schema (will be dropped): {paste(extra_in_data, collapse = ', ')}")
+    # This was a warning, and it cost us: create_player_game_data() has computed
+    # batting_raa/bowling_raa/total_raa since 2026-08-13, the schema predated
+    # them, and every one was dropped on the way to disk. The warning fired into
+    # a pipeline log nobody read, so the stored table silently stayed on the old
+    # 42-column shape and calculate_impact() could not run off it at all.
+    # A computed value column that reaches the writer and does not reach the
+    # table is a defect, not a note.
+    cli::cli_abort(c(
+      "{length(extra_in_data)} column{?s} would be dropped writing {.field {table_name}}.",
+      "x" = "{.val {extra_in_data}}",
+      "i" = "The data has columns the table does not. Add them in
+             {.fun create_player_game_data_tables} and migrate the table, or
+             drop them upstream deliberately.",
+      "i" = "Migrate an existing DB with {.code ALTER TABLE ... ADD COLUMN}."
+    ))
   }
   available_cols <- intersect(target_cols, names(data))
   data_ordered <- data[, available_cols, with = FALSE]

@@ -352,7 +352,12 @@ prepare_full_features <- function(df, format) {
 
   # Calculate derived features if not present
   if (!"over_ball" %in% names(df)) {
-    df$over_ball <- df$over + df$ball / 6
+    df$over_ball <- calculate_over_ball(df$over, df$ball)
+  }
+
+  # Trailing ELO columns the trained models carry (see the select below).
+  for (nm in c("elo_run_diff", "elo_wicket_diff", "elo_venue_run")) {
+    if (!nm %in% names(df)) df[[nm]] <- 0
   }
 
   # Fill missing skill indices with neutral values from constants
@@ -420,8 +425,17 @@ prepare_full_features <- function(df, format) {
         bowler_experience = log1p(bowler_balls_bowled)
       )
 
-    # Select features in the correct order (must match training)
+    # Select features in the correct order (must match training). The trained
+    # models carry three trailing ELO columns (zero-filled at training when
+    # INCLUDE_ELO_FEATURES is off); this xgboost build silently default-routes
+    # absent columns instead of erroring, so they are supplied explicitly --
+    # same hazard class as the agnostic league features (2026-08-13).
     result <- result %>%
+      dplyr::mutate(
+        elo_run_diff = dplyr::coalesce(elo_run_diff, 0),
+        elo_wicket_diff = dplyr::coalesce(elo_wicket_diff, 0),
+        elo_venue_run = dplyr::coalesce(elo_venue_run, 0)
+      ) %>%
       dplyr::select(
         # Context features
         format_t20, format_odi,
@@ -439,7 +453,9 @@ prepare_full_features <- function(df, format) {
         bowling_team_runs_skill, bowling_team_wicket_skill,
         # Venue skills
         venue_run_rate, venue_wicket_rate,
-        venue_boundary_rate, venue_dot_rate
+        venue_boundary_rate, venue_dot_rate,
+        # ELO features, trailing (zeroed unless the caller supplies them)
+        elo_run_diff, elo_wicket_diff, elo_venue_run
       )
 
   } else {
@@ -486,7 +502,9 @@ prepare_full_features <- function(df, format) {
         bowling_team_runs_skill, bowling_team_wicket_skill,
         # Venue skills
         venue_run_rate, venue_wicket_rate,
-        venue_boundary_rate, venue_dot_rate
+        venue_boundary_rate, venue_dot_rate,
+        # ELO features, trailing (zeroed unless the caller supplies them)
+        elo_run_diff, elo_wicket_diff, elo_venue_run
       )
   }
 
@@ -515,8 +533,25 @@ prepare_agnostic_features <- function(df, format) {
 
   # Calculate derived features if not present
   if (!"over_ball" %in% names(df)) {
-    df$over_ball <- df$over + df$ball / 6
+    df$over_ball <- calculate_over_ball(df$over, df$ball)
   }
+
+  # League running averages -- the models trained since 2026-03-14 carry
+  # league_avg_runs / league_avg_wicket (16% of the T20 model's gain between
+  # them), and this xgboost build does NOT error when a prediction matrix has
+  # fewer columns than the booster: the absent features are routed down each
+  # tree's default branch. Serving without them biased E[runs] by +0.17
+  # runs/ball on the model's own training data before this was caught
+  # (2026-08-13). Callers that cannot supply real values get training's own
+  # no-history default, exactly as the training SQL COALESCEs it.
+  default_runs <- switch(format,
+    t20 = EXPECTED_RUNS_T20, odi = EXPECTED_RUNS_ODI, EXPECTED_RUNS_TEST)
+  default_wicket <- switch(format,
+    t20 = EXPECTED_WICKET_T20, odi = EXPECTED_WICKET_ODI, EXPECTED_WICKET_TEST)
+  if (!"league_avg_runs" %in% names(df)) df$league_avg_runs <- NA_real_
+  if (!"league_avg_wicket" %in% names(df)) df$league_avg_wicket <- NA_real_
+  df$league_avg_runs <- dplyr::coalesce(df$league_avg_runs, default_runs)
+  df$league_avg_wicket <- dplyr::coalesce(df$league_avg_wicket, default_wicket)
 
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
@@ -559,7 +594,7 @@ prepare_agnostic_features <- function(df, format) {
         event_tier = dplyr::coalesce(as.numeric(event_tier), 2)  # Default tier 2
       )
 
-    # Select features
+    # Select features (order must match training exactly)
     result <- result %>%
       dplyr::select(
         format_t20, format_odi,
@@ -567,7 +602,8 @@ prepare_agnostic_features <- function(df, format) {
         wickets_fallen, runs_difference, overs_left,
         phase_powerplay, phase_middle, phase_death,
         gender_male,
-        is_knockout, event_tier
+        is_knockout, event_tier,
+        league_avg_runs, league_avg_wicket
       )
 
   } else {
@@ -595,14 +631,15 @@ prepare_agnostic_features <- function(df, format) {
         event_tier = dplyr::coalesce(as.numeric(event_tier), 2)
       )
 
-    # Select features (no overs_left for Test)
+    # Select features (no overs_left for Test; order must match training)
     result <- result %>%
       dplyr::select(
         innings_num, over, ball,
         wickets_fallen, runs_difference,
         phase_new_ball, phase_middle, phase_old_ball,
         gender_male,
-        is_knockout, event_tier
+        is_knockout, event_tier,
+        league_avg_runs, league_avg_wicket
       )
   }
 

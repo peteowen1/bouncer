@@ -4,7 +4,13 @@
 \alias{.aggregate_bowling_game_data}
 \title{Aggregate Bowling Stats Per Player Per Match}
 \usage{
-.aggregate_bowling_game_data(conn, format, match_ids = NULL, gender = NULL)
+.aggregate_bowling_game_data(
+  conn,
+  format,
+  match_ids = NULL,
+  gender = NULL,
+  wp_source = "bouncer"
+)
 }
 \arguments{
 \item{conn}{DBI connection}

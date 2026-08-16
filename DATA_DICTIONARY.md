@@ -311,7 +311,7 @@ Optional tracking data from ESPN Cricinfo. Available for ~3,700 matches with bal
 | `pitchLength` | character | `full`, `good`, `short`, `yorker` — length |
 | `shotType` | character | `drive`, `cut`, `pull`, `defense`, etc. |
 | `shotControl` | character | `controlled`, `risky`, `very risky` |
-| `win_probability` | numeric | Hawkeye-computed win probability |
+| `win_probability` | numeric | **ESPNcricinfo's own forecaster** (`predictions.winProbability`), scraped by `cricinfo_scraper.py`. NOT Hawkeye-derived and NOT bouncer's model. Coverage: Test **0%**, ODI **7.7%**, T20 42.8% — missing whole-match. This column is the source of `batting_wpa`/`bowling_wpa` and therefore of the BOUNCER rating's WPA half. See `?calculate_epr`. |
 
 ## 13. Centrality / Network Quality
 
@@ -370,6 +370,85 @@ Parameters `a`, `b`, `z`, `y` are optimized per format-gender-team_type segment.
 
 ### Unified Margin (wickets wins → runs equivalent)
 Wickets wins are converted to runs-equivalent using the score projection system, allowing all results to be compared on the same scale.
+
+---
+
+## 15. Player Game Data (`main.{format}_player_game_data`)
+
+Per-innings player stats built from Cricinfo data (Step 13). One row per player per match; all-rounders get a single row with both batting and bowling columns.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `match_id` | integer | Cricinfo match ID |
+| `player_id` | character | Cricinfo player ID |
+| `player_name` | character | Title-parsed player name |
+| `team` | character | Player's team |
+| `match_date` | date | Match date |
+| `role` | character | `batter`, `bowler`, `all_rounder` |
+| `batting_runs` | integer | Runs scored |
+| `batting_balls` | integer | Balls faced |
+| `batting_wpa` | numeric | Batting Win Probability Added. **Derived from the SCRAPED ESPNcricinfo `win_probability`, not bouncer's model** — `NA` for any match lacking it (all Tests, 92% of ODIs). See the note below the table. |
+| `batting_era` | numeric | Batting Expected Runs Added |
+| `bowling_wickets` | integer | Wickets taken |
+| `bowling_runs` | integer | Runs conceded |
+| `bowling_balls` | integer | Balls bowled |
+| `bowling_wpa` | numeric | Bowling Win Probability Added. Same scraped source and same coverage gap as `batting_wpa`. |
+| `bowling_era` | numeric | Bowling Expected Runs Added |
+| `total_wpa` | numeric | Combined WPA (batting + bowling). Inherits the coverage gap. |
+| `total_era` | numeric | Combined ERA (batting + bowling) |
+
+Plus Hawkeye-derived features where available (wagonZone distributions, pitchLine/Length aggregates).
+
+> **⚠️ The WPA columns above are a third party's number.** They come from
+> `cricinfo.balls.win_probability` — ESPNcricinfo's own forecaster, scraped by
+> `bouncerdata/scripts/cricinfo_scraper.py` — differenced with a `LEAD()` window
+> in `player_game_data.R`. They are **not** produced by bouncer's in-match
+> models (`predict_win_probability()`), whose only production caller is
+> `plot_win_probability()`.
+>
+> Coverage measured 2026-08-12: **Test 0.0%, ODI 7.7%, T20 42.8%, Hundred 0.0%**,
+> missing whole-match (2,711 of 3,757 matches have none). `SUM()` over an
+> all-NULL group returns `NULL`, so those matches reach `calculate_epr()` as
+> `NA`. `calculate_epr()` drops them from numerator *and* denominator and warns
+> when coverage is thin.
+>
+> Improving bouncer's in-match models does **not** improve these columns.
+> Wiring ours in is open work — `../docs/DECISIONS.md` **D-P6**.
+
+## 16. Stat Ratings (`main.{format}_stat_ratings`)
+
+Bayesian per-game stat ratings (Step 14). One row per player with shrinkage-adjusted ratings for each stat.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `player_id` | character | Cricinfo player ID |
+| `role_group` | character | `batter`, `bowler`, `all_rounder` |
+| `n_matches` | integer | Matches played |
+| `wt_matches` | numeric | Recency-weighted match count |
+| `ref_date` | date | Reference date for ratings |
+| `{stat}_rating` | numeric | Bayesian posterior estimate for each stat |
+| `{stat}_lower` | numeric | Lower credible interval bound |
+| `{stat}_upper` | numeric | Upper credible interval bound |
+
+Stats vary by role: batting average, strike rate (batters); economy, bowling strike rate (bowlers).
+
+## 17. Career Ratings / BOUNCER (`bouncer_ratings()` output)
+
+Composite player value metric (Step 15). Not stored in DuckDB — computed on-the-fly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `player_id` | character | Cricinfo player ID |
+| `role_group` | character | `batter`, `bowler`, `all_rounder` |
+| `bouncer_rating` | numeric | Final BOUNCER composite rating |
+| `total_epr` | numeric | Expected Performance Rating (combined bat+bowl) |
+| `psr` | numeric | Player Stat Rating (from trained PSR model) |
+| `batting_epr` | numeric | Batting-only EPR component |
+| `bowling_epr` | numeric | Bowling-only EPR component |
+| `n_matches` | integer | Matches played |
+| `wt_matches` | numeric | Recency-weighted match count |
+
+**Pipeline:** Stat ratings → PSV (Player Stat Value) / BatV / BowlV → EPR → BOUNCER
 
 ---
 

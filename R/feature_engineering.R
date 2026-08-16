@@ -126,6 +126,18 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
 
   match_type <- tolower(match_type)
 
+  # fcase() requires EVERY output branch to have the same type, and it is
+  # strict about integer vs double. `over` arrives as integer from DuckDB, so
+  # a bare `over` branch is integer while `over - 6` is double (6 is a double
+  # literal), and fcase aborts with "Argument #4 is of type double, however
+  # argument #2 is of type integer".
+  #
+  # The ODI branch below already carried an `as.double(over)` fix for exactly
+  # this, but it was never applied to the T20 branch -- so T20 preparation
+  # died on the first run against integer overs while ODI worked. Coerce once,
+  # here, for every branch, so the three cannot drift apart again.
+  over_dbl <- as.double(over)
+
   # Use data.table::fcase for vectorized conditionals (faster than case_when)
   if (match_type == "t20") {
     phase <- data.table::fcase(
@@ -135,9 +147,9 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
     )
 
     overs_into_phase <- data.table::fcase(
-      over < 6,  over,
-      over < 16, over - 6,
-      default = over - 16
+      over < 6,  over_dbl,
+      over < 16, over_dbl - 6,
+      default = over_dbl - 16
     )
 
     total_overs <- 20
@@ -149,7 +161,6 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
       default = "death"
     )
 
-    over_dbl <- as.double(over)
     overs_into_phase <- data.table::fcase(
       over < 10, over_dbl,
       over < 40, over_dbl - 10,
@@ -161,7 +172,7 @@ calculate_phase_features <- function(over, ball, match_type = "t20") {
   } else {
     # Test match - no phases
     phase <- rep("test", length(over))
-    overs_into_phase <- over
+    overs_into_phase <- over_dbl   # double, matching the other branches
     total_overs <- NA_real_
   }
 
@@ -400,6 +411,13 @@ calculate_era <- function(actual_runs, expected_runs) {
 #' @param runs_needed Integer. Runs still required to win
 #' @param balls_remaining Integer. Balls left in innings
 #' @param wickets_in_hand Integer. Wickets remaining (10 - wickets_fallen)
+#' @param resource_surface A `bouncer_resource_surface` from
+#'   [fit_resource_surface()], or NULL for the legacy
+#'   `balls_remaining + wickets_in_hand * 6` formula. This changes the SCALE of
+#'   `resources_per_run` (expected remaining runs per run needed, versus balls
+#'   per run needed), so a model trained with one must be served the other.
+#'   [load_in_match_models()] carries the surface alongside the model so the two
+#'   cannot drift apart.
 #'
 #' @return Data frame with columns:
 #'   \itemize{
@@ -407,7 +425,13 @@ calculate_era <- function(actual_runs, expected_runs) {
 #'     \item chase_impossible: Binary. 1 if balls/wickets exhausted with runs still needed
 #'     \item runs_per_ball_needed: runs_needed / balls_remaining (Inf capped at 6)
 #'     \item balls_per_run_available: balls_remaining / runs_needed (capped at 20)
-#'     \item resources_per_run: (balls + wickets*6) / runs_needed (capped at 30)
+#'     \item resources_per_run: expected remaining runs (or, without a surface,
+#'       balls + wickets*6) divided by runs_needed
+#'     \item resource_margin: the same comparison as a difference in runs --
+#'       expected remaining runs minus runs needed. Positive means expected to
+#'       win. This is the wicket-sensitive counterpart to
+#'       `projected_win_margin`, which reaches the model only via Stage 1.
+#'     \item resource_margin_per_ball: resource_margin / balls_remaining
 #'     \item chase_buffer: balls_remaining - runs_needed (how many "spare" balls)
 #'     \item chase_buffer_ratio: chase_buffer / balls_remaining
 #'     \item is_easy_chase: Binary. < 1 run per ball needed with 5+ wickets
@@ -417,7 +441,8 @@ calculate_era <- function(actual_runs, expected_runs) {
 #'   }
 #'
 #' @keywords internal
-calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wickets_in_hand) {
+calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wickets_in_hand,
+                                                resource_surface = NULL) {
 
   # Binary indicators for game decided
   chase_completed <- as.integer(runs_needed <= 0)
@@ -441,12 +466,50 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
     default = pmin(balls_remaining / runs_needed, 20)
   )
 
-  # Combined resources: balls + wickets * 6 (each wicket worth ~6 balls)
-  # This captures that having wickets in hand is like having extra balls
-  total_resources <- balls_remaining + (wickets_in_hand * 6)
+  # Combined resources.
+  #
+  # With a fitted surface this is expected remaining RUNS over runs needed, so
+  # the feature reads directly as "how much more than enough do we expect to
+  # score". Without one it falls back to the original balls + wickets * 6, which
+  # asserts that a wicket is worth exactly six balls in every state. Measured
+  # over 13,358 T20 matches the run cost of a wicket runs from 0.5 (20 balls
+  # left, 9 in hand) to 22.7 (100 balls left, 7 in hand) -- a factor of 45
+  # behind one constant, and it is the single largest input to the ODI chase
+  # model at 57% of its gain.
+  #
+  # The two are on different scales and are NOT interchangeable at scoring time:
+  # a model trained on one and served the other is a train/serve skew of exactly
+  # the kind this codebase has been bitten by. The surface travels with the
+  # model via load_in_match_models() so both paths get the same one.
+  if (is.null(resource_surface)) {
+    total_resources <- balls_remaining + (wickets_in_hand * 6)
+    resources_cap <- 30
+  } else {
+    total_resources <- resource_runs(balls_remaining, wickets_in_hand, resource_surface)
+    resources_cap <- 10   # runs-over-runs, so 10x what you need is already won
+  }
   resources_per_run <- data.table::fcase(
-    runs_needed <= 0, 30,  # Cap for completed chase
-    default = pmin(total_resources / pmax(runs_needed, 1), 30)
+    runs_needed <= 0, resources_cap,
+    default = pmin(total_resources / pmax(runs_needed, 1), resources_cap)
+  )
+
+  # The same resource information as a DIFFERENCE in runs, not a ratio.
+  #
+  # `resources_per_run` is a ratio, and the T20 chase model barely used it: 74%
+  # of its gain came from `projected_vs_target` and `projected_win_margin`,
+  # which are differences in runs from the Stage 1 projection. Wickets reached
+  # the model only through that projection, and the route compressed them --
+  # measured win probability moved 2.5x less per wicket than reality.
+  #
+  # These give the model the same comparison in the units it already prefers,
+  # built from the fitted surface instead of the projection, so wickets have a
+  # direct path in. With a surface they are in runs; without one they inherit
+  # the legacy balls-based scale and mean something different, which is another
+  # reason the surface must travel with the model.
+  resource_margin <- total_resources - runs_needed
+  resource_margin_per_ball <- data.table::fcase(
+    balls_remaining <= 0, 0,
+    default = resource_margin / balls_remaining
   )
 
   # Chase buffer: how many "spare" balls beyond what's strictly needed
@@ -479,6 +542,8 @@ calculate_tail_calibration_features <- function(runs_needed, balls_remaining, wi
     runs_per_ball_needed = runs_per_ball_needed,
     balls_per_run_available = balls_per_run_available,
     resources_per_run = resources_per_run,
+    resource_margin = resource_margin,
+    resource_margin_per_ball = resource_margin_per_ball,
     chase_buffer = chase_buffer,
     chase_buffer_ratio = chase_buffer_ratio,
     is_easy_chase = is_easy_chase,

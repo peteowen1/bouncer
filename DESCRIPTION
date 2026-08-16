@@ -1,7 +1,7 @@
 Package: bouncer
 Type: Package
 Title: Cricket Analytics with Ball-by-Ball Skill Tracking
-Version: 0.3.0
+Version: 0.4.0
 Authors@R: person("Pete", "Owen", email = "peteowen1@gmail.com",
                   role = c("aut", "cre", "cph"))
 Description: Cricket analytics featuring a 5-component prediction pipeline with
@@ -33,7 +33,9 @@ Imports:
     DBI,
     duckdb (>= 0.9.0),
     data.table,
-    Matrix
+    Matrix,
+    digest,
+    gh
 Suggests:
     arrow,
     bouncermodels,
@@ -49,6 +51,7 @@ Suggests:
     tidyr,
     xgboost (>= 1.7.0),
     testthat (>= 3.0.0),
+    withr,
     knitr,
     rmarkdown
 Remotes:

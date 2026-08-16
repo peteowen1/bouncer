@@ -219,3 +219,55 @@ get_max_overs <- function(format) {
   if (is.na(result)) NULL else result
 }
 
+
+# ============================================================================
+# OVER-BALL POSITION
+# ============================================================================
+
+#' Compute the `over_ball` Position Feature
+#'
+#' The single definition of `over_ball`, the within-innings position feature
+#' consumed by every XGBoost model in the package. Use this everywhere the
+#' value is computed: the Cricsheet parser that writes
+#' `cricsheet.deliveries.over_ball`, and every prediction path that has to
+#' reconstruct the column when it is absent from the input frame.
+#'
+#' @section Why this function exists:
+#' Until this was centralised, `over_ball` had two incompatible definitions in
+#' the codebase. The parser wrote `over + ball / 10` (and all 10,895,339 stored
+#' rows use it, so every model was trained on that scale), while the prediction
+#' and simulation paths reconstructed it as `over + ball / 6`. Over 10 ball 3
+#' was therefore `10.3` at training time and `10.5` at scoring time, and the
+#' derived `overs_left = max_overs - over_ball` inherited the error. Nothing
+#' raised an error; predictions were simply scored on a feature scale the model
+#' had never seen. One definition, called from every site, is what prevents
+#' that recurring.
+#'
+#' @section Known defect (do not silently "fix"):
+#' `ball` counts every delivery in the over, extras included, so it reaches 19
+#' in the stored data (233,975 deliveries have `ball > 6`). With a `/ 10`
+#' denominator, an over needing 10 or more deliveries spills into the next
+#' over's numeric range: over 5 ball 12 gives `6.2`, indistinguishable from
+#' over 6 ball 2. `floor(over_ball)` is therefore the wrong over for those rows.
+#'
+#' This function deliberately reproduces that behaviour. Changing the
+#' convention would make the feature disagree with `cricsheet.deliveries` and
+#' with every trained model, reintroducing exactly the train/serve skew it was
+#' written to remove. Correcting it requires a coordinated parser change, a
+#' full re-parse, and a retrain — see `docs/NEXT-STEPS.md`.
+#'
+#' @param over Integer vector. Completed overs before this delivery (0-based).
+#' @param ball Integer vector. Delivery number within the over, 1-based,
+#'   counting extras.
+#'
+#' @return Numeric vector of the same length as the recycled inputs.
+#'
+#' Worked values: over 10 ball 3 gives `10.3`; over 0 ball 1 gives `0.1`; over 5
+#' ball 12 gives `6.2` -- see "Known defect" above for why that last one
+#' collides with over 6 ball 2.
+#'
+#' @keywords internal
+calculate_over_ball <- function(over, ball) {
+  as.numeric(over) + as.numeric(ball) / 10
+}
+

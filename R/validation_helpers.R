@@ -366,3 +366,36 @@ validate_match_ids <- function(ids, context = "query") {
 escape_sql_quotes <- function(x) {
   gsub("'", "''", x)
 }
+
+
+#' Quote a File Path for Interpolation into DuckDB SQL
+#'
+#' Escapes a filesystem path for use inside a single-quoted SQL string, such
+#' as `read_parquet('...')`. DuckDB's file-reading functions take the path as
+#' a string literal and cannot be parameterised with a `?` placeholder, so
+#' interpolation is unavoidable here — but it must still be escaped.
+#'
+#' Paths were previously interpolated raw, so any path containing an
+#' apostrophe (`O'Brien/data.parquet`, and Windows user directories in
+#' particular) produced a syntax error or, worse, a query that parsed into
+#' something unintended.
+#'
+#' @param path Character vector of paths. Backslashes are converted to forward
+#'   slashes, which DuckDB accepts on Windows.
+#'
+#' @return Character vector, escaped and ready to sit between single quotes.
+#'   The quotes themselves are NOT added — the caller's format string has them.
+#'
+#' @examples
+#' \dontrun{
+#' sprintf("SELECT * FROM read_parquet('%s')", sql_quote_path(fp))
+#' }
+#'
+#' @keywords internal
+sql_quote_path <- function(path) {
+  if (length(path) == 0L) return(character(0))
+  if (anyNA(path)) {
+    cli::cli_abort("{.arg path} must not contain NA.")
+  }
+  escape_sql_quotes(gsub("\\\\", "/", path))
+}

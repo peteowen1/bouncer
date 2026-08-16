@@ -49,9 +49,16 @@ table_exists <- function(conn, table_name) {
   if (length(parts) == 2) {
     schema <- parts[1]
     tbl <- parts[2]
-  } else {
+  } else if (length(parts) == 1) {
     schema <- "main"
     tbl <- parts[1]
+  } else {
+    # A three-part name previously fell into the one-part branch and checked
+    # main.<first-part> -- a confidently wrong answer rather than an error.
+    cli::cli_abort(c(
+      "{.arg table_name} must be {.val table} or {.val schema.table}, got {.val {table_name}}.",
+      "i" = "Found {length(parts)} dot-separated parts."
+    ))
   }
   nrow(DBI::dbGetQuery(conn,
     "SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
@@ -81,6 +88,59 @@ get_db_connection <- function(path = NULL, read_only = FALSE) {
   )
 
   return(conn)
+}
+
+
+#' Run an Expression Against a Scoped Database Connection
+#'
+#' Opens a connection, passes it to `fn`, and disconnects on the way out
+#' whether `fn` returned or threw.
+#'
+#' @section Why this exists:
+#' DuckDB permits exactly one write connection at a time, so a write
+#' connection leaked by an error holds the lock for the remainder of the R
+#' session — every later write fails with "Could not set lock", far from the
+#' code that caused it. The `open / do work / dbDisconnect` sequence written
+#' without `on.exit` is safe only on the happy path; this makes the disconnect
+#' unconditional. Prefer it to hand-rolling `on.exit` at each call site.
+#'
+#' Not a fit when the connection outlives the call — [connect_to_bouncer()]
+#' hands ownership to its caller and must not use this.
+#'
+#' @param fn Function of one argument, the connection.
+#' @param path Character. Database path, passed to [get_db_connection()].
+#' @param read_only Logical. Open read-only. Default FALSE.
+#'
+#' @return Whatever `fn` returns.
+#'
+#' @examples
+#' \dontrun{
+#' n <- with_db_connection(function(conn) {
+#'   DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n
+#' }, read_only = TRUE)
+#' }
+#'
+#' @keywords internal
+with_db_connection <- function(fn, path = NULL, read_only = FALSE) {
+  conn <- get_db_connection(path = path, read_only = read_only)
+  on.exit(
+    # The tryCatch is deliberate -- a failing disconnect must not clobber a
+    # more informative error thrown by fn(). But it must not be SILENT: a
+    # disconnect that throws can leave the write lock held, which is the exact
+    # failure this function exists to prevent. Swallowing it would hide the
+    # disease one layer down, and worse than the original bare call, which at
+    # least raised. Warn, always.
+    tryCatch(
+      DBI::dbDisconnect(conn, shutdown = TRUE),
+      error = function(e) cli::cli_warn(c(
+        "Failed to close the database connection cleanly: {conditionMessage(e)}",
+        "!" = "A write lock may still be held for the rest of this session.",
+        "i" = "If later writes fail with {.q Could not set lock}, this is why."
+      ))
+    ),
+    add = TRUE
+  )
+  fn(conn)
 }
 
 

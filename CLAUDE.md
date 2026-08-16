@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Work on `dev` branch, not directly on `main`
 - PR from `dev` → `main` when features are tested and stable
 
+Verse-level docs (reviews, plans, decision log, work queue) live in `../CLAUDE.md`'s vault at `bouncerverse/` — see `../docs/HOME.md`.
+
 ## Development Commands
 
 ```r
@@ -35,6 +37,55 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 | **Stat Ratings** | `stat_ratings.R`, `stat_rating_config.R` | Bayesian per-game stat ratings (PSR, economy, SR, etc.) |
 
 3-Way ELO + centrality feed the delivery-level models. Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glicko is deprecated and archived in `data-raw/_deprecated/`.
+
+> ### ⚠️ The WPA feeding the ratings is now OURS (D-P6, 2026-08-13) — but it barely matters
+>
+> Two corrections live here. The first replaced the WPA source. The second is
+> the one that changes what you should work on.
+>
+> **1. Source: `batting_wpa`/`bowling_wpa` now come from bouncer's own models.**
+> `build_cricinfo_win_probability()` scores every T20 and ODI delivery into
+> `main.cricinfo_ball_win_probability`; `player_game_data.R` joins it. The old
+> scraped `cricinfo.balls.win_probability` is still selectable via
+> `wp_source = "cricinfo"` for comparison. Ours won on evidence — Brier
+> **0.1354 vs 0.2208** over 20,326 ODI deliveries where both exist — and on
+> coverage, which went from **8.6% → 100%** (ODI) and **42.9% → 100%** (T20)
+> among rows where the player actually batted.
+>
+> **2. WPA contributes ~0.009% of the EPR that feeds BOUNCER.**
+> `calculate_epr()` computes `bat_value = batting_wpa + batting_era`, adding a
+> probability to a run count:
+>
+> | | WPA sd | ERA sd | corr(bat_value, ERA) | WPA share of variance |
+> |---|---|---|---|---|
+> | T20 | 0.126 | 13.05 | +0.99995 | 0.0094% |
+> | ODI | 0.133 | 25.88 | +0.99999 | 0.0026% |
+>
+> **EPR is ERA.** Do not expect any WPA improvement to move a rating until this
+> is resolved. And do not "fix" it by standardising the two components — that was
+> tested and made the anchor checks worse (Root 14/98 → 98/98 in ODI), so ERA is
+> genuinely the stronger player-value signal and WPA is not simply mis-scaled.
+>
+> **Test WPA exists since 2026-08-13** — `build_cricinfo_test_win_probability()`
+> scores all 355,962 Test deliveries (quality honestly weak until the #24
+> retrain; strong only in innings 4).
+>
+> **The WPA delta is flipped to the batter's own team's perspective** (2026-08-13,
+> bouncerverse#25). Both stored win probabilities are single-perspective numbers,
+> and summing raw deltas docked chasing batters for scoring — corr(batting_wpa,
+> runs) was **−0.43 in innings 2**. The flip lives in `.wp_source_sql()`; do not
+> difference either WP column directly without it.
+>
+> **SUPERSEDED BY D-P11 (2026-08-14):** the rating engine is now
+> `calculate_impact()` — per-match `raa + kappa*wpa` (kappa fitted: 150 T20,
+> 272 ODI) through the same decay/shrinkage/exposure aggregation.
+> `calculate_epr()` survives only as a deprecated alias. The history below
+> explains why the old engine died; the numbers describe THAT engine.
+>
+> **`calculate_impact()`'s coverage warning is still load-bearing** — do not silence
+> it. Matches with no win probability still reach it as `NA`, and
+> `.merge_batting_bowling()` no longer launders those into zeros (it did, for
+> 13,668 of 15,012 ODI player-match rows, until 2026-08-13).
 
 **Key Formula (residual-based skill updates):**
 ```r
@@ -71,36 +122,9 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 | **Tuning** | `xgb_tuning.R` | XGBoost hyperparameter tuning utilities |
 | **Visualization** | `visualization.R` | ggplot2-based plotting functions |
 
-### tests/testthat/ - Test Files (21 files)
+### tests/testthat/
 
-```r
-# Core rating tests
-testthat::test_file("tests/testthat/test-elo-core.R")        # ELO calculations
-testthat::test_file("tests/testthat/test-three-way-elo.R")   # 3-way ELO system
-testthat::test_file("tests/testthat/test-centrality.R")      # PageRank/centrality
-testthat::test_file("tests/testthat/test-skill-indices.R")   # Skill index calculations
-testthat::test_file("tests/testthat/test-skill-utils.R")     # Skill utility functions
-
-# Model & prediction tests
-testthat::test_file("tests/testthat/test-agnostic-model.R")  # Agnostic model
-testthat::test_file("tests/testthat/test-simulation.R")      # Match simulation
-testthat::test_file("tests/testthat/test-score-projection.R")# Score projections
-testthat::test_file("tests/testthat/test-team-predictions.R")# Team match predictions
-testthat::test_file("tests/testthat/test-stat-functions.R")  # Statistical functions
-
-# Data pipeline & API tests
-testthat::test_file("tests/testthat/test-parser.R")          # Cricsheet parsing
-testthat::test_file("tests/testthat/test-database.R")        # DB connections/schema
-testthat::test_file("tests/testthat/test-database-mock.R")   # DB mock tests
-testthat::test_file("tests/testthat/test-data-loaders.R")    # Data loading functions
-testthat::test_file("tests/testthat/test-fox-scraper.R")     # Fox Sports scraper
-testthat::test_file("tests/testthat/test-cricinfo-data.R")   # Cricinfo data integration
-testthat::test_file("tests/testthat/test-pipeline-integration.R") # Full pipeline
-testthat::test_file("tests/testthat/test-user-api.R")        # User-facing functions
-testthat::test_file("tests/testthat/test-format-utils.R")    # Format utilities
-testthat::test_file("tests/testthat/test-validation-helpers.R") # SQL/input validation
-testthat::test_file("tests/testthat/test-visualization.R")   # Plotting functions
-```
+Covers ratings, models, data pipeline, and API surfaces — around 30 test files. Run `ls tests/testthat/` for the current list; run a single file with `testthat::test_file("tests/testthat/test-<name>.R")`.
 
 ### debug/ - Scratch Scripts (gitignored)
 
@@ -115,42 +139,7 @@ debug/
 
 ### data-raw/ - Analysis Scripts (NOT part of package)
 
-```
-data-raw/
-├── run_full_pipeline.R   # Main pipeline entry point
-├── ARCHITECTURE.md       # Complete technical documentation
-├── _deprecated/          # Archived systems (dual ELO, Glicko)
-├── data-acquisition/     # Download scripts (Cricsheet, Fox Sports)
-├── debug/                # Debug scripts organized by topic
-│   ├── elo/              # ELO rating debugging
-│   ├── pagerank/         # PageRank/network analysis
-│   ├── opponent-quality/ # Opponent quality calculations
-│   ├── centrality/       # Network centrality metrics
-│   ├── pipeline/         # Full pipeline testing
-│   └── archive/          # One-time verification scripts
-├── logo/                 # Package logo generation (create_logo.R)
-├── ratings/
-│   ├── player/           # Player rating systems
-│   │   ├── shared/       # Calibration scripts
-│   │   ├── dual-elo/     # Original dual ELO system
-│   │   ├── 3way-elo/     # 3-way ELO (batter+bowler+venue) [Step 5b]
-│   │   ├── skill-indices/# Residual-based skill indices [Step 3]
-│   │   ├── stat-ratings/ # Bayesian stat ratings + career ratings [Steps 13-15]
-│   │   └── analysis/     # Rating analysis scripts
-│   ├── team/             # 01_calculate_team_elos.R, 02_calculate_team_skill_indices.R
-│   ├── venue/            # 01_calculate_venue_skill_indices.R
-│   └── projection/       # 01_optimize_projection_params.R, 02_calculate_projections.R
-├── models/
-│   ├── ball-outcome/     # 01_train_agnostic_model.R, 02_train_full_model.R
-│   │   └── legacy/       # Deprecated BAM models
-│   ├── in-match/         # Projected score + win probability models [Step 12]
-│   └── pre-match/        # Pre-game prediction models
-├── simulation/           # Match/season simulation scripts
-├── release/              # GitHub release upload scripts
-├── utils/                # Utility/maintenance scripts
-├── validation/           # Data validation scripts
-└── archive/              # Deprecated scripts (preserved for reference)
-```
+Not part of the package. Entry point is `run_full_pipeline.R`; `ARCHITECTURE.md` has the complete technical documentation. Organized by topic (`data-acquisition/`, `debug/`, `ratings/`, `models/`, `simulation/`, `release/`, `utils/`, `validation/`, `archive/`, `_deprecated/` for retired dual-ELO/Glicko) — run `ls -R data-raw/` for the current layout. Pipeline-step mapping for files where it isn't obvious from the path: `ratings/player/skill-indices/` = Step 3, `ratings/player/3way-elo/` = Step 5b, `models/in-match/` = Step 12, `ratings/player/stat-ratings/` = Steps 13-15.
 
 **Data location**: `../bouncerdata/` (sibling directory)
 
@@ -189,10 +178,7 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 ## Key Constraints
 
 ### R Package Rules
-- Never manually edit NAMESPACE (roxygen2 generates it)
 - All exported functions need `@export` AND a roxygen2 title/description (bare `@export` without a title generates a NAMESPACE entry but no man page, which breaks pkgdown)
-- Use `@importFrom pkg func` for external functions
-- Global variables declared in `globals.R` to avoid R CMD check NOTEs
 - ~173 exports, ~70 R files; `_pkgdown.yml` must match NAMESPACE exactly
 
 ### Documentation (pkgdown)
@@ -206,11 +192,6 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 ### Rating Calculations
 - **MUST be processed in strict chronological order** - never parallelize
 - Sort by `match_date → match_id → delivery_id`
-
-### Analysis Scripts (`data-raw/`)
-- Scripts should be simple, calling package functions
-- **Do NOT define functions in analysis scripts** - put reusable code in `R/`
-- Use RStudio outline sections: `# Section Title ----`
 
 ## Database Schema
 
@@ -249,27 +230,9 @@ Uses DuckDB schemas for namespace isolation: `cricsheet.*` for Cricsheet data, `
 | `{format}_score_projection` | projected_agnostic, projected_full, resource_remaining |
 | `team_elo` | Game-level ELO ratings |
 
-## Constants Reference (from `R/constants.R`, `R/constants_3way.R`)
+## Constants Reference
 
-| Constant | T20 | ODI | Test |
-|----------|-----|-----|------|
-| `SKILL_ALPHA` | 0.01 | 0.008 | 0.005 |
-| `VENUE_ALPHA` | 0.002 | 0.001 | 0.0005 |
-| `THREE_WAY_ELO_START` | 1400 | 1400 | 1400 |
-| `THREE_WAY_RUNS_PER_100_ELO` | 0.0745 | 0.0826 | 0.0932 |
-| `EXPECTED_RUNS/ball` | 1.138 | 0.782 | 0.518 |
-| `EXPECTED_WICKET/ball` | 0.054 | 0.028 | 0.017 |
-
-### 3-Way ELO Attribution Weights (Men's T20 run ELO shown)
-
-Weights are **format-gender-specific** and differ between run and wicket dimensions. See `get_run_elo_weights()` / `get_wicket_elo_weights()` in `R/constants_3way.R`.
-
-```r
-THREE_WAY_W_BATTER <- 0.612         # Batter contribution
-THREE_WAY_W_BOWLER <- 0.311         # Bowler contribution
-THREE_WAY_W_VENUE_SESSION <- 0.062  # Short-term venue (pitch prep, dew)
-THREE_WAY_W_VENUE_PERM <- 0.015     # Long-term venue (ground size, typical pitch)
-```
+Constants (`SKILL_ALPHA`, `VENUE_ALPHA`, `THREE_WAY_ELO_START`, `THREE_WAY_RUNS_PER_100_ELO`, expected runs/wicket per ball) vary by format (T20/ODI/Test) — see `R/constants.R`. 3-way ELO attribution weights are additionally gender-specific and differ between run and wicket dimensions — see `get_run_elo_weights()` / `get_wicket_elo_weights()` in `R/constants_3way.R` for current values.
 
 See `data-raw/ARCHITECTURE.md` for complete technical documentation. See `DATA_DICTIONARY.md` for column definitions across all DuckDB tables and computed features.
 

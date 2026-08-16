@@ -173,13 +173,18 @@ print(comparison)
 
 ## Prediction Accuracy
 
-The prediction models are calibrated on historical data. Typical accuracy:
+Measured on the 2024-2025 held-out years through the deployed serving path
+(2026-08-14, bouncerverse#15):
 
-| Prediction Type | Accuracy |
-|-----------------|----------|
-| Pre-match winner | ~65-70% |
-| Score projection | RMSE ~15-20 runs |
-| Win probability | Well-calibrated (50% events happen ~50% of time) |
+| Format | Accuracy | Log loss | Elo-baseline log loss |
+|--------|----------|----------|-----------------------|
+| T20 pre-match winner | 66.7% | 0.589 | 0.596 |
+| ODI pre-match winner | 60.7% | 0.653 | 0.659 |
+| Test 3-way (win/draw/loss) | 41.8% | 1.066 | 1.074 |
+
+The margin over a single-feature Elo logistic is ~1% of log loss in every
+format. In-match win probability is evaluated separately and much more
+thoroughly -- see the bouncerverse decision log.
 
 ## See Also
 

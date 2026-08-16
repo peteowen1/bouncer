@@ -213,7 +213,7 @@ prepare_shortform_features <- function(df) {
 
   # Calculate derived features if not present
   if (!"over_ball" %in% names(df)) {
-    df$over_ball <- df$over + df$ball / 6
+    df$over_ball <- calculate_over_ball(df$over, df$ball)
   }
 
   if (!"overs_left" %in% names(df)) {

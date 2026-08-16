@@ -118,10 +118,28 @@ reference:
   - title: Player Value Metrics
     desc: Per-game and career player value ratings (WPA, ERA, PSV, BOUNCER)
     contents:
+    - build_cricinfo_raa
+    - build_cricinfo_test_win_probability
+    - build_cricinfo_win_probability
+    - cricinfo_match_outcome
     - create_player_game_data
     - load_player_game_data
     - player_game_ratings
     - match_mvp
+    - calculate_impact
+    - build_player_id_map
+    - canonicalise_player_ids
+    - calculate_player_rating_v2
+    - calculate_player_value_v2
+    - store_player_rating_v2
+    - store_player_value_v2
+    - load_player_rating_v2
+    - default_competition_reference
+    - competition_reference
+    - fit_competition_factors
+    - fit_two_way_effects
+    - build_cricsheet_raa
+    - build_cricsheet_win_probability
     - player_career_ratings
     - player_career_summary
     - bouncer_ratings
@@ -242,6 +260,8 @@ reference:
     desc: Innings score projection utilities
     contents:
     - calculate_projection_resource
+    - fit_resource_surface
+    - resource_runs
     - calculate_test_projected_score
     - calculate_test_overs_remaining
     - estimate_test_innings_overs_remaining
@@ -314,6 +334,25 @@ reference:
     - get_wicket_elo_weights
     - get_wicket_k_factors
 
+  - title: Competition Units
+    desc: Normalise competition names into comparable units
+    contents:
+    - normalise_competition
+    - COMPETITION_UNIT_MAP
+    - COMPETITION_REDUCED_SEASONS
+
+  - title: Rating Validation
+    desc: Score a rating against shrunk-career and recency baselines
+    contents:
+    - build_rating_frame
+    - load_rating_pool
+    - rating_reliability
+    - score_rating
+    - summarise_rating_score
+    - RATING_VAL_MIN_CAREER_BALLS
+    - RATING_VAL_MIN_WINDOW_BALLS
+    - RATING_VAL_ORIGINS
+
   - title: S3 Methods
     desc: Print methods for bouncer objects
     contents:
@@ -325,3 +364,24 @@ reference:
     - print.bouncer_team
     - print.bouncer_team_comparison
     - print.bouncer_win_prob
+
+  - title: Versebus (Internal)
+    desc: Vendored data-bus helper (ECOSYSTEM-FIX-PLAN.md) - manifest-verified
+      release publish/download primitives shared across verses. Not for direct
+      end-user use.
+    contents:
+    - vb_asset_entry
+    - vb_atomic_write
+    - vb_cache_validate
+    - vb_classify_error
+    - vb_confirm_absent
+    - vb_download
+    - vb_generation
+    - vb_guard_accumulate
+    - vb_list_assets
+    - vb_producer_info
+    - vb_publish
+    - vb_read_manifest
+    - vb_read_prev_manifest
+    - vb_sha256
+    - vb_write_manifest

@@ -47,7 +47,7 @@ FORMAT_GROUPS <- list(
 FORMAT_FILTER <- NULL    # NULL = all formats, or "t20", "odi", "test" for single format
 BATCH_SIZE <- 10000      # Deliveries per batch insert
 MATCH_LIMIT <- NULL      # Set to integer to limit matches (for testing)
-FORCE_FULL <- FALSE      # If TRUE, always recalculate everything
+if (!exists("FORCE_FULL")) FORCE_FULL <- FALSE  # If TRUE, always recalculate everything (pre-set before sourcing to override)
 USE_MODEL <- TRUE        # If TRUE, use agnostic model for baseline expectations (all formats)
 
 # Determine formats to process
@@ -224,6 +224,29 @@ if (use_model_for_format) {
           ELSE 3
         END AS event_tier
       FROM cricsheet.matches m
+    ),
+    -- League running averages, lagged to exclude the current match -- the
+    -- models trained since 2026-03-14 carry these two features (16%% of gain)
+    -- and serving without them default-routed every prediction until
+    -- 2026-08-13 (bouncerverse#23). Same construction as the training SQL.
+    league_stats AS (
+      SELECT m.event_name, m.match_id, m.match_date,
+             AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
+             AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
+      FROM cricsheet.matches m
+      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
+      WHERE LOWER(m.match_type) IN (%s) AND m.event_name IS NOT NULL
+      GROUP BY m.event_name, m.match_id, m.match_date
+    ),
+    league_running_avg AS (
+      SELECT event_name, match_id,
+             AVG(match_avg_runs) OVER (
+               PARTITION BY event_name ORDER BY match_date, match_id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS league_avg_runs,
+             AVG(match_wicket_rate) OVER (
+               PARTITION BY event_name ORDER BY match_date, match_id
+               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS league_avg_wicket
+      FROM league_stats
     )
     SELECT
       cs.delivery_id,
@@ -244,12 +267,15 @@ if (use_model_for_format) {
       cs.gender,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier
+      COALESCE(mc.event_tier, 3) AS event_tier,
+      lra.league_avg_runs,
+      lra.league_avg_wicket
     FROM cumulative_scores cs
     LEFT JOIN match_context mc ON cs.match_id = mc.match_id
+    LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.batter_id IS NOT NULL
       AND cs.bowler_id IS NOT NULL
-  ", match_type_filter, match_type_filter)
+  ", match_type_filter, match_type_filter, match_type_filter)
 } else {
   # Simple query without model features
   base_query <- sprintf("
