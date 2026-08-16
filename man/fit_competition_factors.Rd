@@ -8,7 +8,7 @@ fit_competition_factors(
   conn = NULL,
   format = "t20",
   gender = "male",
-  reference = COMPETITION_REFERENCE_T20,
+  reference = NULL,
   min_here = 30L,
   min_ref = 150L,
   min_players = 3L,
@@ -24,7 +24,8 @@ fit_competition_factors(
 
 \item{gender}{Character. "male" or "female".}
 
-\item{reference}{Character vector of competitions defining the 1.0 scale.}
+\item{reference}{Character vector of competitions defining the 1.0 scale;
+NULL resolves per bucket via \code{\link[=default_competition_reference]{default_competition_reference()}}.}
 
 \item{min_here, min_ref}{Integer. Balls required in the competition being
 rated, and in the reference set, for a player to count as a bridge.

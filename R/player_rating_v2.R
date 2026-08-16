@@ -35,7 +35,8 @@
 #' @param conn DBI connection; opened read-only and closed on exit if NULL.
 #' @param format Character. Currently "t20".
 #' @param gender Character. "male" or "female".
-#' @param reference Character vector of competitions defining the 1.0 scale.
+#' @param reference Character vector of competitions defining the 1.0 scale;
+#'   NULL resolves per bucket via [default_competition_reference()].
 #' @param min_here,min_ref Integer. Balls required in the competition being
 #'   rated, and in the reference set, for a player to count as a bridge.
 #'   `min_here` was 60 until 2026-08-16 (D-P23); 60 left 4.1% of deliveries in
@@ -55,7 +56,7 @@
 fit_competition_factors <- function(conn = NULL,
                                     format = "t20",
                                     gender = "male",
-                                    reference = COMPETITION_REFERENCE_T20,
+                                    reference = NULL,
                                     min_here = 30L,
                                     min_ref = 150L,
                                     min_players = 3L,
@@ -68,6 +69,7 @@ fit_competition_factors <- function(conn = NULL,
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
+  if (is.null(reference)) reference <- default_competition_reference(format, gender)
   types <- if (format == "t20") "'t20','it20'" else "'odi','odm'"
 
   d <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
@@ -134,12 +136,65 @@ fit_competition_factors <- function(conn = NULL,
 }
 
 #' Reference Competitions Defining the 1.0 Difficulty Scale
+#'
+#' One set per bucket. The scale is arbitrary but must be ANCHORED to something
+#' that is both hard and well populated, because every other competition is
+#' expressed as a ratio against it and reached by chaining outward from it.
+#'
+#' The four buckets do not take the same kind of anchor, which is why these are
+#' not one list with a filter. Men's T20 is anchored on the major franchise
+#' leagues, because that is where the best T20 players actually play. ODI has
+#' no franchise tier -- its biggest competitions by volume are DOMESTIC one-day
+#' cups (Royal London is 14% of all ODI-format balls) which are county
+#' standard, so the anchor has to be the elite international tournaments even
+#' though they are only about a tenth of the data. Women's cricket is anchored
+#' on its top franchise and international events together, since neither alone
+#' carries enough volume.
+#' @name competition_reference
 #' @export
 COMPETITION_REFERENCE_T20 <- c(
   "Indian Premier League", "Big Bash League", "Pakistan Super League",
   "SA20", "Caribbean Premier League", "International League T20",
   "ICC Men's T20 World Cup", "Vitality Blast", "NatWest T20 Blast"
 )
+
+#' @rdname competition_reference
+#' @export
+COMPETITION_REFERENCE_ODI <- c(
+  "ICC Cricket World Cup", "ICC World Cup", "ICC Champions Trophy",
+  "NatWest Series", "ICC Men's Cricket World Cup Super League"
+)
+
+#' @rdname competition_reference
+#' @export
+COMPETITION_REFERENCE_T20_FEMALE <- c(
+  "Women's Big Bash League", "Women's Premier League",
+  "Women's Cricket Super League", "Charlotte Edwards Cup",
+  "Vitality Blast Women", "ICC Women's T20 World Cup",
+  "Women's Super Smash"
+)
+
+#' @rdname competition_reference
+#' @export
+COMPETITION_REFERENCE_ODI_FEMALE <- c(
+  "ICC Women's World Cup", "ICC Women's Championship",
+  "Rachael Heyhoe Flint Trophy", "Women's Ashes",
+  "ICC Women's Cricket World Cup"
+)
+
+#' Default Reference Set for a Bucket
+#' @param format,gender Bucket.
+#' @return Character vector of competition names.
+#' @export
+default_competition_reference <- function(format = "t20", gender = "male") {
+  key <- paste(tolower(format), tolower(gender))
+  switch(key,
+    "t20 male"    = COMPETITION_REFERENCE_T20,
+    "odi male"    = COMPETITION_REFERENCE_ODI,
+    "t20 female"  = COMPETITION_REFERENCE_T20_FEMALE,
+    "odi female"  = COMPETITION_REFERENCE_ODI_FEMALE,
+    cli::cli_abort("No reference set defined for {format}/{gender}."))
+}
 
 #' Two-Way Batter and Bowler Effects
 #'
@@ -466,7 +521,7 @@ calculate_player_value_v2 <- function(format = "t20",
   # factor inherits its neighbour's error at every hop, so only competitions
   # rated directly against the reference set count.
   solid <- c(factors[step == 0L & n_bridges >= 5L, comp],
-             intersect(factors$comp, COMPETITION_REFERENCE_T20))
+             intersect(factors$comp, default_competition_reference(format, gender)))
   cal <- data.table::rbindlist(list(
     b[, .(player_id = batter_id, ok = comp %in% solid)],
     b[, .(player_id = bowler_id, ok = comp %in% solid)]
