@@ -27,7 +27,7 @@
 #'   final_innings_total, match_id, innings.
 #' @keywords internal
 load_projection_training_data <- function(conn, format, gender, team_type,
-                                          sample_frac = 1.0) {
+                                          sample_frac = 1.0, seed = 42L) {
 
   format_lower <- normalize_format(format)
   gender_lower <- escape_sql_quotes(tolower(gender))
@@ -74,14 +74,18 @@ load_projection_training_data <- function(conn, format, gender, team_type,
       AND LOWER(d.gender) = '%s'
       AND %s
       AND it.final_innings_total IS NOT NULL
-    ORDER BY RANDOM()
   ", match_types_sql, gender_lower, max_balls, match_types_sql, gender_lower, team_type_filter)
 
   data <- DBI::dbGetQuery(conn, query)
 
-  # Sample if requested
+  # Deterministic subsample. This was `ORDER BY RANDOM()` in SQL followed by an
+  # UNSEEDED sample(), so every run trained on different rows and no two runs
+  # of the optimiser were comparable -- a "better" parameter set could be a
+  # different sample. Sort to a stable order, then sample under a fixed seed.
+  data <- data[order(data$match_id, data$innings, data$balls_remaining), ]
   if (sample_frac < 1.0 && nrow(data) > 1000) {
     n_sample <- ceiling(nrow(data) * sample_frac)
+    set.seed(seed)
     data <- data[sample(nrow(data), n_sample), ]
   }
 
@@ -295,7 +299,8 @@ calculate_actual_eis <- function(conn, format, gender, team_type) {
 optimize_projection_segment <- function(conn, format, gender, team_type,
                                         sample_frac = 0.5,
                                         validation_split = 0.2,
-                                        output_dir = NULL) {
+                                        output_dir = NULL,
+                                        seed = 42L) {
 
   if (is.null(output_dir)) {
     output_dir <- file.path(find_bouncerdata_dir(), "models")
@@ -309,7 +314,7 @@ optimize_projection_segment <- function(conn, format, gender, team_type,
   cli::cli_alert_info("Loading data...")
   data <- tryCatch(
     load_projection_training_data(conn, format, gender, team_type,
-                                  sample_frac = sample_frac),
+                                  sample_frac = sample_frac, seed = seed),
     error = function(e) {
       cli::cli_alert_warning("Error loading data: {e$message}")
       NULL
@@ -323,9 +328,13 @@ optimize_projection_segment <- function(conn, format, gender, team_type,
 
   cli::cli_alert_success("Loaded {nrow(data)} deliveries")
 
-  # Split train/validation by match
-  unique_matches <- unique(data$match_id)
+  # Split train/validation by match, reproducibly. This had NO seed at all and
+  # sampled from an unordered vector, so the validation set changed on every
+  # run -- meaning a parameter comparison across runs was measuring the split
+  # as much as the parameters.
+  unique_matches <- sort(unique(data$match_id))
   n_val <- ceiling(length(unique_matches) * validation_split)
+  set.seed(seed)
   val_matches <- sample(unique_matches, n_val)
 
   train_data <- data[!data$match_id %in% val_matches, ]

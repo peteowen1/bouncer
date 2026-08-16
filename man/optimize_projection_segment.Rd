@@ -11,7 +11,8 @@ optimize_projection_segment(
   team_type,
   sample_frac = 0.5,
   validation_split = 0.2,
-  output_dir = NULL
+  output_dir = NULL,
+  seed = 42L
 )
 }
 \arguments{
