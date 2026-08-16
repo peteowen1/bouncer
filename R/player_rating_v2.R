@@ -545,6 +545,10 @@ calculate_player_value_v2 <- function(format = "t20",
   out[, rank := seq_len(.N)]
   cli::cli_alert_success(
     "Valued {nrow(out)} {gender} {toupper(format)} players as at {ref_date}.")
-  out[, .(rank, player_id, player_name, total_value, bat_value, bowl_value,
-          matches, bat_balls, bowl_balls, calibrated)][]
+  res <- out[, .(rank, player_id, player_name, total_value, bat_value, bowl_value,
+                 matches, bat_balls, bowl_balls, calibrated)][]
+  # Carried so a caller storing this cannot silently stamp it with today's date
+  # instead of the date the data actually runs to.
+  data.table::setattr(res, "as_at", ref_date)
+  res
 }
