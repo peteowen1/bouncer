@@ -108,6 +108,7 @@ reference:
     - analyze_player
     - compare_players
     - search_players
+    - find_player
     - rank_players
     - player_batting_stats
     - player_bowling_stats
