@@ -130,6 +130,7 @@ reference:
     - build_player_id_map
     - canonicalise_player_ids
     - calculate_player_rating_v2
+    - player_career_context
     - calculate_player_value_v2
     - store_player_rating_v2
     - store_player_value_v2

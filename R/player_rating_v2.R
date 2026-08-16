@@ -287,7 +287,10 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   which affects 2,845 players and 4% of appearances.
 #'
 #' @return data.table of `rank`, `player_id`, `player_name`, `rating`,
-#'   `matches`, `balls`, `effective_matches`, `last_match`, ordered best first. `matches` counts innings batted
+#'   `average`, `main_comp`, `matches`, `balls`, `effective_matches`,
+#'   `last_match`, ordered best first. `average` and `main_comp` come from
+#'   [player_career_context()] and are context beside the rating, never inputs
+#'   to it. `matches` counts innings batted
 #'   for a batter and matches played for a bowler — the two roles use different
 #'   inclusion rules, each measured (D-P26), so the two ratings rank correctly
 #'   within a role but are NOT on a common per-match scale and must not be
@@ -404,12 +407,18 @@ calculate_player_rating_v2 <- function(format = "t20",
     "SELECT player_id, ANY_VALUE(player_name) AS player_name
      FROM cricsheet.players GROUP BY player_id"))
   r <- merge(r, nm, by = "player_id", all.x = TRUE)
+
+  # Where he did it, and what the traditional number says. Carried alongside
+  # every rating so the two can be eyeballed together without a second query.
+  ctx <- player_career_context(conn, format, gender, role, id_map = id_map)
+  r <- merge(r, ctx, by = "player_id", all.x = TRUE)
+
   data.table::setorder(r, -rating)
   r[, rank := seq_len(.N)]
   cli::cli_alert_success(
     "Rated {nrow(r)} {gender} {toupper(format)} {role}s as at {ref_date}.")
-  r[, .(rank, player_id, player_name, rating, matches, balls,
-        effective_matches, last_match)][]
+  r[, .(rank, player_id, player_name, rating, average, main_comp,
+        matches, balls, effective_matches, last_match)][]
 }
 
 #' Combined Player Value: Batting Plus Bowling, Per Match Played
@@ -574,4 +583,75 @@ calculate_player_value_v2 <- function(format = "t20",
   # instead of the date the data actually runs to.
   data.table::setattr(res, "as_at", ref_date)
   res
+}
+
+#' Career Context for a Rating Table
+#'
+#' The competition a player has played most of his cricket in, and his
+#' conventional average. Both are for orientation beside a rating, not inputs
+#' to it — a rating says how good he is, these say where he did it and what
+#' the traditional number looks like.
+#'
+#' Averages follow the ordinary cricket definitions rather than anything
+#' bespoke:
+#' \itemize{
+#'   \item batting = runs / dismissals, where retired hurt and retired not out
+#'     are NOT dismissals but retired out is.
+#'   \item bowling = runs conceded / wickets, counting only wickets CREDITED to
+#'     the bowler (caught, bowled, lbw, caught and bowled, stumped, hit
+#'     wicket — never a run out), and runs off the bat plus wides and no-balls
+#'     but not byes or leg-byes.
+#' }
+#' Returns `NA` for a bowler who has never taken a wicket, rather than
+#' infinity or a fabricated zero.
+#'
+#' @param conn DBI connection.
+#' @param format,gender,role Bucket.
+#' @param id_map Output of [build_player_id_map()], so a split career is not
+#'   counted as two players.
+#' @return data.table of `player_id`, `main_comp`, `main_comp_share`, `average`.
+#' @export
+player_career_context <- function(conn, format = "t20", gender = "male",
+                                  role = c("batter", "bowler"), id_map = NULL) {
+  role <- match.arg(role)
+  types <- if (format == "t20") "'t20','it20'" else "'odi','odm'"
+  who <- if (role == "batter") "batter_id" else "bowler_id"
+
+  # Bowler-credited dismissals only; a run out is nobody's wicket.
+  bowler_kinds <- "'caught','bowled','lbw','caught and bowled','stumped','hit wicket'"
+  # Retirements that are not dismissals for batting-average purposes.
+  not_out_kinds <- "'retired hurt','retired not out'"
+
+  runs_expr <- if (role == "batter") "d.runs_batter" else
+    "d.runs_batter + COALESCE(d.wides,0) + COALESCE(d.noballs,0)"
+  outs_expr <- if (role == "batter") {
+    sprintf("CASE WHEN d.player_out_id = d.%s AND COALESCE(d.wicket_kind,'') NOT IN (%s) THEN 1 ELSE 0 END",
+            who, not_out_kinds)
+  } else {
+    sprintf("CASE WHEN COALESCE(d.wicket_kind,'') IN (%s) THEN 1 ELSE 0 END", bowler_kinds)
+  }
+
+  x <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+    SELECT d.%s AS player_id, COALESCE(m.event_name,'unknown') AS comp,
+           COUNT(*) AS balls, SUM(%s) AS runs, SUM(%s) AS outs
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON m.match_id = d.match_id
+    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
+      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%s IS NOT NULL
+    GROUP BY d.%s, m.event_name", who, runs_expr, outs_expr, types, gender, who, who)))
+  if (!nrow(x)) return(data.table::data.table())
+
+  if (is.null(id_map)) id_map <- build_player_id_map(conn)
+  data.table::setnames(x, "player_id", "batter_id")
+  canonicalise_player_ids(x, id_map, cols = "batter_id")
+  data.table::setnames(x, "batter_id", "player_id")
+  x <- x[, .(balls = sum(balls), runs = sum(runs), outs = sum(outs)),
+         by = .(player_id, comp)]
+
+  data.table::setorder(x, player_id, -balls)
+  main <- x[, .(main_comp = comp[1],
+                main_comp_share = balls[1] / sum(balls)), by = player_id]
+  tot <- x[, .(runs = sum(runs), outs = sum(outs)), by = player_id]
+  tot[, average := ifelse(outs > 0L, runs / outs, NA_real_)]
+  merge(main, tot[, .(player_id, average)], by = "player_id")[]
 }

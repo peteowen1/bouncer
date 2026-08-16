@@ -51,7 +51,10 @@ which affects 2,845 players and 4\% of appearances.}
 }
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
-\code{matches}, \code{balls}, \code{effective_matches}, \code{last_match}, ordered best first. \code{matches} counts innings batted
+\code{average}, \code{main_comp}, \code{matches}, \code{balls}, \code{effective_matches},
+\code{last_match}, ordered best first. \code{average} and \code{main_comp} come from
+\code{\link[=player_career_context]{player_career_context()}} and are context beside the rating, never inputs
+to it. \code{matches} counts innings batted
 for a batter and matches played for a bowler — the two roles use different
 inclusion rules, each measured (D-P26), so the two ratings rank correctly
 within a role but are NOT on a common per-match scale and must not be
