@@ -198,7 +198,11 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #' @param min_balls Integer. Career balls required to appear in the result.
 #'
 #' @return data.table of `player_id`, `player_name`, `rating`, `matches`,
-#'   `balls`, `last_match`, ordered best first.
+#'   `balls`, `last_match`, ordered best first. `matches` counts innings batted
+#'   for a batter and matches played for a bowler — the two roles use different
+#'   inclusion rules, each measured (D-P26), so the two ratings rank correctly
+#'   within a role but are NOT on a common per-match scale and must not be
+#'   added. A combined total is blocked on #42.
 #' @export
 calculate_player_rating_v2 <- function(format = "t20",
                                        gender = "male",
@@ -267,7 +271,29 @@ calculate_player_rating_v2 <- function(format = "t20",
   }
 
   pm <- b[, .(v = sum(value), balls = .N),
-          by = c(player_id = id_col, "match_id", "match_date")][balls >= 6]
+          by = c(player_id = id_col, "match_id", "match_date")]
+
+  # Which appearances count is measured per role, not assumed (D-P26). Both
+  # rules were scored against one uncensored target: the player's actual value
+  # in his next match, counting zero when he does not perform the role.
+  if (role == "bowler") {
+    # A match he played but did not bowl is a real zero -- he was in the side
+    # and contributed nothing with the ball -- not missing data. Treating it as
+    # absent costs 8.3%. Appearance is inferred from the ball record, so a
+    # player who neither batted nor bowled is invisible; that undercounts a
+    # pure specialist's matches slightly and cannot inflate him.
+    app <- unique(data.table::rbindlist(list(
+      b[, .(player_id = batter_id, match_id, match_date)],
+      b[, .(player_id = bowler_id, match_id, match_date)])))
+    pm <- merge(app, pm[, .(player_id, match_id, v, balls)],
+                by = c("player_id", "match_id"), all.x = TRUE)
+    pm[is.na(v), `:=`(v = 0, balls = 0)]
+    stopifnot(!anyNA(pm$match_date))
+  }
+  # Batting keeps every innings he batted. The old `balls >= 6` floor was a
+  # survivorship filter: a tailender's innings are mostly 1-5 balls, so it
+  # deleted his failures and kept his survivals -- Bumrah went from 35 innings
+  # to 5, and those 5 averaged +4.85. Removing it is worth 8.8%.
   ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
   pm <- pm[match_date <= ref_date]
   pop <- pm[, mean(v)]

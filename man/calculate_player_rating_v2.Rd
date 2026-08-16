@@ -46,7 +46,11 @@ Shorter decays are worse at every horizon for both roles.}
 }
 \value{
 data.table of \code{player_id}, \code{player_name}, \code{rating}, \code{matches},
-\code{balls}, \code{last_match}, ordered best first.
+\code{balls}, \code{last_match}, ordered best first. \code{matches} counts innings batted
+for a batter and matches played for a bowler — the two roles use different
+inclusion rules, each measured (D-P26), so the two ratings rank correctly
+within a role but are NOT on a common per-match scale and must not be
+added. A combined total is blocked on #42.
 }
 \description{
 The full pipeline: per-ball RAA, adjusted for the opponent faced and for the
