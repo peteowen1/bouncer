@@ -48,9 +48,9 @@ careers split across a bare-name id and a hash id are merged first (#43),
 which affects 2,845 players and 4\% of appearances.}
 }
 \value{
-data.table of \code{player_id}, \code{player_name}, \code{total_value},
-\code{bat_value}, \code{bowl_value}, \code{matches}, \code{bat_balls}, \code{bowl_balls},
-ordered best first.
+data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{total_value},
+\code{bat_value}, \code{bowl_value}, \code{matches}, \code{bat_balls}, \code{bowl_balls} and
+\code{calibrated}, ordered best first.
 }
 \description{
 What a player is worth to a side across both disciplines, in runs per match

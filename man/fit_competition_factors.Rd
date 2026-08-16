@@ -20,7 +20,8 @@ fit_competition_factors(
 \arguments{
 \item{conn}{DBI connection; opened read-only and closed on exit if NULL.}
 
-\item{format}{Character. Currently "t20".}
+\item{format}{Character. "t20" or "odi"; the match types and the default
+reference set both follow from it.}
 
 \item{gender}{Character. "male" or "female".}
 

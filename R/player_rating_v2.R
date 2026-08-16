@@ -9,7 +9,7 @@
 #
 #   RAA per ball (build_cricsheet_raa)
 #     -> two-way batter/bowler adjustment          +40.5%   (D-P19)
-#     -> competition discount                       +5.2%   (D-P22)
+#     -> competition discount                       +4.9%   (D-P22)
 #     -> decayed, shrunk weighted mean              +3%     (D-P20, vs no decay)
 #
 # For scale, tuning kappa / decay / shrinkage in isolation moved the same metric
@@ -33,7 +33,8 @@
 #' with the IPL but does share players with the Europe Qualifiers, which do.
 #'
 #' @param conn DBI connection; opened read-only and closed on exit if NULL.
-#' @param format Character. Currently "t20".
+#' @param format Character. "t20" or "odi"; the match types and the default
+#'   reference set both follow from it.
 #' @param gender Character. "male" or "female".
 #' @param reference Character vector of competitions defining the 1.0 scale;
 #'   NULL resolves per bucket via [default_competition_reference()].
@@ -98,37 +99,57 @@ fit_competition_factors <- function(conn = NULL,
                      "i" = "Check {.arg reference} names against {.field cricsheet.matches.event_name}."))
   }
 
+  clip <- function(x) pmin(pmax(x, clamp[1]), clamp[2])
+
   avg <- function(r, o) sum(r) / pmax(sum(o), 1)
   j <- merge(d[!comp %in% reference & balls >= min_here], ref, by = "batter_id")
   direct <- j[, .(n_bridges = .N,
                   factor = avg(runs, outs) / avg(r_runs, r_outs)),
               by = comp][n_bridges >= min_players]
-  direct[, step := 0L]
+  # Clamped before the chaining loop reads them as neighbour values, not after.
+  direct[, `:=`(factor = clip(factor), step = 0L)]
   out <- rbind(direct,
                data.table::data.table(comp = reference, factor = 1, n_bridges = NA_integer_,
                                       step = 0L), fill = TRUE)
   out <- out[!duplicated(comp)]
-
   for (s in seq_len(max_steps)) {
     known <- out$comp
     cand <- d[balls >= min_here]
-    a <- cand[comp %in% known, .(batter_id, rcomp = comp, r_runs = runs, r_outs = outs)]
+    a <- cand[comp %in% known,
+              .(batter_id, rcomp = comp, r_runs = runs, r_outs = outs, r_balls = balls)]
     u <- cand[!comp %in% known, .(batter_id, comp, runs, outs)]
     if (!nrow(a) || !nrow(u)) break
     jj <- merge(u, a, by = "batter_id", allow.cartesian = TRUE)
     if (!nrow(jj)) break
     fmap <- stats::setNames(out$factor, out$comp)
     jj[, rfac := fmap[rcomp]]
+
+    # ONE ROW PER (player, unrated competition). The cartesian join emits one
+    # row per known competition the player also appears in, each carrying the
+    # SAME `runs`/`outs` for the unrated comp -- so a pooled sum(runs)/sum(outs)
+    # counted a player once per bridge he happened to have rather than once
+    # per player, and `median(rfac)` became a median over player-neighbour
+    # EDGES rather than over neighbours. Both silently gave more say to players
+    # who straddle more rated leagues, which has nothing to do with the
+    # competition being rated. Keep each player's best-evidenced neighbour.
+    data.table::setorder(jj, comp, batter_id, -r_balls)
+    jj <- jj[, .SD[1L], by = .(comp, batter_id)]
+
     nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id),
                  factor = avg(runs, outs) / avg(r_runs, r_outs) * stats::median(rfac)),
              by = comp][n_bridges >= min_players]
     if (!nrow(nw)) break
+    # Clamp NOW, not once at the end. `fmap` reads these factors as the
+    # neighbour value on the next pass, so an unclamped extreme from a thin
+    # cell otherwise propagates through every competition that chains via it
+    # and can land back inside the range, uncorrectable.
+    nw[, factor := clip(factor)]
     nw[, step := s]
     out <- rbind(out, nw)
   }
 
   out <- out[is.finite(factor) & factor > 0]
-  out[, factor := pmin(pmax(factor, clamp[1]), clamp[2])]
+  out[, factor := clip(factor)]
   data.table::setorder(out, -factor)
   cli::cli_alert_success(
     "Rated {nrow(out)} competition{?s} ({sum(out$step == 0)} directly, {sum(out$step > 0)} by chaining).")
@@ -265,12 +286,13 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   careers split across a bare-name id and a hash id are merged first (#43),
 #'   which affects 2,845 players and 4% of appearances.
 #'
-#' @return data.table of `player_id`, `player_name`, `rating`, `matches`,
-#'   `balls`, `last_match`, ordered best first. `matches` counts innings batted
+#' @return data.table of `rank`, `player_id`, `player_name`, `rating`,
+#'   `matches`, `balls`, `effective_matches`, `last_match`, ordered best first. `matches` counts innings batted
 #'   for a batter and matches played for a bowler — the two roles use different
 #'   inclusion rules, each measured (D-P26), so the two ratings rank correctly
 #'   within a role but are NOT on a common per-match scale and must not be
-#'   added. A combined total is blocked on #42.
+#'   added. Use [calculate_player_value_v2()] for a combinable per-match-played
+#'   scale (#42).
 #' @export
 calculate_player_rating_v2 <- function(format = "t20",
                                        gender = "male",
@@ -332,8 +354,9 @@ calculate_player_rating_v2 <- function(format = "t20",
   } else {
     # RAA is signed from the batting side, so negate: a bowler wants it low.
     # The competition factor divides here exactly as it does for batting --
-    # tested, not assumed. Applying it the other way round (multiplying) costs
-    # 10.2% against the same target, so the direction is established rather
+    # tested, not assumed. Applying it the other way round (multiplying)
+    # scores 0.0944 against the two-way-adjusted arm's 0.1051 -- a 10.2% LOSS
+    # where dividing is a 6.6% gain -- so the direction is established rather
     # than merely plausible.
     b[eff$batter, on = "batter_id", opp_eff := i.eff]
     b[is.na(opp_eff), opp_eff := 0]
@@ -438,9 +461,9 @@ calculate_player_rating_v2 <- function(format = "t20",
 #'   are merged. Raise this above 0 only for a display where you would rather
 #'   omit a player than show a number you cannot calibrate.
 #'
-#' @return data.table of `player_id`, `player_name`, `total_value`,
-#'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls`,
-#'   ordered best first.
+#' @return data.table of `rank`, `player_id`, `player_name`, `total_value`,
+#'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls` and
+#'   `calibrated`, ordered best first.
 #' @export
 calculate_player_value_v2 <- function(format = "t20",
                                       gender = "male",

@@ -23,9 +23,12 @@
 #'     name is excluded this way (`E Jones`).
 #'   \item two or more hash ids share the display name, so there is no way to
 #'     pick a target (57 names, e.g. three different `A Sharma`s).
-#'   \item no hash id shares the name at all — a genuinely unregistered player,
-#'     with nothing to merge into (930 ids, 0.45% of appearances).
+#'   \item no hash id shares the name at all — a genuinely unregistered
+#'     player, with nothing to merge into (872 ids).
 #' }
+#'
+#' 930 bare-name ids are left alone in total, carrying 0.45% of appearances:
+#' those 872 plus the 58 caught by the two exclusions above.
 #'
 #' @param conn DBI connection; opened read-only and closed on exit if NULL.
 #' @return data.table of `player_id` (the bare-name id to retire),

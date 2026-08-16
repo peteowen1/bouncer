@@ -848,7 +848,13 @@ download_release_asset <- function(asset_url, dest_path, show_progress = TRUE,
     }
   }
 
-  if (file.exists(dest_path)) unlink(dest_path)
+  # NEVER unlink dest_path before the swap. This previously did, and the
+  # failure mode is total: if both the rename and the copy then fail, the
+  # `on.exit` above also deletes the verified temp because `ok` is still
+  # FALSE -- so the user loses the old good file AND the new one, from the
+  # function that bootstraps the 18GB database. `file.rename` replaces an
+  # existing destination in place on Windows as well as POSIX (verified on
+  # R 4.5.1), so the unlink bought nothing. Same rule as `vb_atomic_write()`.
   if (!file.rename(tmp, dest_path)) {
     if (!file.copy(tmp, dest_path, overwrite = TRUE)) {
       .vb_abort("Could not move verified download into {.path {dest_path}}",

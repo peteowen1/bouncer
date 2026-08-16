@@ -7,7 +7,9 @@
 #
 # Design commitments that must not be quietly changed:
 #   - Targets are per-ball rates (runs per ball, dismissals per ball), not averages.
-#   - One player one vote above the exposure floors; ball-weighting is a secondary report.
+#   - One player one vote above the exposure floors. The unfiltered population
+#     is the secondary report, carried as the `_all` columns -- there is no
+#     ball-weighted variant, and the floors are never used as denominators.
 #   - Both baselines have their hyperparameters tuned on prior origins under the same loss.
 #   - Everything used to produce a rating or tune a parameter is strictly before the origin.
 

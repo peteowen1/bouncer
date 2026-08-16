@@ -119,6 +119,33 @@ fit_resource_surface <- function(format = c("t20", "odi"), conn = NULL,
 
   if (nrow(params) < 5) cli::cli_abort("Resource surface fit failed for {toupper(format)}.")
 
+  # Every wickets level 1-10 must be present, and every fit must be a GROWTH
+  # curve. Two silent corruptions were possible without this:
+  #
+  # 1. A missing level merges in as NA below, and the monotone `cummax` pass
+  #    propagates NA FORWARD -- so one unfitted level (say 3 wickets) turned
+  #    levels 3 THROUGH 10 into NA at every ball count. That NA reaches
+  #    `resources_per_run`, the largest single input to the ODI chase model,
+  #    and is then zero-filled downstream, which is exactly the "zero is not a
+  #    neutral value" failure the feature guard exists to prevent.
+  # 2. `nls()` runs with `warnOnly = TRUE` and no bounds, so a level can
+  #    converge to b <= 0. The curve Z(1 - exp(-b*u)) is then DECREASING in
+  #    balls remaining and can go negative, contradicting the documented
+  #    monotonicity.
+  missing_w <- setdiff(1:10, params$wickets_in_hand)
+  if (length(missing_w)) {
+    cli::cli_abort(c(
+      "Resource surface has no fit for wickets-in-hand {missing_w}.",
+      "i" = "A gap propagates NA to every higher wickets level via the monotone pass.",
+      "i" = "Lower {.arg min_cell} or widen the fitting window."))
+  }
+  bad <- params[!is.finite(Z) | !is.finite(b) | Z <= 0 | b <= 0]
+  if (nrow(bad)) {
+    cli::cli_abort(c(
+      "Resource surface fit is not a growth curve at wickets {bad$wickets_in_hand}.",
+      "i" = "Z and b must both be positive; got Z {round(bad$Z, 2)}, b {round(bad$b, 4)}."))
+  }
+
   # More wickets in hand cannot lower the expected total.
   data.table::setorder(params, wickets_in_hand)
   params[, Z := cummax(Z)]
@@ -135,6 +162,12 @@ fit_resource_surface <- function(format = c("t20", "odi"), conn = NULL,
   # off and only the fitted value is the thing that must not invert.
   data.table::setorder(grid, balls_remaining, wickets_in_hand)
   grid[, exp_runs := cummax(exp_runs), by = balls_remaining]
+  # Belt and braces: the asserts above should make this unreachable, but a
+  # single NA here silently spreads to every higher wickets level, so it is
+  # not something to discover downstream in a model feature.
+  if (anyNA(grid$exp_runs)) {
+    cli::cli_abort("Resource surface produced {sum(is.na(grid$exp_runs))} NA cell{?s}; refusing to return it.")
+  }
   grid <- merge(grid, cells[, .(balls_remaining, wickets_in_hand, n)],
                 by = c("balls_remaining", "wickets_in_hand"), all.x = TRUE)
   grid[is.na(n), n := 0L]

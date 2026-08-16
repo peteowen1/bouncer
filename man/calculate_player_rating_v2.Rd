@@ -50,12 +50,13 @@ careers split across a bare-name id and a hash id are merged first (#43),
 which affects 2,845 players and 4\% of appearances.}
 }
 \value{
-data.table of \code{player_id}, \code{player_name}, \code{rating}, \code{matches},
-\code{balls}, \code{last_match}, ordered best first. \code{matches} counts innings batted
+data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
+\code{matches}, \code{balls}, \code{effective_matches}, \code{last_match}, ordered best first. \code{matches} counts innings batted
 for a batter and matches played for a bowler — the two roles use different
 inclusion rules, each measured (D-P26), so the two ratings rank correctly
 within a role but are NOT on a common per-match scale and must not be
-added. A combined total is blocked on #42.
+added. Use \code{\link[=calculate_player_value_v2]{calculate_player_value_v2()}} for a combinable per-match-played
+scale (#42).
 }
 \description{
 The full pipeline: per-ball RAA, adjusted for the opponent faced and for the

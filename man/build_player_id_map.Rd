@@ -24,7 +24,10 @@ people, since one person cannot bat twice in an innings as two ids. One
 name is excluded this way (\verb{E Jones}).
 \item two or more hash ids share the display name, so there is no way to
 pick a target (57 names, e.g. three different \verb{A Sharma}s).
-\item no hash id shares the name at all — a genuinely unregistered player,
-with nothing to merge into (930 ids, 0.45\% of appearances).
+\item no hash id shares the name at all — a genuinely unregistered
+player, with nothing to merge into (872 ids).
 }
+
+930 bare-name ids are left alone in total, carrying 0.45\% of appearances:
+those 872 plus the 58 caught by the two exclusions above.
 }

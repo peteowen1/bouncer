@@ -6,8 +6,10 @@
 # both to `main`, keyed by bucket, so the blog and the predictions pipeline can
 # read them from a release parquet instead.
 #
-# Replacement is per (format, gender, role), never a whole-table wipe: a failed
-# run of one bucket must not delete the other three.
+# Replacement is per bucket, never a whole-table wipe: a failed run of one
+# bucket must not delete the others. The bucket key is (format, gender, role)
+# for the rating table and (format, gender) for the value table, which has no
+# role column.
 
 .rating_v2_cols <- c(
   "format", "gender", "role", "rank", "player_id", "player_name", "rating",
@@ -17,6 +19,20 @@
   "format", "gender", "rank", "player_id", "player_name", "total_value",
   "bat_value", "bowl_value", "matches", "bat_balls", "bowl_balls",
   "calibrated", "as_at")
+
+# DuckDB auto-commits every dbExecute unless a transaction is open, so a
+# multi-statement replacement is not atomic by default. `expr` is run inside
+# one transaction and rolled back whole on any error.
+.in_transaction <- function(conn, expr) {
+  DBI::dbBegin(conn)
+  out <- tryCatch(expr(), error = function(e) {
+    DBI::dbRollback(conn)
+    cli::cli_abort(c("Write rolled back; nothing was changed.",
+                     "x" = conditionMessage(e)))
+  })
+  DBI::dbCommit(conn)
+  out
+}
 
 .recreate_if_stale <- function(conn, table_name, wanted) {
   existing <- DBI::dbGetQuery(conn, sprintf("
@@ -47,6 +63,7 @@ store_player_rating_v2 <- function(conn, data, format, gender, role,
   d[, `:=`(format = toupper(format), gender = gender, role = role,
            as_at = if (is.null(as_at)) max(d$last_match) else as.Date(as_at))]
 
+  recreate <- function() {
   .recreate_if_stale(conn, table_name, .rating_v2_cols)
   DBI::dbExecute(conn, sprintf("
     CREATE TABLE IF NOT EXISTS main.%s (
@@ -63,15 +80,23 @@ store_player_rating_v2 <- function(conn, data, format, gender, role,
       last_match        DATE,
       as_at             DATE
     )", table_name))
+  }
 
-  DBI::dbExecute(conn, sprintf(
-    "DELETE FROM main.%s WHERE format = '%s' AND gender = '%s' AND role = '%s'",
-    table_name, toupper(format), gender, role))
   duckdb::duckdb_register(conn, "rating_v2_staging", d[, .SD, .SDcols = .rating_v2_cols])
   on.exit(duckdb::duckdb_unregister(conn, "rating_v2_staging"), add = TRUE)
   cols <- paste(.rating_v2_cols, collapse = ", ")
-  n <- DBI::dbExecute(conn, sprintf(
-    "INSERT INTO main.%s (%s) SELECT %s FROM rating_v2_staging", table_name, cols, cols))
+  # DELETE and INSERT in ONE transaction. DuckDB auto-commits each dbExecute,
+  # so without this a DELETE that succeeds followed by an INSERT that fails
+  # leaves the bucket permanently EMPTY -- "replacement" that destroys the
+  # thing it was replacing.
+  n <- .in_transaction(conn, function() {
+    recreate()
+    DBI::dbExecute(conn, sprintf(
+      "DELETE FROM main.%s WHERE format = '%s' AND gender = '%s' AND role = '%s'",
+      table_name, toupper(format), gender, role))
+    DBI::dbExecute(conn, sprintf(
+      "INSERT INTO main.%s (%s) SELECT %s FROM rating_v2_staging", table_name, cols, cols))
+  })
   cli::cli_alert_success(
     "Stored {n} {gender} {toupper(format)} {role} rating{?s} in {.field main.{table_name}}.")
   invisible(n)
@@ -102,6 +127,7 @@ store_player_value_v2 <- function(conn, data, format, gender,
   }
   d[, `:=`(format = toupper(format), gender = gender, as_at = as.Date(stamp))]
 
+  recreate <- function() {
   .recreate_if_stale(conn, table_name, .value_v2_cols)
   DBI::dbExecute(conn, sprintf("
     CREATE TABLE IF NOT EXISTS main.%s (
@@ -119,15 +145,19 @@ store_player_value_v2 <- function(conn, data, format, gender,
       calibrated  DOUBLE,
       as_at       DATE
     )", table_name))
+  }
 
-  DBI::dbExecute(conn, sprintf(
-    "DELETE FROM main.%s WHERE format = '%s' AND gender = '%s'",
-    table_name, toupper(format), gender))
   duckdb::duckdb_register(conn, "value_v2_staging", d[, .SD, .SDcols = .value_v2_cols])
   on.exit(duckdb::duckdb_unregister(conn, "value_v2_staging"), add = TRUE)
   cols <- paste(.value_v2_cols, collapse = ", ")
-  n <- DBI::dbExecute(conn, sprintf(
-    "INSERT INTO main.%s (%s) SELECT %s FROM value_v2_staging", table_name, cols, cols))
+  n <- .in_transaction(conn, function() {
+    recreate()
+    DBI::dbExecute(conn, sprintf(
+      "DELETE FROM main.%s WHERE format = '%s' AND gender = '%s'",
+      table_name, toupper(format), gender))
+    DBI::dbExecute(conn, sprintf(
+      "INSERT INTO main.%s (%s) SELECT %s FROM value_v2_staging", table_name, cols, cols))
+  })
   cli::cli_alert_success(
     "Stored {n} {gender} {toupper(format)} value{?s} in {.field main.{table_name}}.")
   invisible(n)
