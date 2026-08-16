@@ -164,22 +164,34 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 
 #' Player Rating v2
 #'
-#' The full pipeline: per-ball RAA, adjusted for the bowler faced and for the
+#' The full pipeline: per-ball RAA, adjusted for the opponent faced and for the
 #' competition, aggregated as a decayed weighted mean shrunk toward the
 #' population mean.
 #'
 #' Defaults are the values selected by out-of-sample next-match Spearman, not
-#' by inspection of the leaderboard (D-P17 to D-P22).
+#' by inspection of the leaderboard (D-P17 to D-P24).
+#'
+#' Batting and bowling are the same construction with the roles swapped: a
+#' batter's value is RAA net of the bowler he faced, a bowler's is the negation
+#' of RAA net of the batter he bowled to. Both are then divided by the
+#' competition factor. Because the two share every aggregation setting, their
+#' ratings are on one scale and may be added — component sd is 1.358 (batting)
+#' against 1.347 (bowling), a ratio of 0.99. See D-P24: the legacy
+#' [calculate_impact()] path reported 0.61, which was its exposure weighting,
+#' not a property of the game.
 #'
 #' @param format,gender Bucket to rate. Ratings are never pooled across either:
 #'   men and women do not play each other, and formats are separate skills.
+#' @param role "batter" or "bowler".
 #' @param conn DBI connection; opened read-only and closed on exit if NULL.
 #' @param as_at Date. Rate as of this date; NULL uses the latest delivery.
 #'   Decay is measured back from here, so an inactive player falls on his own
 #'   rather than needing an activity filter.
-#' @param decay_days Numeric. 1095 measured best at the next-match horizon;
-#'   shorter decays are worse at every horizon, and no decay only wins when
-#'   predicting 5+ matches ahead.
+#' @param decay_days Numeric, or NULL to use the role's measured default —
+#'   1095 for batting, 1825 for bowling. Bowlers hold their value longer:
+#'   sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
+#'   0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
+#'   Shorter decays are worse at every horizon for both roles.
 #' @param prior_matches Numeric shrinkage toward the population mean.
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
 #' @param factors Output of [fit_competition_factors()]; NULL fits them.
@@ -190,14 +202,18 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #' @export
 calculate_player_rating_v2 <- function(format = "t20",
                                        gender = "male",
+                                       role = c("batter", "bowler"),
                                        conn = NULL,
                                        as_at = NULL,
-                                       decay_days = 1095,
+                                       decay_days = NULL,
                                        prior_matches = 20,
                                        prior_balls = 60,
                                        iterations = 20L,
                                        factors = NULL,
                                        min_balls = 500L) {
+
+  role <- match.arg(role)
+  if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
 
   own <- is.null(conn)
   if (own) {
@@ -233,12 +249,25 @@ calculate_player_rating_v2 <- function(format = "t20",
   }
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
-  b[eff$bowler, on = "bowler_id", bowl_eff := i.eff]
-  b[is.na(bowl_eff), bowl_eff := 0]
-  b[, value := (raa - bowl_eff) / cfactor]
+  if (role == "batter") {
+    b[eff$bowler, on = "bowler_id", opp_eff := i.eff]
+    b[is.na(opp_eff), opp_eff := 0]
+    b[, value := (raa - opp_eff) / cfactor]
+    id_col <- "batter_id"
+  } else {
+    # RAA is signed from the batting side, so negate: a bowler wants it low.
+    # The competition factor divides here exactly as it does for batting --
+    # tested, not assumed. Applying it the other way round (multiplying) costs
+    # 10.2% against the same target, so the direction is established rather
+    # than merely plausible.
+    b[eff$batter, on = "batter_id", opp_eff := i.eff]
+    b[is.na(opp_eff), opp_eff := 0]
+    b[, value := -(raa - opp_eff) / cfactor]
+    id_col <- "bowler_id"
+  }
 
   pm <- b[, .(v = sum(value), balls = .N),
-          by = .(player_id = batter_id, match_id, match_date)][balls >= 6]
+          by = c(player_id = id_col, "match_id", "match_date")][balls >= 6]
   ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
   pm <- pm[match_date <= ref_date]
   pop <- pm[, mean(v)]
@@ -249,13 +278,16 @@ calculate_player_rating_v2 <- function(format = "t20",
               effective_matches = round(sum(w), 1),
               last_match = max(match_date)), by = player_id][balls >= min_balls]
 
+  # ANY_VALUE, not a bare SELECT: a duplicated registry row would otherwise
+  # duplicate the player in the leaderboard rather than erroring.
   nm <- data.table::as.data.table(DBI::dbGetQuery(conn,
-    "SELECT player_id, player_name FROM cricsheet.players"))
+    "SELECT player_id, ANY_VALUE(player_name) AS player_name
+     FROM cricsheet.players GROUP BY player_id"))
   r <- merge(r, nm, by = "player_id", all.x = TRUE)
   data.table::setorder(r, -rating)
   r[, rank := seq_len(.N)]
   cli::cli_alert_success(
-    "Rated {nrow(r)} {gender} {toupper(format)} batters as at {ref_date}.")
+    "Rated {nrow(r)} {gender} {toupper(format)} {role}s as at {ref_date}.")
   r[, .(rank, player_id, player_name, rating, matches, balls,
         effective_matches, last_match)][]
 }

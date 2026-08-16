@@ -7,9 +7,10 @@
 calculate_player_rating_v2(
   format = "t20",
   gender = "male",
+  role = c("batter", "bowler"),
   conn = NULL,
   as_at = NULL,
-  decay_days = 1095,
+  decay_days = NULL,
   prior_matches = 20,
   prior_balls = 60,
   iterations = 20L,
@@ -21,15 +22,19 @@ calculate_player_rating_v2(
 \item{format, gender}{Bucket to rate. Ratings are never pooled across either:
 men and women do not play each other, and formats are separate skills.}
 
+\item{role}{"batter" or "bowler".}
+
 \item{conn}{DBI connection; opened read-only and closed on exit if NULL.}
 
 \item{as_at}{Date. Rate as of this date; NULL uses the latest delivery.
 Decay is measured back from here, so an inactive player falls on his own
 rather than needing an activity filter.}
 
-\item{decay_days}{Numeric. 1095 measured best at the next-match horizon;
-shorter decays are worse at every horizon, and no decay only wins when
-predicting 5+ matches ahead.}
+\item{decay_days}{Numeric, or NULL to use the role's measured default —
+1095 for batting, 1825 for bowling. Bowlers hold their value longer:
+sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
+0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
+Shorter decays are worse at every horizon for both roles.}
 
 \item{prior_matches}{Numeric shrinkage toward the population mean.}
 
@@ -44,11 +49,20 @@ data.table of \code{player_id}, \code{player_name}, \code{rating}, \code{matches
 \code{balls}, \code{last_match}, ordered best first.
 }
 \description{
-The full pipeline: per-ball RAA, adjusted for the bowler faced and for the
+The full pipeline: per-ball RAA, adjusted for the opponent faced and for the
 competition, aggregated as a decayed weighted mean shrunk toward the
 population mean.
 }
 \details{
 Defaults are the values selected by out-of-sample next-match Spearman, not
-by inspection of the leaderboard (D-P17 to D-P22).
+by inspection of the leaderboard (D-P17 to D-P24).
+
+Batting and bowling are the same construction with the roles swapped: a
+batter's value is RAA net of the bowler he faced, a bowler's is the negation
+of RAA net of the batter he bowled to. Both are then divided by the
+competition factor. Because the two share every aggregation setting, their
+ratings are on one scale and may be added — component sd is 1.358 (batting)
+against 1.347 (bowling), a ratio of 0.99. See D-P24: the legacy
+\code{\link[=calculate_impact]{calculate_impact()}} path reported 0.61, which was its exposure weighting,
+not a property of the game.
 }
