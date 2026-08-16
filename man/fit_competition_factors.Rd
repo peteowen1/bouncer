@@ -9,7 +9,7 @@ fit_competition_factors(
   format = "t20",
   gender = "male",
   reference = COMPETITION_REFERENCE_T20,
-  min_here = 60L,
+  min_here = 30L,
   min_ref = 150L,
   min_players = 3L,
   max_steps = 6L,
@@ -26,7 +26,12 @@ fit_competition_factors(
 \item{reference}{Character vector of competitions defining the 1.0 scale.}
 
 \item{min_here, min_ref}{Integer. Balls required in the competition being
-rated, and in the reference set, for a player to count as a bridge.}
+rated, and in the reference set, for a player to count as a bridge.
+\code{min_here} was 60 until 2026-08-16 (D-P23); 60 left 4.1\% of deliveries in
+competitions with no factor, almost all of them short bilateral T20I
+series where no batter reaches 60 balls, and rating those is worth +2.2\%
+next-game Spearman. The metric is flat from 10 to 40 and falls off only at
+60, so this sits mid-plateau rather than at an edge.}
 
 \item{min_players}{Integer. Bridges required before a competition is rated.}
 

@@ -38,6 +38,11 @@
 #' @param reference Character vector of competitions defining the 1.0 scale.
 #' @param min_here,min_ref Integer. Balls required in the competition being
 #'   rated, and in the reference set, for a player to count as a bridge.
+#'   `min_here` was 60 until 2026-08-16 (D-P23); 60 left 4.1% of deliveries in
+#'   competitions with no factor, almost all of them short bilateral T20I
+#'   series where no batter reaches 60 balls, and rating those is worth +2.2%
+#'   next-game Spearman. The metric is flat from 10 to 40 and falls off only at
+#'   60, so this sits mid-plateau rather than at an edge.
 #' @param min_players Integer. Bridges required before a competition is rated.
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin
@@ -49,7 +54,7 @@ fit_competition_factors <- function(conn = NULL,
                                     format = "t20",
                                     gender = "male",
                                     reference = COMPETITION_REFERENCE_T20,
-                                    min_here = 60L,
+                                    min_here = 30L,
                                     min_ref = 150L,
                                     min_players = 3L,
                                     max_steps = 6L,
@@ -214,8 +219,12 @@ calculate_player_rating_v2 <- function(format = "t20",
   if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender)
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
-  # An unrated competition keeps 1.0 -- it is NOT assumed weak, because that
-  # would be a guess. Report the share so the assumption stays visible.
+  # An unrated competition keeps 1.0. "Unrated implies weak" was tested and
+  # rejected (D-P23): most of what went unrated was short bilateral T20I series
+  # between full members, which rate at a median 1.05 and as low as 0.69 once
+  # the bridge threshold admits them. Assuming 1.6 there would have discounted
+  # elite international cricket. With min_here = 30 the residue is ~0.5% of
+  # deliveries, too small to move a rating either way. Report it regardless.
   unrated <- b[is.na(cfactor), .N]
   b[is.na(cfactor), cfactor := 1]
   if (unrated > 0) {
