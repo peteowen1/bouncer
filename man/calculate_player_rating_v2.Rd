@@ -15,7 +15,8 @@ calculate_player_rating_v2(
   prior_balls = 60,
   iterations = 20L,
   factors = NULL,
-  min_balls = 500L
+  min_balls = 500L,
+  id_map = NULL
 )
 }
 \arguments{
@@ -43,6 +44,10 @@ Shorter decays are worse at every horizon for both roles.}
 \item{factors}{Output of \code{\link[=fit_competition_factors]{fit_competition_factors()}}; NULL fits them.}
 
 \item{min_balls}{Integer. Career balls required to appear in the result.}
+
+\item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Player
+careers split across a bare-name id and a hash id are merged first (#43),
+which affects 2,845 players and 4\% of appearances.}
 }
 \value{
 data.table of \code{player_id}, \code{player_name}, \code{rating}, \code{matches},

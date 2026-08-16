@@ -16,7 +16,8 @@ calculate_player_value_v2(
   prior_balls = 60,
   iterations = 20L,
   min_balls = 1000L,
-  min_calibrated = 0
+  min_calibrated = 0,
+  id_map = NULL
 )
 }
 \arguments{
@@ -41,6 +42,10 @@ not respond to a competition-factor change turned up a data defect —
 being rated on two-thirds of his career. Re-open the question after the ids
 are merged. Raise this above 0 only for a display where you would rather
 omit a player than show a number you cannot calibrate.}
+
+\item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Player
+careers split across a bare-name id and a hash id are merged first (#43),
+which affects 2,845 players and 4\% of appearances.}
 }
 \value{
 data.table of \code{player_id}, \code{player_name}, \code{total_value},

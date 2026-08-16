@@ -13,7 +13,8 @@ fit_competition_factors(
   min_ref = 150L,
   min_players = 3L,
   max_steps = 6L,
-  clamp = c(0.5, 4)
+  clamp = c(0.5, 4),
+  id_map = NULL
 )
 }
 \arguments{
@@ -39,6 +40,9 @@ next-game Spearman. The metric is flat from 10 to 40 and falls off only at
 
 \item{clamp}{Numeric length 2. Factors are clipped to this range so one thin
 cell cannot dominate.}
+
+\item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Pass one in
+to avoid rebuilding it per call.}
 }
 \value{
 data.table of \code{comp}, \code{factor}, \code{n_bridges}, \code{step} (0 = direct).

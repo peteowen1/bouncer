@@ -47,6 +47,8 @@
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin
 #'   cell cannot dominate.
+#' @param id_map Output of [build_player_id_map()]; NULL builds it. Pass one in
+#'   to avoid rebuilding it per call.
 #'
 #' @return data.table of `comp`, `factor`, `n_bridges`, `step` (0 = direct).
 #' @export
@@ -58,7 +60,8 @@ fit_competition_factors <- function(conn = NULL,
                                     min_ref = 150L,
                                     min_players = 3L,
                                     max_steps = 6L,
-                                    clamp = c(0.5, 4)) {
+                                    clamp = c(0.5, 4),
+                                    id_map = NULL) {
 
   own <- is.null(conn)
   if (own) {
@@ -77,6 +80,13 @@ fit_competition_factors <- function(conn = NULL,
       AND COALESCE(m.balls_per_over, 6) = 6 AND COALESCE(d.wides, 0) = 0
     GROUP BY d.batter_id, m.event_name", types, gender)))
   if (!nrow(d)) cli::cli_abort("No deliveries for {format}/{gender}.")
+
+  # A split career is counted as two bridge players at half weight each, which
+  # weakens exactly the bridges this scale rests on (#43).
+  if (is.null(id_map)) id_map <- build_player_id_map(conn)
+  canonicalise_player_ids(d, id_map)
+  d <- d[, .(runs = sum(runs), outs = sum(outs), balls = sum(balls)),
+         by = .(batter_id, comp)]
 
   ref <- d[comp %in% reference,
            .(r_runs = sum(runs), r_outs = sum(outs), r_balls = sum(balls)),
@@ -196,6 +206,9 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
 #' @param factors Output of [fit_competition_factors()]; NULL fits them.
 #' @param min_balls Integer. Career balls required to appear in the result.
+#' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
+#'   careers split across a bare-name id and a hash id are merged first (#43),
+#'   which affects 2,845 players and 4% of appearances.
 #'
 #' @return data.table of `player_id`, `player_name`, `rating`, `matches`,
 #'   `balls`, `last_match`, ordered best first. `matches` counts innings batted
@@ -214,7 +227,8 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        prior_balls = 60,
                                        iterations = 20L,
                                        factors = NULL,
-                                       min_balls = 500L) {
+                                       min_balls = 500L,
+                                       id_map = NULL) {
 
   role <- match.arg(role)
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
@@ -231,12 +245,14 @@ calculate_player_rating_v2 <- function(format = "t20",
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
     WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+  if (is.null(id_map)) id_map <- build_player_id_map(conn)
+  canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
     cli::cli_abort(c("No rows in {.field main.cricsheet_ball_raa} for {format}/{gender}.",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender)
+  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
   # An unrated competition keeps 1.0. "Unrated implies weak" was tested and
@@ -351,6 +367,9 @@ calculate_player_rating_v2 <- function(format = "t20",
 #' @param bat_prior,bowl_prior Quality shrinkage, in population-average matches.
 #' @param opp_prior Opportunity shrinkage. See the note above before raising it.
 #' @param min_balls Integer. Career balls, both roles combined.
+#' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
+#'   careers split across a bare-name id and a hash id are merged first (#43),
+#'   which affects 2,845 players and 4% of appearances.
 #' @param min_calibrated Numeric 0-1. Minimum share of a player's career spent
 #'   in competitions rated DIRECTLY against the reference set (5+ bridge
 #'   players), as opposed to reached by chaining. **Defaults to 0: everyone is
@@ -379,7 +398,8 @@ calculate_player_value_v2 <- function(format = "t20",
                                       prior_balls = 60,
                                       iterations = 20L,
                                       min_balls = 1000L,
-                                      min_calibrated = 0) {
+                                      min_calibrated = 0,
+                                      id_map = NULL) {
 
   own <- is.null(conn)
   if (own) {
@@ -393,12 +413,14 @@ calculate_player_value_v2 <- function(format = "t20",
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
     WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+  if (is.null(id_map)) id_map <- build_player_id_map(conn)
+  canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
     cli::cli_abort(c("No rows in {.field main.cricsheet_ball_raa} for {format}/{gender}.",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender)
+  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]][is.na(cfactor), cfactor := 1]
 
