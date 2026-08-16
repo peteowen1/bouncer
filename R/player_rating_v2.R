@@ -353,18 +353,16 @@ calculate_player_rating_v2 <- function(format = "t20",
 #' @param min_balls Integer. Career balls, both roles combined.
 #' @param min_calibrated Numeric 0-1. Minimum share of a player's career spent
 #'   in competitions rated DIRECTLY against the reference set (5+ bridge
-#'   players), as opposed to reached by chaining. Players below it are reported
-#'   and dropped; set to 0 to keep everyone.
+#'   players), as opposed to reached by chaining. **Defaults to 0: everyone is
+#'   returned and the `calibrated` column is reported instead.**
 #'
-#'   This exists because the associate-league residue is not estimable, and
-#'   three attempts to estimate through it failed (D-P28). A player whose entire
-#'   career is in one weak league offers nothing that separates "he is good"
-#'   from "that league is easy" — the 2026-08-06 identifiability constraint —
-#'   and the harness cannot adjudicate it either, because his next match is in
-#'   that same league, which his inflated rating predicts perfectly well.
-#'   Measuring the uncertainty is honest where estimating it is not: the
-#'   population median share is 100% and only 130 of 1,127 players fall below
-#'   50%, so this is a narrow exclusion, not a blunt one.
+#'   It defaults off deliberately. Dropping a player is not a rating, and the
+#'   case that motivated it is not yet settled: chasing why Karanbir Singh would
+#'   not respond to a competition-factor change turned up a data defect —
+#'   **31% of his appearances are on a second `player_id`** (#43), so he was
+#'   being rated on two-thirds of his career. Re-open the question after the ids
+#'   are merged. Raise this above 0 only for a display where you would rather
+#'   omit a player than show a number you cannot calibrate.
 #'
 #' @return data.table of `player_id`, `player_name`, `total_value`,
 #'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls`,
@@ -381,7 +379,7 @@ calculate_player_value_v2 <- function(format = "t20",
                                       prior_balls = 60,
                                       iterations = 20L,
                                       min_balls = 1000L,
-                                      min_calibrated = 0.5) {
+                                      min_calibrated = 0) {
 
   own <- is.null(conn)
   if (own) {
