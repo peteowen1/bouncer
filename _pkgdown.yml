@@ -127,6 +127,13 @@ reference:
     - player_game_ratings
     - match_mvp
     - calculate_impact
+    - calculate_player_rating_v2
+    - calculate_player_value_v2
+    - fit_competition_factors
+    - fit_two_way_effects
+    - COMPETITION_REFERENCE_T20
+    - build_cricsheet_raa
+    - build_cricsheet_win_probability
     - player_career_ratings
     - player_career_summary
     - bouncer_ratings

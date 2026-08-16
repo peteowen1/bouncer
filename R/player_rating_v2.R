@@ -317,3 +317,124 @@ calculate_player_rating_v2 <- function(format = "t20",
   r[, .(rank, player_id, player_name, rating, matches, balls,
         effective_matches, last_match)][]
 }
+
+#' Combined Player Value: Batting Plus Bowling, Per Match Played
+#'
+#' What a player is worth to a side across both disciplines, in runs per match
+#' played. This is a different question from [calculate_player_rating_v2()],
+#' which answers "how good a batter is he" on a per-innings basis. Here a
+#' specialist bowler's batting term is near zero because he barely bats — the
+#' quantity is contribution, not quality — so the two components can be added.
+#'
+#' Each component is `quality x opportunity`:
+#' \itemize{
+#'   \item quality = runs per ball, shrunk toward the population rate
+#'   \item opportunity = balls per match played, shrunk toward the population
+#'     mean
+#' }
+#'
+#' The two shrinkage constants must DIFFER or the product cancels algebraically
+#' back to the plain per-match mean — with `Kq == Ko` the `(balls + Ko * N)`
+#' factor appears in both numerator and denominator. That identity is why an
+#' earlier attempt measured byte-identical to the baseline.
+#'
+#' `opp_prior = 2` deliberately trusts a player's own participation. Sweeping
+#' it against the BATTING-only target prefers 320 (assume everyone bats about
+#' as often), which is true for the regulars that dominate the evaluation set
+#' and false for specialists — and it re-creates the defect this function
+#' exists to fix, paying Bumrah +0.95 with the bat. Against the COMBINED target
+#' the ordering reverses and 2 wins (0.0870 vs 0.0854), so no trade is being
+#' made here; see D-P27.
+#'
+#' @param format,gender,conn,as_at,factors,prior_balls,iterations As in
+#'   [calculate_player_rating_v2()].
+#' @param bat_prior,bowl_prior Quality shrinkage, in population-average matches.
+#' @param opp_prior Opportunity shrinkage. See the note above before raising it.
+#' @param min_balls Integer. Career balls, both roles combined.
+#'
+#' @return data.table of `player_id`, `player_name`, `total_value`,
+#'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls`,
+#'   ordered best first.
+#' @export
+calculate_player_value_v2 <- function(format = "t20",
+                                      gender = "male",
+                                      conn = NULL,
+                                      as_at = NULL,
+                                      factors = NULL,
+                                      bat_prior = 40,
+                                      bowl_prior = 5,
+                                      opp_prior = 2,
+                                      prior_balls = 60,
+                                      iterations = 20L,
+                                      min_balls = 1000L) {
+
+  own <- is.null(conn)
+  if (own) {
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  }
+
+  b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+    SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
+           COALESCE(m.event_name, 'unknown') AS comp
+    FROM main.cricsheet_ball_raa r
+    JOIN cricsheet.matches m ON m.match_id = r.match_id
+    WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+  if (!nrow(b)) {
+    cli::cli_abort(c("No rows in {.field main.cricsheet_ball_raa} for {format}/{gender}.",
+                     "i" = "Run {.fn build_cricsheet_raa} first."))
+  }
+
+  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender)
+  fmap <- stats::setNames(factors$factor, factors$comp)
+  b[, cfactor := fmap[comp]][is.na(cfactor), cfactor := 1]
+
+  eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
+  b[eff$bowler, on = "bowler_id", be := i.eff][is.na(be), be := 0]
+  b[eff$batter, on = "batter_id", ae := i.eff][is.na(ae), ae := 0]
+  b[, v_bat := (raa - be) / cfactor]
+  b[, v_bowl := -(raa - ae) / cfactor]
+
+  bb <- b[, .(vb = sum(v_bat),  nb = .N), by = .(player_id = batter_id, match_id, match_date)]
+  ww <- b[, .(vw = sum(v_bowl), nw = .N), by = .(player_id = bowler_id, match_id, match_date)]
+  pm <- merge(bb, ww, by = c("player_id", "match_id", "match_date"), all = TRUE)
+  for (cc in c("vb", "nb", "vw", "nw")) {
+    data.table::set(pm, which(is.na(pm[[cc]])), cc, 0)
+  }
+  ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
+  pm <- pm[match_date <= ref_date]
+
+  # population rate and participation, on a per-match-PLAYED basis
+  par <- list(
+    bat  = list(r = pm[, sum(vb) / sum(nb)], n = pm[, mean(nb)], decay = 1095),
+    bowl = list(r = pm[, sum(vw) / sum(nw)], n = pm[, mean(nw)], decay = 1825))
+
+  out <- NULL
+  for (tag in c("bat", "bowl")) {
+    p  <- par[[tag]]
+    vc <- if (tag == "bat") "vb" else "vw"
+    nc <- if (tag == "bat") "nb" else "nw"
+    kq <- if (tag == "bat") bat_prior else bowl_prior
+    pm[, w := exp(-as.numeric(ref_date - match_date) / p$decay)]
+    a <- pm[, .(sv = sum(get(vc) * w), sn = sum(get(nc) * w), sw = sum(w),
+                balls = sum(get(nc)), matches = .N), by = player_id]
+    a[, value := ((sv + kq * p$n * p$r) / (sn + kq * p$n)) *
+                 ((sn + opp_prior * p$n) / (sw + opp_prior))]
+    data.table::setnames(a, c("value", "balls"), paste0(tag, c("_value", "_balls")))
+    out <- if (is.null(out)) a[, .(player_id, matches, bat_value, bat_balls)] else
+      merge(out, a[, .(player_id, bowl_value, bowl_balls)], by = "player_id", all = TRUE)
+  }
+  out[, total_value := bat_value + bowl_value]
+  out <- out[bat_balls + bowl_balls >= min_balls]
+
+  nm <- data.table::as.data.table(DBI::dbGetQuery(conn,
+    "SELECT player_id, ANY_VALUE(player_name) AS player_name
+     FROM cricsheet.players GROUP BY player_id"))
+  out <- merge(out, nm, by = "player_id", all.x = TRUE)
+  data.table::setorder(out, -total_value)
+  out[, rank := seq_len(.N)]
+  cli::cli_alert_success(
+    "Valued {nrow(out)} {gender} {toupper(format)} players as at {ref_date}.")
+  out[, .(rank, player_id, player_name, total_value, bat_value, bowl_value,
+          matches, bat_balls, bowl_balls)][]
+}
