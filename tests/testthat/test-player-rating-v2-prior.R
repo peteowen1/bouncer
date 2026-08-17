@@ -3,11 +3,17 @@ test_that(".rating_match_types refuses an unsupported format instead of guessing
   expect_equal(.rating_match_types("odi"), "'odi','odm'")
   expect_equal(.rating_match_types("T20"), "'t20','it20'")
 
-  # The whole point: "test" must not fall through to the ODI branch and return
-  # ODI deliveries labelled Test.
-  expect_error(.rating_match_types("test"), "No rating match-types")
+  # Test pairs with MDM, as ODI pairs with ODM. The bug this replaced was a t20
+  # branch plus an ODI catch-all, so "test" silently returned ODI deliveries.
+  expect_equal(.rating_match_types("test"), "'test','mdm'")
+
+  # An unknown format must still abort rather than inherit someone else's data.
   expect_error(.rating_match_types("hundred"), "No rating match-types")
+  expect_error(.rating_match_types("t10"), "No rating match-types")
 })
+
+# get_raa_lambda's fitted values (including Test's 33) are asserted in
+# test-raa.R, which owns that function -- not duplicated here.
 
 test_that("derive_shrinkage_prior recovers a known prior from simulated data", {
   # Ground truth: build players whose true means have a known between-player

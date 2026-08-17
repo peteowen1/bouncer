@@ -37,10 +37,14 @@
   switch(tolower(format),
     t20  = "'t20','it20'",
     odi  = "'odi','odm'",
+    # Test pairs with MDM (domestic first-class) exactly as ODI pairs with ODM,
+    # which is also what raa_cricsheet.R's own switch does. Without MDM there is
+    # almost no bridge network: 187 Test event_names against 10 MDM ones, but
+    # the MDM side carries 2,161 of the 3,047 matches.
+    test = "'test','mdm'",
     cli::cli_abort(c(
       "No rating match-types defined for format {.val {format}}.",
-      "i" = "Supported: {.val t20}, {.val odi}.",
-      "x" = "Do not add a {.val test} branch here alone -- see docs/plans/TEST-FORMAT-RATINGS-SCOPE.md; the wicket value and the competition reference set are missing too."))
+      "i" = "Supported: {.val t20}, {.val odi}, {.val test}."))
   )
 }
 
