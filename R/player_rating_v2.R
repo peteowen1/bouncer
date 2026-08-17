@@ -48,6 +48,39 @@
   )
 }
 
+# The SQL expression that identifies a "competition" for a bucket.
+#
+# For T20 and ODI, raw `event_name` IS the competition -- the IPL and the BBL
+# are genuinely different leagues that genuinely different players play in.
+#
+# For Test it is not, and using it would quietly wreck the bridge network. Test
+# cricket is one competition split across ~187 bilateral series names, often
+# several for the SAME contest: India v Australia appears as both
+# "Border-Gavaskar Trophy" (24 matches) and "India tour of Australia" (16), and
+# England v India as "England in India Test Series" (11), "England tour of
+# India" (12) AND "Pataudi Trophy" (9). English county cricket is split four
+# ways by sponsor across eras. Fitting a factor per name would estimate separate
+# strengths for synonyms and split every bridge between them.
+#
+# competition_units.R already solved this for exactly this pool (2026-08-06) and
+# was simply never wired into the rating. The CASE below is GENERATED from
+# COMPETITION_UNIT_MAP so that map stays the single source of truth rather than
+# being restated in SQL where the two could drift.
+.competition_sql <- function(format) {
+  if (tolower(format) != "test") return("COALESCE(m.event_name,'unknown')")
+
+  esc <- function(x) gsub("'", "''", x, fixed = TRUE)   # 'LV=' is fine; be safe anyway
+  whens <- paste(sprintf("WHEN m.event_name = '%s' THEN '%s'",
+                         esc(names(COMPETITION_UNIT_MAP)),
+                         esc(unname(COMPETITION_UNIT_MAP))),
+                 collapse = "\n             ")
+  # Any Test row is the "Test" unit whatever its series is called; an
+  # unrecognised first-class event returns NULL rather than a guess, so a new
+  # competition surfaces as unrated instead of being folded into a neighbour.
+  sprintf("CASE WHEN LOWER(m.match_type) = 'test' THEN 'Test'\n             %s\n             ELSE NULL END",
+          whens)
+}
+
 #' Competition Difficulty Factors
 #'
 #' How much a competition inflates batting averages relative to a reference set
@@ -101,16 +134,28 @@ fit_competition_factors <- function(conn = NULL,
   if (is.null(reference)) reference <- default_competition_reference(format, gender)
   types <- .rating_match_types(format)
 
+  comp_sql <- .competition_sql(format)
   d <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT d.batter_id, COALESCE(m.event_name,'unknown') AS comp,
+    SELECT d.batter_id, %1$s AS comp,
            SUM(d.runs_batter) AS runs, SUM(CAST(d.is_wicket AS INT)) AS outs,
            COUNT(*) AS balls
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
-    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
+    WHERE LOWER(d.match_type) IN (%2$s) AND m.gender = '%3$s'
       AND COALESCE(m.balls_per_over, 6) = 6 AND COALESCE(d.wides, 0) = 0
-    GROUP BY d.batter_id, m.event_name", types, gender)))
+    GROUP BY d.batter_id, %1$s", comp_sql, types, gender)))
   if (!nrow(d)) cli::cli_abort("No deliveries for {format}/{gender}.")
+
+  # An unrecognised first-class competition maps to NULL rather than a guess, so
+  # it must be reported and dropped here rather than aggregated into one giant
+  # NA "competition" that would then bridge against everything.
+  if (anyNA(d$comp)) {
+    lost <- d[is.na(comp), sum(balls)]
+    cli::cli_warn(c(
+      "{format(lost, big.mark = ',')} ball{?s} are in a competition with no normalised unit; excluded.",
+      "i" = "Add it to {.field COMPETITION_UNIT_MAP} in {.file R/competition_units.R} if it belongs in the pool."))
+    d <- d[!is.na(comp)]
+  }
 
   # A split career is counted as two bridge players at half weight each, which
   # weakens exactly the bridges this scale rests on (#43).
@@ -231,6 +276,21 @@ COMPETITION_REFERENCE_ODI_FEMALE <- c(
   "ICC Women's Cricket World Cup"
 )
 
+#' @rdname competition_reference
+#'
+#' @details
+#' Test takes a **one-element** reference set, which looks wrong next to the
+#' others and is not. The competition key for Test is a normalised unit from
+#' [normalise_competition()], not a series name, and every Test match collapses
+#' to the single unit `"Test"` -- the ~187 bilateral series names are naming
+#' variants of one competition, several of them for the same contest. So there
+#' are only six units in the whole pool (Test plus five domestic first-class
+#' programmes), and the elite one is the anchor. This is the same logic as ODI's
+#' "anchor on the elite tier even though domestic carries the volume", taken to
+#' its limit: Test is 31.7% of the balls and County Championship alone is more.
+#' @export
+COMPETITION_REFERENCE_TEST <- c("Test")
+
 #' Default Reference Set for a Bucket
 #' @param format,gender Bucket.
 #' @return Character vector of competition names.
@@ -240,8 +300,12 @@ default_competition_reference <- function(format = "t20", gender = "male") {
   switch(key,
     "t20 male"    = COMPETITION_REFERENCE_T20,
     "odi male"    = COMPETITION_REFERENCE_ODI,
+    "test male"   = COMPETITION_REFERENCE_TEST,
     "t20 female"  = COMPETITION_REFERENCE_T20_FEMALE,
     "odi female"  = COMPETITION_REFERENCE_ODI_FEMALE,
+    # Deliberately no "test female": 24 matches and zero MDM female rows, so
+    # there is no domestic bridge network to place it against. See
+    # docs/plans/TEST-LAMBDA-PREDECLARATION.md.
     cli::cli_abort("No reference set defined for {format}/{gender}."))
 }
 
@@ -673,14 +737,18 @@ player_career_context <- function(conn, format = "t20", gender = "male",
     sprintf("CASE WHEN COALESCE(d.wicket_kind,'') IN (%s) THEN 1 ELSE 0 END", bowler_kinds)
   }
 
+  # Same normalisation as the competition fit: for Test, `main_comp` should read
+  # "Test" or "County Championship", not whichever of three names that series
+  # happened to be filed under.
+  comp_sql <- .competition_sql(format)
   x <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT d.%s AS player_id, COALESCE(m.event_name,'unknown') AS comp,
-           COUNT(*) AS balls, SUM(%s) AS runs, SUM(%s) AS outs
+    SELECT d.%1$s AS player_id, COALESCE(%2$s, 'unknown') AS comp,
+           COUNT(*) AS balls, SUM(%3$s) AS runs, SUM(%4$s) AS outs
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
-    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
-      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%s IS NOT NULL
-    GROUP BY d.%s, m.event_name", who, runs_expr, outs_expr, types, gender, who, who)))
+    WHERE LOWER(d.match_type) IN (%5$s) AND m.gender = '%6$s'
+      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%1$s IS NOT NULL
+    GROUP BY d.%1$s, %2$s", who, comp_sql, runs_expr, outs_expr, types, gender)))
   # Typed, not bare: the caller merges this by "player_id", and a zero-COLUMN
   # data.table fails that merge with an error naming the missing key rather
   # than the empty query behind it.
