@@ -20,6 +20,30 @@
 #     per-ball variance, so not worth a model retrain)
 #   - situational wicket value from the resource surface (-6.6%, #40)
 
+# Which cricsheet match_types a rating bucket covers, as a SQL literal list.
+#
+# This was written twice as `if (format == "t20") "'t20','it20'" else
+# "'odi','odm'"`, which is not a two-way choice -- it is a t20 branch and a
+# catch-all. `format = "test"` does not fail there, it silently selects ODI and
+# ODM deliveries and returns ODI numbers labelled Test. The only reason that
+# has never bitten is that no caller passes "test" yet, which is exactly the
+# state in which the trap is easiest to walk into: Test is the one bucket
+# currently queued to be added.
+#
+# Aborting matches what get_raa_lambda() already does for "test" -- it refuses
+# rather than guessing a wicket value -- so the two now fail the same way
+# instead of one aborting and the other quietly answering the wrong question.
+.rating_match_types <- function(format) {
+  switch(tolower(format),
+    t20  = "'t20','it20'",
+    odi  = "'odi','odm'",
+    cli::cli_abort(c(
+      "No rating match-types defined for format {.val {format}}.",
+      "i" = "Supported: {.val t20}, {.val odi}.",
+      "x" = "Do not add a {.val test} branch here alone -- see docs/plans/TEST-FORMAT-RATINGS-SCOPE.md; the wicket value and the competition reference set are missing too."))
+  )
+}
+
 #' Competition Difficulty Factors
 #'
 #' How much a competition inflates batting averages relative to a reference set
@@ -71,7 +95,7 @@ fit_competition_factors <- function(conn = NULL,
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
   if (is.null(reference)) reference <- default_competition_reference(format, gender)
-  types <- if (format == "t20") "'t20','it20'" else "'odi','odm'"
+  types <- .rating_match_types(format)
 
   d <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT d.batter_id, COALESCE(m.event_name,'unknown') AS comp,
@@ -400,8 +424,13 @@ calculate_player_rating_v2 <- function(format = "t20",
   if (is.null(prior_matches)) {
     est <- derive_shrinkage_prior(pm)
     prior_matches <- est$k
-    cli::cli_alert_info(
-      "Derived shrinkage prior {round(prior_matches, 1)} match{?es} ({round(100 * est$share, 2)}% of single-match variance is the player).")
+    # `share` is NA on the thin-bucket fallback, which printed "NA% of
+    # single-match variance is the player" -- say which of the two happened.
+    cli::cli_alert_info(if (is.na(est$share)) {
+      "Shrinkage prior {round(prior_matches, 1)} match{?es} -- NOT derived: only {est$players} player{?s} cleared the estimation threshold, so this is the hardcoded fallback, not this bucket's own number."
+    } else {
+      "Derived shrinkage prior {round(prior_matches, 1)} match{?es} ({round(100 * est$share, 2)}% of single-match variance is the player)."
+    })
   }
   pm[, w := exp(-as.numeric(ref_date - match_date) / decay_days)]
 
@@ -623,7 +652,7 @@ calculate_player_value_v2 <- function(format = "t20",
 player_career_context <- function(conn, format = "t20", gender = "male",
                                   role = c("batter", "bowler"), id_map = NULL) {
   role <- match.arg(role)
-  types <- if (format == "t20") "'t20','it20'" else "'odi','odm'"
+  types <- .rating_match_types(format)
   who <- if (role == "batter") "batter_id" else "bowler_id"
 
   # Bowler-credited dismissals only; a run out is nobody's wicket.
@@ -648,7 +677,12 @@ player_career_context <- function(conn, format = "t20", gender = "male",
     WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
       AND COALESCE(m.balls_per_over, 6) = 6 AND d.%s IS NOT NULL
     GROUP BY d.%s, m.event_name", who, runs_expr, outs_expr, types, gender, who, who)))
-  if (!nrow(x)) return(data.table::data.table())
+  # Typed, not bare: the caller merges this by "player_id", and a zero-COLUMN
+  # data.table fails that merge with an error naming the missing key rather
+  # than the empty query behind it.
+  if (!nrow(x)) return(data.table::data.table(
+    player_id = character(), main_comp = character(),
+    main_comp_share = numeric(), average = numeric()))
 
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   data.table::setnames(x, "player_id", "batter_id")
@@ -688,6 +722,19 @@ player_career_context <- function(conn, format = "t20", gender = "male",
 #' player share of single-match variance, which comes out 2.4–5.5% here against
 #' the 2.2% measured independently in D-P17.
 #'
+#' That check is now **in the code**, not just in this note. It was described
+#' here as though it had been built, while the function floored
+#' `sigma^2_between` at `1e-9` and returned whatever fell out — which
+#' reproduces the 145-billion prior exactly, since `msw` is ~148 on men's T20.
+#' A prior that large is not a visibly broken number: every player collapses
+#' onto the population mean, so the leaderboard still ranks in the right order
+#' with fabricated spread, and the rank-based anchor check cannot see it.
+#' `derive_shrinkage_prior()` therefore **aborts** when `msb <= msw` (the
+#' between-player variance is not identified) and **warns** when the implied
+#' share falls outside 0.5–25%, a band far wider than anything measured.
+#' Covered by `tests/testthat/test-player-rating-v2-prior.R`, which also
+#' recovers a known `k` from simulated data with known variances.
+#'
 #' Note the harness prefers a much SMALLER prior in ODI and women's buckets
 #' (usually 5, the edge of the grid). That is not a contradiction: the harness
 #' only scores players with 10+ prior matches, so it sees established players
@@ -713,7 +760,34 @@ derive_shrinkage_prior <- function(pm, min_matches = 5L) {
   msw <- sum(s$ss) / (N - K)
   msb <- sum(s$n * (s$m - grand)^2) / (K - 1)
   n0 <- (N - sum(s$n^2) / N) / (K - 1)
-  s2b <- max((msb - msw) / n0, 1e-9)
-  list(k = msw / s2b, s2_within = msw, s2_between = s2b,
-       players = K, share = s2b / (s2b + msw))
+  s2b_raw <- (msb - msw) / n0
+
+  # The sanity check the notes above credit for catching the 145-billion prior
+  # -- it was described but never actually written down, and a bare
+  # `max(s2b_raw, 1e-9)` floor RECREATES that incident exactly: msw is ~148 on
+  # men's T20, so a floored s2b returns k = 148/1e-9 = 1.5e11. At that k every
+  # player collapses onto the population mean, and the result is not an
+  # obviously broken number -- it is a full leaderboard in the right ORDER with
+  # fake spread, which the rank-based anchor check in 01_build_player_ratings_v2.R
+  # cannot see. Refuse to return a prior rather than return that.
+  if (!is.finite(s2b_raw) || s2b_raw <= 0) {
+    cli::cli_abort(c(
+      "Between-player variance is not identified for this bucket; refusing to derive a prior.",
+      "x" = "msb {round(msb, 3)} <= msw {round(msw, 3)} (n0 {round(n0, 2)}, {K} players).",
+      "i" = "Every player would shrink onto the population mean and the leaderboard would rank correctly with fabricated spread.",
+      "i" = "Pass an explicit {.arg prior_matches} if you intend to rate this bucket anyway."))
+  }
+
+  out <- list(k = msw / s2b_raw, s2_within = msw, s2_between = s2b_raw,
+              players = K, share = s2b_raw / (s2b_raw + msw))
+
+  # Measured 2.2-5.5% across the six buckets that have enough data. Outside a
+  # band far wider than that, the estimate is telling you something about the
+  # bucket, not about the players -- so say so rather than quietly using it.
+  if (out$share < 0.005 || out$share > 0.25) {
+    cli::cli_warn(c(
+      "Implied player share of single-match variance is {round(100 * out$share, 2)}%, outside the plausible 0.5-25% band.",
+      "!" = "Derived prior is {round(out$k, 1)} matches on {K} players; treat this bucket's spread as unverified."))
+  }
+  out
 }

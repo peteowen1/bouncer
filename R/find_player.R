@@ -76,7 +76,13 @@ find_player <- function(query, format = NULL, gender = NULL, conn = NULL,
   )
   hit <- NULL; tier <- NA_character_
   for (nmt in names(tiers)) {
-    if (any(tiers[[nmt]])) { hit <- nm[tiers[[nmt]]]; tier <- nmt; break }
+    # `%in% TRUE` collapses NA to FALSE. A registry name that is NA makes every
+    # tier's vector carry an NA, and then `any()` returns NA rather than FALSE
+    # for a genuine no-match -- `if (NA)` aborts, and an NA index would select
+    # a phantom all-NA row. Either failure would land on exactly the case this
+    # function exists to make loud and safe.
+    sel <- tiers[[nmt]] %in% TRUE
+    if (any(sel)) { hit <- nm[sel]; tier <- nmt; break }
   }
   if (is.null(hit)) {
     if (!quiet) cli::cli_warn("No player matches {.val {query}}.")

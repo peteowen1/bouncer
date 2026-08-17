@@ -74,6 +74,7 @@ load_projection_training_data <- function(conn, format, gender, team_type,
       AND LOWER(d.gender) = '%s'
       AND %s
       AND it.final_innings_total IS NOT NULL
+    ORDER BY d.delivery_id
   ", match_types_sql, gender_lower, max_balls, match_types_sql, gender_lower, team_type_filter)
 
   data <- DBI::dbGetQuery(conn, query)
@@ -81,8 +82,16 @@ load_projection_training_data <- function(conn, format, gender, team_type,
   # Deterministic subsample. This was `ORDER BY RANDOM()` in SQL followed by an
   # UNSEEDED sample(), so every run trained on different rows and no two runs
   # of the optimiser were comparable -- a "better" parameter set could be a
-  # different sample. Sort to a stable order, then sample under a fixed seed.
-  data <- data[order(data$match_id, data$innings, data$balls_remaining), ]
+  # different sample. Stable order first, then sample under a fixed seed.
+  #
+  # The order comes from `ORDER BY d.delivery_id` in the query above, because
+  # delivery_id is the only UNIQUE key here. An earlier form sorted in R by
+  # (match_id, innings, balls_remaining), which does not work: balls_remaining
+  # derives from `over * 6 + ball`, and `ball` is the position within the over
+  # counting extras (cricsheet_parser.R:370 numbers deliveries with
+  # seq_along() inside the per-over loop), so it runs past 6 -- over 0 ball 7
+  # and over 1 ball 1 both give balls_bowled 7. Ties left row order to DuckDB,
+  # which does not guarantee one, so the seed still reproduced nothing.
   if (sample_frac < 1.0 && nrow(data) > 1000) {
     n_sample <- ceiling(nrow(data) * sample_frac)
     set.seed(seed)

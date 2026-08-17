@@ -38,6 +38,19 @@ of 145 billion matches. The sanity check that catches this is the implied
 player share of single-match variance, which comes out 2.4–5.5\% here against
 the 2.2\% measured independently in D-P17.
 
+That check is now \strong{in the code}, not just in this note. It was described
+here as though it had been built, while the function floored
+\verb{sigma^2_between} at \code{1e-9} and returned whatever fell out — which
+reproduces the 145-billion prior exactly, since \code{msw} is ~148 on men's T20.
+A prior that large is not a visibly broken number: every player collapses
+onto the population mean, so the leaderboard still ranks in the right order
+with fabricated spread, and the rank-based anchor check cannot see it.
+\code{derive_shrinkage_prior()} therefore \strong{aborts} when \code{msb <= msw} (the
+between-player variance is not identified) and \strong{warns} when the implied
+share falls outside 0.5–25\%, a band far wider than anything measured.
+Covered by \code{tests/testthat/test-player-rating-v2-prior.R}, which also
+recovers a known \code{k} from simulated data with known variances.
+
 Note the harness prefers a much SMALLER prior in ODI and women's buckets
 (usually 5, the edge of the grid). That is not a contradiction: the harness
 only scores players with 10+ prior matches, so it sees established players

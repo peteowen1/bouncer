@@ -815,7 +815,12 @@ analyze_match <- function(match_id, db_path = NULL) {
       bowler_id,
       COUNT(*) as balls,
       SUM(runs_total) as runs,
-      SUM(CASE WHEN is_wicket THEN 1 ELSE 0 END) as wickets
+      -- Bowler-CREDITED wickets only, matching query_bowler_stats(). Counting
+      -- every dismissal hands the bowler run outs, which are nobody's wicket,
+      -- and this list is ORDERed by wickets -- so an unfiltered count can rank
+      -- a bowler above a colleague purely because a run out happened on his
+      -- over, and disagree with the figures query_bowler_stats() reports.
+      SUM(CASE WHEN COALESCE(wicket_kind,'') IN ('caught','bowled','lbw','caught and bowled','stumped','hit wicket') THEN 1 ELSE 0 END) as wickets
     FROM cricsheet.deliveries
     WHERE match_id = ?
     GROUP BY bowler_id
