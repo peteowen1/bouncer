@@ -7,8 +7,7 @@
 get_raa_lambda(format = c("t20", "odi", "test"))
 }
 \arguments{
-\item{format}{Character. "t20" and "odi" are fitted. "test" aborts until
-its lambda is fitted from actual outcomes.}
+\item{format}{Character. All three are fitted: "t20", "odi", "test".}
 }
 \value{
 Numeric scalar, runs per wicket.
@@ -26,5 +25,19 @@ by innings (9.0 in use); ODI fitted 22.5 (innings 1) and 23.4 (chase) on
 2026-08-14 over 227,628 male deliveries -- a wicket is worth ~2.5x more
 runs in a 300-ball innings (bouncerverse#19). The naive state-difference
 estimator is selection-biased and must never be used to refit these.
+
+\strong{Test fitted 2026-08-17 at 33}, over Test+MDM male (3,047 matches,
+5,388,418 deliveries). Same method, with one addition the shorter formats
+never needed: a Test can be drawn, so the utility a wicket is priced against
+has to say what a draw is worth. Two of the three candidates turn out to be
+the same utility — since \code{pW+pD+pL=1}, \verb{pW+0.5pD} is \code{0.5 + 0.5(pW-pL)}, an
+affine transform, and lambda is a ratio of derivatives — so the only real
+choice is whether a draw has value at all. It does: pricing a draw as a loss
+returns 22.7, i.e. \emph{below ODI}, which cannot be right for a format whose
+innings ends on wickets and time rather than on balls, and it is far less
+consistent across innings (1.75x spread vs 1.25x). Corroborated by an
+independent estimator using innings run totals and no win probability at
+all: 30.5. Full working in
+\code{docs/reviews/2026-08-17-TEST-LAMBDA-FIT.md}.
 }
 \keyword{internal}

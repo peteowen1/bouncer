@@ -112,6 +112,11 @@
 #'   cell cannot dominate.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Pass one in
 #'   to avoid rebuilding it per call.
+#' @param as_at Date or NULL. Estimate strength from deliveries on or before
+#'   this date only. NULL uses everything, which is correct for a current
+#'   rating and WRONG for a backtest: a rolling-origin harness that let this
+#'   default would score a rating which already knew how the competitions
+#'   turned out, against baselines restricted to pre-origin data.
 #'
 #' @return data.table of `comp`, `factor`, `n_bridges`, `step` (0 = direct).
 #' @export
@@ -124,7 +129,8 @@ fit_competition_factors <- function(conn = NULL,
                                     min_players = 3L,
                                     max_steps = 6L,
                                     clamp = c(0.5, 4),
-                                    id_map = NULL) {
+                                    id_map = NULL,
+                                    as_at = NULL) {
 
   own <- is.null(conn)
   if (own) {
@@ -143,7 +149,12 @@ fit_competition_factors <- function(conn = NULL,
     JOIN cricsheet.matches m ON m.match_id = d.match_id
     WHERE LOWER(d.match_type) IN (%2$s) AND m.gender = '%3$s'
       AND COALESCE(m.balls_per_over, 6) = 6 AND COALESCE(d.wides, 0) = 0
-    GROUP BY d.batter_id, %1$s", comp_sql, types, gender)))
+      %4$s
+    GROUP BY d.batter_id, %1$s", comp_sql, types, gender,
+    # Competition strength must be estimated from pre-origin cricket only, or a
+    # backtest scores a rating that already knows how the leagues turned out.
+    if (is.null(as_at)) "" else
+      sprintf("AND d.match_date <= DATE '%s'", format(as.Date(as_at))))))
   if (!nrow(d)) cli::cli_abort("No deliveries for {format}/{gender}.")
 
   # An unrecognised first-class competition maps to NULL rather than a guess, so
@@ -434,7 +445,29 @@ calculate_player_rating_v2 <- function(format = "t20",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
+  # Truncate BEFORE fitting anything, not after aggregating.
+  #
+  # `as_at` used to filter only the per-match table at the end, which is
+  # harmless at the default (there is no future beyond the last match) and a
+  # LEAK for any backtest: at an origin of 2017 the opponent effects and the
+  # competition factors were still fitted on 2017-2026 deliveries, so the rating
+  # was scored against baselines that only ever saw pre-origin data. Same family
+  # as the venue_result_rate self-inclusion leak (#29). A rolling-origin harness
+  # is the whole reason as_at exists, so it has to bind here.
+  if (!is.null(as_at)) {
+    n0 <- nrow(b)
+    b <- b[match_date <= as.Date(as_at)]
+    if (!nrow(b)) {
+      cli::cli_abort("No {format}/{gender} deliveries on or before {as_at}.")
+    }
+    cli::cli_alert_info(
+      "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
+  }
+
+  if (is.null(factors)) {
+    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
+                                      as_at = as_at)
+  }
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
   # An unrated competition keeps 1.0. "Unrated implies weak" was tested and
@@ -627,7 +660,29 @@ calculate_player_value_v2 <- function(format = "t20",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
+  # Truncate BEFORE fitting anything, not after aggregating.
+  #
+  # `as_at` used to filter only the per-match table at the end, which is
+  # harmless at the default (there is no future beyond the last match) and a
+  # LEAK for any backtest: at an origin of 2017 the opponent effects and the
+  # competition factors were still fitted on 2017-2026 deliveries, so the rating
+  # was scored against baselines that only ever saw pre-origin data. Same family
+  # as the venue_result_rate self-inclusion leak (#29). A rolling-origin harness
+  # is the whole reason as_at exists, so it has to bind here.
+  if (!is.null(as_at)) {
+    n0 <- nrow(b)
+    b <- b[match_date <= as.Date(as_at)]
+    if (!nrow(b)) {
+      cli::cli_abort("No {format}/{gender} deliveries on or before {as_at}.")
+    }
+    cli::cli_alert_info(
+      "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
+  }
+
+  if (is.null(factors)) {
+    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
+                                      as_at = as_at)
+  }
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]][is.na(cfactor), cfactor := 1]
 
