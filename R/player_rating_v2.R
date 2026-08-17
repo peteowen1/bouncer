@@ -414,12 +414,19 @@ calculate_player_rating_v2 <- function(format = "t20",
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
+  # MUST be the same competition key fit_competition_factors() produced. Those
+  # factors are keyed on normalised UNITS for Test, so joining them onto raw
+  # event_name silently leaves most deliveries un-discounted: measured at 60.5%,
+  # namely every Test series plus the sponsor-named county seasons, all of which
+  # then default to reference difficulty and undo the whole adjustment. The
+  # coverage warning below is what caught it -- do not silence it.
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
-           COALESCE(m.event_name, 'unknown') AS comp
+           COALESCE(%s, 'unknown') AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'",
+    .competition_sql(format), toupper(format), gender)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
@@ -600,12 +607,19 @@ calculate_player_value_v2 <- function(format = "t20",
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
+  # MUST be the same competition key fit_competition_factors() produced. Those
+  # factors are keyed on normalised UNITS for Test, so joining them onto raw
+  # event_name silently leaves most deliveries un-discounted: measured at 60.5%,
+  # namely every Test series plus the sponsor-named county seasons, all of which
+  # then default to reference difficulty and undo the whole adjustment. The
+  # coverage warning below is what caught it -- do not silence it.
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
-           COALESCE(m.event_name, 'unknown') AS comp
+           COALESCE(%s, 'unknown') AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'",
+    .competition_sql(format), toupper(format), gender)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {

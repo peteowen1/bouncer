@@ -56,6 +56,33 @@ test_that(".competition_sql keeps event_name for T20/ODI and normalises for Test
   expect_match(s, "ELSE NULL END", fixed = TRUE)
 })
 
+test_that("no query builds a competition key without going through .competition_sql", {
+  # Regression guard for a real bug: fit_competition_factors() was moved onto
+  # normalised units while the two rating queries still keyed on raw
+  # event_name, so the factors joined onto nothing for 60.5% of Test deliveries
+  # -- every Test series plus the sponsor-named county seasons -- which then
+  # defaulted to reference difficulty and undid the entire adjustment. The
+  # symptom was only a coverage WARNING, so nothing failed.
+  #
+  # Source-level check, in the spirit of test-versebus-sync.R. Skipped when the
+  # sources are not present (R CMD check runs against the installed package).
+  src <- NULL
+  for (p in c("../../R/player_rating_v2.R", "R/player_rating_v2.R",
+              testthat::test_path("../../R/player_rating_v2.R"))) {
+    if (file.exists(p)) { src <- readLines(p, warn = FALSE); break }
+  }
+  skip_if(is.null(src), "package sources not available in this context")
+
+  # The only legitimate mention of raw event_name as a competition key is inside
+  # .competition_sql() itself (its T20/ODI branch and its generated CASE).
+  hits <- grep("event_name", src, value = TRUE)
+  hits <- hits[!grepl("^\\s*#", hits)]                 # drop comments
+  offenders <- grep("AS comp|GROUP BY .*event_name", hits, value = TRUE)
+  expect_equal(offenders, character(0),
+               info = paste("raw event_name used as a competition key:",
+                            paste(offenders, collapse = " | ")))
+})
+
 test_that("the Test reference set is the single elite unit", {
   expect_equal(default_competition_reference("test", "male"), "Test")
   # Every reference entry must be a unit normalise_competition can actually
