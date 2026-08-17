@@ -4,7 +4,14 @@
 \alias{load_projection_training_data}
 \title{Load Training Data for Projection Optimization}
 \usage{
-load_projection_training_data(conn, format, gender, team_type, sample_frac = 1)
+load_projection_training_data(
+  conn,
+  format,
+  gender,
+  team_type,
+  sample_frac = 1,
+  seed = 42L
+)
 }
 \arguments{
 \item{conn}{DBI connection to database.}

@@ -1,3 +1,60 @@
+# bouncer 0.5.0
+
+## Bowling figures: run outs are no longer the bowler's wicket
+
+Four functions counted every dismissal on a bowler's delivery as his wicket,
+including run outs, which are nobody's. This inflated T20 wickets by **9.7%**
+and understated bowling averages by **1.94 runs** — and because it is not a
+uniform rescaling, it *reordered* bowlers rather than just shifting them. A
+minor release rather than a patch: every published bowling average moves.
+
+* `query_bowler_stats()`, `analyze_match()` and the player-metrics queries now
+  count only bowler-credited kinds — caught, bowled, lbw, caught and bowled,
+  stumped, hit wicket. `analyze_match()` was the last holdout and it orders its
+  list by wickets, so a bowler could outrank a colleague purely because a run
+  out happened on his over, and disagree with `query_bowler_stats()` for the
+  same match.
+
+## Ratings carry the traditional numbers, and derive their own prior
+
+* `average` and `main_comp` on every rating, so a leaderboard can be read
+  against the number people already know. `player_career_context()` supplies
+  them; a batter with no dismissals or a bowler with no wickets reports `NA`,
+  never a fabricated zero or an `Inf`.
+* `derive_shrinkage_prior()` estimates the shrinkage prior per bucket by
+  unbalanced one-way ANOVA instead of reusing a men's-T20 20. T20 male batting
+  derives **39.9** where the next-match harness independently prefers **40**.
+* **`derive_shrinkage_prior()` now refuses a bucket whose between-player
+  variance is not identified.** It previously floored the variance at `1e-9`
+  and returned whatever fell out, which reproduces the "145 billion matches"
+  prior its own documentation described as already fixed. That value is not a
+  visibly broken number: every player collapses onto the population mean, so
+  the leaderboard still ranks in the right order with fabricated spread, and a
+  rank-based anchor check cannot see it. It now aborts, and warns when the
+  implied player share of single-match variance falls outside 0.5–25%.
+* The thin-bucket fallback says so explicitly instead of logging
+  `NA% of single-match variance is the player`.
+
+## Correctness
+
+* **`find_player()`** — look a player up by name without silently getting the
+  wrong one. Wanindu Hasaranga is `PWH de Silva`; Varun Chakaravarthy is
+  `CV Varun`. Returns every candidate, best-evidenced first, and warns when
+  more than one matches rather than quietly taking the first.
+* **Three seeded splits are now reproducible.** DuckDB does not guarantee row
+  order, so `set.seed()` on a query result reproduces nothing without a stable
+  sort first. The score-projection sampler sorts on `delivery_id`, the only
+  unique key available: an earlier form sorted on `over * 6 + ball`, which is
+  not unique because `ball` counts extras and runs past 6, so over 0 ball 7 and
+  over 1 ball 1 collide.
+* **Rating queries refuse an unsupported format instead of guessing.** The
+  match-type selector was a `t20` branch and an ODI catch-all, so
+  `format = "test"` would have returned ODI deliveries labelled Test. Test is
+  the next bucket queued, which is when that trap was most likely to fire.
+* `player_career_context()` returns a typed empty table when its query matches
+  nothing, so the caller's merge fails naming the real cause rather than a
+  missing key.
+
 # bouncer 0.4.0
 
 ## Player Rating v2

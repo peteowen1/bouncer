@@ -570,7 +570,13 @@ create_grouped_folds <- function(data, n_folds = 5, seed = 42) {
 
   set.seed(seed)
 
-  unique_matches <- unique(data$match_id)
+  # SORT before sampling. `unique()` returns ids in the order they appear in
+  # `data`, and a DuckDB query without ORDER BY does not guarantee row order --
+  # so without this the folds differ between runs DESPITE the seed, and a
+  # cross-validation score cannot be compared with the one before it. The seed
+  # is never the problem; the input order is. (Found 2026-08-16 when a seeded
+  # split-half analysis disagreed with itself: 485 vs 488 eligible players.)
+  unique_matches <- sort(unique(data$match_id))
   shuffled_matches <- sample(unique_matches)
 
   fold_assignments <- cut(

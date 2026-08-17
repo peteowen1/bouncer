@@ -591,7 +591,9 @@ aggregate_bowling_stats_remote <- function(player_id = NULL,
       bowler_id,
       COUNT(*) as balls_bowled,
       SUM(runs_total) as runs_conceded,
-      SUM(CASE WHEN is_wicket THEN 1 ELSE 0 END) as wickets,
+      -- Bowler-CREDITED wickets only; a run out is nobody's wicket (9.7 percent
+      -- of T20 dismissals), which understates the bowling average by ~7.6 percent.
+      SUM(CASE WHEN COALESCE(wicket_kind,'') IN ('caught','bowled','lbw','caught and bowled','stumped','hit wicket') THEN 1 ELSE 0 END) as wickets,
       SUM(CASE WHEN runs_total = 0 THEN 1 ELSE 0 END) as dots
     FROM {table}
     %s
@@ -682,7 +684,8 @@ aggregate_bowling_stats_remote_legacy <- function(player_id = NULL,
     dplyr::summarise(
       balls_bowled = dplyr::n(),
       runs_conceded = sum(runs_total, na.rm = TRUE),
-      wickets = sum(is_wicket, na.rm = TRUE),
+      # Bowler-CREDITED wickets only; see the SQL path above.
+      wickets = sum(wicket_kind %in% c('caught','bowled','lbw','caught and bowled','stumped','hit wicket'), na.rm = TRUE),
       dots = sum(runs_total == 0, na.rm = TRUE),
       .groups = "drop"
     ) |>

@@ -108,6 +108,7 @@ reference:
     - analyze_player
     - compare_players
     - search_players
+    - find_player
     - rank_players
     - player_batting_stats
     - player_bowling_stats
@@ -130,6 +131,8 @@ reference:
     - build_player_id_map
     - canonicalise_player_ids
     - calculate_player_rating_v2
+    - player_career_context
+    - derive_shrinkage_prior
     - calculate_player_value_v2
     - store_player_rating_v2
     - store_player_value_v2

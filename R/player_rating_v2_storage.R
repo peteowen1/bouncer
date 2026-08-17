@@ -13,7 +13,8 @@
 
 .rating_v2_cols <- c(
   "format", "gender", "role", "rank", "player_id", "player_name", "rating",
-  "matches", "balls", "effective_matches", "last_match", "as_at")
+  "average", "main_comp", "matches", "balls", "effective_matches",
+  "last_match", "as_at")
 
 .value_v2_cols <- c(
   "format", "gender", "rank", "player_id", "player_name", "total_value",
@@ -74,6 +75,8 @@ store_player_rating_v2 <- function(conn, data, format, gender, role,
       player_id         VARCHAR,
       player_name       VARCHAR,
       rating            DOUBLE,
+      average           DOUBLE,
+      main_comp         VARCHAR,
       matches           INTEGER,
       balls             INTEGER,
       effective_matches DOUBLE,

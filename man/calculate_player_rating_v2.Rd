@@ -11,7 +11,7 @@ calculate_player_rating_v2(
   conn = NULL,
   as_at = NULL,
   decay_days = NULL,
-  prior_matches = 20,
+  prior_matches = NULL,
   prior_balls = 60,
   iterations = 20L,
   factors = NULL,
@@ -37,7 +37,10 @@ sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
 0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
 Shorter decays are worse at every horizon for both roles.}
 
-\item{prior_matches}{Numeric shrinkage toward the population mean.}
+\item{prior_matches}{Numeric shrinkage toward the population mean, in
+matches. NULL derives it per bucket via \code{\link[=derive_shrinkage_prior]{derive_shrinkage_prior()}}, which
+is the default because the old hand-set 20 was a men's-T20 number reused
+everywhere and is roughly half what that bucket actually wants.}
 
 \item{prior_balls, iterations}{Passed to \code{\link[=fit_two_way_effects]{fit_two_way_effects()}}.}
 
@@ -51,7 +54,10 @@ which affects 2,845 players and 4\% of appearances.}
 }
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
-\code{matches}, \code{balls}, \code{effective_matches}, \code{last_match}, ordered best first. \code{matches} counts innings batted
+\code{average}, \code{main_comp}, \code{matches}, \code{balls}, \code{effective_matches},
+\code{last_match}, ordered best first. \code{average} and \code{main_comp} come from
+\code{\link[=player_career_context]{player_career_context()}} and are context beside the rating, never inputs
+to it. \code{matches} counts innings batted
 for a batter and matches played for a bowler — the two roles use different
 inclusion rules, each measured (D-P26), so the two ratings rank correctly
 within a role but are NOT on a common per-match scale and must not be

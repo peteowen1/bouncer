@@ -20,6 +20,30 @@
 #     per-ball variance, so not worth a model retrain)
 #   - situational wicket value from the resource surface (-6.6%, #40)
 
+# Which cricsheet match_types a rating bucket covers, as a SQL literal list.
+#
+# This was written twice as `if (format == "t20") "'t20','it20'" else
+# "'odi','odm'"`, which is not a two-way choice -- it is a t20 branch and a
+# catch-all. `format = "test"` does not fail there, it silently selects ODI and
+# ODM deliveries and returns ODI numbers labelled Test. The only reason that
+# has never bitten is that no caller passes "test" yet, which is exactly the
+# state in which the trap is easiest to walk into: Test is the one bucket
+# currently queued to be added.
+#
+# Aborting matches what get_raa_lambda() already does for "test" -- it refuses
+# rather than guessing a wicket value -- so the two now fail the same way
+# instead of one aborting and the other quietly answering the wrong question.
+.rating_match_types <- function(format) {
+  switch(tolower(format),
+    t20  = "'t20','it20'",
+    odi  = "'odi','odm'",
+    cli::cli_abort(c(
+      "No rating match-types defined for format {.val {format}}.",
+      "i" = "Supported: {.val t20}, {.val odi}.",
+      "x" = "Do not add a {.val test} branch here alone -- see docs/plans/TEST-FORMAT-RATINGS-SCOPE.md; the wicket value and the competition reference set are missing too."))
+  )
+}
+
 #' Competition Difficulty Factors
 #'
 #' How much a competition inflates batting averages relative to a reference set
@@ -71,7 +95,7 @@ fit_competition_factors <- function(conn = NULL,
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
   if (is.null(reference)) reference <- default_competition_reference(format, gender)
-  types <- if (format == "t20") "'t20','it20'" else "'odi','odm'"
+  types <- .rating_match_types(format)
 
   d <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT d.batter_id, COALESCE(m.event_name,'unknown') AS comp,
@@ -278,7 +302,10 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
 #'   0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
 #'   Shorter decays are worse at every horizon for both roles.
-#' @param prior_matches Numeric shrinkage toward the population mean.
+#' @param prior_matches Numeric shrinkage toward the population mean, in
+#'   matches. NULL derives it per bucket via [derive_shrinkage_prior()], which
+#'   is the default because the old hand-set 20 was a men's-T20 number reused
+#'   everywhere and is roughly half what that bucket actually wants.
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
 #' @param factors Output of [fit_competition_factors()]; NULL fits them.
 #' @param min_balls Integer. Career balls required to appear in the result.
@@ -287,7 +314,10 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   which affects 2,845 players and 4% of appearances.
 #'
 #' @return data.table of `rank`, `player_id`, `player_name`, `rating`,
-#'   `matches`, `balls`, `effective_matches`, `last_match`, ordered best first. `matches` counts innings batted
+#'   `average`, `main_comp`, `matches`, `balls`, `effective_matches`,
+#'   `last_match`, ordered best first. `average` and `main_comp` come from
+#'   [player_career_context()] and are context beside the rating, never inputs
+#'   to it. `matches` counts innings batted
 #'   for a batter and matches played for a bowler — the two roles use different
 #'   inclusion rules, each measured (D-P26), so the two ratings rank correctly
 #'   within a role but are NOT on a common per-match scale and must not be
@@ -300,7 +330,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        conn = NULL,
                                        as_at = NULL,
                                        decay_days = NULL,
-                                       prior_matches = 20,
+                                       prior_matches = NULL,
                                        prior_balls = 60,
                                        iterations = 20L,
                                        factors = NULL,
@@ -391,6 +421,17 @@ calculate_player_rating_v2 <- function(format = "t20",
   ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
   pm <- pm[match_date <= ref_date]
   pop <- pm[, mean(v)]
+  if (is.null(prior_matches)) {
+    est <- derive_shrinkage_prior(pm)
+    prior_matches <- est$k
+    # `share` is NA on the thin-bucket fallback, which printed "NA% of
+    # single-match variance is the player" -- say which of the two happened.
+    cli::cli_alert_info(if (is.na(est$share)) {
+      "Shrinkage prior {round(prior_matches, 1)} match{?es} -- NOT derived: only {est$players} player{?s} cleared the estimation threshold, so this is the hardcoded fallback, not this bucket's own number."
+    } else {
+      "Derived shrinkage prior {round(prior_matches, 1)} match{?es} ({round(100 * est$share, 2)}% of single-match variance is the player)."
+    })
+  }
   pm[, w := exp(-as.numeric(ref_date - match_date) / decay_days)]
 
   r <- pm[, .(rating = (sum(v * w) + prior_matches * pop) / (sum(w) + prior_matches),
@@ -404,12 +445,18 @@ calculate_player_rating_v2 <- function(format = "t20",
     "SELECT player_id, ANY_VALUE(player_name) AS player_name
      FROM cricsheet.players GROUP BY player_id"))
   r <- merge(r, nm, by = "player_id", all.x = TRUE)
+
+  # Where he did it, and what the traditional number says. Carried alongside
+  # every rating so the two can be eyeballed together without a second query.
+  ctx <- player_career_context(conn, format, gender, role, id_map = id_map)
+  r <- merge(r, ctx, by = "player_id", all.x = TRUE)
+
   data.table::setorder(r, -rating)
   r[, rank := seq_len(.N)]
   cli::cli_alert_success(
     "Rated {nrow(r)} {gender} {toupper(format)} {role}s as at {ref_date}.")
-  r[, .(rank, player_id, player_name, rating, matches, balls,
-        effective_matches, last_match)][]
+  r[, .(rank, player_id, player_name, rating, average, main_comp,
+        matches, balls, effective_matches, last_match)][]
 }
 
 #' Combined Player Value: Batting Plus Bowling, Per Match Played
@@ -574,4 +621,173 @@ calculate_player_value_v2 <- function(format = "t20",
   # instead of the date the data actually runs to.
   data.table::setattr(res, "as_at", ref_date)
   res
+}
+
+#' Career Context for a Rating Table
+#'
+#' The competition a player has played most of his cricket in, and his
+#' conventional average. Both are for orientation beside a rating, not inputs
+#' to it — a rating says how good he is, these say where he did it and what
+#' the traditional number looks like.
+#'
+#' Averages follow the ordinary cricket definitions rather than anything
+#' bespoke:
+#' \itemize{
+#'   \item batting = runs / dismissals, where retired hurt and retired not out
+#'     are NOT dismissals but retired out is.
+#'   \item bowling = runs conceded / wickets, counting only wickets CREDITED to
+#'     the bowler (caught, bowled, lbw, caught and bowled, stumped, hit
+#'     wicket — never a run out), and runs off the bat plus wides and no-balls
+#'     but not byes or leg-byes.
+#' }
+#' Returns `NA` for a bowler who has never taken a wicket, rather than
+#' infinity or a fabricated zero.
+#'
+#' @param conn DBI connection.
+#' @param format,gender,role Bucket.
+#' @param id_map Output of [build_player_id_map()], so a split career is not
+#'   counted as two players.
+#' @return data.table of `player_id`, `main_comp`, `main_comp_share`, `average`.
+#' @export
+player_career_context <- function(conn, format = "t20", gender = "male",
+                                  role = c("batter", "bowler"), id_map = NULL) {
+  role <- match.arg(role)
+  types <- .rating_match_types(format)
+  who <- if (role == "batter") "batter_id" else "bowler_id"
+
+  # Bowler-credited dismissals only; a run out is nobody's wicket.
+  bowler_kinds <- "'caught','bowled','lbw','caught and bowled','stumped','hit wicket'"
+  # Retirements that are not dismissals for batting-average purposes.
+  not_out_kinds <- "'retired hurt','retired not out'"
+
+  runs_expr <- if (role == "batter") "d.runs_batter" else
+    "d.runs_batter + COALESCE(d.wides,0) + COALESCE(d.noballs,0)"
+  outs_expr <- if (role == "batter") {
+    sprintf("CASE WHEN d.player_out_id = d.%s AND COALESCE(d.wicket_kind,'') NOT IN (%s) THEN 1 ELSE 0 END",
+            who, not_out_kinds)
+  } else {
+    sprintf("CASE WHEN COALESCE(d.wicket_kind,'') IN (%s) THEN 1 ELSE 0 END", bowler_kinds)
+  }
+
+  x <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+    SELECT d.%s AS player_id, COALESCE(m.event_name,'unknown') AS comp,
+           COUNT(*) AS balls, SUM(%s) AS runs, SUM(%s) AS outs
+    FROM cricsheet.deliveries d
+    JOIN cricsheet.matches m ON m.match_id = d.match_id
+    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
+      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%s IS NOT NULL
+    GROUP BY d.%s, m.event_name", who, runs_expr, outs_expr, types, gender, who, who)))
+  # Typed, not bare: the caller merges this by "player_id", and a zero-COLUMN
+  # data.table fails that merge with an error naming the missing key rather
+  # than the empty query behind it.
+  if (!nrow(x)) return(data.table::data.table(
+    player_id = character(), main_comp = character(),
+    main_comp_share = numeric(), average = numeric()))
+
+  if (is.null(id_map)) id_map <- build_player_id_map(conn)
+  data.table::setnames(x, "player_id", "batter_id")
+  canonicalise_player_ids(x, id_map, cols = "batter_id")
+  data.table::setnames(x, "batter_id", "player_id")
+  x <- x[, .(balls = sum(balls), runs = sum(runs), outs = sum(outs)),
+         by = .(player_id, comp)]
+
+  data.table::setorder(x, player_id, -balls)
+  main <- x[, .(main_comp = comp[1],
+                main_comp_share = balls[1] / sum(balls)), by = player_id]
+  tot <- x[, .(runs = sum(runs), outs = sum(outs)), by = player_id]
+  tot[, average := ifelse(outs > 0L, runs / outs, NA_real_)]
+  merge(main, tot[, .(player_id, average)], by = "player_id")[]
+}
+
+#' Derive the Shrinkage Prior from the Data
+#'
+#' How many matches of a player's own record it takes to outweigh the
+#' population. In the standard empirical-Bayes form an estimate is shrunk by
+#' `n / (n + k)` with `k = sigma^2_within / sigma^2_between` — so `k` is
+#' exactly what `prior_matches` means, and it is derivable rather than a free
+#' parameter.
+#'
+#' Deriving it matters because the hand-set 20 was tuned on men's T20 and
+#' applied unchanged to ODI and to women's cricket, which carry different
+#' information per match. For men's T20 batting the derivation returns **39.9**
+#' where the next-match harness independently prefers **40** — two unrelated
+#' lines of evidence agreeing, and both saying the shipped 20 was half what it
+#' should be.
+#'
+#' Estimated by unbalanced one-way ANOVA (method of moments). The tempting
+#' shortcut — `var(player means) - sigma^2_within / harmonic_n` — is badly
+#' biased when group sizes are skewed: it drove `sigma^2_between` to zero in
+#' every bucket, implying players do not differ at all, and produced a "prior"
+#' of 145 billion matches. The sanity check that catches this is the implied
+#' player share of single-match variance, which comes out 2.4–5.5% here against
+#' the 2.2% measured independently in D-P17.
+#'
+#' That check is now **in the code**, not just in this note. It was described
+#' here as though it had been built, while the function floored
+#' `sigma^2_between` at `1e-9` and returned whatever fell out — which
+#' reproduces the 145-billion prior exactly, since `msw` is ~148 on men's T20.
+#' A prior that large is not a visibly broken number: every player collapses
+#' onto the population mean, so the leaderboard still ranks in the right order
+#' with fabricated spread, and the rank-based anchor check cannot see it.
+#' `derive_shrinkage_prior()` therefore **aborts** when `msb <= msw` (the
+#' between-player variance is not identified) and **warns** when the implied
+#' share falls outside 0.5–25%, a band far wider than anything measured.
+#' Covered by `tests/testthat/test-player-rating-v2-prior.R`, which also
+#' recovers a known `k` from simulated data with known variances.
+#'
+#' Note the harness prefers a much SMALLER prior in ODI and women's buckets
+#' (usually 5, the edge of the grid). That is not a contradiction: the harness
+#' only scores players with 10+ prior matches, so it sees established players
+#' for whom shrinkage is pure bias, while this minimises error across all
+#' players including thin ones. An optimum sitting on a grid boundary is a
+#' warning, not a result.
+#'
+#' @param pm data.table of per-match values with `player_id` and `v`.
+#' @param min_matches Integer. Players below this are ignored for estimation
+#'   only; they are still rated.
+#' @return list with `k`, `s2_within`, `s2_between`, `players`, `share`.
+#' @export
+derive_shrinkage_prior <- function(pm, min_matches = 5L) {
+  s <- pm[, .(n = .N, m = mean(v), ss = sum((v - mean(v))^2)), by = player_id]
+  s <- s[n >= min_matches]
+  if (nrow(s) < 30L) {
+    cli::cli_warn("Only {nrow(s)} player{?s} clear {min_matches} matches; falling back to 20.")
+    return(list(k = 20, s2_within = NA_real_, s2_between = NA_real_,
+                players = nrow(s), share = NA_real_))
+  }
+  N <- sum(s$n); K <- nrow(s)
+  grand <- sum(s$n * s$m) / N
+  msw <- sum(s$ss) / (N - K)
+  msb <- sum(s$n * (s$m - grand)^2) / (K - 1)
+  n0 <- (N - sum(s$n^2) / N) / (K - 1)
+  s2b_raw <- (msb - msw) / n0
+
+  # The sanity check the notes above credit for catching the 145-billion prior
+  # -- it was described but never actually written down, and a bare
+  # `max(s2b_raw, 1e-9)` floor RECREATES that incident exactly: msw is ~148 on
+  # men's T20, so a floored s2b returns k = 148/1e-9 = 1.5e11. At that k every
+  # player collapses onto the population mean, and the result is not an
+  # obviously broken number -- it is a full leaderboard in the right ORDER with
+  # fake spread, which the rank-based anchor check in 01_build_player_ratings_v2.R
+  # cannot see. Refuse to return a prior rather than return that.
+  if (!is.finite(s2b_raw) || s2b_raw <= 0) {
+    cli::cli_abort(c(
+      "Between-player variance is not identified for this bucket; refusing to derive a prior.",
+      "x" = "msb {round(msb, 3)} <= msw {round(msw, 3)} (n0 {round(n0, 2)}, {K} players).",
+      "i" = "Every player would shrink onto the population mean and the leaderboard would rank correctly with fabricated spread.",
+      "i" = "Pass an explicit {.arg prior_matches} if you intend to rate this bucket anyway."))
+  }
+
+  out <- list(k = msw / s2b_raw, s2_within = msw, s2_between = s2b_raw,
+              players = K, share = s2b_raw / (s2b_raw + msw))
+
+  # Measured 2.2-5.5% across the six buckets that have enough data. Outside a
+  # band far wider than that, the estimate is telling you something about the
+  # bucket, not about the players -- so say so rather than quietly using it.
+  if (out$share < 0.005 || out$share > 0.25) {
+    cli::cli_warn(c(
+      "Implied player share of single-match variance is {round(100 * out$share, 2)}%, outside the plausible 0.5-25% band.",
+      "!" = "Derived prior is {round(out$k, 1)} matches on {K} players; treat this bucket's spread as unverified."))
+  }
+  out
 }
