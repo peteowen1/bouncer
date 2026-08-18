@@ -126,3 +126,50 @@ alias_competition <- function(event_name) {
   out <- unname(COMPETITION_ALIASES[as.character(event_name)])
   ifelse(is.na(out), as.character(event_name), out)
 }
+
+# Bilateral tours and short series -------------------------------------------
+#
+# Cricsheet names every bilateral series as its own event: "Zimbabwe in New
+# Zealand T20I Series", "Gibraltar tour of Malta", "Bulgaria Tri-Nation T20I
+# Series". Fitting a competition factor per name means fitting 326 separate
+# strengths off a median of 5 matches each, and the result is noise wearing the
+# label of league strength:
+#
+#   * "Zimbabwe in New Zealand T20I Series" -- Williamson, McCullum, Guptill,
+#     Taylor -- came out as the WEAKEST competition on record at 2.90.
+#   * "Australia tour of Bangladesh", 5 matches, came out as the HARDEST
+#     competition on record at 0.53 -- harder than the IPL or the World Cup.
+#   * 88 of 267 short international events rated weaker than 2.0, and 35 were
+#     pinned at the 4.0 ceiling.
+#
+# What those factors actually captured was the pitch and conditions of a handful
+# of matches. Grouping the series into a few large units gives each a real
+# sample. Named tournaments (ICC events, qualifiers, continental cups) are NOT
+# affected -- they are separately named and keep their own factors.
+#
+# Three buckets rather than one, because a Zimbabwe-New Zealand series and a
+# Gibraltar-Malta series are not the same standard. Membership is decided by
+# whether each side is an ICC Full Member.
+COMPETITION_FULL_MEMBERS <- c(
+  "Afghanistan", "Australia", "Bangladesh", "England", "India", "Ireland",
+  "New Zealand", "Pakistan", "South Africa", "Sri Lanka", "West Indies",
+  "Zimbabwe"
+)
+
+#' SQL fragment that recognises a bilateral tour or short multi-team series
+#'
+#' Matches the naming shapes cricsheet uses. Kept as one definition so the
+#' rating and the diagnostics cannot drift apart.
+#' @keywords internal
+COMPETITION_TOUR_PATTERN_SQL <- paste(
+  # NOTE: DuckDB's SIMILAR TO is RE2 regex, where '%' is a LITERAL character and
+  # the pattern must match the whole string -- it is NOT a LIKE wildcard. An
+  # earlier version used SIMILAR TO here and silently matched nothing, leaving
+  # "Zimbabwe in New Zealand T20I Series" as its own competition. Use LIKE for
+  # wildcards and regexp_matches() for alternation.
+  "m.event_name LIKE '%% tour of %%'",
+  "OR regexp_matches(m.event_name, ' in .*(Series|T20I|ODI|Twenty20)')",
+  "OR regexp_matches(m.event_name, ' v .*(Series|T20I|ODI|Twenty20)')",
+  "OR regexp_matches(m.event_name, '(Tri-Nation|Tri-Series|Triangular|Quadrangular|Pentangular)')",
+  sep = " ")
+

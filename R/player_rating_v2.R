@@ -81,7 +81,24 @@
                            esc(unname(COMPETITION_ALIASES))),
                    collapse = "
              ")
-    return(sprintf("COALESCE(CASE %s ELSE m.event_name END, 'unknown')", whens))
+    # Bilateral tours and short series collapse into three buckets by member
+    # status. Fitting one factor per series meant 326 competitions off a median
+    # of 5 matches, which put Williamson and McCullum in the "weakest
+    # competition on record" and rated a 5-match series in Bangladesh harder
+    # than the IPL. Named tournaments are unaffected -- see competition_units.R.
+    fm <- paste(sprintf("'%s'", gsub("'", "''", COMPETITION_FULL_MEMBERS, fixed = TRUE)),
+                collapse = ", ")
+    tours <- sprintf(
+      "WHEN m.team_type = 'international' AND (%s) THEN
+                 CASE WHEN m.team1 IN (%s) AND m.team2 IN (%s)
+                        THEN 'International Bilateral (Full Member)'
+                      WHEN m.team1 NOT IN (%s) AND m.team2 NOT IN (%s)
+                        THEN 'International Bilateral (Associate)'
+                      ELSE 'International Bilateral (Mixed)' END",
+      COMPETITION_TOUR_PATTERN_SQL, fm, fm, fm, fm)
+    return(sprintf("COALESCE(CASE %s
+             %s ELSE m.event_name END, 'unknown')",
+                   whens, tours))
   }
 
   esc <- function(x) gsub("'", "''", x, fixed = TRUE)   # 'LV=' is fine; be safe anyway

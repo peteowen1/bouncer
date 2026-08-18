@@ -183,3 +183,43 @@ test_that("a factors object on the wrong basis is refused, before any query runs
         error = function(e) conditionMessage(e))
   expect_false(grepl("basis", e))
 })
+
+# Bilateral tour bucketing ----------------------------------------------------
+
+test_that("the Full Member list is the twelve ICC Full Members", {
+  expect_length(COMPETITION_FULL_MEMBERS, 12L)
+  expect_true(all(c("Afghanistan", "Australia", "Bangladesh", "England", "India",
+                    "Ireland", "New Zealand", "Pakistan", "South Africa",
+                    "Sri Lanka", "West Indies", "Zimbabwe") %in%
+                  COMPETITION_FULL_MEMBERS))
+  # associate sides must NOT be in it, or their series bucket as Full Member
+  expect_false(any(c("Malta", "Gibraltar", "Nepal", "Namibia", "Bulgaria") %in%
+                   COMPETITION_FULL_MEMBERS))
+})
+
+test_that("the tour pattern does not use SIMILAR TO", {
+  # DuckDB's SIMILAR TO is RE2 regex: '%' is a LITERAL, not a wildcard, and the
+  # pattern must match the whole string. An earlier version used it here and
+  # matched NOTHING, silently leaving every bilateral series as its own
+  # competition -- the failure looked exactly like success.
+  expect_false(grepl("SIMILAR TO", COMPETITION_TOUR_PATTERN_SQL, fixed = TRUE))
+  expect_true(grepl("regexp_matches", COMPETITION_TOUR_PATTERN_SQL, fixed = TRUE))
+})
+
+test_that("limited-overs competition SQL emits the three bilateral buckets", {
+  for (fmt in c("t20", "odi")) {
+    sql <- bouncer:::.competition_sql(fmt)
+    expect_true(grepl("International Bilateral (Full Member)", sql, fixed = TRUE))
+    expect_true(grepl("International Bilateral (Associate)", sql, fixed = TRUE))
+    expect_true(grepl("International Bilateral (Mixed)", sql, fixed = TRUE))
+    # the bucket only applies to international cricket -- franchise leagues and
+    # named tournaments must keep their own identity
+    expect_true(grepl("team_type = 'international'", sql, fixed = TRUE))
+  }
+})
+
+test_that("Test competition SQL is unaffected by the bilateral buckets", {
+  sql <- bouncer:::.competition_sql("test")
+  expect_false(grepl("International Bilateral", sql, fixed = TRUE))
+})
+
