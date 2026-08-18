@@ -343,6 +343,8 @@ reference:
     - normalise_competition
     - COMPETITION_UNIT_MAP
     - COMPETITION_REDUCED_SEASONS
+    - alias_competition
+    - COMPETITION_ALIASES
 
   - title: Rating Validation
     desc: Score a rating against shrunk-career and recency baselines

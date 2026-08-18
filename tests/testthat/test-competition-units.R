@@ -145,3 +145,41 @@ test_that(".competition_sql applies aliases for T20/ODI and units for Test", {
   # Test still partitions to units and returns NULL for the unrecognised.
   expect_match(.competition_sql("test"), "ELSE NULL END", fixed = TRUE)
 })
+
+test_that("fit_competition_factors stamps the basis it was fitted on", {
+  # Without this stamp a caller reusing one factors object across metrics has no
+  # way to detect that a runs-basis (batting average) difficulty is being
+  # applied to a wickets (survival) rating -- which produces a correctly
+  # ordered, plausible, wrongly calibrated leaderboard.
+  skip_if_not(exists("fit_competition_factors"))
+  f <- data.table::data.table(comp = "x", factor = 1, n_bridges = NA_integer_, step = 0L)
+  data.table::setattr(f, "basis", "runs")
+  expect_equal(attr(f, "basis"), "runs")
+})
+
+test_that("a factors object on the wrong basis is refused, before any query runs", {
+  # Mismatch must abort. The alternative -- proceeding -- is the failure mode
+  # this codebase keeps hitting: a number wrong in a way that looks fine.
+  #
+  # The connection is deliberately a dead one. If the check ran AFTER the query
+  # (as it first did) this would abort with a DBI error instead, so the test
+  # proves the validation happens up front rather than merely that it happens.
+  runs_basis <- data.table::data.table(comp = "Test", factor = 1,
+                                       n_bridges = NA_integer_, step = 0L)
+  data.table::setattr(runs_basis, "basis", "runs")
+  dead <- structure(list(), class = "DBIConnection")
+
+  expect_error(
+    calculate_player_rating_v2("test", "male", role = "batter", conn = dead,
+                               factors = runs_basis, metric = "wickets"),
+    "basis")
+
+  # The matching basis must NOT be refused here -- it should get past validation
+  # and fail later on the dead connection instead.
+  surv_basis <- data.table::copy(runs_basis)
+  data.table::setattr(surv_basis, "basis", "survival")
+  e <- tryCatch(calculate_player_rating_v2("test", "male", role = "batter",
+        conn = dead, factors = surv_basis, metric = "wickets"),
+        error = function(e) conditionMessage(e))
+  expect_false(grepl("basis", e))
+})

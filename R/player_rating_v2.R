@@ -96,6 +96,35 @@
           whens)
 }
 
+
+# Report competitions the rating could not price, distinguishing the two very
+# different reasons a delivery has no factor.
+#
+# `comp` is NA only when .competition_sql() deliberately returned NULL -- a
+# first-class competition absent from COMPETITION_UNIT_MAP. That is a MAP GAP:
+# the fit already warns and drops those rows, and a consumer that quietly rates
+# them at reference difficulty reproduces, in shape, the 60.5% un-discounted
+# incident this machinery was written to fix. Ranji Trophy is not in the map
+# today, so the next cricsheet refresh can trigger this.
+#
+# `comp` present but absent from `fmap` is the ordinary thin-bridge case, which
+# D-P23 measured and deliberately leaves at 1.0.
+.report_unrated <- function(b, where) {
+  nmap <- b[is.na(comp), .N]
+  if (nmap > 0) {
+    cli::cli_warn(c(
+      "{where}: {format(nmap, big.mark = ',')} deliver{?y/ies} are in a first-class competition with no normalised unit.",
+      "x" = "They are being rated at REFERENCE difficulty, which is almost certainly wrong for a competition nobody has classified.",
+      "i" = "Add it to {.field COMPETITION_UNIT_MAP} in {.file R/competition_units.R}."))
+  }
+  unrated <- b[!is.na(comp) & is.na(cfactor), .N]
+  if (unrated > 0) {
+    cli::cli_alert_info(
+      "{where}: {round(100 * unrated / nrow(b), 1)}% of deliveries are in competitions with no factor; treated as reference difficulty.")
+  }
+  invisible(NULL)
+}
+
 #' Competition Difficulty Factors
 #'
 #' How much a competition inflates batting averages relative to a reference set
@@ -262,6 +291,11 @@ fit_competition_factors <- function(conn = NULL,
   out <- out[is.finite(factor) & factor > 0]
   out[, factor := clip(factor)]
   data.table::setorder(out, -factor)
+  # Stamp the basis so a caller reusing this object across metrics can be told
+  # when it does not match. A runs-basis factor applied to a wickets rating is
+  # correctly ordered, plausible, and wrongly calibrated -- the exact shape this
+  # codebase keeps getting caught by.
+  data.table::setattr(out, "basis", basis)
   cli::cli_alert_success(
     "Rated {nrow(out)} competition{?s} ({sum(out$step == 0)} directly, {sum(out$step > 0)} by chaining).")
   out[]
@@ -446,6 +480,29 @@ calculate_player_rating_v2 <- function(format = "t20",
                                                   "team_score")) {
   metric <- match.arg(metric)
 
+  # Validate BEFORE opening a connection or querying 2M rows: a bad argument
+  # should fail in milliseconds, not after the expensive part. (A test for this
+  # initially passed only because the working directory happened to resolve a
+  # database -- the check ran after the query.)
+  want_basis <- if (metric == "wickets") "survival" else "runs"
+  if (!is.null(factors)) {
+    # `factors` exists to be reused across calls, which is exactly how a
+    # runs-basis object reaches a wickets rating. Nothing in the returned table
+    # records its basis, so without this the mismatch is undetectable: the
+    # result is correctly ordered, plausible, and wrongly calibrated.
+    got <- attr(factors, "basis")
+    if (is.null(got)) {
+      cli::cli_warn(c(
+        "Supplied {.arg factors} carries no basis attribute, so it cannot be checked against {.val {metric}}.",
+        "i" = "Refit with {.fn fit_competition_factors} to stamp it, or pass {.code NULL} to fit here."))
+    } else if (!identical(got, want_basis)) {
+      cli::cli_abort(c(
+        "Supplied {.arg factors} were fitted on the {.val {got}} basis; {.val {metric}} needs {.val {want_basis}}.",
+        "x" = "A runs-basis factor on a wickets rating is correctly ordered, plausible and wrongly calibrated.",
+        "i" = "Pass {.code factors = NULL} to fit the right basis."))
+    }
+  }
+
   role <- match.arg(role)
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
 
@@ -481,7 +538,7 @@ calculate_player_rating_v2 <- function(format = "t20",
   metric_filter <- if (metric == "team_score") " AND r.tsa IS NOT NULL" else ""
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, %s AS raa,
-           COALESCE(%s, 'unknown') AS comp
+           %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
     WHERE r.format = '%s' AND r.gender = '%s'%s",
@@ -521,8 +578,7 @@ calculate_player_rating_v2 <- function(format = "t20",
     # gets its competition strength from balls-per-dismissal instead of
     # runs-per-dismissal. Same construction, same anchors, different numerator.
     factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
-                                      as_at = as_at,
-                                      basis = if (metric == "wickets") "survival" else "runs")
+                                      as_at = as_at, basis = want_basis)
   }
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
@@ -532,12 +588,8 @@ calculate_player_rating_v2 <- function(format = "t20",
   # the bridge threshold admits them. Assuming 1.6 there would have discounted
   # elite international cricket. With min_here = 30 the residue is ~0.5% of
   # deliveries, too small to move a rating either way. Report it regardless.
-  unrated <- b[is.na(cfactor), .N]
+  .report_unrated(b, "calculate_player_rating_v2")
   b[is.na(cfactor), cfactor := 1]
-  if (unrated > 0) {
-    cli::cli_alert_info(
-      "{round(100 * unrated / nrow(b), 1)}% of deliveries are in competitions with no factor; treated as reference difficulty.")
-  }
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   if (role == "batter") {
@@ -704,7 +756,7 @@ calculate_player_value_v2 <- function(format = "t20",
   # coverage warning below is what caught it -- do not silence it.
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
-           COALESCE(%s, 'unknown') AS comp
+           %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
     WHERE r.format = '%s' AND r.gender = '%s'",
@@ -740,7 +792,9 @@ calculate_player_value_v2 <- function(format = "t20",
                                       as_at = as_at)
   }
   fmap <- stats::setNames(factors$factor, factors$comp)
-  b[, cfactor := fmap[comp]][is.na(cfactor), cfactor := 1]
+  b[, cfactor := fmap[comp]]
+  .report_unrated(b, "calculate_player_value_v2")
+  b[is.na(cfactor), cfactor := 1]
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   b[eff$bowler, on = "bowler_id", be := i.eff][is.na(be), be := 0]
@@ -867,7 +921,7 @@ player_career_context <- function(conn, format = "t20", gender = "male",
   # happened to be filed under.
   comp_sql <- .competition_sql(format)
   x <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT d.%1$s AS player_id, COALESCE(%2$s, 'unknown') AS comp,
+    SELECT d.%1$s AS player_id, %2$s AS comp,
            COUNT(*) AS balls, SUM(%3$s) AS runs, SUM(%4$s) AS outs
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
