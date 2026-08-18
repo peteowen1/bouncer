@@ -1,3 +1,65 @@
+# bouncer 0.7.0
+
+## A post-delivery target leak was in every ball-outcome model
+
+`cricsheet.deliveries.total_runs` is the innings score **including** the current
+ball. Eleven queries took it raw as `batting_score` and derived
+`runs_difference` from it, feeding models whose target is that same ball's
+outcome. On the first ball of an innings nothing else is in the feature, so it
+*was* the target.
+
+* `cor(runs_difference, runs off that ball)` = **1.000** across 14,129 T20
+  innings. 5,812 of 9,700 first balls predicted `E[runs] < 0.05`, and their
+  actual mean was **0.000** against **1.844** for the rest.
+* The effect dilutes as the score grows — `cor(pred, actual)` runs 0.442 at over
+  0 against ~0.175 by over 8 — which is why over-level calibration looked healthy
+  the whole time.
+* All three formats retrained. **mlogloss got worse everywhere** (T20 1.3805 →
+  1.4137, ODI 1.1634 → 1.1871, Test 0.9252 → 0.9288), which is what removing a
+  leak must do. First-ball `sd(E[runs])` fell 17x in T20.
+* A second leak of the same shape was found in review: `R/model_predictions.R`
+  had the runs fix applied and left `wickets_fallen` raw in the same `SELECT`,
+  feeding a model that predicts `P(wicket)`. Fixed there and in three trainers.
+  **Those models must be retrained before their `pred_*` columns are used.**
+* Training also included wides while the RAA scorer excluded them. Populations
+  now match row-for-row.
+
+**Every rating computed before this is superseded.**
+
+## Competition factors rebuilt
+
+Cricsheet names every bilateral series as its own event, so the factor was
+fitted **326 times off a median of five matches** — "Zimbabwe in New Zealand
+T20I Series" (Williamson, McCullum, Guptill, Taylor) rated the weakest
+competition in the fit at 2.90.
+
+* Bilateral tours group into four buckets by playing standard; the 49-event ICC
+  qualifying pathway into one. T20 male units **426 → 67**.
+* Bridges are weighted by the **harmonic mean** of their two ball counts, which
+  is inverse-variance weighting. The old pooled estimator weighted each player
+  by his volume on each side separately, so it compared career professionals
+  against local players and measured squad composition rather than difficulty.
+* Factors shrink toward 1.0 by evidence, and a competition with under one
+  weighted dismissal behind it is dropped rather than given a floored
+  denominator.
+* No domestic league now rates harder than the IPL. Coverage 99.7% / 99.9%.
+
+## The shrinkage prior was derived by the wrong estimator
+
+`derive_shrinkage_prior()` used a one-way ANOVA that **understates the prior in
+nine of ten buckets by 28-71%**, so every rating under-shrunk and low-volume
+players were over-credited. Now derived by split-half reliability, which needs
+no distributional assumption and is deterministic without a seed.
+
+## Also
+
+* Test format added to the rating build. Test **female** is deliberately
+  excluded at 46,652 balls over 24 matches.
+* The benchmark regression check ran *after* recording, so it compared each run
+  against itself and could never fire.
+* `derive_shrinkage_prior()` no longer returns a prior whose reported variance
+  share disagrees with the prior in force.
+
 # bouncer 0.6.0
 
 ## Three ratings instead of one
