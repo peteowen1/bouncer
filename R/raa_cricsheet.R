@@ -205,15 +205,25 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
 
   balls[, exp_runs := get_agnostic_expected_runs(probs)]
   balls[, exp_wicket := get_agnostic_expected_wicket(probs)]
+  # Three quantities, deliberately kept apart (docs/reference/RATING-ARCHITECTURE.md):
+  #   raa_run  runs above average -- the RAA rating's input
+  #   waa      wickets above average, in WICKETS. Positive means the batter
+  #            survived a ball the model expected him to lose, negative on
+  #            dismissal. This is the WAA rating's input and it carries no
+  #            lambda, so it is not committed to any run price.
+  #   raa      the composite, raa_run + lambda * waa, on the runs scale
+  # Keeping waa unpriced is the point: lambda belongs at the aggregate, where it
+  # can be made situational, not baked into every ball at a flat rate.
   balls[, raa_run := actual_runs - exp_runs]
-  balls[, raa_wicket := -lambda * (is_wicket - exp_wicket)]
+  balls[, waa := exp_wicket - is_wicket]
+  balls[, raa_wicket := lambda * waa]
   balls[, raa := raa_run + raa_wicket]
 
   out <- balls[, .(
     delivery_id, match_id, match_date,
     innings_number = innings, over_number = over, ball_number = ball,
     format = db_format, gender, batter_id, bowler_id,
-    exp_runs, exp_wicket, actual_runs, is_wicket, raa_run, raa_wicket, raa
+    exp_runs, exp_wicket, actual_runs, is_wicket, raa_run, waa, raa_wicket, raa
   )]
 
   if (!write) return(out[])
@@ -240,7 +250,7 @@ store_cricsheet_raa <- function(conn, data, format,
               "over_number", "ball_number", "format", "gender", "batter_id",
               "bowler_id",
               "exp_runs", "exp_wicket", "actual_runs", "is_wicket",
-              "raa_run", "raa_wicket", "raa")
+              "raa_run", "waa", "raa_wicket", "raa")
 
   existing <- DBI::dbGetQuery(conn, sprintf("
     SELECT column_name FROM information_schema.columns
@@ -268,6 +278,7 @@ store_cricsheet_raa <- function(conn, data, format,
       actual_runs    INTEGER,
       is_wicket      INTEGER,
       raa_run        DOUBLE,
+      waa            DOUBLE,
       raa_wicket     DOUBLE,
       raa            DOUBLE
     )", table_name))

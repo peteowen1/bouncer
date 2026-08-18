@@ -130,7 +130,9 @@ fit_competition_factors <- function(conn = NULL,
                                     max_steps = 6L,
                                     clamp = c(0.5, 4),
                                     id_map = NULL,
-                                    as_at = NULL) {
+                                    as_at = NULL,
+                                    basis = c("runs", "survival")) {
+  basis <- match.arg(basis)
 
   own <- is.null(conn)
   if (own) {
@@ -185,10 +187,20 @@ fit_competition_factors <- function(conn = NULL,
 
   clip <- function(x) pmin(pmax(x, clamp[1]), clamp[2])
 
-  avg <- function(r, o) sum(r) / pmax(sum(o), 1)
+  # What "easier" means depends on the metric being adjusted, and a batting
+  # average is the wrong yardstick for a survival metric.
+  #   runs      sum(runs)  / sum(outs)  -- batting average
+  #   survival  sum(balls) / sum(outs)  -- balls faced per dismissal
+  # Both are ratios where larger means an easier competition, so the chaining,
+  # clamping and reference anchoring below are unchanged.
+  avg <- if (basis == "runs") {
+    function(r, o, b) sum(r) / pmax(sum(o), 1)
+  } else {
+    function(r, o, b) sum(b) / pmax(sum(o), 1)
+  }
   j <- merge(d[!comp %in% reference & balls >= min_here], ref, by = "batter_id")
   direct <- j[, .(n_bridges = .N,
-                  factor = avg(runs, outs) / avg(r_runs, r_outs)),
+                  factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls)),
               by = comp][n_bridges >= min_players]
   # Clamped before the chaining loop reads them as neighbour values, not after.
   direct[, `:=`(factor = clip(factor), step = 0L)]
@@ -201,7 +213,7 @@ fit_competition_factors <- function(conn = NULL,
     cand <- d[balls >= min_here]
     a <- cand[comp %in% known,
               .(batter_id, rcomp = comp, r_runs = runs, r_outs = outs, r_balls = balls)]
-    u <- cand[!comp %in% known, .(batter_id, comp, runs, outs)]
+    u <- cand[!comp %in% known, .(batter_id, comp, runs, outs, balls)]
     if (!nrow(a) || !nrow(u)) break
     jj <- merge(u, a, by = "batter_id", allow.cartesian = TRUE)
     if (!nrow(jj)) break
@@ -220,7 +232,7 @@ fit_competition_factors <- function(conn = NULL,
     jj <- jj[, .SD[1L], by = .(comp, batter_id)]
 
     nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id),
-                 factor = avg(runs, outs) / avg(r_runs, r_outs) * stats::median(rfac)),
+                 factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls) * stats::median(rfac)),
              by = comp][n_bridges >= min_players]
     if (!nrow(nw)) break
     # Clamp NOW, not once at the end. `fmap` reads these factors as the
@@ -414,7 +426,9 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        iterations = 20L,
                                        factors = NULL,
                                        min_balls = 500L,
-                                       id_map = NULL) {
+                                       id_map = NULL,
+                                       metric = c("composite", "runs", "wickets")) {
+  metric <- match.arg(metric)
 
   role <- match.arg(role)
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
@@ -431,18 +445,33 @@ calculate_player_rating_v2 <- function(format = "t20",
   # namely every Test series plus the sponsor-named county seasons, all of which
   # then default to reference difficulty and undo the whole adjustment. The
   # coverage warning below is what caught it -- do not silence it.
+  # The chosen metric is aliased to `raa` so every stage below -- the two-way
+  # opponent fit, the competition divide, the decay and the shrinkage -- is
+  # identical whichever is picked. A wickets rating is in WICKETS, not runs.
+  #
+  # The three L1 metrics (docs/reference/RATING-ARCHITECTURE.md). "composite" is
+  # the DEFAULT and is what shipped: raa_run + lambda * waa, on the runs scale.
+  # Changing that default would silently move every published rating.
+  metric_col <- switch(metric,
+    composite = "r.raa",       # runs scale, wicket priced at a flat lambda
+    runs      = "r.raa_run",   # runs above average alone
+    wickets   = "r.waa")       # wickets above average, unpriced
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
+    SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, %s AS raa,
            COALESCE(%s, 'unknown') AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
     WHERE r.format = '%s' AND r.gender = '%s'",
-    .competition_sql(format), toupper(format), gender)))
+    metric_col, .competition_sql(format), toupper(format), gender)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
     cli::cli_abort(c("No rows in {.field main.cricsheet_ball_raa} for {format}/{gender}.",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
+  }
+  if (anyNA(b$raa)) {
+    cli::cli_abort(c("{sum(is.na(b$raa))} NA values in {.field {metric_col}}.",
+                     "i" = "Rebuild with {.fn build_cricsheet_raa}, or backfill the column."))
   }
 
   # Truncate BEFORE fitting anything, not after aggregating.
@@ -465,8 +494,12 @@ calculate_player_rating_v2 <- function(format = "t20",
   }
 
   if (is.null(factors)) {
+    # A batting average is the wrong yardstick for a survival metric, so WAA
+    # gets its competition strength from balls-per-dismissal instead of
+    # runs-per-dismissal. Same construction, same anchors, different numerator.
     factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
-                                      as_at = as_at)
+                                      as_at = as_at,
+                                      basis = if (metric == "wickets") "survival" else "runs")
   }
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
