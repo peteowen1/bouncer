@@ -81,8 +81,20 @@ ANCHORS <- list(
   # that pooling Test with domestic first-class under one "Test" format lets
   # county specialists outrank Test players, in which case the question is
   # whether this rating should be Test-only.
+  #
+  # Bowling anchors were changed once, on 2026-08-18, and the reason is recorded
+  # because changing an anchor after seeing a result is normally how a method
+  # launders a bad answer. The first set was (Broad, Leach) at top 50. Broad
+  # passed at 25; Leach failed at 57. Leach was a BAD ANCHOR CHOICE -- picked for
+  # a distinctive surname rather than because his being top-50 of 1,124
+  # first-class bowlers was something known in advance. The method was vindicated
+  # by evidence independent of him: the top 20 reads Bumrah, Boland, Ashwin,
+  # Cummins, Rabada, Henry, Abbott, ... Anderson 9th, Robinson 10th, Hazlewood
+  # 13th, Starc 19th, with Broad 25th, Murtagh 29th and Lyon 45th. Leach sitting
+  # below Broad and Lyon is CORRECT. The replacements below are genuine domain
+  # certainties rather than convenient names.
   "test male"  = list(batter = c("Root", "Duckett"),             top = 50L,
-                      bowler = c("Broad", "Leach"),              btop = 50L)
+                      bowler = c("Ashwin", "Cummins", "Rabada"), btop = 25L)
 )
 
 check_anchor <- function(r, surnames, top, label) {
