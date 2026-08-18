@@ -174,6 +174,15 @@
 #'   series where no batter reaches 60 balls, and rating those is worth +2.2%
 #'   next-game Spearman. The metric is flat from 10 to 40 and falls off only at
 #'   60, so this sits mid-plateau rather than at an edge.
+#' @param min_evidence Numeric. Effective paired evidence, in balls, required
+#'   before a competition is rated. Bridges are weighted by the harmonic mean of
+#'   their ball counts in the two competitions (inverse-variance weighting), so
+#'   this is a real evidence floor where a headcount is not: three players with
+#'   one ball each contribute almost nothing and must not rate a league. 1,500
+#'   is roughly seven innings of paired evidence; at 200 a SINGLE match cleared
+#'   it (HRV Cup, 231 balls, rated 0.82 off one game). `min_ref` keeps a light
+#'   floor because runs-per-dismissal is degenerate for a player with a handful
+#'   of reference balls and no dismissal.
 #' @param min_players Integer. Bridges required before a competition is rated.
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin
@@ -192,9 +201,10 @@ fit_competition_factors <- function(conn = NULL,
                                     format = "t20",
                                     gender = "male",
                                     reference = NULL,
-                                    min_here = 30L,
-                                    min_ref = 150L,
+                                    min_here = 1L,
+                                    min_ref = 30L,
                                     min_players = 3L,
+                                    min_evidence = 1500,
                                     max_steps = 6L,
                                     clamp = c(0.5, 4),
                                     id_map = NULL,
@@ -266,10 +276,57 @@ fit_competition_factors <- function(conn = NULL,
   } else {
     function(r, o, b) sum(b) / pmax(sum(o), 1)
   }
+  # Symmetric bridge weighting -------------------------------------------------
+  #
+  # The factor is a ratio of two pooled averages: these players' record HERE
+  # against the same players' record in the reference. Pooling runs and outs on
+  # each side separately weights every player by his volume ON THAT SIDE, and
+  # the two sides are wildly unequal -- Bopara brings 393 balls to the Nepal
+  # Premier League and 4,181 to the reference, while Paudel brings 489 and 114.
+  # The reference average therefore reflects career franchise professionals and
+  # the local average reflects local players, so the ratio measures the
+  # difference between two populations rather than the difficulty of a league.
+  # Nepal came out at 0.835 -- harder to score in than the IPL -- and EVERY
+  # competition tested was biased the same way, which is also why weak leagues
+  # were being discounted far too little downstream.
+  #
+  # Scaling both sides of each bridge down to the thinner one makes every player
+  # contribute the same evidence to numerator and denominator. Deliberately NOT
+  # a mean of per-player ratios: a player with few dismissals has an explosive
+  # average, and averaging such ratios is the D-P37 defect.
+  balance <- function(x) {
+    x <- data.table::copy(x)
+    # HARMONIC MEAN of the two ball counts, which is inverse-variance weighting:
+    # the variance of a player's between-league difference goes as
+    # (1/n_here + 1/n_ref), so its precision is the harmonic mean over two. A
+    # player thin on either side earns almost no say, smoothly, so no arbitrary
+    # ball cutoff is needed -- one ball in a league carries a weight near zero
+    # rather than being either excluded or counted in full.
+    #
+    # Bopara has 393 Nepal Premier League balls and 4,181 reference balls;
+    # Paudel has 489 and 114. Harmonic weights are 718 and 185, so Bopara has
+    # about 4x the say. Under the old pooling the reference side saw 4,181
+    # against 114 -- a 37x imbalance that measured squad composition, not
+    # league difficulty.
+    x[, w := data.table::fifelse(balls > 0 & r_balls > 0,
+                                 2 * balls * r_balls / (balls + r_balls), 0)]
+    x <- x[w > 0]
+    x[, `:=`(runs   = runs   * w / pmax(balls, 1),
+             outs   = outs   * w / pmax(balls, 1),
+             r_runs = r_runs * w / pmax(r_balls, 1),
+             r_outs = r_outs * w / pmax(r_balls, 1),
+             balls = w, r_balls = w)]
+    x[]
+  }
+
   j <- merge(d[!comp %in% reference & balls >= min_here], ref, by = "batter_id")
-  direct <- j[, .(n_bridges = .N,
+  j <- balance(j)
+  # `balls` holds the harmonic weight after balance(), so its sum is the
+  # effective paired evidence behind the competition, in balls. That replaces a
+  # raw headcount: three players with one ball each is not three bridges.
+  direct <- j[, .(n_bridges = .N, evidence = sum(balls),
                   factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls)),
-              by = comp][n_bridges >= min_players]
+              by = comp][n_bridges >= min_players & evidence >= min_evidence]
   # Clamped before the chaining loop reads them as neighbour values, not after.
   direct[, `:=`(factor = clip(factor), step = 0L)]
   out <- rbind(direct,
@@ -299,9 +356,10 @@ fit_competition_factors <- function(conn = NULL,
     data.table::setorder(jj, comp, batter_id, -r_balls)
     jj <- jj[, .SD[1L], by = .(comp, batter_id)]
 
-    nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id),
+    jj <- balance(jj)
+    nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id), evidence = sum(balls),
                  factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls) * stats::median(rfac)),
-             by = comp][n_bridges >= min_players]
+             by = comp][n_bridges >= min_players & evidence >= min_evidence]
     if (!nrow(nw)) break
     # Clamp NOW, not once at the end. `fmap` reads these factors as the
     # neighbour value on the next pass, so an unclamped extreme from a thin
