@@ -1186,7 +1186,13 @@ derive_shrinkage_prior <- function(pm, min_matches = 5L,
       "{sh$players} players, {round(sh$nh)} matches per half);",
       "ANOVA would have given {round(out$k, 1)}."))
     out$k_anova <- out$k
+    out$share_anova <- out$share
     out$k <- sh$k
+    # Keep `share` consistent with the prior actually in force. share and k are
+    # two views of the same quantity (share = 1 / (1 + k)), so leaving the ANOVA
+    # share next to a split-half k reported "35.4 matches (3.84%)" when 3.84%
+    # is the share implied by k = 25.
+    out$share <- 1 / (1 + sh$k)
     out$split_half_r <- sh$r
     out$method <- "split_half"
   }

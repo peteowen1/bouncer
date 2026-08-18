@@ -156,3 +156,19 @@ test_that("too little data falls back to the ANOVA estimate", {
   expect_equal(out$method, "anova")
   expect_null(out$split_half_r)
 })
+
+test_that("reported share is consistent with the prior actually used", {
+  # share and k are two views of one quantity: share = 1 / (1 + k). Leaving the
+  # ANOVA share beside a split-half k reported "35.4 matches (3.84%)", where
+  # 3.84% is the share implied by k = 25 -- two different answers in one line.
+  set.seed(4)
+  P <- 120L; M <- 40L
+  d <- data.table::data.table(
+    player_id = rep(sprintf("p%03d", seq_len(P)), each = M),
+    match_id  = rep(sprintf("m%03d", seq_len(M)), times = P),
+    v         = rep(stats::rnorm(P), each = M) + stats::rnorm(P * M, 0, 3))
+  out <- suppressMessages(derive_shrinkage_prior(d))
+  expect_equal(out$method, "split_half")
+  expect_equal(out$share, 1 / (1 + out$k), tolerance = 1e-9)
+  expect_true(out$share_anova != out$share)
+})
