@@ -60,3 +60,69 @@ normalise_competition <- function(event_name, match_type) {
   out[match_type == "Test"] <- "Test"
   out
 }
+
+#' Sponsor and Naming Aliases for Limited-Overs Competitions
+#'
+#' A competition that changes sponsor changes its `event_name` while remaining
+#' the same competition. Fitting a difficulty factor per name estimates separate
+#' strengths for synonyms and splits every bridge player between them -- the
+#' same defect [COMPETITION_UNIT_MAP] fixes for first-class cricket, which had
+#' gone unnoticed in the limited-overs buckets.
+#'
+#' Measured 2026-08-18, matches split across names:
+#' \itemize{
+#'   \item England domestic T20 -- **1,554** matches across three names, more
+#'     than the IPL's 1,243
+#'   \item England domestic 50-over -- **832** across two
+#'   \item Men's T20 World Cup -- 334 across three
+#'   \item South Africa domestic T20 -- 314 across three
+#'   \item England women's domestic 50-over -- 282 across two
+#'   \item Men's Cricket World Cup -- 229 across two
+#' }
+#'
+#' Canonical form is the CURRENT name, so a reference set written today keeps
+#' working as sponsors change. Unlike [COMPETITION_UNIT_MAP] this is a rename
+#' map, not a partition: an event not listed here passes through unchanged,
+#' because limited-overs cricket has hundreds of genuinely distinct competitions
+#' and they cannot be enumerated.
+#'
+#' @format Named character vector: names are variant `event_name`s, values the
+#'   canonical name.
+#' @export
+COMPETITION_ALIASES <- c(
+  # England domestic T20: NatWest -> Vitality, and "Men" appended from 2025.
+  "NatWest T20 Blast"                    = "Vitality Blast",
+  "Vitality Blast Men"                   = "Vitality Blast",
+  # South Africa domestic T20, three sponsors of one competition.
+  "MiWAY T20 Challenge"                  = "CSA T20 Challenge",
+  "Ram Slam T20 Challenge"               = "CSA T20 Challenge",
+  # The men's global T20 event, renamed twice.
+  "ICC World Twenty20"                   = "ICC Men's T20 World Cup",
+  "World T20"                            = "ICC Men's T20 World Cup",
+  "ICC World Twenty20 Qualifier"         = "ICC Men's T20 World Cup Qualifier",
+  # The women's global T20 event.
+  "Women's World T20"                    = "ICC Women's T20 World Cup",
+  # England domestic 50-over: Royal London sponsorship ended after 2022.
+  "Royal London One-Day Cup"             = "One-Day Cup",
+  # England women's domestic 50-over. The RHF Trophy ran 2020-2024 and its
+  # successor carries the ECB name -- note this one also silently broke
+  # COMPETITION_REFERENCE_ODI_FEMALE, which anchored on the retired name.
+  "Rachael Heyhoe Flint Trophy"          = "ECB Women's One-Day Cup",
+  # Australia domestic 50-over. Marsh sponsorship, then the plain name.
+  "The Marsh Cup"                        = "One-Day Cup (Australia)",
+  # The men's global 50-over event.
+  "ICC World Cup"                        = "ICC Cricket World Cup"
+)
+
+#' Apply Limited-Overs Competition Aliases
+#'
+#' @param event_name Character vector of `event_name` values.
+#' @return The same vector with sponsor variants mapped to their canonical
+#'   name; anything unlisted is returned unchanged, and `NA` stays `NA`.
+#' @examples
+#' alias_competition(c("NatWest T20 Blast", "Indian Premier League"))
+#' @export
+alias_competition <- function(event_name) {
+  out <- unname(COMPETITION_ALIASES[as.character(event_name)])
+  ifelse(is.na(out), as.character(event_name), out)
+}

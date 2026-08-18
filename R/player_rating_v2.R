@@ -67,7 +67,22 @@
 # COMPETITION_UNIT_MAP so that map stays the single source of truth rather than
 # being restated in SQL where the two could drift.
 .competition_sql <- function(format) {
-  if (tolower(format) != "test") return("COALESCE(m.event_name,'unknown')")
+  if (tolower(format) != "test") {
+    # T20 and ODI DO have genuinely distinct competitions, so unlike Test this
+    # is a rename rather than a partition -- but a competition that changes
+    # sponsor changes its event_name while staying the same competition, and
+    # fitting a factor per name splits every bridge between the variants.
+    # England's domestic T20 alone is 1,554 matches across three names, more
+    # than the IPL. Generated from COMPETITION_ALIASES so that map stays the
+    # single source of truth.
+    esc <- function(x) gsub("'", "''", x, fixed = TRUE)
+    whens <- paste(sprintf("WHEN m.event_name = '%s' THEN '%s'",
+                           esc(names(COMPETITION_ALIASES)),
+                           esc(unname(COMPETITION_ALIASES))),
+                   collapse = "
+             ")
+    return(sprintf("COALESCE(CASE %s ELSE m.event_name END, 'unknown')", whens))
+  }
 
   esc <- function(x) gsub("'", "''", x, fixed = TRUE)   # 'LV=' is fine; be safe anyway
   whens <- paste(sprintf("WHEN m.event_name = '%s' THEN '%s'",
@@ -272,13 +287,13 @@ fit_competition_factors <- function(conn = NULL,
 COMPETITION_REFERENCE_T20 <- c(
   "Indian Premier League", "Big Bash League", "Pakistan Super League",
   "SA20", "Caribbean Premier League", "International League T20",
-  "ICC Men's T20 World Cup", "Vitality Blast", "NatWest T20 Blast"
+  "ICC Men's T20 World Cup", "Vitality Blast"
 )
 
 #' @rdname competition_reference
 #' @export
 COMPETITION_REFERENCE_ODI <- c(
-  "ICC Cricket World Cup", "ICC World Cup", "ICC Champions Trophy",
+  "ICC Cricket World Cup", "ICC Champions Trophy",
   "NatWest Series", "ICC Men's Cricket World Cup Super League"
 )
 
@@ -295,7 +310,7 @@ COMPETITION_REFERENCE_T20_FEMALE <- c(
 #' @export
 COMPETITION_REFERENCE_ODI_FEMALE <- c(
   "ICC Women's World Cup", "ICC Women's Championship",
-  "Rachael Heyhoe Flint Trophy", "Women's Ashes",
+  "ECB Women's One-Day Cup", "Women's Ashes",
   "ICC Women's Cricket World Cup"
 )
 

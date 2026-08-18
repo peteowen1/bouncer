@@ -95,3 +95,53 @@ test_that("women's Test is refused rather than silently rated on 24 matches", {
   expect_error(default_competition_reference("test", "female"),
                "No reference set defined")
 })
+
+test_that("sponsor variants of one competition map to a single canonical name", {
+  # England domestic T20 -- 1,554 matches across three names, more than the IPL.
+  expect_equal(alias_competition("NatWest T20 Blast"),  "Vitality Blast")
+  expect_equal(alias_competition("Vitality Blast Men"), "Vitality Blast")
+  # South Africa domestic T20, three sponsors.
+  expect_equal(alias_competition("Ram Slam T20 Challenge"), "CSA T20 Challenge")
+  expect_equal(alias_competition("MiWAY T20 Challenge"),    "CSA T20 Challenge")
+  # England domestic 50-over, and the women's equivalent.
+  expect_equal(alias_competition("Royal London One-Day Cup"), "One-Day Cup")
+  expect_equal(alias_competition("Rachael Heyhoe Flint Trophy"),
+               "ECB Women's One-Day Cup")
+  # Global events renamed over time.
+  expect_equal(alias_competition("ICC World Twenty20"), "ICC Men's T20 World Cup")
+  expect_equal(alias_competition("ICC World Cup"),      "ICC Cricket World Cup")
+})
+
+test_that("alias_competition is a rename, not a partition", {
+  # Unlike COMPETITION_UNIT_MAP, an unlisted competition passes through
+  # unchanged -- limited-overs cricket has hundreds of genuinely distinct
+  # competitions and they cannot be enumerated.
+  expect_equal(alias_competition("Indian Premier League"), "Indian Premier League")
+  expect_equal(alias_competition("a competition invented for this test"),
+               "a competition invented for this test")
+  expect_true(is.na(alias_competition(NA_character_)))
+  expect_equal(length(alias_competition(character(0))), 0L)
+})
+
+test_that("every reference set names a CANONICAL competition, not a retired alias", {
+  # This is the defect the aliases exposed: COMPETITION_REFERENCE_ODI_FEMALE
+  # anchored on "Rachael Heyhoe Flint Trophy", which ended in 2024, so from
+  # 2025 the competition carrying that cricket was unanchored. A reference set
+  # that names an alias silently anchors on a competition that no longer
+  # appears under that name.
+  for (nm in c("COMPETITION_REFERENCE_T20", "COMPETITION_REFERENCE_ODI",
+               "COMPETITION_REFERENCE_T20_FEMALE", "COMPETITION_REFERENCE_ODI_FEMALE")) {
+    ref <- get(nm)
+    bad <- intersect(ref, names(COMPETITION_ALIASES))
+    expect_equal(bad, character(0),
+                 info = paste(nm, "names a retired alias:", paste(bad, collapse = ", ")))
+  }
+})
+
+test_that(".competition_sql applies aliases for T20/ODI and units for Test", {
+  s20 <- .competition_sql("t20")
+  expect_match(s20, "NatWest T20 Blast", fixed = TRUE)
+  expect_match(s20, "ELSE m.event_name END", fixed = TRUE)  # rename, not partition
+  # Test still partitions to units and returns NULL for the unrecognised.
+  expect_match(.competition_sql("test"), "ELSE NULL END", fixed = TRUE)
+})

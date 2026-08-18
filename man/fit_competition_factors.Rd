@@ -15,7 +15,8 @@ fit_competition_factors(
   max_steps = 6L,
   clamp = c(0.5, 4),
   id_map = NULL,
-  as_at = NULL
+  as_at = NULL,
+  basis = c("runs", "survival")
 )
 }
 \arguments{
