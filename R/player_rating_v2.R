@@ -37,11 +37,92 @@
   switch(tolower(format),
     t20  = "'t20','it20'",
     odi  = "'odi','odm'",
+    # Test pairs with MDM (domestic first-class) exactly as ODI pairs with ODM,
+    # which is also what raa_cricsheet.R's own switch does. Without MDM there is
+    # almost no bridge network: 187 Test event_names against 10 MDM ones, but
+    # the MDM side carries 2,161 of the 3,047 matches.
+    test = "'test','mdm'",
     cli::cli_abort(c(
       "No rating match-types defined for format {.val {format}}.",
-      "i" = "Supported: {.val t20}, {.val odi}.",
-      "x" = "Do not add a {.val test} branch here alone -- see docs/plans/TEST-FORMAT-RATINGS-SCOPE.md; the wicket value and the competition reference set are missing too."))
+      "i" = "Supported: {.val t20}, {.val odi}, {.val test}."))
   )
+}
+
+# The SQL expression that identifies a "competition" for a bucket.
+#
+# For T20 and ODI, raw `event_name` IS the competition -- the IPL and the BBL
+# are genuinely different leagues that genuinely different players play in.
+#
+# For Test it is not, and using it would quietly wreck the bridge network. Test
+# cricket is one competition split across ~187 bilateral series names, often
+# several for the SAME contest: India v Australia appears as both
+# "Border-Gavaskar Trophy" (24 matches) and "India tour of Australia" (16), and
+# England v India as "England in India Test Series" (11), "England tour of
+# India" (12) AND "Pataudi Trophy" (9). English county cricket is split four
+# ways by sponsor across eras. Fitting a factor per name would estimate separate
+# strengths for synonyms and split every bridge between them.
+#
+# competition_units.R already solved this for exactly this pool (2026-08-06) and
+# was simply never wired into the rating. The CASE below is GENERATED from
+# COMPETITION_UNIT_MAP so that map stays the single source of truth rather than
+# being restated in SQL where the two could drift.
+.competition_sql <- function(format) {
+  if (tolower(format) != "test") {
+    # T20 and ODI DO have genuinely distinct competitions, so unlike Test this
+    # is a rename rather than a partition -- but a competition that changes
+    # sponsor changes its event_name while staying the same competition, and
+    # fitting a factor per name splits every bridge between the variants.
+    # England's domestic T20 alone is 1,554 matches across three names, more
+    # than the IPL. Generated from COMPETITION_ALIASES so that map stays the
+    # single source of truth.
+    esc <- function(x) gsub("'", "''", x, fixed = TRUE)
+    whens <- paste(sprintf("WHEN m.event_name = '%s' THEN '%s'",
+                           esc(names(COMPETITION_ALIASES)),
+                           esc(unname(COMPETITION_ALIASES))),
+                   collapse = "
+             ")
+    return(sprintf("COALESCE(CASE %s ELSE m.event_name END, 'unknown')", whens))
+  }
+
+  esc <- function(x) gsub("'", "''", x, fixed = TRUE)   # 'LV=' is fine; be safe anyway
+  whens <- paste(sprintf("WHEN m.event_name = '%s' THEN '%s'",
+                         esc(names(COMPETITION_UNIT_MAP)),
+                         esc(unname(COMPETITION_UNIT_MAP))),
+                 collapse = "\n             ")
+  # Any Test row is the "Test" unit whatever its series is called; an
+  # unrecognised first-class event returns NULL rather than a guess, so a new
+  # competition surfaces as unrated instead of being folded into a neighbour.
+  sprintf("CASE WHEN LOWER(m.match_type) = 'test' THEN 'Test'\n             %s\n             ELSE NULL END",
+          whens)
+}
+
+
+# Report competitions the rating could not price, distinguishing the two very
+# different reasons a delivery has no factor.
+#
+# `comp` is NA only when .competition_sql() deliberately returned NULL -- a
+# first-class competition absent from COMPETITION_UNIT_MAP. That is a MAP GAP:
+# the fit already warns and drops those rows, and a consumer that quietly rates
+# them at reference difficulty reproduces, in shape, the 60.5% un-discounted
+# incident this machinery was written to fix. Ranji Trophy is not in the map
+# today, so the next cricsheet refresh can trigger this.
+#
+# `comp` present but absent from `fmap` is the ordinary thin-bridge case, which
+# D-P23 measured and deliberately leaves at 1.0.
+.report_unrated <- function(b, where) {
+  nmap <- b[is.na(comp), .N]
+  if (nmap > 0) {
+    cli::cli_warn(c(
+      "{where}: {format(nmap, big.mark = ',')} deliver{?y/ies} are in a first-class competition with no normalised unit.",
+      "x" = "They are being rated at REFERENCE difficulty, which is almost certainly wrong for a competition nobody has classified.",
+      "i" = "Add it to {.field COMPETITION_UNIT_MAP} in {.file R/competition_units.R}."))
+  }
+  unrated <- b[!is.na(comp) & is.na(cfactor), .N]
+  if (unrated > 0) {
+    cli::cli_alert_info(
+      "{where}: {round(100 * unrated / nrow(b), 1)}% of deliveries are in competitions with no factor; treated as reference difficulty.")
+  }
+  invisible(NULL)
 }
 
 #' Competition Difficulty Factors
@@ -75,6 +156,11 @@
 #'   cell cannot dominate.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Pass one in
 #'   to avoid rebuilding it per call.
+#' @param as_at Date or NULL. Estimate strength from deliveries on or before
+#'   this date only. NULL uses everything, which is correct for a current
+#'   rating and WRONG for a backtest: a rolling-origin harness that let this
+#'   default would score a rating which already knew how the competitions
+#'   turned out, against baselines restricted to pre-origin data.
 #'
 #' @return data.table of `comp`, `factor`, `n_bridges`, `step` (0 = direct).
 #' @export
@@ -87,7 +173,10 @@ fit_competition_factors <- function(conn = NULL,
                                     min_players = 3L,
                                     max_steps = 6L,
                                     clamp = c(0.5, 4),
-                                    id_map = NULL) {
+                                    id_map = NULL,
+                                    as_at = NULL,
+                                    basis = c("runs", "survival")) {
+  basis <- match.arg(basis)
 
   own <- is.null(conn)
   if (own) {
@@ -97,16 +186,33 @@ fit_competition_factors <- function(conn = NULL,
   if (is.null(reference)) reference <- default_competition_reference(format, gender)
   types <- .rating_match_types(format)
 
+  comp_sql <- .competition_sql(format)
   d <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT d.batter_id, COALESCE(m.event_name,'unknown') AS comp,
+    SELECT d.batter_id, %1$s AS comp,
            SUM(d.runs_batter) AS runs, SUM(CAST(d.is_wicket AS INT)) AS outs,
            COUNT(*) AS balls
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
-    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
+    WHERE LOWER(d.match_type) IN (%2$s) AND m.gender = '%3$s'
       AND COALESCE(m.balls_per_over, 6) = 6 AND COALESCE(d.wides, 0) = 0
-    GROUP BY d.batter_id, m.event_name", types, gender)))
+      %4$s
+    GROUP BY d.batter_id, %1$s", comp_sql, types, gender,
+    # Competition strength must be estimated from pre-origin cricket only, or a
+    # backtest scores a rating that already knows how the leagues turned out.
+    if (is.null(as_at)) "" else
+      sprintf("AND d.match_date <= DATE '%s'", format(as.Date(as_at))))))
   if (!nrow(d)) cli::cli_abort("No deliveries for {format}/{gender}.")
+
+  # An unrecognised first-class competition maps to NULL rather than a guess, so
+  # it must be reported and dropped here rather than aggregated into one giant
+  # NA "competition" that would then bridge against everything.
+  if (anyNA(d$comp)) {
+    lost <- d[is.na(comp), sum(balls)]
+    cli::cli_warn(c(
+      "{format(lost, big.mark = ',')} ball{?s} are in a competition with no normalised unit; excluded.",
+      "i" = "Add it to {.field COMPETITION_UNIT_MAP} in {.file R/competition_units.R} if it belongs in the pool."))
+    d <- d[!is.na(comp)]
+  }
 
   # A split career is counted as two bridge players at half weight each, which
   # weakens exactly the bridges this scale rests on (#43).
@@ -125,10 +231,20 @@ fit_competition_factors <- function(conn = NULL,
 
   clip <- function(x) pmin(pmax(x, clamp[1]), clamp[2])
 
-  avg <- function(r, o) sum(r) / pmax(sum(o), 1)
+  # What "easier" means depends on the metric being adjusted, and a batting
+  # average is the wrong yardstick for a survival metric.
+  #   runs      sum(runs)  / sum(outs)  -- batting average
+  #   survival  sum(balls) / sum(outs)  -- balls faced per dismissal
+  # Both are ratios where larger means an easier competition, so the chaining,
+  # clamping and reference anchoring below are unchanged.
+  avg <- if (basis == "runs") {
+    function(r, o, b) sum(r) / pmax(sum(o), 1)
+  } else {
+    function(r, o, b) sum(b) / pmax(sum(o), 1)
+  }
   j <- merge(d[!comp %in% reference & balls >= min_here], ref, by = "batter_id")
   direct <- j[, .(n_bridges = .N,
-                  factor = avg(runs, outs) / avg(r_runs, r_outs)),
+                  factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls)),
               by = comp][n_bridges >= min_players]
   # Clamped before the chaining loop reads them as neighbour values, not after.
   direct[, `:=`(factor = clip(factor), step = 0L)]
@@ -141,7 +257,7 @@ fit_competition_factors <- function(conn = NULL,
     cand <- d[balls >= min_here]
     a <- cand[comp %in% known,
               .(batter_id, rcomp = comp, r_runs = runs, r_outs = outs, r_balls = balls)]
-    u <- cand[!comp %in% known, .(batter_id, comp, runs, outs)]
+    u <- cand[!comp %in% known, .(batter_id, comp, runs, outs, balls)]
     if (!nrow(a) || !nrow(u)) break
     jj <- merge(u, a, by = "batter_id", allow.cartesian = TRUE)
     if (!nrow(jj)) break
@@ -160,7 +276,7 @@ fit_competition_factors <- function(conn = NULL,
     jj <- jj[, .SD[1L], by = .(comp, batter_id)]
 
     nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id),
-                 factor = avg(runs, outs) / avg(r_runs, r_outs) * stats::median(rfac)),
+                 factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls) * stats::median(rfac)),
              by = comp][n_bridges >= min_players]
     if (!nrow(nw)) break
     # Clamp NOW, not once at the end. `fmap` reads these factors as the
@@ -175,6 +291,11 @@ fit_competition_factors <- function(conn = NULL,
   out <- out[is.finite(factor) & factor > 0]
   out[, factor := clip(factor)]
   data.table::setorder(out, -factor)
+  # Stamp the basis so a caller reusing this object across metrics can be told
+  # when it does not match. A runs-basis factor applied to a wickets rating is
+  # correctly ordered, plausible, and wrongly calibrated -- the exact shape this
+  # codebase keeps getting caught by.
+  data.table::setattr(out, "basis", basis)
   cli::cli_alert_success(
     "Rated {nrow(out)} competition{?s} ({sum(out$step == 0)} directly, {sum(out$step > 0)} by chaining).")
   out[]
@@ -200,13 +321,13 @@ fit_competition_factors <- function(conn = NULL,
 COMPETITION_REFERENCE_T20 <- c(
   "Indian Premier League", "Big Bash League", "Pakistan Super League",
   "SA20", "Caribbean Premier League", "International League T20",
-  "ICC Men's T20 World Cup", "Vitality Blast", "NatWest T20 Blast"
+  "ICC Men's T20 World Cup", "Vitality Blast"
 )
 
 #' @rdname competition_reference
 #' @export
 COMPETITION_REFERENCE_ODI <- c(
-  "ICC Cricket World Cup", "ICC World Cup", "ICC Champions Trophy",
+  "ICC Cricket World Cup", "ICC Champions Trophy",
   "NatWest Series", "ICC Men's Cricket World Cup Super League"
 )
 
@@ -223,9 +344,24 @@ COMPETITION_REFERENCE_T20_FEMALE <- c(
 #' @export
 COMPETITION_REFERENCE_ODI_FEMALE <- c(
   "ICC Women's World Cup", "ICC Women's Championship",
-  "Rachael Heyhoe Flint Trophy", "Women's Ashes",
+  "ECB Women's One-Day Cup", "Women's Ashes",
   "ICC Women's Cricket World Cup"
 )
+
+#' @rdname competition_reference
+#'
+#' @details
+#' Test takes a **one-element** reference set, which looks wrong next to the
+#' others and is not. The competition key for Test is a normalised unit from
+#' [normalise_competition()], not a series name, and every Test match collapses
+#' to the single unit `"Test"` -- the ~187 bilateral series names are naming
+#' variants of one competition, several of them for the same contest. So there
+#' are only six units in the whole pool (Test plus five domestic first-class
+#' programmes), and the elite one is the anchor. This is the same logic as ODI's
+#' "anchor on the elite tier even though domestic carries the volume", taken to
+#' its limit: Test is 31.7% of the balls and County Championship alone is more.
+#' @export
+COMPETITION_REFERENCE_TEST <- c("Test")
 
 #' Default Reference Set for a Bucket
 #' @param format,gender Bucket.
@@ -236,8 +372,12 @@ default_competition_reference <- function(format = "t20", gender = "male") {
   switch(key,
     "t20 male"    = COMPETITION_REFERENCE_T20,
     "odi male"    = COMPETITION_REFERENCE_ODI,
+    "test male"   = COMPETITION_REFERENCE_TEST,
     "t20 female"  = COMPETITION_REFERENCE_T20_FEMALE,
     "odi female"  = COMPETITION_REFERENCE_ODI_FEMALE,
+    # Deliberately no "test female": 24 matches and zero MDM female rows, so
+    # there is no domestic bridge network to place it against. See
+    # docs/plans/TEST-LAMBDA-PREDECLARATION.md.
     cli::cli_abort("No reference set defined for {format}/{gender}."))
 }
 
@@ -335,7 +475,33 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        iterations = 20L,
                                        factors = NULL,
                                        min_balls = 500L,
-                                       id_map = NULL) {
+                                       id_map = NULL,
+                                       metric = c("composite", "runs", "wickets",
+                                                  "team_score")) {
+  metric <- match.arg(metric)
+
+  # Validate BEFORE opening a connection or querying 2M rows: a bad argument
+  # should fail in milliseconds, not after the expensive part. (A test for this
+  # initially passed only because the working directory happened to resolve a
+  # database -- the check ran after the query.)
+  want_basis <- if (metric == "wickets") "survival" else "runs"
+  if (!is.null(factors)) {
+    # `factors` exists to be reused across calls, which is exactly how a
+    # runs-basis object reaches a wickets rating. Nothing in the returned table
+    # records its basis, so without this the mismatch is undetectable: the
+    # result is correctly ordered, plausible, and wrongly calibrated.
+    got <- attr(factors, "basis")
+    if (is.null(got)) {
+      cli::cli_warn(c(
+        "Supplied {.arg factors} carries no basis attribute, so it cannot be checked against {.val {metric}}.",
+        "i" = "Refit with {.fn fit_competition_factors} to stamp it, or pass {.code NULL} to fit here."))
+    } else if (!identical(got, want_basis)) {
+      cli::cli_abort(c(
+        "Supplied {.arg factors} were fitted on the {.val {got}} basis; {.val {metric}} needs {.val {want_basis}}.",
+        "x" = "A runs-basis factor on a wickets rating is correctly ordered, plausible and wrongly calibrated.",
+        "i" = "Pass {.code factors = NULL} to fit the right basis."))
+    }
+  }
 
   role <- match.arg(role)
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
@@ -346,20 +512,74 @@ calculate_player_rating_v2 <- function(format = "t20",
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
+  # MUST be the same competition key fit_competition_factors() produced. Those
+  # factors are keyed on normalised UNITS for Test, so joining them onto raw
+  # event_name silently leaves most deliveries un-discounted: measured at 60.5%,
+  # namely every Test series plus the sponsor-named county seasons, all of which
+  # then default to reference difficulty and undo the whole adjustment. The
+  # coverage warning below is what caught it -- do not silence it.
+  # The chosen metric is aliased to `raa` so every stage below -- the two-way
+  # opponent fit, the competition divide, the decay and the shrinkage -- is
+  # identical whichever is picked. A wickets rating is in WICKETS, not runs.
+  #
+  # The three L1 metrics (docs/reference/RATING-ARCHITECTURE.md). "composite" is
+  # the DEFAULT and is what shipped: raa_run + lambda * waa, on the runs scale.
+  # Changing that default would silently move every published rating.
+  metric_col <- switch(metric,
+    composite  = "r.raa",       # runs scale, wicket priced at a flat lambda
+    runs       = "r.raa_run",   # runs above average alone
+    wickets    = "r.waa",       # wickets above average, unpriced
+    team_score = "r.tsa")       # effect on the team's projected final score
+
+  # TSA exists for innings 1 of limited-overs cricket only: a chase truncates
+  # the innings so "projected final score" stops being the modelled quantity,
+  # and Test has no fixed ball allocation at all. Those rows are NULL and must
+  # be excluded rather than treated as zero contribution.
+  metric_filter <- if (metric == "team_score") " AND r.tsa IS NOT NULL" else ""
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
-           COALESCE(m.event_name, 'unknown') AS comp
+    SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, %s AS raa,
+           %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'%s",
+    metric_col, .competition_sql(format), toupper(format), gender, metric_filter)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
     cli::cli_abort(c("No rows in {.field main.cricsheet_ball_raa} for {format}/{gender}.",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
+  if (anyNA(b$raa)) {
+    cli::cli_abort(c("{sum(is.na(b$raa))} NA values in {.field {metric_col}}.",
+                     "i" = "Rebuild with {.fn build_cricsheet_raa}, or backfill the column."))
+  }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
+  # Truncate BEFORE fitting anything, not after aggregating.
+  #
+  # `as_at` used to filter only the per-match table at the end, which is
+  # harmless at the default (there is no future beyond the last match) and a
+  # LEAK for any backtest: at an origin of 2017 the opponent effects and the
+  # competition factors were still fitted on 2017-2026 deliveries, so the rating
+  # was scored against baselines that only ever saw pre-origin data. Same family
+  # as the venue_result_rate self-inclusion leak (#29). A rolling-origin harness
+  # is the whole reason as_at exists, so it has to bind here.
+  if (!is.null(as_at)) {
+    n0 <- nrow(b)
+    b <- b[match_date <= as.Date(as_at)]
+    if (!nrow(b)) {
+      cli::cli_abort("No {format}/{gender} deliveries on or before {as_at}.")
+    }
+    cli::cli_alert_info(
+      "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
+  }
+
+  if (is.null(factors)) {
+    # A batting average is the wrong yardstick for a survival metric, so WAA
+    # gets its competition strength from balls-per-dismissal instead of
+    # runs-per-dismissal. Same construction, same anchors, different numerator.
+    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
+                                      as_at = as_at, basis = want_basis)
+  }
   fmap <- stats::setNames(factors$factor, factors$comp)
   b[, cfactor := fmap[comp]]
   # An unrated competition keeps 1.0. "Unrated implies weak" was tested and
@@ -368,12 +588,8 @@ calculate_player_rating_v2 <- function(format = "t20",
   # the bridge threshold admits them. Assuming 1.6 there would have discounted
   # elite international cricket. With min_here = 30 the residue is ~0.5% of
   # deliveries, too small to move a rating either way. Report it regardless.
-  unrated <- b[is.na(cfactor), .N]
+  .report_unrated(b, "calculate_player_rating_v2")
   b[is.na(cfactor), cfactor := 1]
-  if (unrated > 0) {
-    cli::cli_alert_info(
-      "{round(100 * unrated / nrow(b), 1)}% of deliveries are in competitions with no factor; treated as reference difficulty.")
-  }
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   if (role == "batter") {
@@ -532,12 +748,19 @@ calculate_player_value_v2 <- function(format = "t20",
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
   }
 
+  # MUST be the same competition key fit_competition_factors() produced. Those
+  # factors are keyed on normalised UNITS for Test, so joining them onto raw
+  # event_name silently leaves most deliveries un-discounted: measured at 60.5%,
+  # namely every Test series plus the sponsor-named county seasons, all of which
+  # then default to reference difficulty and undo the whole adjustment. The
+  # coverage warning below is what caught it -- do not silence it.
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
-           COALESCE(m.event_name, 'unknown') AS comp
+           %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'", toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'",
+    .competition_sql(format), toupper(format), gender)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
@@ -545,9 +768,33 @@ calculate_player_value_v2 <- function(format = "t20",
                      "i" = "Run {.fn build_cricsheet_raa} first."))
   }
 
-  if (is.null(factors)) factors <- fit_competition_factors(conn, format, gender, id_map = id_map)
+  # Truncate BEFORE fitting anything, not after aggregating.
+  #
+  # `as_at` used to filter only the per-match table at the end, which is
+  # harmless at the default (there is no future beyond the last match) and a
+  # LEAK for any backtest: at an origin of 2017 the opponent effects and the
+  # competition factors were still fitted on 2017-2026 deliveries, so the rating
+  # was scored against baselines that only ever saw pre-origin data. Same family
+  # as the venue_result_rate self-inclusion leak (#29). A rolling-origin harness
+  # is the whole reason as_at exists, so it has to bind here.
+  if (!is.null(as_at)) {
+    n0 <- nrow(b)
+    b <- b[match_date <= as.Date(as_at)]
+    if (!nrow(b)) {
+      cli::cli_abort("No {format}/{gender} deliveries on or before {as_at}.")
+    }
+    cli::cli_alert_info(
+      "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
+  }
+
+  if (is.null(factors)) {
+    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
+                                      as_at = as_at)
+  }
   fmap <- stats::setNames(factors$factor, factors$comp)
-  b[, cfactor := fmap[comp]][is.na(cfactor), cfactor := 1]
+  b[, cfactor := fmap[comp]]
+  .report_unrated(b, "calculate_player_value_v2")
+  b[is.na(cfactor), cfactor := 1]
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   b[eff$bowler, on = "bowler_id", be := i.eff][is.na(be), be := 0]
@@ -669,14 +916,18 @@ player_career_context <- function(conn, format = "t20", gender = "male",
     sprintf("CASE WHEN COALESCE(d.wicket_kind,'') IN (%s) THEN 1 ELSE 0 END", bowler_kinds)
   }
 
+  # Same normalisation as the competition fit: for Test, `main_comp` should read
+  # "Test" or "County Championship", not whichever of three names that series
+  # happened to be filed under.
+  comp_sql <- .competition_sql(format)
   x <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT d.%s AS player_id, COALESCE(m.event_name,'unknown') AS comp,
-           COUNT(*) AS balls, SUM(%s) AS runs, SUM(%s) AS outs
+    SELECT d.%1$s AS player_id, %2$s AS comp,
+           COUNT(*) AS balls, SUM(%3$s) AS runs, SUM(%4$s) AS outs
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
-    WHERE LOWER(d.match_type) IN (%s) AND m.gender = '%s'
-      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%s IS NOT NULL
-    GROUP BY d.%s, m.event_name", who, runs_expr, outs_expr, types, gender, who, who)))
+    WHERE LOWER(d.match_type) IN (%5$s) AND m.gender = '%6$s'
+      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%1$s IS NOT NULL
+    GROUP BY d.%1$s, %2$s", who, comp_sql, runs_expr, outs_expr, types, gender)))
   # Typed, not bare: the caller merges this by "player_id", and a zero-COLUMN
   # data.table fails that merge with an error naming the missing key rather
   # than the empty query behind it.

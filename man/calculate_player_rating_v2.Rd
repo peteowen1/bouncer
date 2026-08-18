@@ -16,7 +16,8 @@ calculate_player_rating_v2(
   iterations = 20L,
   factors = NULL,
   min_balls = 500L,
-  id_map = NULL
+  id_map = NULL,
+  metric = c("composite", "runs", "wickets", "team_score")
 )
 }
 \arguments{

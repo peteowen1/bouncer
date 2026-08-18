@@ -7,15 +7,18 @@
 \alias{COMPETITION_REFERENCE_ODI}
 \alias{COMPETITION_REFERENCE_T20_FEMALE}
 \alias{COMPETITION_REFERENCE_ODI_FEMALE}
+\alias{COMPETITION_REFERENCE_TEST}
 \title{Reference Competitions Defining the 1.0 Difficulty Scale}
 \format{
-An object of class \code{character} of length 9.
+An object of class \code{character} of length 8.
 
-An object of class \code{character} of length 5.
+An object of class \code{character} of length 4.
 
 An object of class \code{character} of length 7.
 
 An object of class \code{character} of length 5.
+
+An object of class \code{character} of length 1.
 }
 \usage{
 COMPETITION_REFERENCE_T20
@@ -25,6 +28,8 @@ COMPETITION_REFERENCE_ODI
 COMPETITION_REFERENCE_T20_FEMALE
 
 COMPETITION_REFERENCE_ODI_FEMALE
+
+COMPETITION_REFERENCE_TEST
 }
 \description{
 One set per bucket. The scale is arbitrary but must be ANCHORED to something
@@ -41,5 +46,15 @@ standard, so the anchor has to be the elite international tournaments even
 though they are only about a tenth of the data. Women's cricket is anchored
 on its top franchise and international events together, since neither alone
 carries enough volume.
+
+Test takes a \strong{one-element} reference set, which looks wrong next to the
+others and is not. The competition key for Test is a normalised unit from
+\code{\link[=normalise_competition]{normalise_competition()}}, not a series name, and every Test match collapses
+to the single unit \code{"Test"} -- the ~187 bilateral series names are naming
+variants of one competition, several of them for the same contest. So there
+are only six units in the whole pool (Test plus five domestic first-class
+programmes), and the elite one is the anchor. This is the same logic as ODI's
+"anchor on the elite tier even though domestic carries the volume", taken to
+its limit: Test is 31.7\% of the balls and County Championship alone is more.
 }
 \keyword{datasets}

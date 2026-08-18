@@ -48,8 +48,21 @@
 #' runs in a 300-ball innings (bouncerverse#19). The naive state-difference
 #' estimator is selection-biased and must never be used to refit these.
 #'
-#' @param format Character. "t20" and "odi" are fitted. "test" aborts until
-#'   its lambda is fitted from actual outcomes.
+#' **Test fitted 2026-08-17 at 33**, over Test+MDM male (3,047 matches,
+#' 5,388,418 deliveries). Same method, with one addition the shorter formats
+#' never needed: a Test can be drawn, so the utility a wicket is priced against
+#' has to say what a draw is worth. Two of the three candidates turn out to be
+#' the same utility — since `pW+pD+pL=1`, `pW+0.5pD` is `0.5 + 0.5(pW-pL)`, an
+#' affine transform, and lambda is a ratio of derivatives — so the only real
+#' choice is whether a draw has value at all. It does: pricing a draw as a loss
+#' returns 22.7, i.e. *below ODI*, which cannot be right for a format whose
+#' innings ends on wickets and time rather than on balls, and it is far less
+#' consistent across innings (1.75x spread vs 1.25x). Corroborated by an
+#' independent estimator using innings run totals and no win probability at
+#' all: 30.5. Full working in
+#' `docs/reviews/2026-08-17-TEST-LAMBDA-FIT.md`.
+#'
+#' @param format Character. All three are fitted: "t20", "odi", "test".
 #'
 #' @return Numeric scalar, runs per wicket.
 #'
@@ -57,8 +70,12 @@
 get_raa_lambda <- function(format = c("t20", "odi", "test")) {
   format <- match.arg(format)
   switch(format,
-    t20 = 9.0,
-    odi = 23.0,
+    t20  = 9.0,
+    odi  = 23.0,
+    test = 33.0,
+    # Unreachable while match.arg() gates the argument, but kept so that adding
+    # a format to the signature without fitting its lambda fails loudly rather
+    # than inheriting another format's wicket value by falling through.
     cli::cli_abort(c(
       "RAA lambda is not fitted for {.val {format}} yet.",
       "i" = "Fit it from actual outcomes as the RAA plan specifies; do not reuse another format's value."

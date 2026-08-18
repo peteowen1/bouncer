@@ -1,3 +1,61 @@
+# bouncer 0.6.0
+
+## Three ratings instead of one
+
+Runs and wickets are now measured, adjusted and rated separately, and a third
+metric prices tempo. `lambda` moves from inside the per-ball score to the
+composite, where it can be made situational. See
+`bouncerverse/docs/reference/RATING-ARCHITECTURE.md`.
+
+* `main.cricsheet_ball_raa` gains **`waa`** (wickets above average, in wickets,
+  carrying no `lambda`) and **`tsa`** (the player's effect on his team's
+  projected final score). `waa` was backfilled across 11,045,263 balls without
+  rescoring — it is derivable from columns already stored, verified exactly.
+* `calculate_player_rating_v2()` takes `metric = "composite" | "runs" |
+  "wickets" | "team_score"`. **`composite` is the default and is unchanged**, so
+  no published rating moves.
+* The three carry genuinely different information: Spearman between the runs and
+  wickets ratings is +0.142 in T20 and −0.134 in Test.
+* `tsa` is innings 1 of limited-overs only. A chase truncates the innings, so
+  projected final score stops being the modelled quantity, and Test has no fixed
+  ball allocation.
+
+## Test-format ratings
+
+* **`get_raa_lambda("test")` returns 33**, fitted from actual match outcomes over
+  Test + MDM male (5,388,418 deliveries) rather than assumed. A Test can be
+  drawn, which the T20/ODI method never had to handle; pricing a draw as a loss
+  returns 22.7, *below* ODI, which cannot be right for a format whose innings
+  ends on wickets and time rather than balls.
+* `.rating_match_types()` and the competition key now support Test, which pairs
+  with MDM as ODI pairs with ODM.
+
+## Competition normalisation
+
+* **`COMPETITION_ALIASES` / `alias_competition()`** merge sponsor variants of one
+  competition. England's domestic T20 was split three ways across 1,554
+  matches — more than the IPL — and five other competitions were similarly
+  split. Unlike `COMPETITION_UNIT_MAP` this is a rename, not a partition: an
+  unlisted competition passes through unchanged.
+* **`COMPETITION_REFERENCE_ODI_FEMALE` was anchored on a competition that ended
+  in 2024.** The Rachael Heyhoe Flint Trophy's successor carries the ECB name
+  and was not in the reference set, so from 2025 that cricket was unanchored.
+  A test now fails if any reference set names a retired alias.
+* `fit_competition_factors()` takes `basis = "runs" | "survival"`. A batting
+  average is the wrong yardstick for a survival metric, and weak leagues inflate
+  scoring far more than they inflate survival.
+
+## Correctness
+
+* **`as_at` now truncates before fitting**, not only at the final aggregation.
+  It previously left the opponent effects and competition factors fitted on the
+  whole corpus, which is harmless for a current rating and a leak in any
+  backtest. Verified not to move the shipped path: `as_at = NULL` reproduces the
+  prior rating to 1.07e-14.
+* `derive_shrinkage_prior()` aborts when the between-player variance is not
+  identified, instead of returning a prior of order 1e11 that collapses every
+  player onto the population mean while preserving rank order.
+
 # bouncer 0.5.0
 
 ## Bowling figures: run outs are no longer the bowler's wicket

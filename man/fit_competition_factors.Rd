@@ -14,7 +14,9 @@ fit_competition_factors(
   min_players = 3L,
   max_steps = 6L,
   clamp = c(0.5, 4),
-  id_map = NULL
+  id_map = NULL,
+  as_at = NULL,
+  basis = c("runs", "survival")
 )
 }
 \arguments{
@@ -45,6 +47,12 @@ cell cannot dominate.}
 
 \item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Pass one in
 to avoid rebuilding it per call.}
+
+\item{as_at}{Date or NULL. Estimate strength from deliveries on or before
+this date only. NULL uses everything, which is correct for a current
+rating and WRONG for a backtest: a rolling-origin harness that let this
+default would score a rating which already knew how the competitions
+turned out, against baselines restricted to pre-origin data.}
 }
 \value{
 data.table of \code{comp}, \code{factor}, \code{n_bridges}, \code{step} (0 = direct).

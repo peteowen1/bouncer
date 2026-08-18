@@ -5,12 +5,28 @@
 # lives in the ticket record for bouncerverse#11; what is pinned here is the
 # arithmetic and the guardrails that do not need data.
 
-test_that("get_raa_lambda returns the fitted values and refuses unfitted formats", {
+test_that("get_raa_lambda returns the fitted values for all three formats", {
   expect_equal(get_raa_lambda("t20"), 9.0)
   # ODI fitted 22.5/23.4 by innings from actual outcomes (bouncerverse#19);
   # a wicket in a 300-ball innings is worth ~2.5x its T20 value.
   expect_equal(get_raa_lambda("odi"), 23.0)
-  expect_error(get_raa_lambda("test"), "not fitted")
+  # Test fitted 2026-08-17 at 33 over Test+MDM male (5,388,418 deliveries).
+  # This assertion previously pinned the ABSENCE of a Test value; the abort was
+  # the correct behaviour until the number existed, and is now unreachable
+  # through match.arg() -- see docs/reviews/2026-08-17-TEST-LAMBDA-FIT.md.
+  expect_equal(get_raa_lambda("test"), 33.0)
+
+  # The structural property, which outlives any individual refit: a wicket is
+  # worth more runs the longer the innings, because it destroys more of what
+  # remains. This is the pre-declared falsifier that rejected pricing a Test
+  # draw as a loss -- that utility returned 22.7, i.e. below ODI, in a format
+  # whose innings ends on wickets and time rather than on balls.
+  expect_gt(get_raa_lambda("odi"), get_raa_lambda("t20"))
+  expect_gt(get_raa_lambda("test"), get_raa_lambda("odi"))
+
+  # An unfitted format must still be refused rather than silently inheriting
+  # another format's wicket value.
+  expect_error(get_raa_lambda("hundred"), "should be one of")
 })
 
 test_that("the RAA formula prices runs and wickets the way the spec says", {
