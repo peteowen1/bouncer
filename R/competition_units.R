@@ -215,3 +215,21 @@ COMPETITION_PATHWAY_PATTERN_SQL <- paste(
   "'(Qualifier|Region|Division|World Cricket League|Challenge League|Pre-Qualifier)')",
   sep = " ")
 
+#' Nations that have reached a T20 World Cup without being a top-10 side
+#'
+#' Derived from the data: teams appearing in "ICC Men's T20 World Cup",
+#' "ICC World Twenty20" or "World T20" and not in [COMPETITION_TOP_NATIONS].
+#' Reaching a World Cup is an observable qualification bar, so this line is a
+#' fact about results rather than a judgement about reputation.
+#'
+#' It exists because one "Other Nations" bucket was too coarse. Netherlands and
+#' Scotland sat on the same 1.25 factor as Malta and Gibraltar, and the visible
+#' consequence was Karanbir Singh ranking 3rd among T20 men on 1,354 balls at an
+#' average of 58.7 in European associate cricket.
+#' @keywords internal
+COMPETITION_WC_ASSOCIATES <- c(
+  "Ireland", "Netherlands", "Zimbabwe", "Scotland", "Namibia", "Oman",
+  "United States of America", "United Arab Emirates", "Nepal", "Canada",
+  "Papua New Guinea", "Hong Kong", "Italy", "Uganda", "Kenya"
+)
+

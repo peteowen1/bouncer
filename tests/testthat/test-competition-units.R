@@ -213,7 +213,8 @@ test_that("limited-overs competition SQL emits the three bilateral buckets", {
   for (fmt in c("t20", "odi")) {
     sql <- bouncer:::.competition_sql(fmt)
     expect_true(grepl("International (Top Nations)", sql, fixed = TRUE))
-    expect_true(grepl("International (Other Nations)", sql, fixed = TRUE))
+    expect_true(grepl("International (Associate)", sql, fixed = TRUE))
+    expect_true(grepl("International (Developing)", sql, fixed = TRUE))
     expect_true(grepl("International (Mixed)", sql, fixed = TRUE))
     # the bucket only applies to international cricket -- franchise leagues and
     # named tournaments must keep their own identity
@@ -226,3 +227,14 @@ test_that("Test competition SQL is unaffected by the bilateral buckets", {
   expect_false(grepl("International (", sql, fixed = TRUE))
 })
 
+test_that("the World Cup associate tier is data-derived and excludes top nations", {
+  expect_true(all(c("Ireland", "Netherlands", "Zimbabwe", "Scotland", "Namibia",
+                    "Nepal", "Oman") %in% COMPETITION_WC_ASSOCIATES))
+  # no overlap with the top tier, or a match would match two buckets
+  expect_length(intersect(COMPETITION_WC_ASSOCIATES, COMPETITION_TOP_NATIONS), 0L)
+  # sides that have never reached a T20 World Cup must NOT be here -- that is
+  # the whole point of the Associate/Developing split (Karanbir Singh ranked 3rd
+  # among T20 men off European associate cricket when they shared a bucket)
+  expect_false(any(c("Malta", "Gibraltar", "Bulgaria", "Hungary", "Serbia") %in%
+                   COMPETITION_WC_ASSOCIATES))
+})

@@ -88,14 +88,24 @@
     # than the IPL. Named tournaments are unaffected -- see competition_units.R.
     fm <- paste(sprintf("'%s'", gsub("'", "''", COMPETITION_TOP_NATIONS, fixed = TRUE)),
                 collapse = ", ")
+    wc <- paste(sprintf("'%s'", gsub("'", "''", COMPETITION_WC_ASSOCIATES, fixed = TRUE)),
+                collapse = ", ")
     tours <- sprintf(
       "WHEN m.team_type = 'international' AND (%s) THEN
                  CASE WHEN m.team1 IN (%s) AND m.team2 IN (%s)
                         THEN 'International (Top Nations)'
-                      WHEN m.team1 NOT IN (%s) AND m.team2 NOT IN (%s)
-                        THEN 'International (Other Nations)'
-                      ELSE 'International (Mixed)' END",
-      COMPETITION_TOUR_PATTERN_SQL, fm, fm, fm, fm)
+                      WHEN (m.team1 IN (%s) OR m.team2 IN (%s))
+                       AND (m.team1 IN (%s) OR m.team1 IN (%s))
+                       AND (m.team2 IN (%s) OR m.team2 IN (%s))
+                        THEN 'International (Mixed)'
+                      WHEN (m.team1 IN (%s) OR m.team1 IN (%s))
+                       AND (m.team2 IN (%s) OR m.team2 IN (%s))
+                        THEN 'International (Associate)'
+                      ELSE 'International (Developing)' END",
+      COMPETITION_TOUR_PATTERN_SQL,
+      fm, fm,
+      fm, fm, fm, wc, fm, wc,
+      fm, wc, fm, wc)
     pathway <- sprintf(
       "WHEN m.team_type = 'international' AND (%s) THEN 'ICC Qualifying Pathway'",
       COMPETITION_PATHWAY_PATTERN_SQL)
@@ -183,6 +193,10 @@
 #'   it (HRV Cup, 231 balls, rated 0.82 off one game). `min_ref` keeps a light
 #'   floor because runs-per-dismissal is degenerate for a player with a handful
 #'   of reference balls and no dismissal.
+#' @param shrink_balls Numeric. Evidence, in balls, at which a fitted factor is
+#'   pulled halfway to 1.0. Replaces a hard evidence cutoff with a smooth one, so
+#'   a thin competition degrades toward neutral instead of either being trusted
+#'   in full or dropped entirely.
 #' @param min_players Integer. Bridges required before a competition is rated.
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin
@@ -204,7 +218,8 @@ fit_competition_factors <- function(conn = NULL,
                                     min_here = 1L,
                                     min_ref = 30L,
                                     min_players = 3L,
-                                    min_evidence = 1500,
+                                    min_evidence = 200,
+                                    shrink_balls = 1500,
                                     max_steps = 6L,
                                     clamp = c(0.5, 4),
                                     id_map = NULL,
@@ -261,6 +276,16 @@ fit_competition_factors <- function(conn = NULL,
   if (nrow(ref) < 20) {
     cli::cli_abort(c("Only {nrow(ref)} players clear the reference threshold.",
                      "i" = "Check {.arg reference} names against {.field cricsheet.matches.event_name}."))
+  }
+
+  # Shrink each factor toward 1.0 by how much paired evidence stands behind it.
+  # A hard evidence cutoff is a step function: 1,499 balls says nothing and
+  # 1,501 balls says everything. This is the smooth version, and it is the same
+  # medicine the player rating already takes via derive_shrinkage_prior(). A
+  # competition with `shrink_balls` of evidence lands halfway between its fitted
+  # value and neutral; a well-evidenced league is barely touched.
+  shrink <- function(f, evidence) {
+    (evidence * f + shrink_balls * 1) / (evidence + shrink_balls)
   }
 
   clip <- function(x) pmin(pmax(x, clamp[1]), clamp[2])
@@ -328,7 +353,7 @@ fit_competition_factors <- function(conn = NULL,
                   factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls)),
               by = comp][n_bridges >= min_players & evidence >= min_evidence]
   # Clamped before the chaining loop reads them as neighbour values, not after.
-  direct[, `:=`(factor = clip(factor), step = 0L)]
+  direct[, `:=`(factor = clip(shrink(factor, evidence)), step = 0L)]
   out <- rbind(direct,
                data.table::data.table(comp = reference, factor = 1, n_bridges = NA_integer_,
                                       step = 0L), fill = TRUE)
@@ -365,7 +390,7 @@ fit_competition_factors <- function(conn = NULL,
     # neighbour value on the next pass, so an unclamped extreme from a thin
     # cell otherwise propagates through every competition that chains via it
     # and can land back inside the range, uncorrectable.
-    nw[, factor := clip(factor)]
+    nw[, factor := clip(shrink(factor, evidence))]
     nw[, step := s]
     out <- rbind(out, nw)
   }
