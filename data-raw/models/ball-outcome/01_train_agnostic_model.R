@@ -553,6 +553,29 @@ if (exists("conn") && !is.null(conn)) {
 
 tryCatch({
   bench_conn <- get_db_connection(read_only = FALSE)
+
+  # Compare against the PREVIOUS run BEFORE recording this one. record_benchmarks()
+  # inserts a row with a newer run_timestamp, and get_latest_benchmark() selects
+  # MAX(run_timestamp) -- so checking after recording compares this run against
+  # itself, reports 0% change, and can never flag a regression. That is why the
+  # 2026-08-18 frame fix printed "All metrics stable or improved" while T20
+  # mlogloss moved 1.3805 -> 1.4137 (+2.40%, over the 2% threshold).
+  for (fmt in names(all_results)) {
+    regression <- check_benchmark_regression(
+      conn = bench_conn,
+      step_name = "agnostic_model",
+      format = fmt,
+      current_metrics = list(
+        mlogloss = all_results[[fmt]]$test_logloss
+      )
+    )
+    if (regression$is_regression) {
+      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
+    } else {
+      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
+    }
+  }
+
   for (fmt in names(all_results)) {
     res <- all_results[[fmt]]
     record_benchmarks(
@@ -572,22 +595,6 @@ tryCatch({
     )
   }
 
-  # Check for regressions against previous run
-  for (fmt in names(all_results)) {
-    regression <- check_benchmark_regression(
-      conn = bench_conn,
-      step_name = "agnostic_model",
-      format = fmt,
-      current_metrics = list(
-        mlogloss = all_results[[fmt]]$test_logloss
-      )
-    )
-    if (regression$is_regression) {
-      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
-    } else {
-      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
-    }
-  }
   DBI::dbDisconnect(bench_conn, shutdown = TRUE)
 }, error = function(e) {
   cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")
