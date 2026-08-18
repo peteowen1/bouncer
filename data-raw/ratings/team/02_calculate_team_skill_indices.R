@@ -145,7 +145,10 @@ base_query <- sprintf("
   cumulative_scores AS (
     SELECT
       d.*,
-      d.total_runs AS batting_score,
+      -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+      -- the running total post-ball). Subtract the ball's own runs to get the score
+      -- BEFORE it, or runs_difference leaks the target it is used to predict.
+      (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
       COALESCE(
         (SELECT SUM(it.innings_total)
          FROM innings_totals it
