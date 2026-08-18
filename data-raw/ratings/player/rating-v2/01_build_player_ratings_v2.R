@@ -39,7 +39,19 @@ BUCKETS <- list(
   list(format = "t20", gender = "male"),
   list(format = "odi", gender = "male"),
   list(format = "t20", gender = "female"),
-  list(format = "odi", gender = "female")
+  list(format = "odi", gender = "female"),
+  # Test goes LAST so an anchor failure here cannot block the buckets above it.
+  #
+  # Note what this pool actually is: 68% of it is domestic first-class, not Test
+  # cricket -- 3,672,691 `mdm` balls against 1,704,103 `test` balls, and the
+  # largest competitions are the County Championship (1.16M balls), Plunket
+  # Shield and Sheffield Shield, while The Ashes is 83,446. It is a first-class
+  # rating with Test matches inside it, normalised onto a "Test" reference.
+  #
+  # Test FEMALE is deliberately absent: 46,652 balls across 24 matches and 178
+  # batters. Too thin to rate, and a bucket that thin would produce a leaderboard
+  # that looks authoritative and is not.
+  list(format = "test", gender = "male")
 )
 
 # Anchors, per bucket: players who must appear near the top if the pipeline is
@@ -55,7 +67,22 @@ ANCHORS <- list(
   "t20 female" = list(batter = c("Mooney", "Perry"),             top = 25L,
                       bowler = c("Ecclestone"),                  btop = 15L),
   "odi female" = list(batter = c("Mandhana", "Sciver"),          top = 25L,
-                      bowler = c("Ecclestone"),                  btop = 15L)
+                      bowler = c("Ecclestone"),                  btop = 15L),
+  # Test thresholds are looser than the limited-overs ones on purpose, and the
+  # names are chosen for the pool rather than for fame. The pool is 3,293 batters
+  # and 2,555 bowlers, mostly English, New Zealand and Australian domestic
+  # first-class, so the elite Test players who are best represented in it are the
+  # ones who also play county cricket. Root, Duckett, Broad and Leach all do.
+  # Surnames must be distinctive because `check_anchor()` does a substring match
+  # and takes the best-ranked hit -- "Smith" would silently match any of a dozen
+  # county Smiths and pass on the wrong player.
+  #
+  # If these fail, the method is wrong, not the anchors: the most likely cause is
+  # that pooling Test with domestic first-class under one "Test" format lets
+  # county specialists outrank Test players, in which case the question is
+  # whether this rating should be Test-only.
+  "test male"  = list(batter = c("Root", "Duckett"),             top = 50L,
+                      bowler = c("Broad", "Leach"),              btop = 50L)
 )
 
 check_anchor <- function(r, surnames, top, label) {
