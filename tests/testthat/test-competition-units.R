@@ -186,15 +186,18 @@ test_that("a factors object on the wrong basis is refused, before any query runs
 
 # Bilateral tour bucketing ----------------------------------------------------
 
-test_that("the Full Member list is the twelve ICC Full Members", {
-  expect_length(COMPETITION_FULL_MEMBERS, 12L)
+test_that("the top-nations list is by playing standard, not ICC status", {
+  expect_length(COMPETITION_TOP_NATIONS, 10L)
   expect_true(all(c("Afghanistan", "Australia", "Bangladesh", "England", "India",
-                    "Ireland", "New Zealand", "Pakistan", "South Africa",
-                    "Sri Lanka", "West Indies", "Zimbabwe") %in%
-                  COMPETITION_FULL_MEMBERS))
-  # associate sides must NOT be in it, or their series bucket as Full Member
+                    "New Zealand", "Pakistan", "South Africa", "Sri Lanka",
+                    "West Indies") %in% COMPETITION_TOP_NATIONS))
+  # Ireland and Zimbabwe are ICC Full Members and are deliberately excluded on
+  # playing standard. If someone "corrects" this back to the Full Member list,
+  # this test should stop them and send them to the comment in competition_units.R
+  expect_false("Ireland" %in% COMPETITION_TOP_NATIONS)
+  expect_false("Zimbabwe" %in% COMPETITION_TOP_NATIONS)
   expect_false(any(c("Malta", "Gibraltar", "Nepal", "Namibia", "Bulgaria") %in%
-                   COMPETITION_FULL_MEMBERS))
+                   COMPETITION_TOP_NATIONS))
 })
 
 test_that("the tour pattern does not use SIMILAR TO", {
@@ -209,9 +212,9 @@ test_that("the tour pattern does not use SIMILAR TO", {
 test_that("limited-overs competition SQL emits the three bilateral buckets", {
   for (fmt in c("t20", "odi")) {
     sql <- bouncer:::.competition_sql(fmt)
-    expect_true(grepl("International Bilateral (Full Member)", sql, fixed = TRUE))
-    expect_true(grepl("International Bilateral (Associate)", sql, fixed = TRUE))
-    expect_true(grepl("International Bilateral (Mixed)", sql, fixed = TRUE))
+    expect_true(grepl("International (Top Nations)", sql, fixed = TRUE))
+    expect_true(grepl("International (Other Nations)", sql, fixed = TRUE))
+    expect_true(grepl("International (Mixed)", sql, fixed = TRUE))
     # the bucket only applies to international cricket -- franchise leagues and
     # named tournaments must keep their own identity
     expect_true(grepl("team_type = 'international'", sql, fixed = TRUE))
@@ -220,6 +223,6 @@ test_that("limited-overs competition SQL emits the three bilateral buckets", {
 
 test_that("Test competition SQL is unaffected by the bilateral buckets", {
   sql <- bouncer:::.competition_sql("test")
-  expect_false(grepl("International Bilateral", sql, fixed = TRUE))
+  expect_false(grepl("International (", sql, fixed = TRUE))
 })
 

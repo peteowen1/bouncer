@@ -150,11 +150,27 @@ alias_competition <- function(event_name) {
 # Three buckets rather than one, because a Zimbabwe-New Zealand series and a
 # Gibraltar-Malta series are not the same standard. Membership is decided by
 # whether each side is an ICC Full Member.
-COMPETITION_FULL_MEMBERS <- c(
-  "Afghanistan", "Australia", "Bangladesh", "England", "India", "Ireland",
-  "New Zealand", "Pakistan", "South Africa", "Sri Lanka", "West Indies",
-  "Zimbabwe"
+COMPETITION_TOP_NATIONS <- c(
+  "Afghanistan", "Australia", "Bangladesh", "England", "India",
+  "New Zealand", "Pakistan", "South Africa", "Sri Lanka", "West Indies"
 )
+# NOTE: this is a PLAYING-STANDARD list, not the ICC Full Member list. Ireland
+# and Zimbabwe are Full Members (Test status 2017 and 1992) and are deliberately
+# NOT here: Pete's call, on the basis that a Zimbabwe-Ireland series is closer in
+# standard to Netherlands-Scotland than to India-Australia. Two attempts to settle
+# it from the data were both confounded and neither was used --
+#   * mean RAA conceded ranks Associates ABOVE Full Members, because the agnostic
+#     model already carries league_avg_runs and event_tier, so RAA is measured
+#     against a baseline that is already raised for weak competitions;
+#   * raw runs conceded per ball ranks the Test 9 WORSE (1.271 vs 1.111), because
+#     they bowl at stronger batting sides -- that measures opposition, not self.
+#
+# DATA GAP: Afghanistan is listed for when the data is fixed, but is currently
+# ABSENT FROM THE ENTIRE DATABASE -- zero balls in any format, while every other
+# Full Member has 30-51k balls of international T20 alone. They were 2024 T20
+# World Cup semi-finalists. Their absence is why Rashid Khan, Mujeeb and Noor
+# Ahmad show no country on the leaderboards. This is a bouncerdata collection
+# gap, not a modelling choice.
 
 #' SQL fragment that recognises a bilateral tour or short multi-team series
 #'
@@ -168,8 +184,34 @@ COMPETITION_TOUR_PATTERN_SQL <- paste(
   # "Zimbabwe in New Zealand T20I Series" as its own competition. Use LIKE for
   # wildcards and regexp_matches() for alternation.
   "m.event_name LIKE '%% tour of %%'",
+  # Anything cricsheet calls a "Series" and plays between national sides is a
+  # bilateral or short multi-team series, never a standing tournament. This one
+  # line catches "Hong Kong Men's T20I Series", "No Frills T20I Series",
+  # "Pearl of Africa T20I Series" and the rest that the shapes below miss.
+  "OR m.event_name LIKE '%%Series'",
   "OR regexp_matches(m.event_name, ' in .*(Series|T20I|ODI|Twenty20)')",
   "OR regexp_matches(m.event_name, ' v .*(Series|T20I|ODI|Twenty20)')",
+  # A bare "Ireland v Zimbabwe" or "Ireland vs South Africa" -- two team names
+  # and nothing else. One match, three bridge players, and it was rated the
+  # weakest competition on record at the 4.0 ceiling.
+  "OR regexp_matches(m.event_name, '^[A-Za-z][A-Za-z ]* vs? [A-Za-z][A-Za-z ]*$')",
   "OR regexp_matches(m.event_name, '(Tri-Nation|Tri-Series|Triangular|Quadrangular|Pentangular)')",
+  sep = " ")
+
+#' SQL fragment recognising the ICC qualifying pathway
+#'
+#' The World Cup qualifying ladder is 49 separately-named events in the men's
+#' T20 data alone -- regional qualifiers, sub-regional groups, divisions,
+#' World Cricket League stages -- eight of them with six matches or fewer, and
+#' several pinned at the 4.0 factor ceiling off a handful of bridge players.
+#' They are one competitive standard: associate nations playing for World Cup
+#' places. Fitting one factor across all of them uses 227,895 balls instead of
+#' a few hundred. The World Cup proper is NOT in here -- it is a separate,
+#' substantial tournament and keeps its own factor.
+#' @keywords internal
+COMPETITION_PATHWAY_PATTERN_SQL <- paste(
+  "m.event_name NOT LIKE '%%World Cup'",
+  "AND regexp_matches(m.event_name,",
+  "'(Qualifier|Region|Division|World Cricket League|Challenge League|Pre-Qualifier)')",
   sep = " ")
 

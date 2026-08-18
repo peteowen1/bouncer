@@ -86,19 +86,26 @@
     # of 5 matches, which put Williamson and McCullum in the "weakest
     # competition on record" and rated a 5-match series in Bangladesh harder
     # than the IPL. Named tournaments are unaffected -- see competition_units.R.
-    fm <- paste(sprintf("'%s'", gsub("'", "''", COMPETITION_FULL_MEMBERS, fixed = TRUE)),
+    fm <- paste(sprintf("'%s'", gsub("'", "''", COMPETITION_TOP_NATIONS, fixed = TRUE)),
                 collapse = ", ")
     tours <- sprintf(
       "WHEN m.team_type = 'international' AND (%s) THEN
                  CASE WHEN m.team1 IN (%s) AND m.team2 IN (%s)
-                        THEN 'International Bilateral (Full Member)'
+                        THEN 'International (Top Nations)'
                       WHEN m.team1 NOT IN (%s) AND m.team2 NOT IN (%s)
-                        THEN 'International Bilateral (Associate)'
-                      ELSE 'International Bilateral (Mixed)' END",
+                        THEN 'International (Other Nations)'
+                      ELSE 'International (Mixed)' END",
       COMPETITION_TOUR_PATTERN_SQL, fm, fm, fm, fm)
+    pathway <- sprintf(
+      "WHEN m.team_type = 'international' AND (%s) THEN 'ICC Qualifying Pathway'",
+      COMPETITION_PATHWAY_PATTERN_SQL)
+    # Pathway is tested BEFORE the tour patterns: a name like "ICC Men's T20
+    # World Cup Sub Regional Europe Qualifier Group C" would otherwise be caught
+    # by the bilateral shapes and land in the wrong bucket.
     return(sprintf("COALESCE(CASE %s
+             %s
              %s ELSE m.event_name END, 'unknown')",
-                   whens, tours))
+                   whens, pathway, tours))
   }
 
   esc <- function(x) gsub("'", "''", x, fixed = TRUE)   # 'LV=' is fine; be safe anyway
