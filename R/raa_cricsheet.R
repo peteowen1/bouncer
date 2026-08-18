@@ -148,7 +148,10 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       d.runs_batter                              AS actual_runs,
       CAST(d.is_wicket AS INT)                   AS is_wicket,
       (d.wickets_fallen - CAST(d.is_wicket AS INT)) AS wickets_pre,
-      d.total_runs                               AS batting_score,
+      -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+      -- the running total post-ball). Subtract the ball's own runs to get the score
+      -- BEFORE it, or runs_difference leaks the target it is used to predict.
+      (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
       COALESCE((SELECT SUM(it.innings_total) FROM innings_totals it
                 WHERE it.match_id = d.match_id
                   AND it.batting_team = d.bowling_team
@@ -211,7 +214,9 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
   #            survived a ball the model expected him to lose, negative on
   #            dismissal. This is the WAA rating's input and it carries no
   #            lambda, so it is not committed to any run price.
-  #   raa      the composite, raa_run + lambda * waa, on the runs scale
+  #   raa      RVAA -- the composite, raa_run + lambda * waa, on the runs scale.
+  #            Distinct from TSA (team score added), which is the change in the
+  #            team's PROJECTED INNINGS TOTAL across a delivery, post minus pre.
   # Keeping waa unpriced is the point: lambda belongs at the aggregate, where it
   # can be made situational, not baked into every ball at a flat rate.
   balls[, raa_run := actual_runs - exp_runs]

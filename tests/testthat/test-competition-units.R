@@ -183,3 +183,58 @@ test_that("a factors object on the wrong basis is refused, before any query runs
         error = function(e) conditionMessage(e))
   expect_false(grepl("basis", e))
 })
+
+# Bilateral tour bucketing ----------------------------------------------------
+
+test_that("the top-nations list is by playing standard, not ICC status", {
+  expect_length(COMPETITION_TOP_NATIONS, 10L)
+  expect_true(all(c("Afghanistan", "Australia", "Bangladesh", "England", "India",
+                    "New Zealand", "Pakistan", "South Africa", "Sri Lanka",
+                    "West Indies") %in% COMPETITION_TOP_NATIONS))
+  # Ireland and Zimbabwe are ICC Full Members and are deliberately excluded on
+  # playing standard. If someone "corrects" this back to the Full Member list,
+  # this test should stop them and send them to the comment in competition_units.R
+  expect_false("Ireland" %in% COMPETITION_TOP_NATIONS)
+  expect_false("Zimbabwe" %in% COMPETITION_TOP_NATIONS)
+  expect_false(any(c("Malta", "Gibraltar", "Nepal", "Namibia", "Bulgaria") %in%
+                   COMPETITION_TOP_NATIONS))
+})
+
+test_that("the tour pattern does not use SIMILAR TO", {
+  # DuckDB's SIMILAR TO is RE2 regex: '%' is a LITERAL, not a wildcard, and the
+  # pattern must match the whole string. An earlier version used it here and
+  # matched NOTHING, silently leaving every bilateral series as its own
+  # competition -- the failure looked exactly like success.
+  expect_false(grepl("SIMILAR TO", COMPETITION_TOUR_PATTERN_SQL, fixed = TRUE))
+  expect_true(grepl("regexp_matches", COMPETITION_TOUR_PATTERN_SQL, fixed = TRUE))
+})
+
+test_that("limited-overs competition SQL emits the four bilateral buckets", {
+  for (fmt in c("t20", "odi")) {
+    sql <- bouncer:::.competition_sql(fmt)
+    expect_true(grepl("International (Top Nations)", sql, fixed = TRUE))
+    expect_true(grepl("International (Associate)", sql, fixed = TRUE))
+    expect_true(grepl("International (Developing)", sql, fixed = TRUE))
+    expect_true(grepl("International (Mixed)", sql, fixed = TRUE))
+    # the bucket only applies to international cricket -- franchise leagues and
+    # named tournaments must keep their own identity
+    expect_true(grepl("team_type = 'international'", sql, fixed = TRUE))
+  }
+})
+
+test_that("Test competition SQL is unaffected by the bilateral buckets", {
+  sql <- bouncer:::.competition_sql("test")
+  expect_false(grepl("International (", sql, fixed = TRUE))
+})
+
+test_that("the World Cup associate tier is data-derived and excludes top nations", {
+  expect_true(all(c("Ireland", "Netherlands", "Zimbabwe", "Scotland", "Namibia",
+                    "Nepal", "Oman") %in% COMPETITION_WC_ASSOCIATES))
+  # no overlap with the top tier, or a match would match two buckets
+  expect_length(intersect(COMPETITION_WC_ASSOCIATES, COMPETITION_TOP_NATIONS), 0L)
+  # sides that have never reached a T20 World Cup must NOT be here -- that is
+  # the whole point of the Associate/Developing split (Karanbir Singh ranked 3rd
+  # among T20 men off European associate cricket when they shared a bucket)
+  expect_false(any(c("Malta", "Gibraltar", "Bulgaria", "Hungary", "Serbia") %in%
+                   COMPETITION_WC_ASSOCIATES))
+})

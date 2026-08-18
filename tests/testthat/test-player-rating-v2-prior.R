@@ -101,3 +101,74 @@ test_that("derive_shrinkage_prior falls back loudly on a thin bucket", {
   expect_true(is.na(est$share))
   expect_true(is.na(est$s2_between))
 })
+
+# Split-half estimator -------------------------------------------------------
+
+test_that("split-half recovers a known prior", {
+  # Construct data where the true prior is known exactly. With a per-player
+  # effect of variance s2b and per-match noise s2w, the shrinkage prior IS
+  # s2w / s2b, and the split-half correlation over n matches per half is
+  # n*s2b / (n*s2b + s2w). Here s2b = 1 and s2w = 9, so the true prior is 9.
+  set.seed(1)
+  P <- 120L; M <- 40L; s2b <- 1; s2w <- 9
+  eff <- stats::rnorm(P, 0, sqrt(s2b))
+  d <- data.table::data.table(
+    player_id = rep(sprintf("p%03d", seq_len(P)), each = M),
+    match_id  = rep(sprintf("m%03d", seq_len(M)), times = P),
+    v         = rep(eff, each = M) + stats::rnorm(P * M, 0, sqrt(s2w)))
+  out <- suppressMessages(derive_shrinkage_prior(d))
+  expect_equal(out$method, "split_half")
+  # recovery within 40% -- this is a variance-ratio estimate on 120 players
+  expect_gt(out$k, 9 * 0.6)
+  expect_lt(out$k, 9 * 1.4)
+  expect_true(is.finite(out$split_half_r) && out$split_half_r > 0)
+  expect_true(is.finite(out$k_anova))
+})
+
+test_that("split-half is deterministic without a seed", {
+  # The split alternates over a stable sort rather than sampling, so two calls
+  # must agree exactly. A seeded split over an unordered result would not.
+  set.seed(2)
+  P <- 60L; M <- 30L
+  # NOTE: a real per-player effect is required. Without one the ANOVA guard
+  # aborts first (correctly -- between-player variance is not identified) and
+  # split-half never runs, because it refines the ANOVA result rather than
+  # replacing it.
+  d <- data.table::data.table(
+    player_id = rep(sprintf("p%03d", seq_len(P)), each = M),
+    match_id  = rep(sprintf("m%03d", seq_len(M)), times = P),
+    v         = rep(stats::rnorm(P), each = M) + stats::rnorm(P * M, 0, 2))
+  a <- suppressMessages(derive_shrinkage_prior(data.table::copy(d)))
+  b <- suppressMessages(derive_shrinkage_prior(data.table::copy(d)[sample(nrow(d))]))
+  expect_equal(a$k, b$k)
+})
+
+test_that("too little data falls back to the ANOVA estimate", {
+  # Fewer players than sh_min_players, so split-half must not be attempted and
+  # the existing ANOVA path (with all its guards) still governs.
+  set.seed(3)
+  P <- 35L; M <- 25L
+  d <- data.table::data.table(
+    player_id = rep(sprintf("p%03d", seq_len(P)), each = M),
+    match_id  = rep(sprintf("m%03d", seq_len(M)), times = P),
+    v         = rep(stats::rnorm(P), each = M) + stats::rnorm(P * M, 0, 3))
+  out <- suppressMessages(derive_shrinkage_prior(d))
+  expect_equal(out$method, "anova")
+  expect_null(out$split_half_r)
+})
+
+test_that("reported share is consistent with the prior actually used", {
+  # share and k are two views of one quantity: share = 1 / (1 + k). Leaving the
+  # ANOVA share beside a split-half k reported "35.4 matches (3.84%)", where
+  # 3.84% is the share implied by k = 25 -- two different answers in one line.
+  set.seed(4)
+  P <- 120L; M <- 40L
+  d <- data.table::data.table(
+    player_id = rep(sprintf("p%03d", seq_len(P)), each = M),
+    match_id  = rep(sprintf("m%03d", seq_len(M)), times = P),
+    v         = rep(stats::rnorm(P), each = M) + stats::rnorm(P * M, 0, 3))
+  out <- suppressMessages(derive_shrinkage_prior(d))
+  expect_equal(out$method, "split_half")
+  expect_equal(out$share, 1 / (1 + out$k), tolerance = 1e-9)
+  expect_true(out$share_anova != out$share)
+})

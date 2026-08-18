@@ -54,7 +54,10 @@ WITH innings_totals AS (
 cumulative_scores AS (
   SELECT
     d.*,
-    d.total_runs AS batting_score,
+    -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+    -- the running total post-ball). Subtract the ball's own runs to get the score
+    -- BEFORE it, or runs_difference leaks the target it is used to predict.
+    (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
     COALESCE(
       (SELECT SUM(it.innings_total)
        FROM innings_totals it
@@ -78,7 +81,11 @@ SELECT
   gender,
   runs_batter,
   is_wicket,
-  wickets_fallen,
+  -- FIX: wickets_fallen is the count AFTER this delivery, so subtract the
+  -- ball's own wicket to get the count BEFORE it. Same defect as the
+  -- batting_score fix above, in the sibling column of the same SELECT --
+  -- which is precisely how the original leak survived three audits.
+  (wickets_fallen - CAST(is_wicket AS INT)) AS wickets_fallen,
   (batting_score - bowling_score) AS runs_difference
 FROM cumulative_scores
 WHERE runs_batter NOT IN (5)         -- Remove 5 runs (rare)

@@ -106,7 +106,10 @@ for (format in FORMATS_TO_TRAIN) {
     cumulative_scores AS (
       SELECT
         d.*,
-        d.total_runs AS batting_score,
+        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+        -- the running total post-ball). Subtract the ball's own runs to get the score
+        -- BEFORE it, or runs_difference leaks the target it is used to predict.
+        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
         COALESCE(
           (SELECT SUM(it.innings_total)
            FROM innings_totals it
@@ -649,6 +652,25 @@ if (exists("conn") && !is.null(conn)) {
 
 tryCatch({
   bench_conn <- get_db_connection(read_only = FALSE)
+
+  # Regression check runs BEFORE recording: record_benchmarks() inserts a row with
+  # a newer run_timestamp and get_latest_benchmark() takes MAX(run_timestamp), so
+  # checking afterwards compares this run against itself and can never fire.
+  # Check regressions and compare with agnostic
+  for (fmt in names(all_results)) {
+    regression <- check_benchmark_regression(
+      conn = bench_conn,
+      step_name = "full_model",
+      format = fmt,
+      current_metrics = list(mlogloss = all_results[[fmt]]$test_logloss)
+    )
+    if (regression$is_regression) {
+      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
+    } else {
+      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
+    }
+  }
+
   for (fmt in names(all_results)) {
     res <- all_results[[fmt]]
     record_benchmarks(
@@ -668,20 +690,6 @@ tryCatch({
     )
   }
 
-  # Check regressions and compare with agnostic
-  for (fmt in names(all_results)) {
-    regression <- check_benchmark_regression(
-      conn = bench_conn,
-      step_name = "full_model",
-      format = fmt,
-      current_metrics = list(mlogloss = all_results[[fmt]]$test_logloss)
-    )
-    if (regression$is_regression) {
-      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
-    } else {
-      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
-    }
-  }
   DBI::dbDisconnect(bench_conn, shutdown = TRUE)
 }, error = function(e) {
   cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")

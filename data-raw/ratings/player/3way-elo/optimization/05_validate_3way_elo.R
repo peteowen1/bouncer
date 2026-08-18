@@ -462,6 +462,22 @@ tryCatch({
   bench_conn <- get_db_connection(read_only = FALSE)
   test_dates <- range(validation_data$match_date, na.rm = TRUE)
   gender_label <- if (is.null(GENDER)) "all" else GENDER
+
+  # Regression check runs BEFORE recording: record_benchmarks() inserts a row with
+  # a newer run_timestamp and get_latest_benchmark() takes MAX(run_timestamp), so
+  # checking afterwards compares this run against itself and can never fire.
+  # Check regression
+  regression <- check_benchmark_regression(
+    conn = bench_conn,
+    step_name = "3way_elo",
+    format = FORMAT,
+    current_metrics = list(
+      poisson_loss = poisson_loss,
+      log_loss = log_loss,
+      brier_score = brier_score
+    )
+  )
+
   record_benchmarks(
     conn = bench_conn,
     step_name = "3way_elo",
@@ -489,17 +505,6 @@ tryCatch({
                   "| Gender:", gender_label, "| Blending:", USE_BLENDING)
   )
 
-  # Check regression
-  regression <- check_benchmark_regression(
-    conn = bench_conn,
-    step_name = "3way_elo",
-    format = FORMAT,
-    current_metrics = list(
-      poisson_loss = poisson_loss,
-      log_loss = log_loss,
-      brier_score = brier_score
-    )
-  )
   if (regression$is_regression) {
     cli::cli_alert_danger("REGRESSION: {paste(regression$messages, collapse = '; ')}")
   } else {

@@ -40,7 +40,10 @@ FORMAT_GROUPS <- list(
   test = c("Test", "MDM")
 )
 
-FORMAT_FILTER <- NULL    # NULL = all formats, or "t20", "odi", "test" for single format
+# Pre-set before sourcing to override, same as FORCE_FULL. A full rebuild holds
+# millions of rows plus predictions in memory at once, so running one format per
+# process is the difference between finishing and being OOM-killed.
+if (!exists("FORMAT_FILTER")) FORMAT_FILTER <- NULL    # NULL = all formats, or "t20", "odi", "test" for single format
 BATCH_SIZE <- 10000      # Deliveries per batch insert
 MATCH_LIMIT <- NULL      # Set to integer to limit matches (for testing)
 if (!exists("FORCE_FULL")) FORCE_FULL <- FALSE  # If TRUE, always recalculate everything (pre-set before sourcing to override)
@@ -145,7 +148,10 @@ base_query <- sprintf("
   cumulative_scores AS (
     SELECT
       d.*,
-      d.total_runs AS batting_score,
+      -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+      -- the running total post-ball). Subtract the ball's own runs to get the score
+      -- BEFORE it, or runs_difference leaks the target it is used to predict.
+      (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
       COALESCE(
         (SELECT SUM(it.innings_total)
          FROM innings_totals it

@@ -118,7 +118,10 @@ for (format in FORMATS_TO_TRAIN) {
     cumulative_scores AS (
       SELECT
         d.*,
-        d.total_runs AS batting_score,
+        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
+        -- the running total post-ball). Subtract the ball's own runs to get the score
+        -- BEFORE it, or runs_difference leaks the target it is used to predict.
+        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
         COALESCE(
           (SELECT SUM(it.innings_total)
            FROM innings_totals it
@@ -134,6 +137,7 @@ for (format in FORMATS_TO_TRAIN) {
       SELECT DISTINCT
         m.match_id,
         m.event_name,
+        m.balls_per_over,
         CASE
           WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
           WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
@@ -210,6 +214,19 @@ for (format in FORMATS_TO_TRAIN) {
     LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
+      -- The training population must match the population the model is SCORED on
+      -- (R/raa_cricsheet.R), or every expectation is biased by the difference.
+      -- Wides are runs_batter = 0 and the scorer drops them; leaving them in
+      -- training pulled expectations down by wide_rate x mean_runs -- measured
+      -- 2026-08-18 as +0.0463 mean RAA in T20 male against a +0.0418 prediction,
+      -- and the same relation held across a 16x range of wide rates (ODI 2.3%%,
+      -- Test 0.2%%). The other three conditions mirror the scorer likewise.
+      AND COALESCE(cs.wides, 0) = 0
+      AND cs.batter_id IS NOT NULL
+      AND cs.bowler_id IS NOT NULL
+      AND cs.innings BETWEEN 1
+          AND CASE WHEN LOWER(cs.match_type) IN ('test', 'mdm') THEN 4 ELSE 2 END
+      AND COALESCE(mc.balls_per_over, 6) = 6
     %s
   ", format_filter_bare,  # innings_totals: bare deliveries table
      format_filter_d,      # cumulative_scores: d. prefix
@@ -550,6 +567,29 @@ if (exists("conn") && !is.null(conn)) {
 
 tryCatch({
   bench_conn <- get_db_connection(read_only = FALSE)
+
+  # Compare against the PREVIOUS run BEFORE recording this one. record_benchmarks()
+  # inserts a row with a newer run_timestamp, and get_latest_benchmark() selects
+  # MAX(run_timestamp) -- so checking after recording compares this run against
+  # itself, reports 0% change, and can never flag a regression. That is why the
+  # 2026-08-18 frame fix printed "All metrics stable or improved" while T20
+  # mlogloss moved 1.3805 -> 1.4137 (+2.40%, over the 2% threshold).
+  for (fmt in names(all_results)) {
+    regression <- check_benchmark_regression(
+      conn = bench_conn,
+      step_name = "agnostic_model",
+      format = fmt,
+      current_metrics = list(
+        mlogloss = all_results[[fmt]]$test_logloss
+      )
+    )
+    if (regression$is_regression) {
+      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
+    } else {
+      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
+    }
+  }
+
   for (fmt in names(all_results)) {
     res <- all_results[[fmt]]
     record_benchmarks(
@@ -569,22 +609,6 @@ tryCatch({
     )
   }
 
-  # Check for regressions against previous run
-  for (fmt in names(all_results)) {
-    regression <- check_benchmark_regression(
-      conn = bench_conn,
-      step_name = "agnostic_model",
-      format = fmt,
-      current_metrics = list(
-        mlogloss = all_results[[fmt]]$test_logloss
-      )
-    )
-    if (regression$is_regression) {
-      cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
-    } else {
-      cli::cli_alert_success("{toupper(fmt)}: {regression$messages}")
-    }
-  }
   DBI::dbDisconnect(bench_conn, shutdown = TRUE)
 }, error = function(e) {
   cli::cli_alert_warning("Benchmark recording failed: {conditionMessage(e)}")
