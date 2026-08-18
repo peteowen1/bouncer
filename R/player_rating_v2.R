@@ -1105,7 +1105,8 @@ player_career_context <- function(conn, format = "t20", gender = "male",
 #'   only; they are still rated.
 #' @return list with `k`, `s2_within`, `s2_between`, `players`, `share`.
 #' @export
-derive_shrinkage_prior <- function(pm, min_matches = 5L) {
+derive_shrinkage_prior <- function(pm, min_matches = 5L,
+                                   sh_min_matches = 20L, sh_min_players = 40L) {
   s <- pm[, .(n = .N, m = mean(v), ss = sum((v - mean(v))^2)), by = player_id]
   s <- s[n >= min_matches]
   if (nrow(s) < 30L) {
@@ -1137,7 +1138,58 @@ derive_shrinkage_prior <- function(pm, min_matches = 5L) {
   }
 
   out <- list(k = msw / s2b_raw, s2_within = msw, s2_between = s2b_raw,
-              players = K, share = s2b_raw / (s2b_raw + msw))
+              players = K, share = s2b_raw / (s2b_raw + msw), method = "anova")
+
+  # SPLIT-HALF is preferred where it is measurable, because the ANOVA estimate
+  # is systematically too small. Split each player's matches in two, correlate
+  # the half-means across players, and the prior follows from
+  # k = n_half * (1 - r) / r with no distributional assumption at all.
+  #
+  # Measured 2026-08-19 on every bucket, split-half against ANOVA:
+  #   t20 male batter 35.1 / 25.0    t20 male bowler 57.5 / 39.5
+  #   odi male batter 38.0 / 28.5    odi male bowler 35.0 / 26.9
+  #   t20 fem batter  24.9 / 14.6    t20 fem bowler  41.4 / 24.5
+  #   odi fem batter  19.8 / 15.5    odi fem bowler  16.9 / 20.4
+  #   test male batter 23.3 / 18.1   test male bowler 13.6 / 9.9
+  # Higher in NINE of ten, by 28-71%, the exception being the smallest bucket.
+  # So every rating in the system was under-shrunk, and low-volume players were
+  # over-credited -- which is what put a 48-match associate-cricket batter 6th
+  # among T20 men.
+  #
+  # The split alternates over a STABLE sort rather than sampling. That is
+  # deterministic without needing a seed, and sidesteps the trap that a seeded
+  # split over an unordered query result reproduces nothing.
+  # Note the ordering: this REFINES the ANOVA result rather than replacing it,
+  # so the abort above still governs. A bucket whose between-player variance is
+  # not identified never reaches this point, which is deliberate -- split-half
+  # would report r <= 0 there anyway, and the abort carries the better message.
+  sh <- tryCatch({
+    d <- pm[, .(player_id, match_id, v)]
+    keep <- d[, .N, by = player_id][N >= sh_min_matches, player_id]
+    d <- d[player_id %in% keep]
+    if (data.table::uniqueN(d$player_id) < sh_min_players) NULL else {
+      data.table::setorder(d, player_id, match_id)
+      d[, .half := rep_len(c(1L, 2L), .N), by = player_id]
+      hm <- data.table::dcast(d[, .(m = mean(v), n = .N), by = .(player_id, .half)],
+                              player_id ~ .half, value.var = c("m", "n"))
+      hm <- hm[stats::complete.cases(hm)]
+      r <- suppressWarnings(stats::cor(hm$m_1, hm$m_2))
+      nh <- mean(c(hm$n_1, hm$n_2))
+      if (!is.finite(r) || r <= 0 || r >= 1) NULL
+      else list(k = nh * (1 - r) / r, r = r, nh = nh, players = nrow(hm))
+    }
+  }, error = function(e) NULL)
+
+  if (!is.null(sh) && is.finite(sh$k) && sh$k >= 1 && sh$k <= 500) {
+    cli::cli_alert_info(paste(
+      "Split-half prior {round(sh$k, 1)} matches (r = {round(sh$r, 3)} on",
+      "{sh$players} players, {round(sh$nh)} matches per half);",
+      "ANOVA would have given {round(out$k, 1)}."))
+    out$k_anova <- out$k
+    out$k <- sh$k
+    out$split_half_r <- sh$r
+    out$method <- "split_half"
+  }
 
   # Measured 2.2-5.5% across the six buckets that have enough data. Outside a
   # band far wider than that, the estimate is telling you something about the
