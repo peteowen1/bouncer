@@ -136,7 +136,11 @@ alias_competition <- function(event_name) {
 # label of league strength:
 #
 #   * "Zimbabwe in New Zealand T20I Series" -- Williamson, McCullum, Guptill,
-#     Taylor -- came out as the WEAKEST competition on record at 2.90.
+#     Taylor -- came out as the weakest competition in the fit at that point,
+#     2.90. (After the first pass of grouping, a bare one-match "Ireland v
+#     Zimbabwe" took that title at the 4.0 clamp ceiling -- see the pattern
+#     notes below. Two different series held it at two different stages; neither
+#     is "the weakest on record" without saying when.)
 #   * "Australia tour of Bangladesh", 5 matches, came out as the HARDEST
 #     competition on record at 0.53 -- harder than the IPL or the World Cup.
 #   * 88 of 267 short international events rated weaker than 2.0, and 35 were
@@ -147,9 +151,12 @@ alias_competition <- function(event_name) {
 # sample. Named tournaments (ICC events, qualifiers, continental cups) are NOT
 # affected -- they are separately named and keep their own factors.
 #
-# Three buckets rather than one, because a Zimbabwe-New Zealand series and a
-# Gibraltar-Malta series are not the same standard. Membership is decided by
-# whether each side is an ICC Full Member.
+# FOUR buckets rather than one, because a Zimbabwe-New Zealand series and a
+# Gibraltar-Malta series are not the same standard: Top Nations, Mixed,
+# Associate and Developing. Membership crosses two lists -- COMPETITION_TOP_NATIONS
+# and COMPETITION_WC_ASSOCIATES -- and is NOT decided by ICC Full Member status;
+# see the note on COMPETITION_TOP_NATIONS immediately below, which deliberately
+# excludes two Full Members.
 COMPETITION_TOP_NATIONS <- c(
   "Afghanistan", "Australia", "Bangladesh", "England", "India",
   "New Zealand", "Pakistan", "South Africa", "Sri Lanka", "West Indies"
@@ -192,8 +199,9 @@ COMPETITION_TOUR_PATTERN_SQL <- paste(
   "OR regexp_matches(m.event_name, ' in .*(Series|T20I|ODI|Twenty20)')",
   "OR regexp_matches(m.event_name, ' v .*(Series|T20I|ODI|Twenty20)')",
   # A bare "Ireland v Zimbabwe" or "Ireland vs South Africa" -- two team names
-  # and nothing else. One match, three bridge players, and it was rated the
-  # weakest competition on record at the 4.0 ceiling.
+  # and nothing else. One match, three bridge players, and after the first pass
+  # of grouping it was the weakest competition in the fit, pinned at the 4.0
+  # clamp ceiling.
   "OR regexp_matches(m.event_name, '^[A-Za-z][A-Za-z ]* vs? [A-Za-z][A-Za-z ]*$')",
   "OR regexp_matches(m.event_name, '(Tri-Nation|Tri-Series|Triangular|Quadrangular|Pentangular)')",
   sep = " ")

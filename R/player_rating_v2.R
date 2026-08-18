@@ -81,8 +81,8 @@
                            esc(unname(COMPETITION_ALIASES))),
                    collapse = "
              ")
-    # Bilateral tours and short series collapse into three buckets by member
-    # status. Fitting one factor per series meant 326 competitions off a median
+    # Bilateral tours and short series collapse into four buckets by playing
+    # standard. Fitting one factor per series meant 326 competitions off a median
     # of 5 matches, which put Williamson and McCullum in the "weakest
     # competition on record" and rated a 5-match series in Bangladesh harder
     # than the IPL. Named tournaments are unaffected -- see competition_units.R.
@@ -179,6 +179,11 @@
 #'   NULL resolves per bucket via [default_competition_reference()].
 #' @param min_here,min_ref Integer. Balls required in the competition being
 #'   rated, and in the reference set, for a player to count as a bridge.
+#'   `min_here` is 1 as of 2026-08-19: bridges are now weighted by the harmonic
+#'   mean of their two ball counts, so a one-ball bridge earns a weight near zero
+#'   on its own and no cutoff is needed. `min_evidence` and `shrink_balls` do the
+#'   real work. The plateau note below describes the OLD regime, when the default
+#'   was a hard 30 and the cutoff was the only defence.
 #'   `min_here` was 60 until 2026-08-16 (D-P23); 60 left 4.1% of deliveries in
 #'   competitions with no factor, almost all of them short bilateral T20I
 #'   series where no batter reaches 60 balls, and rating those is worth +2.2%
@@ -188,9 +193,11 @@
 #'   before a competition is rated. Bridges are weighted by the harmonic mean of
 #'   their ball counts in the two competitions (inverse-variance weighting), so
 #'   this is a real evidence floor where a headcount is not: three players with
-#'   one ball each contribute almost nothing and must not rate a league. 1,500
-#'   is roughly seven innings of paired evidence; at 200 a SINGLE match cleared
-#'   it (HRV Cup, 231 balls, rated 0.82 off one game). `min_ref` keeps a light
+#'   one ball each contribute almost nothing and must not rate a league. The
+#'   default is 200; a single match is roughly 230 balls, so this alone does not
+#'   stop a one-game competition being rated -- `shrink_balls` is what pulls such
+#'   a factor back toward neutral (the HRV Cup, 231 balls over one match, rated
+#'   0.82 before shrinkage and 0.99 after). `min_ref` keeps a light
 #'   floor because runs-per-dismissal is degenerate for a player with a handful
 #'   of reference balls and no dismissal.
 #' @param shrink_balls Numeric. Evidence, in balls, at which a fitted factor is
@@ -315,7 +322,8 @@ fit_competition_factors <- function(conn = NULL,
   # competition tested was biased the same way, which is also why weak leagues
   # were being discounted far too little downstream.
   #
-  # Scaling both sides of each bridge down to the thinner one makes every player
+  # Weighting both sides of each bridge by the harmonic mean of its two ball
+  # counts makes every player
   # contribute the same evidence to numerator and denominator. Deliberately NOT
   # a mean of per-player ratios: a player with few dismissals has an explosive
   # average, and averaging such ratios is the D-P37 defect.
@@ -346,6 +354,26 @@ fit_competition_factors <- function(conn = NULL,
 
   j <- merge(d[!comp %in% reference & balls >= min_here], ref, by = "batter_id")
   j <- balance(j)
+  # `avg()` floors its denominator with pmax(sum(outs), 1). A competition can
+  # clear the ball-based min_evidence gate while its weighted DISMISSAL total
+  # sits below 1, at which point the floor invents the denominator and the
+  # resulting factor still lands inside the [0.5, 4] clamp -- plausible-looking
+  # and fabricated, the same shape as the 1.5e11 shrinkage-prior incident.
+  #
+  # This is not hypothetical: on 2026-08-19 the ECA Men's European Cup (775
+  # balls) cleared the gate on ball volume with under one weighted dismissal
+  # behind it. Refuse to rate such a competition rather than publish a number
+  # resting on a floor, which is how derive_shrinkage_prior() already handles
+  # its own unidentified case. An unrated competition falls back to reference
+  # difficulty and is reported by .report_unrated().
+  .starved <- j[, .(o = sum(outs), ro = sum(r_outs)), by = comp][o < 1 | ro < 1, comp]
+  if (length(.starved)) {
+    cli::cli_alert_info(paste(
+      "Dropping {length(.starved)} competition{?s} with under one weighted dismissal:",
+      "{paste(utils::head(.starved, 5), collapse = ', ')}.",
+      "A factor there would rest on a floored denominator."))
+    j <- j[!comp %in% .starved]
+  }
   # `balls` holds the harmonic weight after balance(), so its sum is the
   # effective paired evidence behind the competition, in balls. That replaces a
   # raw headcount: three players with one ball each is not three bridges.
@@ -382,6 +410,18 @@ fit_competition_factors <- function(conn = NULL,
     jj <- jj[, .SD[1L], by = .(comp, batter_id)]
 
     jj <- balance(jj)
+    # Same starvation check as the direct pass. Without it a competition
+    # rejected for having under one weighted dismissal against the REFERENCE
+    # simply reappears here bridged against a neighbour -- the ECA Men's
+    # European Cup did exactly that, dropped at step 0 and rated 1.27 at step 1.
+    .starved_c <- jj[, .(o = sum(outs), ro = sum(r_outs)), by = comp][o < 1 | ro < 1, comp]
+    if (length(.starved_c)) {
+      cli::cli_alert_info(paste(
+        "Chaining: dropping {length(.starved_c)} competition{?s} with under one",
+        "weighted dismissal: {paste(utils::head(.starved_c, 5), collapse = ', ')}."))
+      jj <- jj[!comp %in% .starved_c]
+      if (!nrow(jj)) break
+    }
     nw <- jj[, .(n_bridges = data.table::uniqueN(batter_id), evidence = sum(balls),
                  factor = avg(runs, outs, balls) / avg(r_runs, r_outs, r_balls) * stats::median(rfac)),
              by = comp][n_bridges >= min_players & evidence >= min_evidence]
@@ -1159,10 +1199,14 @@ derive_shrinkage_prior <- function(pm, min_matches = 5L,
   # The split alternates over a STABLE sort rather than sampling. That is
   # deterministic without needing a seed, and sidesteps the trap that a seeded
   # split over an unordered query result reproduces nothing.
-  # Note the ordering: this REFINES the ANOVA result rather than replacing it,
-  # so the abort above still governs. A bucket whose between-player variance is
-  # not identified never reaches this point, which is deliberate -- split-half
-  # would report r <= 0 there anyway, and the abort carries the better message.
+  # Two separate things, which an earlier version of this comment conflated:
+  #   CONTROL FLOW is inherited -- the abort above still governs, so a bucket
+  #     whose between-player variance is not identified never reaches here.
+  #     That is deliberate: split-half would report r <= 0 anyway, and the
+  #     abort carries the better message.
+  #   THE ESTIMATE IS REPLACED, not blended. When split-half succeeds, out$k is
+  #     overwritten outright and the ANOVA value survives only as k_anova for
+  #     diagnostics. Everything downstream reads out$k.
   sh <- tryCatch({
     d <- pm[, .(player_id, match_id, v)]
     keep <- d[, .N, by = player_id][N >= sh_min_matches, player_id]
@@ -1178,8 +1222,21 @@ derive_shrinkage_prior <- function(pm, min_matches = 5L,
       if (!is.finite(r) || r <= 0 || r >= 1) NULL
       else list(k = nh * (1 - r) / r, r = r, nh = nh, players = nrow(hm))
     }
-  }, error = function(e) NULL)
+  }, error = function(e) {
+    # Never let a genuine failure look like "not enough data". Both used to
+    # return NULL, so a dcast collision, a renamed column or an OOM would
+    # silently drop the pipeline back onto the estimator we know under-shrinks,
+    # with no signal at all.
+    cli::cli_warn(c("Split-half prior estimation failed; falling back to ANOVA.",
+                    "x" = conditionMessage(e)))
+    NULL
+  })
 
+  if (!is.null(sh) && (!is.finite(sh$k) || sh$k < 1 || sh$k > 500)) {
+    cli::cli_warn(c(
+      "Split-half prior {round(sh$k, 1)} is outside the plausible 1-500 band; using ANOVA instead.",
+      "i" = "r = {round(sh$r, 3)} on {sh$players} players."))
+  }
   if (!is.null(sh) && is.finite(sh$k) && sh$k >= 1 && sh$k <= 500) {
     cli::cli_alert_info(paste(
       "Split-half prior {round(sh$k, 1)} matches (r = {round(sh$r, 3)} on",

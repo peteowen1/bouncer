@@ -89,3 +89,44 @@ test_that("wickets_fallen is corrected to the pre-delivery count", {
   d <- data.frame(wickets_fallen = c(0L, 1L, 1L, 2L), is_wicket = c(FALSE, TRUE, FALSE, TRUE))
   expect_equal(d$wickets_fallen - as.integer(d$is_wicket), c(0L, 0L, 1L, 1L))
 })
+
+test_that("a query that corrects batting_score also corrects wickets_fallen", {
+  # THE SIBLING RULE. Both columns are post-delivery, so any query that fixes one
+  # must fix the other. The original leak survived three separate frame audits
+  # precisely because `wickets_fallen` was corrected and `total_runs` sitting on
+  # the adjacent line was not; the review of 2026-08-19 then found the mirror
+  # image -- R/model_predictions.R had the batting_score fix applied and left
+  # wickets_fallen raw, feeding a model that predicts P(wicket).
+  #
+  # Checking them as a PAIR is what makes this catchable. A guard on either
+  # column alone has now failed in both directions.
+  roots <- c(testthat::test_path("..", "..", "R"),
+             testthat::test_path("..", "..", "data-raw"))
+  roots <- roots[dir.exists(roots)]
+  skip_if(length(roots) == 0, "source tree not available")
+  files <- unlist(lapply(roots, list.files, pattern = "[.]R$",
+                         recursive = TRUE, full.names = TRUE))
+
+  offenders <- character(0)
+  for (f in files) {
+    txt <- paste(readLines(f, warn = FALSE), collapse = "
+")
+    # Prefix-tolerant: the real code writes `d.total_runs - (d.runs_batter +
+    # d.runs_extras)` and `cs.` elsewhere. A fixed-string check for the
+    # unprefixed form matched nothing and made this whole guard vacuous --
+    # verified by reintroducing the bug and watching it pass.
+    fixes_runs <- grepl("[a-z]*[.]?total_runs[[:space:]]*-[[:space:]]*[(][a-z]*[.]?runs_batter", txt)
+    if (!fixes_runs) next
+    # does the same file also select wickets_fallen, and if so is it corrected?
+    selects_wkts <- grepl("wickets_fallen", txt, fixed = TRUE)
+    fixes_wkts   <- grepl("[a-z]*[.]?wickets_fallen[[:space:]]*-[[:space:]]*CAST", txt)
+    if (selects_wkts && !fixes_wkts) offenders <- c(offenders, basename(f))
+  }
+  expect_equal(offenders, character(0),
+               info = paste0(
+                 "These files correct the pre-delivery RUNS frame but use ",
+                 "wickets_fallen without the matching `- is_wicket` correction:
+  ",
+                 paste(offenders, collapse = "
+  ")))
+})

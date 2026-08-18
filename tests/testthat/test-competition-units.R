@@ -209,7 +209,7 @@ test_that("the tour pattern does not use SIMILAR TO", {
   expect_true(grepl("regexp_matches", COMPETITION_TOUR_PATTERN_SQL, fixed = TRUE))
 })
 
-test_that("limited-overs competition SQL emits the three bilateral buckets", {
+test_that("limited-overs competition SQL emits the four bilateral buckets", {
   for (fmt in c("t20", "odi")) {
     sql <- bouncer:::.competition_sql(fmt)
     expect_true(grepl("International (Top Nations)", sql, fixed = TRUE))
