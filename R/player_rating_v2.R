@@ -427,7 +427,8 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        factors = NULL,
                                        min_balls = 500L,
                                        id_map = NULL,
-                                       metric = c("composite", "runs", "wickets")) {
+                                       metric = c("composite", "runs", "wickets",
+                                                  "team_score")) {
   metric <- match.arg(metric)
 
   role <- match.arg(role)
@@ -453,16 +454,23 @@ calculate_player_rating_v2 <- function(format = "t20",
   # the DEFAULT and is what shipped: raa_run + lambda * waa, on the runs scale.
   # Changing that default would silently move every published rating.
   metric_col <- switch(metric,
-    composite = "r.raa",       # runs scale, wicket priced at a flat lambda
-    runs      = "r.raa_run",   # runs above average alone
-    wickets   = "r.waa")       # wickets above average, unpriced
+    composite  = "r.raa",       # runs scale, wicket priced at a flat lambda
+    runs       = "r.raa_run",   # runs above average alone
+    wickets    = "r.waa",       # wickets above average, unpriced
+    team_score = "r.tsa")       # effect on the team's projected final score
+
+  # TSA exists for innings 1 of limited-overs cricket only: a chase truncates
+  # the innings so "projected final score" stops being the modelled quantity,
+  # and Test has no fixed ball allocation at all. Those rows are NULL and must
+  # be excluded rather than treated as zero contribution.
+  metric_filter <- if (metric == "team_score") " AND r.tsa IS NOT NULL" else ""
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, %s AS raa,
            COALESCE(%s, 'unknown') AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'",
-    metric_col, .competition_sql(format), toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'%s",
+    metric_col, .competition_sql(format), toupper(format), gender, metric_filter)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
