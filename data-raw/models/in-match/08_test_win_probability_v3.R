@@ -87,23 +87,35 @@ venue_avgs <- DBI::dbGetQuery(conn, "
 ")
 setDT(venue_avgs)
 
-# Venue result rates (historical P(result) at each venue) — Bayesian smoothed
+# Venue result rates, TIME-CAUSAL and per match (#29).
+#
+# This was one rate per venue computed over every match at the ground --
+# including the match being predicted. A live prediction cannot know its own
+# outcome, and the weight is not small: the median Test venue has 3 matches, so
+# with prior_weight 10 the match's own result carried 7.7% of its own feature.
+# Because training and serving built it identically it never showed as a
+# train/serve divergence; it inflated both.
+#
+# Do NOT "fix" this by subtracting the match's own outcome. That was measured
+# and is far worse -- see the note at the top of R/venue_rates.R.
 venue_results <- DBI::dbGetQuery(conn, "
-  SELECT m.venue,
-         COUNT(*) AS n_matches,
-         SUM(CASE WHEN m.outcome_type != 'draw' THEN 1 ELSE 0 END) AS n_results
+  SELECT m.match_id, m.venue, m.match_date, m.outcome_type
   FROM cricsheet.matches m
   WHERE LOWER(m.match_type) IN ('test', 'mdm')
     AND m.outcome_type IS NOT NULL
-  GROUP BY m.venue
 ")
 setDT(venue_results)
-# Bayesian smoothing: prior_weight matches of which prior_rate are results
-prior_weight <- 10
-prior_rate <- mean(venue_results$n_results / venue_results$n_matches, na.rm = TRUE)
-venue_results[, venue_result_rate := (n_results + prior_weight * prior_rate) /
-                                      (n_matches + prior_weight)]
-venue_results <- venue_results[, .(venue, venue_result_rate)]
+venue_results[, `:=`(decided = 1L,
+                     is_result = as.integer(outcome_type != "draw"),
+                     match_date = as.Date(match_date))]
+venue_results <- time_causal_venue_result_rate(venue_results, prior_weight = 10)
+prior_rate <- attr(venue_results, "prior_rate")
+cli::cli_alert_info(paste0(
+  "Venue result rate: ", sum(venue_results$at_prior), " of ", nrow(venue_results),
+  " matches (", round(100 * mean(venue_results$at_prior), 1),
+  "%) are the first at their ground and fall back to the prior (",
+  round(prior_rate, 3), ")."))
+venue_results <- venue_results[, .(match_id, venue_result_rate)]
 
 DBI::dbDisconnect(conn, shutdown = TRUE)
 
@@ -173,7 +185,9 @@ inn_wide <- dcast(innings_totals, match_id ~ paste0("inn", innings),
 deliveries <- merge(deliveries, inn_wide, by = "match_id", all.x = TRUE)
 deliveries <- merge(deliveries, venue_avgs, by = "venue", all.x = TRUE)
 deliveries[is.na(venue_avg), venue_avg := 340]
-deliveries <- merge(deliveries, venue_results, by = "venue", all.x = TRUE)
+# Keyed on match_id, not venue: the rate is now per match, because what a
+# venue's history looked like depends on when you ask (#29).
+deliveries <- merge(deliveries, venue_results, by = "match_id", all.x = TRUE)
 deliveries[is.na(venue_result_rate), venue_result_rate := prior_rate]
 
 # Team1 lead (cumulative)

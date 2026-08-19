@@ -149,22 +149,31 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
     , .(venue_avg = mean(inn1), n = .N), by = ground_name]
   venue_avg_dt[n < 3, venue_avg := NA_real_]
 
+  # Time-causal, per MATCH rather than per venue -- see R/venue_rates.R. This
+  # was a per-venue rate computed over every match at the ground including the
+  # one being scored, which is label information a live prediction cannot have
+  # (#29). The merge key changes from ground_name to match_id accordingly.
   outcomes <- data.table::as.data.table(DBI::dbGetQuery(conn, "
-    SELECT m.match_id, m.ground_name, m.status_text
+    SELECT m.match_id, m.ground_name, m.match_date, m.status_text
     FROM cricinfo.matches m WHERE m.format = 'TEST'
   "))
   oc <- cricinfo_match_outcome(outcomes$status_text)
   outcomes[, is_result := as.integer(oc$result %in% c("batting_first", "chasing"))]
   outcomes[, decided := as.integer(!is.na(oc$result) & oc$result != "no_result")]
-  vr <- outcomes[decided == 1, .(n = .N, res = sum(is_result)), by = ground_name]
-  prior_rate <- vr[, sum(res) / sum(n)]
-  PRIOR <- 10
-  vr[, venue_result_rate := (res + PRIOR * prior_rate) / (n + PRIOR)]
+  vr <- time_causal_venue_result_rate(
+    outcomes[, .(match_id, venue = ground_name,
+                 match_date = as.Date(match_date), decided, is_result)],
+    prior_weight = 10)
+  prior_rate <- attr(vr, "prior_rate")
+  cli::cli_alert_info(
+    "Venue result rate: {sum(vr$at_prior)} of {nrow(vr)} matches
+     ({round(100 * mean(vr$at_prior), 1)}%) are the first at their ground and
+     fall back to the prior ({round(prior_rate, 3)}).")
 
   balls <- merge(balls, venue_avg_dt[, .(ground_name, venue_avg)],
                  by = "ground_name", all.x = TRUE)
-  balls <- merge(balls, vr[, .(ground_name, venue_result_rate)],
-                 by = "ground_name", all.x = TRUE)
+  balls <- merge(balls, vr[, .(match_id, venue_result_rate)],
+                 by = "match_id", all.x = TRUE)
   balls[is.na(venue_avg), venue_avg := 340]
   balls[is.na(venue_result_rate), venue_result_rate := prior_rate]
 
