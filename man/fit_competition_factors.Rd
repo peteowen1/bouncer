@@ -9,9 +9,11 @@ fit_competition_factors(
   format = "t20",
   gender = "male",
   reference = NULL,
-  min_here = 30L,
-  min_ref = 150L,
+  min_here = 1L,
+  min_ref = 30L,
   min_players = 3L,
+  min_evidence = 200,
+  shrink_balls = 1500,
   max_steps = 6L,
   clamp = c(0.5, 4),
   id_map = NULL,
@@ -32,6 +34,11 @@ NULL resolves per bucket via \code{\link[=default_competition_reference]{default
 
 \item{min_here, min_ref}{Integer. Balls required in the competition being
 rated, and in the reference set, for a player to count as a bridge.
+\code{min_here} is 1 as of 2026-08-19: bridges are now weighted by the harmonic
+mean of their two ball counts, so a one-ball bridge earns a weight near zero
+on its own and no cutoff is needed. \code{min_evidence} and \code{shrink_balls} do the
+real work. The plateau note below describes the OLD regime, when the default
+was a hard 30 and the cutoff was the only defence.
 \code{min_here} was 60 until 2026-08-16 (D-P23); 60 left 4.1\% of deliveries in
 competitions with no factor, almost all of them short bilateral T20I
 series where no batter reaches 60 balls, and rating those is worth +2.2\%
@@ -39,6 +46,23 @@ next-game Spearman. The metric is flat from 10 to 40 and falls off only at
 60, so this sits mid-plateau rather than at an edge.}
 
 \item{min_players}{Integer. Bridges required before a competition is rated.}
+
+\item{min_evidence}{Numeric. Effective paired evidence, in balls, required
+before a competition is rated. Bridges are weighted by the harmonic mean of
+their ball counts in the two competitions (inverse-variance weighting), so
+this is a real evidence floor where a headcount is not: three players with
+one ball each contribute almost nothing and must not rate a league. The
+default is 200; a single match is roughly 230 balls, so this alone does not
+stop a one-game competition being rated -- \code{shrink_balls} is what pulls such
+a factor back toward neutral (the HRV Cup, 231 balls over one match, rated
+0.82 before shrinkage and 0.99 after). \code{min_ref} keeps a light
+floor because runs-per-dismissal is degenerate for a player with a handful
+of reference balls and no dismissal.}
+
+\item{shrink_balls}{Numeric. Evidence, in balls, at which a fitted factor is
+pulled halfway to 1.0. Replaces a hard evidence cutoff with a smooth one, so
+a thin competition degrades toward neutral instead of either being trusted
+in full or dropped entirely.}
 
 \item{max_steps}{Integer. Chaining passes.}
 

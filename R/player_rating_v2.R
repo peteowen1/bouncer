@@ -143,7 +143,7 @@
 #
 # `comp` present but absent from `fmap` is the ordinary thin-bridge case, which
 # D-P23 measured and deliberately leaves at 1.0.
-.report_unrated <- function(b, where) {
+.report_unrated <- function(b, where, col = "cfactor") {
   nmap <- b[is.na(comp), .N]
   if (nmap > 0) {
     cli::cli_warn(c(
@@ -151,7 +151,7 @@
       "x" = "They are being rated at REFERENCE difficulty, which is almost certainly wrong for a competition nobody has classified.",
       "i" = "Add it to {.field COMPETITION_UNIT_MAP} in {.file R/competition_units.R}."))
   }
-  unrated <- b[!is.na(comp) & is.na(cfactor), .N]
+  unrated <- b[!is.na(comp) & is.na(get(col)), .N]
   if (unrated > 0) {
     cli::cli_alert_info(
       "{where}: {round(100 * unrated / nrow(b), 1)}% of deliveries are in competitions with no factor; treated as reference difficulty.")
@@ -448,6 +448,177 @@ fit_competition_factors <- function(conn = NULL,
   out[]
 }
 
+# Map a per-ball value onto the reference scale: RECENTRE, then COMPRESS.
+#
+#   .competition_adjust(v0, m_here, m_ref, cfactor) = m_ref + (v0 - m_here) / cfactor
+#
+# One definition used by both the rating and the value function, and by the
+# tests. It exists as a function rather than an inline expression because the
+# property that matters is not obvious by reading it, and was wrong in
+# production until 2026-08-19: for ANY two players with the same raw value, the
+# one in the EASIER competition must come out lower -- at negative values as
+# well as positive. The old form (`v0 / cfactor`) satisfied that only for
+# positive v0 and inverted it for negative, so a below-average batter was made
+# better by a weak-league discount. See test-competition-adjust.R.
+#
+# `m_here` is what an average bridge player scores in the competition and
+# `m_ref` what the same players score in the reference, so subtracting m_here
+# and adding m_ref moves a player onto the reference scale. Dividing the
+# remaining deviation by `cfactor` then compresses it -- see the OPEN QUESTION
+# in calculate_player_rating_v2() before treating that second step as settled.
+.competition_adjust <- function(v0, m_here, m_ref, cfactor) {
+  m_ref + (v0 - m_here) / cfactor
+}
+
+#' Competition Difficulty Offsets
+#'
+#' How much a competition inflates per-ball value relative to the reference set,
+#' as an ADDITIVE shift on the same scale the rating aggregates.
+#'
+#' This replaces the divisive competition factor for the rating, and the reason
+#' is a defect rather than a preference. [fit_competition_factors()] estimates a
+#' ratio of batting AVERAGES -- a non-negative quantity, where a ratio is the
+#' natural form. The rating then divided RVAA by it, and RVAA is a SIGNED
+#' deviation. Dividing a negative by 1.6 moves it toward zero, so a below-average
+#' batter in a weak league was made to look BETTER by the weak-league discount.
+#' On 2026-08-19, 671 of 1,039 below-average male T20 batters with 200+ balls
+#' were being helped this way, by a mean of +0.032 RVAA/ball and up to +0.201.
+#'
+#' The fix is to recentre rather than rescale: subtract what an average bridge
+#' player scores in that competition. Three forms were tested against a
+#' bridge-prediction target on 1,788 player-competition pairs (T20 men) --
+#' additive, additive-then-multiplicative, and a multiplicative form on a
+#' non-negative level scale. With the pipeline's shrinkage applied to all three
+#' they are indistinguishable (RMSE 0.1400 / 0.1401 / 0.1400) and all beat both
+#' the divisive form (0.1423) and no adjustment (0.1439). Additive is taken
+#' because it is the only one of the three with no free parameter.
+#'
+#' Weak leagues DO also spread players out -- the same players' RVAA has SD
+#' 0.304 in a weak competition against 0.226 in the reference, a ratio of 1.35 --
+#' so a multiplier below 1 on the deviation is real. It is not applied because
+#' shrinkage downstream already compresses far harder (the best multiplier
+#' against this target is 0.107, and every form independently chose a shrinkage
+#' of 850 balls), leaving the extra term worth 0.0001 RMSE.
+#'
+#' @section Why this is fitted here and not in fit_competition_factors:
+#' The offset is subtracted from `raa - opp_eff`, so it must be ESTIMATED on
+#' `raa - opp_eff`. Weak competitions are full of weak bowlers, and
+#' [fit_two_way_effects()] already removes part of the competition's strength
+#' as an opponent effect. An offset fitted on raw RVAA would re-remove what the
+#' opponent adjustment has already taken out, and double-discount weak leagues.
+#' That is why this takes an already-adjusted ball table rather than a
+#' connection.
+#'
+#' @param b data.table of deliveries carrying `comp`, the bridge id column, and
+#'   the adjusted per-ball value. Not modified; only read.
+#' @param id_col Character. Column bridging players -- "batter_id" for a batting
+#'   offset, "bowler_id" for a bowling one. The two are fitted separately
+#'   because a competition can have weak bowling and ordinary batting.
+#' @param value_col Character. The already-opponent-adjusted per-ball value.
+#' @param reference Character vector of competitions defining the 0.0 anchor.
+#' @param min_evidence,shrink_balls,min_players,max_steps,clamp As in
+#'   [fit_competition_factors()], and deliberately the same defaults: the two
+#'   estimators face the same thin-bridge problem and drifting them apart would
+#'   mean two sets of tuning to reason about.
+#' @return data.table of `comp`, `offset`, `m_here`, `m_ref`, `n_bridges`,
+#'   `evidence`, `step`, where `offset == m_here - m_ref`. `m_here` is what an
+#'   average bridge player scores in that competition and `m_ref` is what the
+#'   same players score in the reference, so a caller can recentre exactly
+#'   (subtract `m_here`, add `m_ref`) rather than only shift. Reference
+#'   competitions are present at offset 0, step 0.
+#' @export
+fit_competition_offsets <- function(b, id_col, value_col, reference,
+                                    min_evidence = 200, shrink_balls = 1500,
+                                    min_players = 3L, max_steps = 6L,
+                                    clamp = c(-0.75, 0.75)) {
+  stopifnot(is.data.frame(b), id_col %in% names(b), value_col %in% names(b),
+            "comp" %in% names(b), length(clamp) == 2L, clamp[1] < clamp[2])
+  x <- data.table::as.data.table(b)[, .(balls = .N, s = sum(get(value_col))),
+                                    by = c("comp", id_col)]
+  data.table::setnames(x, id_col, "pid")
+  x <- x[!is.na(pid) & !is.na(comp) & balls > 0]
+  x[, m := s / balls]
+
+  # Shrink toward 0 -- no adjustment -- on the same evidence scale the factor
+  # fit uses, so a competition resting on one thin bridge barely moves.
+  shrink <- function(c_hat, evidence) evidence * c_hat / (evidence + shrink_balls)
+  clip <- function(v) pmin(pmax(v, clamp[1]), clamp[2])
+
+  # Reference competitions anchor the scale: no shift, and both means 0 so a
+  # caller's recentring is the identity there.
+  out <- data.table::data.table(comp = unique(reference[reference %in% x$comp]),
+                                offset = 0, m_here = 0, m_ref = 0,
+                                n_bridges = NA_integer_,
+                                evidence = NA_real_, step = 0L)
+  if (!nrow(out)) {
+    cli::cli_abort(c("No reference competition appears in the supplied deliveries.",
+                     "i" = "Check {.arg reference} against the {.field comp} column."))
+  }
+
+  for (s in seq_len(max_steps)) {
+    cmap <- stats::setNames(out$offset, out$comp)
+    a <- x[comp %in% out$comp, .(pid, ncomp = comp, n_m = m, n_balls = balls)]
+    u <- x[!comp %in% out$comp, .(pid, comp, m, balls)]
+    if (!nrow(a) || !nrow(u)) break
+    jj <- merge(u, a, by = "pid", allow.cartesian = TRUE)
+    if (!nrow(jj)) break
+
+    # ONE ROW PER (player, unrated competition), keeping his best-evidenced
+    # neighbour. The cartesian join otherwise gives more say to players who
+    # happen to straddle more rated leagues, which is a property of the player
+    # and not of the competition being rated -- the same defect the factor
+    # chaining loop fixes for the same reason.
+    data.table::setorder(jj, comp, pid, -n_balls)
+    jj <- jj[, .SD[1L], by = .(comp, pid)]
+
+    # The neighbour's OWN offset comes off first, so what is left is this
+    # competition's shift relative to the reference rather than to the
+    # neighbour. This is how an offset chains: additively, where a factor
+    # chains multiplicatively.
+    jj[, n_adj := n_m - cmap[ncomp]]
+    # Harmonic mean of the two ball counts = inverse-variance weighting: the
+    # variance of a player's between-competition DIFFERENCE goes as
+    # (1/n_here + 1/n_there), so its precision is the harmonic mean. A player
+    # thin on either side earns almost no say, smoothly, which is why there is
+    # no ball cutoff here.
+    jj[, w := 2 * balls * n_balls / (balls + n_balls)]
+    jj <- jj[w > 0 & is.finite(n_adj)]
+    if (!nrow(jj)) break
+
+    nw <- jj[, .(n_bridges = data.table::uniqueN(pid), evidence = sum(w),
+                 m_here = sum(w * m) / sum(w),
+                 m_ref  = sum(w * n_adj) / sum(w)), by = comp]
+    nw[, offset := m_here - m_ref]
+    nw <- nw[n_bridges >= min_players & evidence >= min_evidence & is.finite(offset)]
+    if (!nrow(nw)) break
+    # Clamp NOW, not once at the end: `cmap` reads these as the neighbour value
+    # on the next pass, so an unclamped extreme from a thin cell would
+    # propagate through everything that chains via it and could land back
+    # inside the range, uncorrectable.
+    nw[, offset := clip(shrink(offset, evidence))]
+    # Keep the identity offset == m_here - m_ref after shrinkage, so a caller
+    # recentring with these two means gets exactly the shrunk offset and not a
+    # slightly different one. Anchoring on m_here (an observed quantity) rather
+    # than m_ref keeps the recentre exact for a player at his league's average.
+    nw[, m_ref := m_here - offset]
+    # `s` counts loop passes, but the FIRST pass bridges straight to the
+    # reference, which is a direct fit and not a chain. Recording it as step 0
+    # keeps the same meaning `step` has for factors, where 0 means "measured
+    # against the reference itself".
+    nw[, step := s - 1L]
+    out <- rbind(out, nw)
+  }
+
+  data.table::setorder(out, -offset)
+  # Stamp the bridge column. A batting offset applied to a bowling rating is
+  # correctly ordered, plausible and wrongly calibrated -- the same hazard the
+  # `basis` attribute guards for factors, and the reason that guard exists.
+  data.table::setattr(out, "id_col", id_col)
+  cli::cli_alert_success(
+    "Offset {nrow(out)} competition{?s} ({sum(out$step == 0)} directly, {sum(out$step > 0)} by chaining).")
+  out[]
+}
+
 #' Reference Competitions Defining the 1.0 Difficulty Scale
 #'
 #' One set per bucket. The scale is arbitrary but must be ANCHORED to something
@@ -594,7 +765,14 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   is the default because the old hand-set 20 was a men's-T20 number reused
 #'   everywhere and is roughly half what that bucket actually wants.
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
-#' @param factors Output of [fit_competition_factors()]; NULL fits them.
+#' @param factors Output of [fit_competition_factors()]; NULL fits them on the
+#'   basis `metric` requires. Used ONLY to compress the within-competition
+#'   deviation, never to scale the uncentred value -- that was the defect this
+#'   replaces. A supplied object must carry the matching `basis` attribute.
+#' @param offsets Output of [fit_competition_offsets()]; NULL fits them. Must
+#'   have been fitted on the same side as `role` -- checked via its `id_col`
+#'   attribute, because a batting offset on a bowling rating is plausible and
+#'   wrong.
 #' @param min_balls Integer. Career balls required to appear in the result.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
 #'   careers split across a bare-name id and a hash id are merged first (#43),
@@ -620,6 +798,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        prior_matches = NULL,
                                        prior_balls = 60,
                                        iterations = 20L,
+                                       offsets = NULL,
                                        factors = NULL,
                                        min_balls = 500L,
                                        id_map = NULL,
@@ -631,12 +810,22 @@ calculate_player_rating_v2 <- function(format = "t20",
   # should fail in milliseconds, not after the expensive part. (A test for this
   # initially passed only because the working directory happened to resolve a
   # database -- the check ran after the query.)
+  role <- match.arg(role)
+  id_col <- if (role == "batter") "batter_id" else "bowler_id"
+
+  # The factor no longer scales the raw value -- it compresses the deviation
+  # from a competition's own mean -- but it is STILL a ratio of per-dismissal
+  # rates, and which rate depends on the metric. `wickets` reads r.waa, a
+  # survival quantity, so it needs balls-per-dismissal; everything else reads a
+  # runs quantity and needs runs-per-dismissal. Dropping this argument when the
+  # application site was rewritten silently compressed WAA deviations with a
+  # batting-average factor: correctly ordered, plausible, wrongly calibrated.
   want_basis <- if (metric == "wickets") "survival" else "runs"
   if (!is.null(factors)) {
     # `factors` exists to be reused across calls, which is exactly how a
     # runs-basis object reaches a wickets rating. Nothing in the returned table
-    # records its basis, so without this the mismatch is undetectable: the
-    # result is correctly ordered, plausible, and wrongly calibrated.
+    # records its basis for a reader, so without this the mismatch is
+    # undetectable at the call site.
     got <- attr(factors, "basis")
     if (is.null(got)) {
       cli::cli_warn(c(
@@ -650,7 +839,23 @@ calculate_player_rating_v2 <- function(format = "t20",
     }
   }
 
-  role <- match.arg(role)
+  # The runs/survival basis split guarded the FACTOR, which was a ratio of
+  # averages and so needed a different numerator for a survival metric. An
+  # offset is estimated directly on the value being adjusted, so there is no
+  # basis to get wrong. The analogous hazard is a BATTING offset reaching a
+  # BOWLING rating -- correctly ordered, plausible, wrongly calibrated -- and
+  # that is what this checks.
+  #
+  # Deliberately here, before the connection is opened and before 2M rows are
+  # queried: a bad argument should fail in milliseconds. The equivalent check
+  # for `factors` was written after the query once, and the test for it passed
+  # only because the working directory happened to resolve a database.
+  if (!is.null(offsets) && !identical(attr(offsets, "id_col"), id_col)) {
+    cli::cli_abort(c(
+      "Supplied {.arg offsets} were not fitted on the {.val {role}} side.",
+      "x" = "A batting offset on a bowling rating is correctly ordered, plausible and wrongly calibrated.",
+      "i" = "Pass {.code offsets = NULL} to fit the right side, or refit with {.fn fit_competition_offsets}."))
+  }
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
 
   own <- is.null(conn)
@@ -720,42 +925,102 @@ calculate_player_rating_v2 <- function(format = "t20",
       "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
   }
 
-  if (is.null(factors)) {
-    # A batting average is the wrong yardstick for a survival metric, so WAA
-    # gets its competition strength from balls-per-dismissal instead of
-    # runs-per-dismissal. Same construction, same anchors, different numerator.
-    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
-                                      as_at = as_at, basis = want_basis)
-  }
-  fmap <- stats::setNames(factors$factor, factors$comp)
-  b[, cfactor := fmap[comp]]
-  # An unrated competition keeps 1.0. "Unrated implies weak" was tested and
-  # rejected (D-P23): most of what went unrated was short bilateral T20I series
-  # between full members, which rate at a median 1.05 and as low as 0.69 once
-  # the bridge threshold admits them. Assuming 1.6 there would have discounted
-  # elite international cricket. With min_here = 30 the residue is ~0.5% of
-  # deliveries, too small to move a rating either way. Report it regardless.
-  .report_unrated(b, "calculate_player_rating_v2")
-  b[is.na(cfactor), cfactor := 1]
-
+  # The opponent effect comes off FIRST, because the competition offset is
+  # estimated on `raa - opp_eff` and so must be applied to it. Weak competitions
+  # are full of weak bowlers and fit_two_way_effects() already removes part of a
+  # competition's strength as an opponent effect; subtracting an offset fitted
+  # on raw RVAA on top of that would discount weak leagues twice.
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   if (role == "batter") {
     b[eff$bowler, on = "bowler_id", opp_eff := i.eff]
-    b[is.na(opp_eff), opp_eff := 0]
-    b[, value := (raa - opp_eff) / cfactor]
-    id_col <- "batter_id"
+    sgn <- 1
   } else {
     # RAA is signed from the batting side, so negate: a bowler wants it low.
-    # The competition factor divides here exactly as it does for batting --
-    # tested, not assumed. Applying it the other way round (multiplying)
-    # scores 0.0944 against the two-way-adjusted arm's 0.1051 -- a 10.2% LOSS
-    # where dividing is a 6.6% gain -- so the direction is established rather
-    # than merely plausible.
     b[eff$batter, on = "batter_id", opp_eff := i.eff]
-    b[is.na(opp_eff), opp_eff := 0]
-    b[, value := -(raa - opp_eff) / cfactor]
-    id_col <- "bowler_id"
+    sgn <- -1
   }
+  b[is.na(opp_eff), opp_eff := 0]
+  b[, v0 := raa - opp_eff]
+
+  # SUBTRACT a competition offset; do not divide by a competition factor.
+  #
+  # The factor is a ratio of batting AVERAGES -- non-negative, where a ratio is
+  # the natural form -- and RVAA is a SIGNED deviation. Dividing a negative by
+  # 1.6 moves it toward zero, so until 2026-08-19 the weak-league discount made
+  # a BELOW-average batter look better: 671 of 1,039 below-average male T20
+  # batters with 200+ balls were being helped, by up to +0.201 RVAA/ball.
+  #
+  # Three forms were tested (additive; additive then multiplicative; and
+  # multiplicative on a non-negative level scale). Written properly all three
+  # are "recentre, then scale the deviation" and differ only in the multiplier;
+  # once the shrinkage below is applied they are indistinguishable, so additive
+  # is taken as the only one with no free parameter. On next-match Spearman over
+  # reference matches this is +2.6% for batters, and +19.2% for the players
+  # whose records are 60%+ weak-league cricket -- the ones it exists for.
+  if (is.null(factors)) {
+    factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
+                                       as_at = as_at, basis = want_basis)
+  }
+  if (is.null(offsets)) {
+    offsets <- fit_competition_offsets(
+      b, id_col, "v0", default_competition_reference(format, gender))
+  }
+  b[, m_here := stats::setNames(offsets$m_here, offsets$comp)[comp]]
+  b[, m_ref  := stats::setNames(offsets$m_ref,  offsets$comp)[comp]]
+  b[, cfactor := stats::setNames(factors$factor, factors$comp)[comp]]
+  # An unrated competition keeps the identity -- no shift, no compression.
+  # "Unrated implies weak" was tested and rejected (D-P23): most of what went
+  # unrated was short bilateral T20I series between full members.
+  .report_unrated(b, "calculate_player_rating_v2", "m_here")
+  b[is.na(m_here), m_here := 0]
+  b[is.na(m_ref),  m_ref  := 0]
+  b[is.na(cfactor) | !is.finite(cfactor) | cfactor <= 0, cfactor := 1]
+
+  # RECENTRE, then COMPRESS the deviation.
+  #
+  #   value = m_ref + (v0 - m_here) / f
+  #
+  # The recentring is what fixes the sign defect. The compression is why the
+  # form is `additive THEN multiplicative` rather than plain additive, and it
+  # was added on 2026-08-19 after the plain-additive build was scored:
+  #
+  # A flat offset is not progressive. Dividing by 1.6 costs a player in
+  # proportion to how far above average he is; subtracting 0.26 per ball costs
+  # everyone the same. So plain additive correctly stopped rewarding
+  # below-average weak-league batters -- the ten biggest fallers were all
+  # 0%-reference players dropping 400 to 610 places -- while simultaneously
+  # EASING the discount on the best one, moving a batter with 1,354 balls and
+  # no reference cricket at all from 7th to 4th in the world.
+  #
+  # OPEN QUESTION -- the compression term's MECHANISM is not established.
+  #
+  # It was justified on a measured 1.35x spread ratio (SD 0.304 in a weak
+  # competition against 0.226 in the reference for the same players). That
+  # number does not survive a within-competition measurement: centring each
+  # competition on its own bridge mean first, weak-competition spreads come out
+  # SMALLER than reference spreads, not larger (0.198 vs 0.236 above the mean,
+  # 0.180 vs 0.252 below). The 1.35 was between-competition variance leaking in
+  # -- the pooled estimate never centred each competition. See EB_symmetry.R.
+  #
+  # What IS established is that the term earns its place empirically:
+  #   - it scores best or joint-best in every cell of the next-match Spearman
+  #     table (batters +2.6% overall and +19.3% on 60%+ weak-league records;
+  #     bowlers +0.9% and +5.8%), against plain recentring and against the old
+  #     divisive form;
+  #   - without it, plain recentring moved a batter with 1,354 balls and NO
+  #     reference cricket at all from 7th to 4th in the world, because a flat
+  #     offset is not progressive: dividing by 1.6 costs a player in proportion
+  #     to how far above average he is, subtracting 0.26 per ball costs everyone
+  #     the same. With it he sits 28th.
+  #
+  # So it is kept on an anchor plus a metric, with its stated cause withdrawn.
+  # The known cost is at the bottom of the range: below a crossover value a
+  # weak-competition return is rated ABOVE the same return in the reference.
+  # test-competition-adjust.R pins where that crossover is rather than
+  # pretending it is not there. Resolving it needs the asymmetry question
+  # answered properly -- the two sides regress at 0.153 and 0.077, so a single
+  # multiplier is wrong for at least one of them.
+  b[, value := sgn * .competition_adjust(v0, m_here, m_ref, cfactor)]
 
   pm <- b[, .(v = sum(value), balls = .N),
           by = c(player_id = id_col, "match_id", "match_date")]
@@ -934,20 +1199,41 @@ calculate_player_value_v2 <- function(format = "t20",
       "as_at {as_at}: fitting on {format(nrow(b), big.mark = ',')} of {format(n0, big.mark = ',')} deliveries.")
   }
 
+  # `factors` compresses the within-competition deviation and decides which
+  # competitions count as directly calibrated for the `calibrated` share below.
+  # It is never applied to the uncentred value -- see the note in
+  # calculate_player_rating_v2() for why that was wrong.
   if (is.null(factors)) {
     factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
                                       as_at = as_at)
   }
-  fmap <- stats::setNames(factors$factor, factors$comp)
-  b[, cfactor := fmap[comp]]
-  .report_unrated(b, "calculate_player_value_v2")
-  b[is.na(cfactor), cfactor := 1]
 
   eff <- fit_two_way_effects(b, prior_balls = prior_balls, iterations = iterations)
   b[eff$bowler, on = "bowler_id", be := i.eff][is.na(be), be := 0]
   b[eff$batter, on = "batter_id", ae := i.eff][is.na(ae), ae := 0]
-  b[, v_bat := (raa - be) / cfactor]
-  b[, v_bowl := -(raa - ae) / cfactor]
+
+  # Two offsets, not one. A competition can have weak bowling and ordinary
+  # batting, so the batting and bowling shifts are separate quantities -- and
+  # in T20 men they are: the batting offsets span -0.086 to +0.257 while the
+  # bowling offsets span -0.187 to +0.087. Each is fitted on exactly the
+  # opponent-adjusted value it is subtracted from.
+  ref <- default_competition_reference(format, gender)
+  b[, v0_bat := raa - be]
+  b[, v0_bowl := raa - ae]
+  off_bat  <- fit_competition_offsets(b, "batter_id", "v0_bat",  ref)
+  off_bowl <- fit_competition_offsets(b, "bowler_id", "v0_bowl", ref)
+  b[, h_bat  := stats::setNames(off_bat$m_here,  off_bat$comp)[comp]]
+  b[, r_bat  := stats::setNames(off_bat$m_ref,   off_bat$comp)[comp]]
+  b[, h_bowl := stats::setNames(off_bowl$m_here, off_bowl$comp)[comp]]
+  b[, r_bowl := stats::setNames(off_bowl$m_ref,  off_bowl$comp)[comp]]
+  b[, cfactor := stats::setNames(factors$factor, factors$comp)[comp]]
+  .report_unrated(b, "calculate_player_value_v2", "h_bat")
+  for (cc in c("h_bat", "r_bat", "h_bowl", "r_bowl")) b[is.na(get(cc)), (cc) := 0]
+  b[is.na(cfactor) | !is.finite(cfactor) | cfactor <= 0, cfactor := 1]
+  # Recentre then compress, exactly as calculate_player_rating_v2() does; see
+  # the note there for why the compression term is not optional.
+  b[, v_bat  :=  .competition_adjust(v0_bat,  h_bat,  r_bat,  cfactor)]
+  b[, v_bowl := -.competition_adjust(v0_bowl, h_bowl, r_bowl, cfactor)]
 
   bb <- b[, .(vb = sum(v_bat),  nb = .N), by = .(player_id = batter_id, match_id, match_date)]
   ww <- b[, .(vw = sum(v_bowl), nw = .N), by = .(player_id = bowler_id, match_id, match_date)]

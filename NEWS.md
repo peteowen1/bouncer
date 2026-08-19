@@ -1,3 +1,55 @@
+# bouncer 0.7.1
+
+## The competition adjustment had the wrong sign for below-average players
+
+`fit_competition_factors()` estimates a ratio of batting **averages** -- a
+non-negative quantity where a ratio is natural. The rating applied it as
+`(raa - opp_eff) / cfactor`, and RVAA is a **signed deviation**, so dividing a
+negative by 1.6 moved it toward zero: the weak-league discount made a
+below-average batter look *better*. In T20 men, **671 of 1,039** below-average
+batters with 200+ balls were being helped, by up to +0.201 RVAA/ball.
+
+The rating now recentres onto the reference scale before compressing:
+
+```r
+value <- m_ref + (v0 - m_here) / cfactor
+```
+
+`m_here` is what an average bridge player scores in that competition and
+`m_ref` what the same players score in the reference, both from the new
+`fit_competition_offsets()`. Offsets are fitted per role on `raa - opp_eff`,
+because that is what they are subtracted from -- weak competitions are full of
+weak bowlers and `fit_two_way_effects()` already removes part of a
+competition's strength, so fitting on raw RVAA would double-discount.
+
+On next-match Spearman over reference matches: batters **+2.6%** overall and
+**+19.3%** for players whose records are 60%+ weak-league cricket; bowlers
+**+0.9%** and **+5.8%**. All ten anchor checks pass; old-vs-new rank
+correlation 0.916.
+
+Plain additive recentring was built first and rejected on an anchor. A flat
+offset is not progressive, so it correctly stopped rewarding below-average
+weak-league batters while *easing* the discount on the best one -- moving a
+batter with 1,354 balls and no reference cricket from 7th to 4th in the world.
+With compression he sits 28th.
+
+The compression term's stated cause is **withdrawn**: the 1.35x spread ratio
+behind it was between-competition variance in an estimate that never centred
+each competition. Measured within competition, weak-league spreads are smaller
+than reference spreads. The term is kept on an anchor and a metric, and the
+resulting crossover -- below which a weak-competition return still rates above
+the same return in the reference -- is pinned by `test-competition-adjust.R`
+rather than hidden.
+
+### Also
+
+* `metric = "wickets"` fits its competition factor on the survival basis again.
+  Rewiring the application site dropped the argument, so a wickets rating was
+  compressing WAA deviations with a batting-average factor. Not live (the
+  pipeline runs `metric = "composite"`), but reachable.
+* Both the factor-basis and offset-side guards run before the connection opens,
+  so a mismatched argument fails in milliseconds rather than after 2M rows.
+
 # bouncer 0.7.0
 
 ## A post-delivery target leak was in every ball-outcome model

@@ -4,7 +4,12 @@
 \alias{derive_shrinkage_prior}
 \title{Derive the Shrinkage Prior from the Data}
 \usage{
-derive_shrinkage_prior(pm, min_matches = 5L)
+derive_shrinkage_prior(
+  pm,
+  min_matches = 5L,
+  sh_min_matches = 20L,
+  sh_min_players = 40L
+)
 }
 \arguments{
 \item{pm}{data.table of per-match values with \code{player_id} and \code{v}.}
