@@ -37,7 +37,9 @@ library(xgboost)
 if (!("bouncer" %in% loadedNamespaces())) devtools::load_all()
 
 # Configuration ----
-FORMATS_TO_TRAIN <- c("t20", "odi", "test")  # Which formats to train
+# Honour a caller-supplied value (run_all_models.R sets this) rather than
+# overwriting it, matching the TUNE_HYPERPARAMS idiom below.
+if (!exists("FORMATS_TO_TRAIN")) FORMATS_TO_TRAIN <- c("t20", "odi", "test")
 MATCH_LIMIT <- NULL  # NULL = all matches, or set number for testing
 RANDOM_SEED <- 42
 CV_FOLDS <- 5
