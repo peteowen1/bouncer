@@ -234,7 +234,11 @@ deliveries[, cum_overs := as.double(over) + fcase(
   default = 0
 )]
 
-MAX_OVERS <- 450
+# Overridable so the constant can be TESTED rather than assumed (#71). For a
+# tree model a constant divisor is a monotone reparameterisation, so this can
+# only change anything where it CLIPS -- and at 450 it clips for 3 of 3,071
+# matches -- or where overs_remaining is a DENOMINATOR.
+if (!exists("MAX_OVERS")) MAX_OVERS <- 450
 deliveries[, `:=`(
   overs_remaining = pmax(0, MAX_OVERS - cum_overs),
   match_progress = pmin(1, cum_overs / MAX_OVERS),
