@@ -157,6 +157,42 @@ test_that("fit_competition_factors stamps the basis it was fitted on", {
   expect_equal(attr(f, "basis"), "runs")
 })
 
+test_that("a factors object on the wrong basis is refused, before any query runs", {
+  # Regression guard, added 2026-08-19 after a code review caught it.
+  #
+  # When the rating switched from dividing the raw value by a factor to
+  # compressing the DEVIATION by it, the `basis = want_basis` argument was
+  # dropped from the internal fit and this test's predecessor was deleted along
+  # with the guard it covered. The factor is still a ratio of per-dismissal
+  # rates and `metric = "wickets"` still reads r.waa, so a runs-basis
+  # (runs-per-dismissal) factor was silently compressing a survival quantity.
+  # Not live in the pipeline, which runs metric = "composite", but reachable by
+  # any caller of an exported function.
+  #
+  # The connection is deliberately dead: if the check ran AFTER the query this
+  # would abort with a DBI error instead, so the test proves the validation
+  # happens up front rather than merely that it happens.
+  runs_basis <- data.table::data.table(comp = "Test", factor = 1,
+                                       n_bridges = NA_integer_, step = 0L)
+  data.table::setattr(runs_basis, "basis", "runs")
+  dead <- structure(list(), class = "DBIConnection")
+
+  expect_error(
+    calculate_player_rating_v2("test", "male", role = "batter", conn = dead,
+                               factors = runs_basis, metric = "wickets"),
+    "fitted on the .*runs.* basis")
+
+  # A MATCHING basis must not trip the guard. It still errors, on the dead
+  # connection, so assert on the message rather than on success: the point is
+  # that the failure is no longer about the basis.
+  msg <- tryCatch({
+    calculate_player_rating_v2("test", "male", role = "batter", conn = dead,
+                               factors = runs_basis, metric = "composite")
+    ""
+  }, error = function(e) conditionMessage(e))
+  expect_false(grepl("basis", msg, fixed = TRUE))
+})
+
 test_that("an offsets object fitted on the wrong side is refused, before any query runs", {
   # The runs/survival BASIS guard this replaces is gone: the rating no longer
   # divides by a factor, so there is no basis to mismatch. The analogous hazard

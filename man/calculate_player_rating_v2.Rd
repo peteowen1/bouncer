@@ -51,9 +51,10 @@ have been fitted on the same side as \code{role} -- checked via its \code{id_col
 attribute, because a batting offset on a bowling rating is plausible and
 wrong.}
 
-\item{factors}{Output of \code{\link[=fit_competition_factors]{fit_competition_factors()}}; NULL fits them. Used
-ONLY to compress the within-competition deviation, never to scale the
-uncentred value -- that was the defect this replaces.}
+\item{factors}{Output of \code{\link[=fit_competition_factors]{fit_competition_factors()}}; NULL fits them on the
+basis \code{metric} requires. Used ONLY to compress the within-competition
+deviation, never to scale the uncentred value -- that was the defect this
+replaces. A supplied object must carry the matching \code{basis} attribute.}
 
 \item{min_balls}{Integer. Career balls required to appear in the result.}
 

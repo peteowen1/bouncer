@@ -765,9 +765,10 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   is the default because the old hand-set 20 was a men's-T20 number reused
 #'   everywhere and is roughly half what that bucket actually wants.
 #' @param prior_balls,iterations Passed to [fit_two_way_effects()].
-#' @param factors Output of [fit_competition_factors()]; NULL fits them. Used
-#'   ONLY to compress the within-competition deviation, never to scale the
-#'   uncentred value -- that was the defect this replaces.
+#' @param factors Output of [fit_competition_factors()]; NULL fits them on the
+#'   basis `metric` requires. Used ONLY to compress the within-competition
+#'   deviation, never to scale the uncentred value -- that was the defect this
+#'   replaces. A supplied object must carry the matching `basis` attribute.
 #' @param offsets Output of [fit_competition_offsets()]; NULL fits them. Must
 #'   have been fitted on the same side as `role` -- checked via its `id_col`
 #'   attribute, because a batting offset on a bowling rating is plausible and
@@ -811,6 +812,32 @@ calculate_player_rating_v2 <- function(format = "t20",
   # database -- the check ran after the query.)
   role <- match.arg(role)
   id_col <- if (role == "batter") "batter_id" else "bowler_id"
+
+  # The factor no longer scales the raw value -- it compresses the deviation
+  # from a competition's own mean -- but it is STILL a ratio of per-dismissal
+  # rates, and which rate depends on the metric. `wickets` reads r.waa, a
+  # survival quantity, so it needs balls-per-dismissal; everything else reads a
+  # runs quantity and needs runs-per-dismissal. Dropping this argument when the
+  # application site was rewritten silently compressed WAA deviations with a
+  # batting-average factor: correctly ordered, plausible, wrongly calibrated.
+  want_basis <- if (metric == "wickets") "survival" else "runs"
+  if (!is.null(factors)) {
+    # `factors` exists to be reused across calls, which is exactly how a
+    # runs-basis object reaches a wickets rating. Nothing in the returned table
+    # records its basis for a reader, so without this the mismatch is
+    # undetectable at the call site.
+    got <- attr(factors, "basis")
+    if (is.null(got)) {
+      cli::cli_warn(c(
+        "Supplied {.arg factors} carries no basis attribute, so it cannot be checked against {.val {metric}}.",
+        "i" = "Refit with {.fn fit_competition_factors} to stamp it, or pass {.code NULL} to fit here."))
+    } else if (!identical(got, want_basis)) {
+      cli::cli_abort(c(
+        "Supplied {.arg factors} were fitted on the {.val {got}} basis; {.val {metric}} needs {.val {want_basis}}.",
+        "x" = "A runs-basis factor on a wickets rating is correctly ordered, plausible and wrongly calibrated.",
+        "i" = "Pass {.code factors = NULL} to fit the right basis."))
+    }
+  }
 
   # The runs/survival basis split guarded the FACTOR, which was a ratio of
   # averages and so needed a different numerator for a survival metric. An
@@ -932,7 +959,7 @@ calculate_player_rating_v2 <- function(format = "t20",
   # whose records are 60%+ weak-league cricket -- the ones it exists for.
   if (is.null(factors)) {
     factors <- fit_competition_factors(conn, format, gender, id_map = id_map,
-                                       as_at = as_at)
+                                       as_at = as_at, basis = want_basis)
   }
   if (is.null(offsets)) {
     offsets <- fit_competition_offsets(
