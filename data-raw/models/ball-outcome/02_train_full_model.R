@@ -592,6 +592,12 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_h3("Saving model")
 
   model_path <- file.path(models_dir, sprintf("full_outcome_%s.ubj", format))
+  # Stamp the build date before saving. bouncer's loaders refuse an outcome
+  # model that is unstamped or predates the post-delivery leak fix
+  # (.check_model_vintage() in R/agnostic_model.R), because the bouncermodels
+  # release served a 2026-03-27 vintage in preference to corrected local files
+  # for five months without anything noticing (bouncerverse#50).
+  xgb.attr(xgb_model, "bouncer_build_date") <- as.character(Sys.Date())  # not format(): `format` is the loop variable here
   xgb.save(xgb_model, model_path)
   cli::cli_alert_success("Model saved to {.file {model_path}}")
 
