@@ -1017,9 +1017,19 @@ calculate_player_rating_v2 <- function(format = "t20",
   # The known cost is at the bottom of the range: below a crossover value a
   # weak-competition return is rated ABOVE the same return in the reference.
   # test-competition-adjust.R pins where that crossover is rather than
-  # pretending it is not there. Resolving it needs the asymmetry question
-  # answered properly -- the two sides regress at 0.153 and 0.077, so a single
-  # multiplier is wrong for at least one of them.
+  # pretending it is not there.
+  #
+  # A TWO-SIDED multiplier was investigated and is NOT justified. An earlier
+  # note here claimed the two sides regress at 0.153 and 0.077; that came from
+  # splitting players on the sign of their own noisy deviation and then
+  # regressing on that same deviation, which biases each half's slope toward
+  # zero by different amounts and manufactured the gap. Redone properly --
+  # classifying on one half of a player's record and measuring on the other, so
+  # classification noise is independent of measurement noise -- the slopes are
+  # 0.137 above and 0.050 below, a difference of 0.087 with se 0.050 (z = 1.74,
+  # p = 0.082, n = 601). Not distinguishable, and a quadratic term on the
+  # unsplit data earns nothing (F = 0.30, p = 0.585). One multiplier stands.
+  # Underpowered rather than refuted, so worth revisiting on more data.
   b[, value := sgn * .competition_adjust(v0, m_here, m_ref, cfactor)]
 
   pm <- b[, .(v = sum(value), balls = .N),
