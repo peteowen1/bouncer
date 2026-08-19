@@ -157,31 +157,34 @@ test_that("fit_competition_factors stamps the basis it was fitted on", {
   expect_equal(attr(f, "basis"), "runs")
 })
 
-test_that("a factors object on the wrong basis is refused, before any query runs", {
-  # Mismatch must abort. The alternative -- proceeding -- is the failure mode
-  # this codebase keeps hitting: a number wrong in a way that looks fine.
+test_that("an offsets object fitted on the wrong side is refused, before any query runs", {
+  # The runs/survival BASIS guard this replaces is gone: the rating no longer
+  # divides by a factor, so there is no basis to mismatch. The analogous hazard
+  # survives -- a BATTING offset reaching a BOWLING rating is correctly ordered,
+  # plausible, and wrongly calibrated, which is this codebase's recurring shape.
   #
   # The connection is deliberately a dead one. If the check ran AFTER the query
-  # (as it first did) this would abort with a DBI error instead, so the test
-  # proves the validation happens up front rather than merely that it happens.
-  runs_basis <- data.table::data.table(comp = "Test", factor = 1,
-                                       n_bridges = NA_integer_, step = 0L)
-  data.table::setattr(runs_basis, "basis", "runs")
+  # this would abort with a DBI error instead, so the test proves the validation
+  # happens up front rather than merely that it happens.
+  bat <- data.table::data.table(comp = "Test", offset = 0, m_here = 0, m_ref = 0,
+                                n_bridges = NA_integer_, evidence = NA_real_,
+                                step = 0L)
+  data.table::setattr(bat, "id_col", "batter_id")
   dead <- structure(list(), class = "DBIConnection")
 
   expect_error(
-    calculate_player_rating_v2("test", "male", role = "batter", conn = dead,
-                               factors = runs_basis, metric = "wickets"),
-    "basis")
+    calculate_player_rating_v2("test", "male", role = "bowler", conn = dead,
+                               offsets = bat),
+    "not fitted on the .*bowler.* side")
 
-  # The matching basis must NOT be refused here -- it should get past validation
-  # and fail later on the dead connection instead.
-  surv_basis <- data.table::copy(runs_basis)
-  data.table::setattr(surv_basis, "basis", "survival")
-  e <- tryCatch(calculate_player_rating_v2("test", "male", role = "batter",
-        conn = dead, factors = surv_basis, metric = "wickets"),
-        error = function(e) conditionMessage(e))
-  expect_false(grepl("basis", e))
+  # An offsets object with no stamp at all is refused too: silently trusting an
+  # unlabelled one is how the mismatch would get through.
+  bare <- data.table::copy(bat)
+  data.table::setattr(bare, "id_col", NULL)
+  expect_error(
+    calculate_player_rating_v2("test", "male", role = "batter", conn = dead,
+                               offsets = bare),
+    "not fitted on the .*batter.* side")
 })
 
 # Bilateral tour bucketing ----------------------------------------------------

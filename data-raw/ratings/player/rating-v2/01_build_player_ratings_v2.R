@@ -138,6 +138,9 @@ for (b in BUCKETS) {
   a <- ANCHORS[[key]]
 
   for (role in c("batter", "bowler")) {
+    # `factors` is passed for the deviation-compression term only. The
+    # competition OFFSET is fitted per role inside the call, because it has
+    # to be estimated on that role's own opponent-adjusted value.
     r <- calculate_player_rating_v2(b$format, b$gender, role = role, conn = conn,
                                     factors = factors, id_map = idmap)
     check_anchor(r, if (role == "batter") a$batter else a$bowler,

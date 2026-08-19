@@ -34,8 +34,12 @@ estimators face the same thin-bridge problem and drifting them apart would
 mean two sets of tuning to reason about.}
 }
 \value{
-data.table of \code{comp}, \code{offset}, \code{n_bridges}, \code{evidence}, \code{step}.
-Reference competitions are present at offset 0, step 0.
+data.table of \code{comp}, \code{offset}, \code{m_here}, \code{m_ref}, \code{n_bridges},
+\code{evidence}, \code{step}, where \code{offset == m_here - m_ref}. \code{m_here} is what an
+average bridge player scores in that competition and \code{m_ref} is what the
+same players score in the reference, so a caller can recentre exactly
+(subtract \code{m_here}, add \code{m_ref}) rather than only shift. Reference
+competitions are present at offset 0, step 0.
 }
 \description{
 How much a competition inflates per-ball value relative to the reference set,
