@@ -17,6 +17,8 @@
 # looks like (bouncerverse#29).
 
 rate_of  <- function(r, id) r$venue_result_rate[match(id, r$match_id)]
+rate2    <- function(r, id) r$venue_mean[match(id, r$match_id)]
+nprior2  <- function(r, id) r$n_prior[match(id, r$match_id)]
 nprior_of <- function(r, id) r$n_prior[match(id, r$match_id)]
 
 mk <- function(...) {
@@ -113,4 +115,56 @@ test_that("leave-one-out is NOT what this does", {
   # LOO for match a would be (1 - 1 + 5) / (2 - 1 + 10) = 0.4545.
   # Time-causal for match a is the bare prior, because nothing precedes it.
   expect_equal(rate_of(r, "a"), 0.5)
+})
+
+# ---- the numeric sibling: venue averages had the same defect ----------------
+#
+# Measured on the same 3,071 Test/MDM matches. Correlation of the feature with
+# the match's OWN innings-1 total:
+#
+#   venue history      old      new
+#   1 match          1.000    constant (no history -> the prior)
+#   < 5 matches      0.764    0.114
+#   >= 30 matches    0.172    0.077
+#
+# At the 79 one-match venues the old feature WAS the label, exactly, for both
+# the result rate and the average. Unsmoothed, self-inclusive, and used in the
+# Test WPA batch (bouncerverse#69).
+
+test_that("a venue's first match gets the prior, not its own total", {
+  m <- mk(match_id = "m1", venue = "A", match_date = "2020-01-01", inn1 = 400)
+  r <- time_causal_venue_mean(m, "inn1", prior_weight = 5, prior_value = 300)
+  expect_equal(r$venue_mean, 300)
+  expect_true(r$at_prior)
+})
+
+test_that("a match cannot see its own total", {
+  base <- function(v2) mk(match_id = c("a", "b"), venue = "A",
+                          match_date = c("2020-01-01", "2021-01-01"),
+                          inn1 = c(400, v2))
+  hi <- time_causal_venue_mean(base(600), "inn1", prior_weight = 5, prior_value = 300)
+  lo <- time_causal_venue_mean(base(100), "inn1", prior_weight = 5, prior_value = 300)
+  expect_equal(rate2(hi, "b"), rate2(lo, "b"))
+  expect_equal(rate2(hi, "b"), (400 + 5 * 300) / 6)
+})
+
+test_that("earlier totals accumulate, and NA contributes nothing", {
+  m <- mk(match_id = c("a", "b", "c"), venue = "A",
+          match_date = c("2020-01-01", "2021-01-01", "2022-01-01"),
+          inn1 = c(400, NA, 200))
+  r <- time_causal_venue_mean(m, "inn1", prior_weight = 5, prior_value = 300)
+  expect_equal(nprior2(r, "c"), 1L)          # b had no total to contribute
+  expect_equal(rate2(r, "c"), (400 + 5 * 300) / 6)
+})
+
+test_that("same-day matches at one ground cannot see each other", {
+  m <- mk(match_id = c("x", "y"), venue = "A",
+          match_date = c("2021-06-01", "2021-06-01"), inn1 = c(500, 100))
+  r <- time_causal_venue_mean(m, "inn1", prior_weight = 5, prior_value = 300)
+  expect_equal(length(unique(r$venue_mean)), 1L)
+})
+
+test_that("a missing value column is named", {
+  m <- mk(match_id = "a", venue = "A", match_date = "2020-01-01", inn1 = 300)
+  expect_error(time_causal_venue_mean(m, "not_a_column"), "not_a_column")
 })

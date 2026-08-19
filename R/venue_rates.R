@@ -85,3 +85,54 @@ time_causal_venue_result_rate <- function(matches, prior_weight = 10,
   data.table::setattr(out, "prior_rate", prior_rate)
   out[]
 }
+
+#' Mean of a per-match value at a venue, using only earlier matches
+#'
+#' The numeric sibling of [time_causal_venue_result_rate()], for features like
+#' "average first-innings total at this ground". Same defect, same shape: a
+#' venue average computed over every match at the ground **includes the match
+#' being predicted**, and at a one-match venue the feature simply *is* that
+#' match's own total.
+#'
+#' @param matches data.table with `match_id`, `venue`, `match_date` and the
+#'   column named by `value_col`. Rows where that value is `NA` contribute
+#'   nothing but still receive an estimate.
+#' @param value_col Name of the numeric column to average.
+#' @param prior_weight Strength of the prior, in matches. Default 5 — lower
+#'   than the result-rate default because a total is far less noisy than a
+#'   single binary outcome.
+#' @param prior_value Value to shrink toward. NULL means the global mean.
+#'
+#' @return data.table with `match_id`, `venue_mean`, `n_prior`, `at_prior`.
+#'   Carries `prior_value` as an attribute.
+#' @keywords internal
+time_causal_venue_mean <- function(matches, value_col, prior_weight = 5,
+                                   prior_value = NULL) {
+  m <- data.table::as.data.table(matches)
+  need <- c("match_id", "venue", "match_date", value_col)
+  miss <- setdiff(need, names(m))
+  if (length(miss)) cli::cli_abort("{.arg matches} is missing {.field {miss}}.")
+
+  m[, .v := as.numeric(get(value_col))]
+  m[, .has := as.integer(!is.na(.v))]
+  m[is.na(.v), .v := 0]
+
+  if (is.null(prior_value)) {
+    if (sum(m$.has) == 0L) cli::cli_abort("No usable values to estimate a prior from.")
+    prior_value <- sum(m$.v) / sum(m$.has)
+  }
+
+  data.table::setorder(m, venue, match_date, match_id)
+  m[, `:=`(cum_n = cumsum(.has), cum_v = cumsum(.v)), by = venue]
+  # Strictly earlier by DATE, so same-day fixtures cannot see each other.
+  m[, `:=`(n_prior = max(cum_n) - sum(.has),
+           v_prior = max(cum_v) - sum(.v)),
+    by = .(venue, match_date)]
+
+  m[, venue_mean := (v_prior + prior_weight * prior_value) / (n_prior + prior_weight)]
+  m[, at_prior := n_prior == 0L]
+
+  out <- m[, .(match_id, venue_mean, n_prior, at_prior)]
+  data.table::setattr(out, "prior_value", prior_value)
+  out[]
+}
