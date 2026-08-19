@@ -29,10 +29,29 @@ build_matchup_matrices <- function(deliveries,
     deliveries <- deliveries[tolower(match_type) %in% c(format_lower, paste0("i", format_lower))]
   }
 
-  # Detect wicket column and add is_wicket_val
-  if ("is_wicket_delivery" %in% names(deliveries)) {
+  # Detect wicket column and add is_wicket_val.
+  #
+  # `wicket_kind` is preferred over both of the others because it is the only
+  # one that can tell a bowler's wicket from a run out. Crediting every
+  # dismissal to whoever was bowling inflates his edge weight against that
+  # batter: 10,113 of 132,814 T20 male dismissals (7.6%) are not the bowler's,
+  # 9,845 of them run outs, and 179 are retired hurt -- not a dismissal at all
+  # (bouncerverse#44).
+  #
+  # `player_out_id` is the worst of the three and is kept only so a caller that
+  # supplies nothing better still gets a matrix. It warns, because a silent
+  # 7.6% overcount is how this survived.
+  if ("wicket_kind" %in% names(deliveries)) {
+    deliveries[, is_wicket_val := as.numeric(
+      tolower(trimws(as.character(wicket_kind))) %in% BOWLER_WICKET_KINDS)]
+  } else if ("is_wicket_delivery" %in% names(deliveries)) {
     deliveries[, is_wicket_val := as.numeric(is_wicket_delivery)]
   } else if ("player_out_id" %in% names(deliveries)) {
+    cli::cli_warn(c(
+      "Counting wickets from {.field player_out_id}, which includes run outs.",
+      "i" = "Bowler wickets are overstated by roughly 7.6% (bouncerverse#44).",
+      "i" = "Supply {.field wicket_kind}, or a {.field is_wicket_delivery} already
+             filtered to {.code bowler_wicket_kinds_sql()}."))
     deliveries[, is_wicket_val := as.numeric(!is.na(player_out_id) & player_out_id != "")]
   } else {
     deliveries[, is_wicket_val := 0]
