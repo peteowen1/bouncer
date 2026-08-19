@@ -32,13 +32,13 @@ cat("\n")
 # Load Prepared Data ----
 cli::cli_h2("Loading prepared data")
 
-# Try format-specific file first, fall back to legacy IPL file
+# Format-scoped, with no fallback. The IPL fallback that used to sit here was a
+# wrong-data hazard rather than a convenience: running this for Test with the
+# Test frame missing trained the Test model on IPL T20 deliveries and said
+# nothing. The IPL intermediates were deleted in #49; a missing frame is now an
+# error naming the frame you actually wanted.
 output_dir <- file.path(find_bouncerdata_dir(), "models")
 data_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_data.rds"))
-if (!file.exists(data_path)) {
-  # Legacy fallback for T20
-  data_path <- file.path(output_dir, "ipl_stage1_data.rds")
-}
 if (!file.exists(data_path)) {
   cli::cli_alert_danger("Data not found at {data_path}")
   cli::cli_alert_info("Run 01_prepare_all_formats.R first")

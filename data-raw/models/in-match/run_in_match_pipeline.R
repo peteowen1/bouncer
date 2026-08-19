@@ -13,7 +13,7 @@
 # NOT APPLICABLE for Test cricket (no fixed target/chase dynamic).
 #
 # Pipeline steps (STRICT SEQUENTIAL - each depends on previous):
-#   1. 01_prepare_data.R - Data preparation and feature engineering
+#   1. 01_prepare_all_formats.R - Data preparation and feature engineering
 #   2. 02_baseline_projected_score.R - Venue/context baseline model
 #   3. 03_projected_score_model.R - Stage 1: Predict final score
 #   4. 04_win_probability_innings1.R - Win prob during 1st innings
@@ -48,8 +48,14 @@ RUN_BASELINE <- TRUE          # Run baseline model
 RUN_STAGE1 <- TRUE            # Run projected score model
 RUN_WIN_PROB_INN1 <- TRUE     # Run 1st innings win probability
 RUN_WIN_PROB_INN2 <- TRUE     # Run 2nd innings win probability
-RUN_EVALUATION <- TRUE        # Run model evaluation
-RUN_WPA_ANALYSIS <- TRUE      # Run WPA/ERA analysis
+# Evaluation and WPA analysis are OFF because they cannot run against the
+# all-formats prep: 06_evaluate_predictions.R and 07_wpa_era_analysis.R read
+# ipl_match_metadata.rds, which only the superseded IPL prep ever wrote and
+# which was deleted with the rest of the IPL intermediates (#49). Turning them
+# on today produces an error, not an evaluation. Making them format-scoped
+# needs the all-formats prep to emit metadata, which is Phase 2 work (#51).
+RUN_EVALUATION <- FALSE       # Run model evaluation      (see note above)
+RUN_WPA_ANALYSIS <- FALSE     # Run WPA/ERA analysis      (see note above)
 
 # Export configuration to environment for child scripts
 Sys.setenv(
@@ -83,7 +89,12 @@ if (RUN_PREPARATION) {
   step_start <- Sys.time()
 
   tryCatch({
-    source("data-raw/models/in-match/01_prepare_data.R", local = new.env())
+    # Repointed in #49. This sourced 01_prepare_data.R -- the superseded
+    # single-event IPL prep, which writes ipl_* artefacts and loads the legacy
+    # outcome model deleted in #48. The same defect run_all_models.R had: the
+    # runner built the old thing while the current models were produced by
+    # running the numbered scripts by hand.
+    source("data-raw/models/in-match/01_prepare_all_formats.R", local = new.env())
     step_times$preparation <- difftime(Sys.time(), step_start, units = "mins")
     cli::cli_alert_success("Data preparation complete ({round(step_times$preparation, 1)} mins)")
   }, error = function(e) {

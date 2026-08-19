@@ -39,11 +39,12 @@ cli::cli_h2("Loading prepared data")
 output_dir <- file.path(find_bouncerdata_dir(), "models")
 
 # Stage 1 data
+# Format-scoped, with no fallback -- see the note in 03_projected_score_model.R:
+# the IPL fallback silently trained one format on another format's deliveries.
 stage1_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_data.rds"))
-if (!file.exists(stage1_path)) stage1_path <- file.path(output_dir, "ipl_stage1_data.rds")
 if (!file.exists(stage1_path)) {
   cli::cli_alert_danger("Data not found at {stage1_path}")
-  cli::cli_alert_info("Run 01_prepare_data.R first")
+  cli::cli_alert_info("Run 01_prepare_all_formats.R first")
   stop("Data file not found")
 }
 
@@ -63,7 +64,6 @@ if (!"batting_first_wins" %in% names(train_data)) {
 
 # Load Stage 1 projected score model
 stage1_model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage1_results.rds"))
-if (!file.exists(stage1_model_path)) stage1_model_path <- file.path(output_dir, "ipl_stage1_results.rds")
 if (!file.exists(stage1_model_path)) {
   cli::cli_alert_danger("Stage 1 model not found at {stage1_model_path}")
   cli::cli_alert_info("Run 03_projected_score_model.R first")
@@ -77,13 +77,18 @@ stage1_feature_cols <- stage1_results$feature_cols
 cli::cli_alert_success("Loaded Stage 1 projected score model")
 
 # Load baseline model
-baseline_path <- file.path(output_dir, "ipl_baseline_projected_score.rds")
+# Format-scoped. This read an ipl_* name for every format, so an ODI or Test
+# innings-1 model was handed a baseline fitted on IPL T20 scores (#49). Absent
+# baseline still degrades to the venue average rather than erroring, but the
+# warning now names the file you need to build.
+baseline_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_baseline_projected_score.rds"))
 if (file.exists(baseline_path)) {
   baseline_model <- readRDS(baseline_path)
   cli::cli_alert_success("Loaded baseline model")
   HAS_BASELINE <- TRUE
 } else {
-  cli::cli_alert_warning("Baseline model not found - using venue average as baseline")
+  cli::cli_alert_warning("Baseline model not found at {baseline_path} - using venue average")
+  cli::cli_alert_info("Run 02_baseline_projected_score.R for {IN_MATCH_FORMAT} to build it")
   HAS_BASELINE <- FALSE
 }
 

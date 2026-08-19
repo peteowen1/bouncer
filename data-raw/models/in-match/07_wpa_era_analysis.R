@@ -1,3 +1,11 @@
+# IPL-ERA (#49) — reads ipl_match_metadata.rds, which only the superseded
+# 01_prepare_data.R ever wrote and which was deleted with the rest of the IPL
+# intermediates. It therefore cannot run against the all-formats prep, and is
+# switched off in run_in_match_pipeline.R.
+#
+# Making it format-scoped needs 01_prepare_all_formats.R to emit metadata —
+# Phase 2 work, tracked on #51.
+#
 # WPA/ERA Analysis for IPL T20 Matches ----
 #
 # This script demonstrates Win Probability Added (WPA) and Expected Runs Added (ERA)

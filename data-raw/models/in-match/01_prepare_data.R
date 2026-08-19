@@ -1,3 +1,10 @@
+# SUPERSEDED (#49) — the single-competition IPL prep. Replaced by
+# 01_prepare_all_formats.R, which the pipeline runner now sources.
+#
+# It cannot run as-is: it loads xgb_outcome_shortform.ubj (deleted in #48) and
+# writes ipl_* artefacts (deleted in #49). Kept for reference because it is the
+# only script that ever emitted match metadata, which 06/07/validate need.
+#
 # IPL Data Preparation for Win Probability Modeling ----
 #
 # This script prepares IPL match data for the two-stage win probability model:
