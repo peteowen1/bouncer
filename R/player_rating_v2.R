@@ -448,6 +448,133 @@ fit_competition_factors <- function(conn = NULL,
   out[]
 }
 
+#' Competition Difficulty Offsets
+#'
+#' How much a competition inflates per-ball value relative to the reference set,
+#' as an ADDITIVE shift on the same scale the rating aggregates.
+#'
+#' This replaces the divisive competition factor for the rating, and the reason
+#' is a defect rather than a preference. [fit_competition_factors()] estimates a
+#' ratio of batting AVERAGES -- a non-negative quantity, where a ratio is the
+#' natural form. The rating then divided RVAA by it, and RVAA is a SIGNED
+#' deviation. Dividing a negative by 1.6 moves it toward zero, so a below-average
+#' batter in a weak league was made to look BETTER by the weak-league discount.
+#' On 2026-08-19, 671 of 1,039 below-average male T20 batters with 200+ balls
+#' were being helped this way, by a mean of +0.032 RVAA/ball and up to +0.201.
+#'
+#' The fix is to recentre rather than rescale: subtract what an average bridge
+#' player scores in that competition. Three forms were tested against a
+#' bridge-prediction target on 1,788 player-competition pairs (T20 men) --
+#' additive, additive-then-multiplicative, and a multiplicative form on a
+#' non-negative level scale. With the pipeline's shrinkage applied to all three
+#' they are indistinguishable (RMSE 0.1400 / 0.1401 / 0.1400) and all beat both
+#' the divisive form (0.1423) and no adjustment (0.1439). Additive is taken
+#' because it is the only one of the three with no free parameter.
+#'
+#' Weak leagues DO also spread players out -- the same players' RVAA has SD
+#' 0.304 in a weak competition against 0.226 in the reference, a ratio of 1.35 --
+#' so a multiplier below 1 on the deviation is real. It is not applied because
+#' shrinkage downstream already compresses far harder (the best multiplier
+#' against this target is 0.107, and every form independently chose a shrinkage
+#' of 850 balls), leaving the extra term worth 0.0001 RMSE.
+#'
+#' @section Why this is fitted here and not in fit_competition_factors:
+#' The offset is subtracted from `raa - opp_eff`, so it must be ESTIMATED on
+#' `raa - opp_eff`. Weak competitions are full of weak bowlers, and
+#' [fit_two_way_effects()] already removes part of the competition's strength
+#' as an opponent effect. An offset fitted on raw RVAA would re-remove what the
+#' opponent adjustment has already taken out, and double-discount weak leagues.
+#' That is why this takes an already-adjusted ball table rather than a
+#' connection.
+#'
+#' @param b data.table of deliveries carrying `comp`, the bridge id column, and
+#'   the adjusted per-ball value. Not modified; only read.
+#' @param id_col Character. Column bridging players -- "batter_id" for a batting
+#'   offset, "bowler_id" for a bowling one. The two are fitted separately
+#'   because a competition can have weak bowling and ordinary batting.
+#' @param value_col Character. The already-opponent-adjusted per-ball value.
+#' @param reference Character vector of competitions defining the 0.0 anchor.
+#' @param min_evidence,shrink_balls,min_players,max_steps,clamp As in
+#'   [fit_competition_factors()], and deliberately the same defaults: the two
+#'   estimators face the same thin-bridge problem and drifting them apart would
+#'   mean two sets of tuning to reason about.
+#' @return data.table of `comp`, `offset`, `n_bridges`, `evidence`, `step`.
+#'   Reference competitions are present at offset 0, step 0.
+#' @export
+fit_competition_offsets <- function(b, id_col, value_col, reference,
+                                    min_evidence = 200, shrink_balls = 1500,
+                                    min_players = 3L, max_steps = 6L,
+                                    clamp = c(-0.75, 0.75)) {
+  stopifnot(is.data.frame(b), id_col %in% names(b), value_col %in% names(b),
+            "comp" %in% names(b), length(clamp) == 2L, clamp[1] < clamp[2])
+  x <- data.table::as.data.table(b)[, .(balls = .N, s = sum(get(value_col))),
+                                    by = c("comp", id_col)]
+  data.table::setnames(x, id_col, "pid")
+  x <- x[!is.na(pid) & !is.na(comp) & balls > 0]
+  x[, m := s / balls]
+
+  # Shrink toward 0 -- no adjustment -- on the same evidence scale the factor
+  # fit uses, so a competition resting on one thin bridge barely moves.
+  shrink <- function(c_hat, evidence) evidence * c_hat / (evidence + shrink_balls)
+  clip <- function(v) pmin(pmax(v, clamp[1]), clamp[2])
+
+  out <- data.table::data.table(comp = unique(reference[reference %in% x$comp]),
+                                offset = 0, n_bridges = NA_integer_,
+                                evidence = NA_real_, step = 0L)
+  if (!nrow(out)) {
+    cli::cli_abort(c("No reference competition appears in the supplied deliveries.",
+                     "i" = "Check {.arg reference} against the {.field comp} column."))
+  }
+
+  for (s in seq_len(max_steps)) {
+    cmap <- stats::setNames(out$offset, out$comp)
+    a <- x[comp %in% out$comp, .(pid, ncomp = comp, n_m = m, n_balls = balls)]
+    u <- x[!comp %in% out$comp, .(pid, comp, m, balls)]
+    if (!nrow(a) || !nrow(u)) break
+    jj <- merge(u, a, by = "pid", allow.cartesian = TRUE)
+    if (!nrow(jj)) break
+
+    # ONE ROW PER (player, unrated competition), keeping his best-evidenced
+    # neighbour. The cartesian join otherwise gives more say to players who
+    # happen to straddle more rated leagues, which is a property of the player
+    # and not of the competition being rated -- the same defect the factor
+    # chaining loop fixes for the same reason.
+    data.table::setorder(jj, comp, pid, -n_balls)
+    jj <- jj[, .SD[1L], by = .(comp, pid)]
+
+    # The neighbour's OWN offset comes off first, so what is left is this
+    # competition's shift relative to the reference rather than to the
+    # neighbour. This is how an offset chains: additively, where a factor
+    # chains multiplicatively.
+    jj[, n_adj := n_m - cmap[ncomp]]
+    # Harmonic mean of the two ball counts = inverse-variance weighting: the
+    # variance of a player's between-competition DIFFERENCE goes as
+    # (1/n_here + 1/n_there), so its precision is the harmonic mean. A player
+    # thin on either side earns almost no say, smoothly, which is why there is
+    # no ball cutoff here.
+    jj[, w := 2 * balls * n_balls / (balls + n_balls)]
+    jj <- jj[w > 0 & is.finite(n_adj)]
+    if (!nrow(jj)) break
+
+    nw <- jj[, .(n_bridges = data.table::uniqueN(pid), evidence = sum(w),
+                 offset = sum(w * (m - n_adj)) / sum(w)), by = comp]
+    nw <- nw[n_bridges >= min_players & evidence >= min_evidence & is.finite(offset)]
+    if (!nrow(nw)) break
+    # Clamp NOW, not once at the end: `cmap` reads these as the neighbour value
+    # on the next pass, so an unclamped extreme from a thin cell would
+    # propagate through everything that chains via it and could land back
+    # inside the range, uncorrectable.
+    nw[, offset := clip(shrink(offset, evidence))]
+    nw[, step := s]
+    out <- rbind(out, nw)
+  }
+
+  data.table::setorder(out, -offset)
+  cli::cli_alert_success(
+    "Offset {nrow(out)} competition{?s} ({sum(out$step > 0)} by chaining).")
+  out[]
+}
+
 #' Reference Competitions Defining the 1.0 Difficulty Scale
 #'
 #' One set per bucket. The scale is arbitrary but must be ANCHORED to something
