@@ -222,6 +222,43 @@ for (current_format in FORMATS_TO_PREPARE) {
     ) %>%
     mutate(batting_first_wins = as.integer(outcome_winner == batting_team))
 
+  # A row per innings at BALL ZERO -- the state before anything has happened.
+  #
+  # Training started at ball one, so the model had never seen 0 balls bowled,
+  # yet that is exactly the state the win-probability builder scores as the
+  # "before" side of the first delivery. Its projection there was extrapolation,
+  # and the resulting first-ball TSA bias survived the run-rate shrinkage: mean
+  # -1.209 (ODI) and -1.538 (T20) against +0.006 and -0.019 for every other
+  # ball. A model should be trained on the states it is asked to score (#70).
+  #
+  # The target is the same final_innings_total the ball-one row carries, so this
+  # teaches "before a ball is bowled, expect the innings to end here" -- which is
+  # what makes the projection a martingale from the very first transition.
+  ball0 <- stage1_data %>%
+    group_by(match_id) %>%
+    slice_min(balls_bowled, n = 1, with_ties = FALSE) %>%
+    ungroup() %>%
+    mutate(
+      total_runs = 0L, wickets_fallen = 0L, wickets_in_hand = 10L,
+      over = 0L, ball = 0L, balls_bowled = 0L,
+      overs_completed = 0, overs_remaining = if (is_longform) NA_real_ else max_overs,
+      balls_remaining = if (is_longform) NA_real_ else max_balls,
+      current_run_rate = shrunk_run_rate(0, 0, current_format),
+      runs_batter = 0L, runs_extras = 0L, runs_total = 0L,
+      is_four = 0L, is_six = 0L, is_wicket = 0L
+    )
+  # Momentum windows describe the balls just gone; before the innings there are
+  # none, and zero is the honest value rather than an imputation.
+  mom <- grep("^(runs|dots|boundaries|wickets)_last_", names(ball0), value = TRUE)
+  for (nm in mom) ball0[[nm]] <- 0
+  rr <- grep("^rr_last_", names(ball0), value = TRUE)
+  for (nm in rr) ball0[[nm]] <- ball0$current_run_rate
+
+  cli::cli_alert_info(
+    "Added {nrow(ball0)} ball-zero row{?s} so the pre-innings state is in the training distribution.")
+  stage1_data <- bind_rows(ball0, stage1_data) %>%
+    arrange(match_id, balls_bowled)
+
   # Stage 2: Second innings (for limited-overs only)
   if (!is_longform) {
     stage2_data <- deliveries_df %>%
