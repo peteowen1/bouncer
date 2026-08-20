@@ -251,8 +251,15 @@ for (current_format in FORMATS_TO_PREPARE) {
   # none, and zero is the honest value rather than an imputation.
   mom <- grep("^(runs|dots|boundaries|wickets)_last_", names(ball0), value = TRUE)
   for (nm in mom) ball0[[nm]] <- 0
+  # rr_last_* is ZERO here, not the prior rate, because that is what SERVING
+  # produces: build_cricsheet_win_probability() builds the before-state of ball
+  # one by lagging the momentum columns with fill = 0. Setting the prior here
+  # instead looked more principled and was a train/serve mismatch -- the model
+  # saw rr_last_3_overs = 5.0 in training and 0 at serving, which left the ODI
+  # ball-zero projection 8.4 runs high while the same model scored the training
+  # ball-zero rows to within 1.3. Match serving; do not out-think it.
   rr <- grep("^rr_last_", names(ball0), value = TRUE)
-  for (nm in rr) ball0[[nm]] <- ball0$current_run_rate
+  for (nm in rr) ball0[[nm]] <- 0
 
   cli::cli_alert_info(
     "Added {nrow(ball0)} ball-zero row{?s} so the pre-innings state is in the training distribution.")
