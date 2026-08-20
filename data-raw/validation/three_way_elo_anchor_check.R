@@ -64,6 +64,38 @@
 # the strongest competitions. The ODI pool is almost entirely international and
 # near-homogeneous, which is where such an effect would vanish. The format
 # contrast is evidence for this, not proof of it. Test before acting.
+#
+# ANSWERED 2026-08-20, and it was neither hypothesis. The T20 anchor failure
+# was substantially the PLAYER IDENTITY REGRESSION (#74): for essentially all
+# of 2026 the corpus filed players under a NAME instead of a registry id, which
+# split every current player in two and put 3,139 phantom low-exposure
+# identities into the pool -- as batters, and as the BOWLERS and venues the
+# ratings are computed against.
+#
+# Rebuilt on the corrected corpus, same code, same parameters:
+#
+#   batter        rank before -> after   balls
+#   JC Buttler          803 ->    2      9,410
+#   Babar Azam        1,077 ->   79      8,455
+#   V Kohli             406 ->   59     10,134
+#   GJ Maxwell          511 ->  187      6,996
+#   SA Yadav            828 ->  260      5,949
+#   TM Head              51 ->  100      3,387
+#   RG Sharma           263 ->  617      8,608
+#
+# The ceiling cleared too: 3 players at 1800 against 5, four within ten of it
+# against twelve, and the 200-500 ball bucket's share of the top 50 halved.
+# The exposure gradient is now monotonic -- mean 1350 -> 1568 across buckets,
+# spread narrowing 156 -> 125.
+#
+# TWO THINGS STILL WORTH WATCHING, so this does not read as fully solved:
+#   * Rohit Sharma moved the WRONG way, 263 -> 617 on 8,608 balls. One anchor
+#     regressing while six improve is not proof of anything, but it is not
+#     nothing either.
+#   * Suryakumar Yadav at 260 is defensible rather than obviously right.
+#   * blend_elo_with_replacement() is STILL never called. The ceiling improved
+#     because the phantoms left the pool, not because shrinkage was switched
+#     on. That remains available and untested.
 
 # Why do elite high-volume batters sit mid-table while 400-ball players top it?
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
