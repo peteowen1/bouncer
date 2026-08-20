@@ -32,7 +32,7 @@ if (n == 0) {
   quit(status = 0)
 }
 
-.in_transaction(conn, function() {
+invisible(.in_transaction(conn, function() {
   DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", snap))
   # Last rating per player, taken by date then delivery id -- the same ordering
   # the ratings themselves are built in, so "final" means the same thing.
@@ -54,7 +54,7 @@ if (n == 0) {
       FROM main.%s)
     SELECT player_id, 'bowler' AS role, run_elo, wicket_elo, balls
     FROM bowl WHERE rn = 1", snap, tbl))
-})
+}))
 
 s <- dbGetQuery(conn, sprintf("SELECT role, COUNT(*) n FROM %s GROUP BY 1 ORDER BY 1", snap))
 cli::cli_alert_success("Snapshotted {tbl} ({format(n, big.mark=',')} rows) into {snap}:")
