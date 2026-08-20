@@ -158,7 +158,10 @@ for (current_format in FORMATS_TO_PREPARE) {
         balls_bowled = over * 6 + ball,
         balls_remaining = pmax(0, max_balls - balls_bowled),
         overs_remaining = balls_remaining / 6,
-        current_run_rate = calculate_run_rate(total_runs, balls_bowled),
+        # Shrunk toward the format prior. Raw division made the rate after one
+        # ball 0, 6, 24 or 36 -- noise the model read as signal, which is what
+        # gave the first ball of an innings a free +4.6 TSA in ODI (#70).
+        current_run_rate = shrunk_run_rate(total_runs, balls_bowled, current_format),
         wickets_in_hand = 10 - wickets_fallen
       )
   } else {
@@ -168,7 +171,7 @@ for (current_format in FORMATS_TO_PREPARE) {
         balls_bowled = over * 6 + ball,
         balls_remaining = NA_real_,
         overs_remaining = NA_real_,
-        current_run_rate = calculate_run_rate(total_runs, balls_bowled),
+        current_run_rate = shrunk_run_rate(total_runs, balls_bowled, current_format),
         wickets_in_hand = 10 - wickets_fallen
       )
   }

@@ -593,3 +593,72 @@ create_grouped_folds <- function(data, n_folds = 5, seed = 42) {
 
   return(folds)
 }
+
+
+# ============================================================================
+# Shrunk run rate (bouncerverse#70 / TSA first-ball bias)
+# ============================================================================
+#
+# THE PROBLEM. `calculate_run_rate()` divides runs by overs, so after ONE ball
+# the "rate" is 0, 6, 24 or 36 -- pure noise presented to the model as signal.
+# Measured: the sd of the observed rate across innings is 6.51 (ODI), 7.66 (T20)
+# and 6.34 (Test) at one ball, LARGER than the mean rate itself, falling to
+# 1.16 / 1.80 / 0.91 by 120 balls.
+#
+# What it cost: at the first ball of an ODI, one run moved the projected score
+# by +30.7. Because the before-state of ball one has 0 runs off 0 balls, a dot
+# leaves the state unchanged and any run moves it sharply up -- so first-ball
+# TSA had almost no negative branch. Only 1.8% of ODI first balls scored
+# negative TSA against 42.6% of later balls, and the mean was +4.572 against
+# +0.008. Whoever faced the first ball collected roughly 4.6 free runs.
+#
+# THE WEIGHT IS DERIVED, NOT CHOSEN. Variance of the observed rate after n balls
+# decomposes as sd^2(n) = B + N/n, with B the between-innings variance of the
+# true rate and N the per-ball noise; the MSE-optimal shrinkage weight in balls
+# is k = N/B. Fitted across n = 6, 12, 24, 60, 120, 180:
+#
+#   format   N(noise)   B(true)   k = N/B
+#   T20         67.86     3.181      21.3
+#   ODI         47.03     1.268      37.1
+#   Test        43.25     0.564      76.7
+#
+# Test needs the heaviest shrinkage because its between-innings spread is
+# smallest relative to per-ball noise. data-raw/validation/run_rate_shrinkage.R
+# rederives all of it.
+
+#' Shrinkage weight for the in-progress run rate, in balls
+#' @keywords internal
+RUN_RATE_PRIOR_BALLS <- c(t20 = 21, odi = 37, test = 77)
+
+#' Prior run rate per format, runs per over
+#'
+#' The empirical mean innings rate over all innings of 60+ balls: T20 7.252,
+#' ODI 4.996, Test 3.343.
+#' @keywords internal
+RUN_RATE_PRIOR_RATE <- c(t20 = 7.25, odi = 5.00, test = 3.34)
+
+#' Run Rate Shrunk Toward the Format Prior
+#'
+#' For an IN-PROGRESS innings. Use [calculate_run_rate()] for a completed one,
+#' where the raw rate is the answer and shrinking it would be wrong.
+#'
+#' @param runs Numeric. Runs so far.
+#' @param balls Numeric. Balls bowled so far. Zero is allowed and returns the
+#'   prior, which is the honest answer before anything has happened.
+#' @param format "t20", "odi" or "test".
+#' @return Numeric run rate, runs per over.
+#' @keywords internal
+shrunk_run_rate <- function(runs, balls, format) {
+  fmt <- tolower(format[1])
+  if (!fmt %in% names(RUN_RATE_PRIOR_BALLS)) {
+    cli::cli_abort("{.arg format} must be one of {.val {names(RUN_RATE_PRIOR_BALLS)}}, got {.val {fmt}}.")
+  }
+  k <- RUN_RATE_PRIOR_BALLS[[fmt]]
+  prior <- RUN_RATE_PRIOR_RATE[[fmt]]
+  b <- pmax(as.numeric(balls), 0)
+  r <- as.numeric(runs)
+  r[is.na(r)] <- 0
+  b[is.na(b)] <- 0
+  # (observed runs + prior runs) / (observed overs + prior overs)
+  (r + prior * k / 6) / ((b + k) / 6)
+}
