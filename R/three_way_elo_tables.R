@@ -140,10 +140,24 @@ promote_3way_elo_staging <- function(category, conn, min_rows = 1L,
     }
   }
 
+  # NOT a rename. create_3way_elo_table() declares delivery_id as a PRIMARY
+  # KEY, DuckDB backs that with an index, and ALTER TABLE ... RENAME on a table
+  # with a dependent index fails: "Cannot alter entry ... because there are
+  # entries that depend on it". Recreating the live table from the schema and
+  # copying the rows keeps the primary key, which a rename of a schema-less
+  # copy would have quietly dropped.
   .in_transaction(conn, function() {
     DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", live))
-    DBI::dbExecute(conn, sprintf("ALTER TABLE %s RENAME TO %s", stage, live))
+    create_3way_elo_table(tolower(category), conn, overwrite = FALSE)
+    DBI::dbExecute(conn, sprintf("INSERT INTO %s SELECT * FROM %s", live, stage))
+    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", stage))
   })
+
+  moved <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", live))$n
+  if (moved != n) {
+    cli::cli_abort(c("Promoted {moved} row{?s} but staging held {n}.",
+                     "x" = "The copy did not carry every row."))
+  }
   cli::cli_alert_success(
     "Promoted {cli::qty(n)}{format(n, big.mark = ',')} row{?s} into {.val {live}}.")
   invisible(n)
