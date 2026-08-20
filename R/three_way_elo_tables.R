@@ -102,9 +102,16 @@ three_way_elo_staging_category <- function(category) {
 #' @param min_rows Integer. Refuse to promote fewer rows than this. A staging
 #'   table that is empty or tiny means the rebuild failed, and promoting it
 #'   would destroy the ratings it was meant to replace.
+#' @param min_fraction_of_live Numeric. Also refuse to promote a table holding
+#'   less than this share of the CURRENT live table. `min_rows` only compares
+#'   against what the run itself expected, so a deliberately limited run --
+#'   `MATCH_LIMIT` set for a smoke test -- would pass it and then replace a
+#'   full table with a handful of matches. Set to `NULL` to allow a genuine
+#'   shrink (a format being rebuilt from a smaller corpus).
 #' @return Invisibly, the number of rows promoted.
 #' @keywords internal
-promote_3way_elo_staging <- function(category, conn, min_rows = 1L) {
+promote_3way_elo_staging <- function(category, conn, min_rows = 1L,
+                                     min_fraction_of_live = 0.9) {
   live <- paste0(tolower(category), "_3way_elo")
   stage <- paste0(three_way_elo_staging_category(category), "_3way_elo")
 
@@ -114,9 +121,23 @@ promote_3way_elo_staging <- function(category, conn, min_rows = 1L) {
   n <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", stage))$n
   if (n < min_rows) {
     cli::cli_abort(c(
-      "Staging table {.val {stage}} holds {n} row{?s}, below the {min_rows} required.",
+      "Staging table {.val {stage}} holds {cli::qty(n)}{n} row{?s}, below the {min_rows} required.",
       "x" = "Refusing to promote -- {.val {live}} would be replaced with nothing.",
       "i" = "The staging table is left in place for inspection."))
+  }
+
+  # A limited run is the likelier mistake than a shrinking corpus, so compare
+  # against what is already there and make the caller say when a shrink is
+  # intended.
+  if (!is.null(min_fraction_of_live) && table_exists(conn, live)) {
+    n_live <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", live))$n
+    if (n_live > 0 && n < n_live * min_fraction_of_live) {
+      cli::cli_abort(c(
+        "Staging holds {cli::qty(n)}{format(n, big.mark = ',')} row{?s} against {format(n_live, big.mark = ',')} live.",
+        "x" = "That is {round(100 * n / n_live, 1)}% of the live table; refusing to promote.",
+        "i" = "A MATCH_LIMIT or partial run looks exactly like this.",
+        "i" = "Pass {.code min_fraction_of_live = NULL} if the corpus genuinely shrank."))
+    }
   }
 
   .in_transaction(conn, function() {
@@ -124,6 +145,6 @@ promote_3way_elo_staging <- function(category, conn, min_rows = 1L) {
     DBI::dbExecute(conn, sprintf("ALTER TABLE %s RENAME TO %s", stage, live))
   })
   cli::cli_alert_success(
-    "Promoted {format(n, big.mark = ',')} row{?s} into {.val {live}}.")
+    "Promoted {cli::qty(n)}{format(n, big.mark = ',')} row{?s} into {.val {live}}.")
   invisible(n)
 }

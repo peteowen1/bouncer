@@ -484,33 +484,31 @@ if (nrow(league_running_avgs) > 0) {
 current_match_baseline <- calibration$mean_runs
 
 ## 4.7.2 Pre-compute K-factor Parameters (OPTIMIZATION) ----
-# Avoid repeated switch() lookups inside the loop
-k_params <- list(
-  run = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_RUN_MAX_T20, k_min = THREE_WAY_K_RUN_MIN_T20, halflife = THREE_WAY_K_RUN_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_RUN_MAX_ODI, k_min = THREE_WAY_K_RUN_MIN_ODI, halflife = THREE_WAY_K_RUN_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_RUN_MAX_TEST, k_min = THREE_WAY_K_RUN_MIN_TEST, halflife = THREE_WAY_K_RUN_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_RUN_MAX_T20, k_min = THREE_WAY_K_RUN_MIN_T20, halflife = THREE_WAY_K_RUN_HALFLIFE_T20)
-  ),
-  wicket = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_WICKET_MAX_T20, k_min = THREE_WAY_K_WICKET_MIN_T20, halflife = THREE_WAY_K_WICKET_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_WICKET_MAX_ODI, k_min = THREE_WAY_K_WICKET_MIN_ODI, halflife = THREE_WAY_K_WICKET_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_WICKET_MAX_TEST, k_min = THREE_WAY_K_WICKET_MIN_TEST, halflife = THREE_WAY_K_WICKET_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_WICKET_MAX_T20, k_min = THREE_WAY_K_WICKET_MIN_T20, halflife = THREE_WAY_K_WICKET_HALFLIFE_T20)
-  ),
-  venue_perm = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_T20, k_min = THREE_WAY_K_VENUE_PERM_MIN_T20, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_ODI, k_min = THREE_WAY_K_VENUE_PERM_MIN_ODI, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_TEST, k_min = THREE_WAY_K_VENUE_PERM_MIN_TEST, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_VENUE_PERM_MAX_T20, k_min = THREE_WAY_K_VENUE_PERM_MIN_T20, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_T20)
-  ),
-  venue_session = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_T20, k_min = THREE_WAY_K_VENUE_SESSION_MIN_T20, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_ODI, k_min = THREE_WAY_K_VENUE_SESSION_MIN_ODI, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_TEST, k_min = THREE_WAY_K_VENUE_SESSION_MIN_TEST, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_T20, k_min = THREE_WAY_K_VENUE_SESSION_MIN_T20, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20)
-  )
+# Read from THREE_WAY_PARAMS rather than per-format constants.
+#
+# This block used to switch() over THREE_WAY_K_RUN_MAX_T20 and 38 siblings,
+# all of which the 2026-02-09 constant consolidation removed -- which is why
+# this script has not run since (bouncerverse#63). The same values now live in
+# THREE_WAY_PARAMS under the identical names minus the format suffix.
+#
+# It is also a correctness fix, not just a rename: the deleted constants were
+# per FORMAT only, so a women's run used men's K-factors. get_3way_params() is
+# keyed by format AND gender.
+tw <- get_3way_params(current_format, gender_db_value)
+k_of <- function(prefix) list(
+  k_max    = tw[[paste0("THREE_WAY_K_", prefix, "_MAX")]],
+  k_min    = tw[[paste0("THREE_WAY_K_", prefix, "_MIN")]],
+  halflife = tw[[paste0("THREE_WAY_K_", prefix, "_HALFLIFE")]]
 )
+k_params <- list(
+  run           = k_of("RUN"),
+  wicket        = k_of("WICKET"),
+  venue_perm    = k_of("VENUE_PERM"),
+  venue_session = k_of("VENUE_SESSION")
+)
+# A missing name would otherwise arrive as a NULL k_max deep inside the loop.
+stopifnot(!vapply(unlist(k_params), is.null, logical(1)),
+          all(is.finite(unlist(k_params))))
 
 # Pre-compute phase multipliers lookup (faster than switch in loop)
 phase_mult_lookup <- c(
@@ -528,12 +526,8 @@ tier_mult_lookup <- c(
 )
 
 # Pre-compute expected runs constant
-runs_per_elo <- switch(current_format,
-  "t20" = THREE_WAY_RUNS_PER_100_ELO_POINTS_T20,
-  "odi" = THREE_WAY_RUNS_PER_100_ELO_POINTS_ODI,
-  "test" = THREE_WAY_RUNS_PER_100_ELO_POINTS_TEST,
-  THREE_WAY_RUNS_PER_100_ELO_POINTS_T20
-) / 100
+runs_per_elo <- tw[["THREE_WAY_RUNS_PER_100_ELO_POINTS"]] / 100
+stopifnot(is.finite(runs_per_elo))
 
 ## 4.7.2 Pre-index Match Boundaries (OPTIMIZATION) ----
 # Avoid which() scans in the loop - compute all match start indices upfront

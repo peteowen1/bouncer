@@ -65,3 +65,38 @@ test_that("the staging category is distinct from the live one", {
   expect_equal(three_way_elo_staging_category("mens_t20"), "mens_t20_staging")
   expect_false(three_way_elo_staging_category("mens_t20") == "mens_t20")
 })
+
+test_that("a limited run cannot replace a full table with a handful of rows", {
+  # min_rows only compares against what the RUN expected, so a MATCH_LIMIT
+  # smoke test passes it and would then wipe the live ratings. This is the
+  # guard that actually protects the table.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE TABLE mens_t20_3way_elo (delivery_id VARCHAR)")
+  DBI::dbExecute(conn, "INSERT INTO mens_t20_3way_elo SELECT 'd' || i FROM range(1000) t(i)")
+  make_stage(conn, "mens_t20", 50)
+
+  # 50 of 50 expected rows: min_rows is satisfied, and it is still refused.
+  expect_error(promote_3way_elo_staging("mens_t20", conn, min_rows = 49),
+               "refusing to promote")
+  expect_equal(DBI::dbGetQuery(conn, "SELECT COUNT(*) n FROM mens_t20_3way_elo")$n, 1000)
+})
+
+test_that("a genuine shrink is allowed when the caller says so", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE TABLE mens_odi_3way_elo (delivery_id VARCHAR)")
+  DBI::dbExecute(conn, "INSERT INTO mens_odi_3way_elo SELECT 'd' || i FROM range(1000) t(i)")
+  make_stage(conn, "mens_odi", 50)
+  expect_equal(
+    promote_3way_elo_staging("mens_odi", conn, min_fraction_of_live = NULL), 50)
+})
+
+test_that("a normal full rebuild of similar size still promotes", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE TABLE mens_test_3way_elo (delivery_id VARCHAR)")
+  DBI::dbExecute(conn, "INSERT INTO mens_test_3way_elo SELECT 'd' || i FROM range(1000) t(i)")
+  make_stage(conn, "mens_test", 1200)   # corpus grew, as it does
+  expect_equal(promote_3way_elo_staging("mens_test", conn), 1200)
+})
