@@ -730,6 +730,51 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
   list(batter = bat[], bowler = bwl[])
 }
 
+#' Career balls required to appear on a leaderboard, per format and role
+#'
+#' One number cannot serve three formats. `min_balls = 500` was 33.9 T20 batter
+#' matches but only **3.5 Test bowler matches**, and the reliability it bought
+#' ranged from 0.455 (T20 batter) to **0.169** (Test bowler) -- the latter
+#' barely distinguishable from noise (#57).
+#'
+#' These floors equalise split-half reliability at about 0.40, so a name on any
+#' leaderboard means roughly the same thing. Read off the reliability curve in
+#' `data-raw/validation/exposure_floor_reliability.R`:
+#'
+#' \preformatted{
+#'   reliability at 500 balls    batter   bowler
+#'   T20                          0.455    0.415
+#'   ODI                          0.276    0.278
+#'   TEST                         0.329    0.169
+#' }
+#'
+#' Note the direction, which is the opposite of what it looks like: ODI needs
+#' MORE balls than T20 to reach the same reliability, not fewer, because an ODI
+#' innings is a smaller share of a career and per-ball noise is larger relative
+#' to the between-player spread.
+#'
+#' The floor decides only whether a player is LISTED. The shrinkage prior
+#' already stops an unreliable one topping a board.
+#'
+#' @keywords internal
+EXPOSURE_FLOOR <- list(
+  t20  = c(batter =  500L, bowler =  500L),
+  odi  = c(batter = 1500L, bowler = 2000L),
+  test = c(batter = 1000L, bowler = 1800L)
+)
+
+#' The exposure floor for a format and role
+#' @keywords internal
+default_exposure_floor <- function(format, role) {
+  fmt <- tolower(format[1]); rl <- tolower(role[1])
+  if (!fmt %in% names(EXPOSURE_FLOOR)) {
+    cli::cli_abort("No exposure floor defined for {.val {fmt}}.")
+  }
+  f <- EXPOSURE_FLOOR[[fmt]]
+  if (!rl %in% names(f)) cli::cli_abort("No exposure floor for role {.val {rl}}.")
+  unname(f[[rl]])
+}
+
 #' Player Rating v2
 #'
 #' The full pipeline: per-ball RAA, adjusted for the opponent faced and for the
@@ -773,7 +818,9 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #'   have been fitted on the same side as `role` -- checked via its `id_col`
 #'   attribute, because a batting offset on a bowling rating is plausible and
 #'   wrong.
-#' @param min_balls Integer. Career balls required to appear in the result.
+#' @param min_balls Integer, or NULL to use the format-and-role floor from
+#'   [EXPOSURE_FLOOR]. A single number across formats meant 3.5 Test bowler
+#'   matches against 33.9 T20 batter matches (#57).
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
 #'   careers split across a bare-name id and a hash id are merged first (#43),
 #'   which affects 2,845 players and 4% of appearances.
@@ -800,7 +847,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        iterations = 20L,
                                        offsets = NULL,
                                        factors = NULL,
-                                       min_balls = 500L,
+                                       min_balls = NULL,
                                        id_map = NULL,
                                        metric = c("composite", "runs", "wickets",
                                                   "team_score")) {
@@ -857,6 +904,9 @@ calculate_player_rating_v2 <- function(format = "t20",
       "i" = "Pass {.code offsets = NULL} to fit the right side, or refit with {.fn fit_competition_offsets}."))
   }
   if (is.null(decay_days)) decay_days <- if (role == "batter") 1095 else 1825
+  # Per format AND role -- see EXPOSURE_FLOOR. A single number gave a Test
+  # bowler a leaderboard place on 3.5 matches (#57).
+  if (is.null(min_balls)) min_balls <- default_exposure_floor(format, role)
 
   own <- is.null(conn)
   if (own) {

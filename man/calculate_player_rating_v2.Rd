@@ -16,7 +16,7 @@ calculate_player_rating_v2(
   iterations = 20L,
   offsets = NULL,
   factors = NULL,
-  min_balls = 500L,
+  min_balls = NULL,
   id_map = NULL,
   metric = c("composite", "runs", "wickets", "team_score")
 )
@@ -56,7 +56,9 @@ basis \code{metric} requires. Used ONLY to compress the within-competition
 deviation, never to scale the uncentred value -- that was the defect this
 replaces. A supplied object must carry the matching \code{basis} attribute.}
 
-\item{min_balls}{Integer. Career balls required to appear in the result.}
+\item{min_balls}{Integer, or NULL to use the format-and-role floor from
+\link{EXPOSURE_FLOOR}. A single number across formats meant 3.5 Test bowler
+matches against 33.9 T20 batter matches (#57).}
 
 \item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Player
 careers split across a bare-name id and a hash id are merged first (#43),
