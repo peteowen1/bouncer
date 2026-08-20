@@ -36,6 +36,14 @@ results <- list()
 for (job in ALL) {
   tag <- paste(job, collapse = "_")
   log_line("START ", tag)
+  # Snapshot per-player final ratings BEFORE the rebuild. The promote drops the
+  # live table, so without this there is nothing left to compare a rebuild
+  # against. One row per player, not the whole table.
+  snap <- system2("Rscript",
+    c(shQuote(file.path(HERE, "..", "..", "..", "validation",
+                        "snapshot_3way_elo_ratings.R")), job[1], job[2]))
+  if (snap != 0) log_line("WARN  snapshot failed for ", tag,
+                          " -- rebuilding anyway, but old-vs-new will not be possible")
   t0 <- Sys.time()
   # A separate process per format, deliberately: the calculation script sets
   # globals and setwd()s, and a failure in one format must not poison the next.
