@@ -149,7 +149,12 @@ if (LOAD_FROM_CHECKPOINT && file.exists(checkpoint_file)) {
   cli::cli_alert_info("Skipping to database insert...")
 
   # Prepare table
-  create_3way_elo_table(current_category, conn, overwrite = TRUE)
+  # Build into STAGING, never over the live table. This call DROPs first and
+  # the insert is hours away; an interruption in between used to leave the
+  # live table empty with nothing to say so, which is how t20_3way_elo reached
+  # zero rows (bouncerverse#63). Dropping a staging table costs nothing.
+  build_category <- three_way_elo_staging_category(current_category)
+  create_3way_elo_table(build_category, conn, overwrite = TRUE)
 
   # Skip directly to section 4.10 (Build Result Data.Table)
   # The code below will be skipped via the flag
@@ -169,7 +174,12 @@ current_params$format <- current_category
 
 ## 4.2 Prepare Table ----
 if (FORCE_FULL) {
-  create_3way_elo_table(current_category, conn, overwrite = TRUE)
+  # Build into STAGING, never over the live table. This call DROPs first and
+  # the insert is hours away; an interruption in between used to leave the
+  # live table empty with nothing to say so, which is how t20_3way_elo reached
+  # zero rows (bouncerverse#63). Dropping a staging table costs nothing.
+  build_category <- three_way_elo_staging_category(current_category)
+  create_3way_elo_table(build_category, conn, overwrite = TRUE)
 }
 
 ## 4.3 Load Calibration Data ----
@@ -1096,7 +1106,7 @@ for (b in seq_len(n_batches)) {
   end_idx <- min(b * BATCH_SIZE, n_deliveries)
 
   batch_df <- as.data.frame(result_dt[start_idx:end_idx])
-  insert_3way_elos(batch_df, current_category, conn)
+  insert_3way_elos(batch_df, build_category, conn)
 
   cli::cli_progress_update()
 }
@@ -1104,6 +1114,12 @@ for (b in seq_len(n_batches)) {
 cli::cli_progress_done()
 
 cli::cli_alert_success("Inserted {format(n_deliveries, big.mark = ',')} deliveries")
+
+## 4.11b Promote Staging Over Live ----
+# Only now, with every row written, does the live table change -- in one
+# transaction, and only if the staging table is plausibly full.
+promote_3way_elo_staging(current_category, conn,
+                         min_rows = max(1L, floor(n_deliveries * 0.99)))
 
 ## 4.12 Store Parameters ----
 cli::cli_h2("Storing parameters")

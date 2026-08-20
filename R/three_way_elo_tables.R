@@ -70,3 +70,60 @@ three_way_elo_query <- function(format, columns, conn) {
   cols <- paste(columns, collapse = ",\n    ")
   paste(sprintf("SELECT\n    %s\n  FROM %s", cols, tbls), collapse = "\n  UNION ALL\n  ")
 }
+
+# Rebuilding without a window where the table is empty ------------------------
+#
+# `create_3way_elo_table(..., overwrite = TRUE)` DROPs first and the rebuild
+# then computes for hours before its first insert. Interrupt it anywhere in
+# between -- Ctrl-C, a crash, a laptop lid -- and the table is left EMPTY with
+# nothing to say so. That is how `t20_3way_elo` reached zero rows, and it is
+# the same shape as the FORCE_FULL index rebuild and the #45 schema drop.
+#
+# So the rebuild writes to a staging table and the live one is replaced only
+# once the data is complete. An interruption during the computation or the
+# insert costs the staging table, which held nothing anyone was reading.
+
+#' Staging Category for a 3-Way ELO Rebuild
+#'
+#' @param category Character, e.g. `"mens_t20"`.
+#' @return The category to build into, e.g. `"mens_t20_staging"`.
+#' @keywords internal
+three_way_elo_staging_category <- function(category) {
+  paste0(tolower(category), "_staging")
+}
+
+#' Promote a Completed 3-Way ELO Staging Table Over the Live One
+#'
+#' Replaces the live table with the staging table in a single transaction, so
+#' there is no point at which a reader sees an empty table.
+#'
+#' @param category Character, e.g. `"mens_t20"`.
+#' @param conn A DBI connection with write access.
+#' @param min_rows Integer. Refuse to promote fewer rows than this. A staging
+#'   table that is empty or tiny means the rebuild failed, and promoting it
+#'   would destroy the ratings it was meant to replace.
+#' @return Invisibly, the number of rows promoted.
+#' @keywords internal
+promote_3way_elo_staging <- function(category, conn, min_rows = 1L) {
+  live <- paste0(tolower(category), "_3way_elo")
+  stage <- paste0(three_way_elo_staging_category(category), "_3way_elo")
+
+  if (!table_exists(conn, stage)) {
+    cli::cli_abort("No staging table {.val {stage}} to promote.")
+  }
+  n <- DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", stage))$n
+  if (n < min_rows) {
+    cli::cli_abort(c(
+      "Staging table {.val {stage}} holds {n} row{?s}, below the {min_rows} required.",
+      "x" = "Refusing to promote -- {.val {live}} would be replaced with nothing.",
+      "i" = "The staging table is left in place for inspection."))
+  }
+
+  .in_transaction(conn, function() {
+    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", live))
+    DBI::dbExecute(conn, sprintf("ALTER TABLE %s RENAME TO %s", stage, live))
+  })
+  cli::cli_alert_success(
+    "Promoted {format(n, big.mark = ',')} row{?s} into {.val {live}}.")
+  invisible(n)
+}
