@@ -259,20 +259,22 @@ for (format in FORMATS_TO_TRAIN) {
       mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
   } else if (INCLUDE_ELO_FEATURES) {
     cli::cli_alert_info("Adding 3-way ELO features...")
-    elo_table <- paste0(format, "_3way_elo")
+    # The frame is mixed-gender (gender_male is itself a feature), and the ELO
+    # tables are per gender AND format. Building the name as
+    # paste0(format, "_3way_elo") hit an empty legacy table in T20 and a stale
+    # women's-only one in ODI/Test, so every ELO feature coalesced to neutral
+    # for every row while the step reported success (bouncerverse#63).
+    elo_query <- three_way_elo_query(format, c(
+      "delivery_id",
+      "batter_run_elo_before AS batter_run_elo",
+      "bowler_run_elo_before AS bowler_run_elo",
+      "batter_wicket_elo_before AS batter_wicket_elo",
+      "bowler_wicket_elo_before AS bowler_wicket_elo",
+      "venue_session_run_elo_before AS venue_session_run_elo",
+      "venue_perm_run_elo_before AS venue_perm_run_elo"), conn)
     tryCatch({
-      if (table_exists(conn, elo_table)) {
-        elo_data <- DBI::dbGetQuery(conn, sprintf("
-          SELECT
-            delivery_id,
-            batter_run_elo_before AS batter_run_elo,
-            bowler_run_elo_before AS bowler_run_elo,
-            batter_wicket_elo_before AS batter_wicket_elo,
-            bowler_wicket_elo_before AS bowler_wicket_elo,
-            venue_session_run_elo_before AS venue_session_run_elo,
-            venue_perm_run_elo_before AS venue_perm_run_elo
-          FROM %s
-        ", elo_table))
+      if (!is.null(elo_query)) {
+        elo_data <- DBI::dbGetQuery(conn, elo_query)
 
         model_data <- model_data %>%
           left_join(elo_data, by = "delivery_id") %>%
@@ -284,10 +286,21 @@ for (format in FORMATS_TO_TRAIN) {
           )
 
         n_elo <- sum(!is.na(model_data$batter_run_elo))
-        cli::cli_alert_success("{n_elo}/{nrow(model_data)} have ELO features")
+        cov <- n_elo / nrow(model_data)
+        # A zero-coverage join used to print as a success line with "0/N" in it.
+        # Neutral features for every row is a missing join, not a trained model.
+        if (cov < 0.5) {
+          cli::cli_abort(c(
+            "Only {n_elo}/{nrow(model_data)} rows ({round(100*cov, 1)}%) matched a 3-way ELO.",
+            "x" = "Below 50% the ELO features are mostly neutral and the model is not using them.",
+            "i" = "Read from: {.val {three_way_elo_tables(format, conn)}}.",
+            "i" = "Set INCLUDE_ELO_FEATURES <- FALSE to train without them deliberately."))
+        }
+        cli::cli_alert_success("{n_elo}/{nrow(model_data)} ({round(100*cov, 1)}%) have ELO features")
         has_elo_features <- TRUE
       } else {
-        cli::cli_alert_warning("No {elo_table} table found, skipping ELO features")
+        cli::cli_alert_warning(
+          "No 3-way ELO table for {.val {format}}, skipping ELO features")
         model_data <- model_data %>%
           mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
       }

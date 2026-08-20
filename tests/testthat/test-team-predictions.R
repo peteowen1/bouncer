@@ -6,7 +6,7 @@ test_that("calculate_roster_elo returns expected structure", {
   # Use a small test roster
   roster <- c("V Kohli", "R Sharma")
 
-  result <- calculate_roster_elo(roster, match_type = "t20")
+  result <- suppressWarnings(calculate_roster_elo(roster, match_type = "t20"))
 
   expect_type(result, "list")
   expect_true("team_batting_elo" %in% names(result))
@@ -29,18 +29,18 @@ test_that("calculate_roster_elo respects weights", {
   roster <- c("V Kohli")
 
   # All batting weight
-  result_batting <- calculate_roster_elo(
+  result_batting <- suppressWarnings(calculate_roster_elo(
     roster,
     match_type = "t20",
     weights = list(batting = 1, bowling = 0)
-  )
+  ))
 
   # All bowling weight
-  result_bowling <- calculate_roster_elo(
+  result_bowling <- suppressWarnings(calculate_roster_elo(
     roster,
     match_type = "t20",
     weights = list(batting = 0, bowling = 1)
-  )
+  ))
 
   # Combined should equal batting ELO when weight is all batting
   expect_equal(result_batting$combined_elo, result_batting$team_batting_elo)
@@ -172,7 +172,30 @@ test_that("team functions handle different match types", {
   roster <- c("V Kohli")
 
   # Should not error for different match types
-  expect_no_error(calculate_roster_elo(roster, match_type = "t20"))
-  expect_no_error(calculate_roster_elo(roster, match_type = "odi"))
-  expect_no_error(calculate_roster_elo(roster, match_type = "test"))
+  expect_no_error(suppressWarnings(calculate_roster_elo(roster, match_type = "t20")))
+  expect_no_error(suppressWarnings(calculate_roster_elo(roster, match_type = "odi")))
+  expect_no_error(suppressWarnings(calculate_roster_elo(roster, match_type = "test")))
+})
+
+
+# bouncerverse#63 -----------------------------------------------------------
+# calculate_roster_elo built its table name as paste0(format, "_3way_elo"),
+# which is not where the ratings live -- they are keyed by gender AND format.
+# Every player therefore fell back to THREE_WAY_ELO_START and every roster
+# scored an identical 1400, which reads as a working model. The warning below
+# is the only thing that distinguishes that from a genuinely unrated squad.
+
+test_that("an unrated roster warns rather than silently scoring 1400", {
+  roster <- paste0("no_such_player_", 1:5)
+  expect_warning(calculate_roster_elo(roster, match_type = "t20"),
+                 "No 3-way ELO")
+  res <- suppressWarnings(calculate_roster_elo(roster, match_type = "t20"))
+  expect_equal(res$team_batting_elo, THREE_WAY_ELO_START)
+})
+
+test_that("the roster query reads the gender-keyed tables", {
+  # Pinning the join target: the legacy name is empty in T20, so a reader
+  # pointed at it cannot tell any two rosters apart.
+  expect_setequal(three_way_elo_tables("t20"),
+                  c("mens_t20_3way_elo", "womens_t20_3way_elo"))
 })

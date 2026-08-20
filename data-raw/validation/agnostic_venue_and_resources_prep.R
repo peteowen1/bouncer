@@ -32,7 +32,14 @@ d <- as.data.table(dbGetQuery(conn, "
   SELECT d.match_id, d.venue, CAST(d.match_date AS DATE) AS match_date,
          d.innings, d.over, d.ball, d.gender, d.match_type,
          (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
-         d.wickets_fallen, d.runs_batter, d.runs_extras, d.is_wicket,
+         -- THE SIBLING RULE. wickets_fallen is POST-delivery, exactly like
+         -- total_runs: on the first ball of an innings it is 1 wherever a
+         -- wicket fell (812 T20 cases) and its max is 11, not 9. Correcting
+         -- the runs frame and leaving this raw is the mirror-image mistake
+         -- that R/model_predictions.R made, and it fed the outcome model a
+         -- wicket count that already knew about this ball's wicket.
+         (d.wickets_fallen - CAST(d.is_wicket AS INTEGER)) AS wickets_fallen,
+         d.runs_batter, d.runs_extras, d.is_wicket,
          d.runs_total
   FROM cricsheet.deliveries d
   JOIN cricsheet.matches m ON m.match_id = d.match_id

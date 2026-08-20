@@ -33,9 +33,13 @@ calculate_roster_elo <- function(player_ids,
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Determine 3-way ELO table for this format
+  # The ELO tables are keyed by gender AND format. Building the name as
+  # paste0(format, "_3way_elo") resolved to an unpopulated legacy table, so
+  # every player silently fell back to THREE_WAY_ELO_START and every roster
+  # scored identically (bouncerverse#63). A player appears under one gender
+  # only, so unioning both tables cannot mix them.
   format <- normalize_format(match_type)
-  elo_table <- paste0(format, "_3way_elo")
+  elo_tables <- three_way_elo_tables(format, conn)
 
   start_elo <- THREE_WAY_ELO_START
 
@@ -46,41 +50,63 @@ calculate_roster_elo <- function(player_ids,
     stringsAsFactors = FALSE
   )
 
-  if (table_exists(conn, elo_table)) {
+  if (length(elo_tables) > 0) {
     placeholders <- paste(rep("?", length(player_ids)), collapse = ", ")
+
+    # ROW_NUMBER() must rank over the UNION, not within each table, or a player
+    # with rows in both would yield two "latest" ratings.
+    elo_source <- function(id_col, run_col, wicket_col) {
+      sprintf("SELECT %s AS player_id, (%s + %s) / 2 AS elo, match_date, delivery_id
+               FROM %s WHERE %s IN (%s) AND %s IS NOT NULL",
+              id_col, run_col, wicket_col, elo_tables, id_col, placeholders, run_col)
+    }
 
     # Get latest batting ELOs from 3-way ELO table
     batting_query <- sprintf("
-      WITH ranked AS (
-        SELECT batter_id as player_id,
-               (batter_run_elo_after + batter_wicket_elo_after) / 2 as elo,
-               ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) as rn
-        FROM %s
-        WHERE batter_id IN (%s) AND batter_run_elo_after IS NOT NULL
+      WITH src AS (%s), ranked AS (
+        SELECT player_id, elo,
+               ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY match_date DESC, delivery_id DESC) as rn
+        FROM src
       )
       SELECT player_id, elo FROM ranked WHERE rn = 1
-    ", elo_table, placeholders)
+    ", paste(elo_source("batter_id", "batter_run_elo_after",
+                        "batter_wicket_elo_after"), collapse = " UNION ALL "))
 
     batting_result <- tryCatch(
-      DBI::dbGetQuery(conn, batting_query, params = as.list(player_ids)),
-      error = function(e) data.frame(player_id = character(0), elo = numeric(0))
+      DBI::dbGetQuery(conn, batting_query,
+                      params = as.list(rep(player_ids, length(elo_tables)))),
+      error = function(e) {
+        # A failing query and an unrated squad both produce zero rows, and the
+        # difference matters: one is a bug, the other is a fact about the
+        # players. Malformed SQL hid here for the length of this ticket.
+        cli::cli_warn(c("The batting ELO query failed: {conditionMessage(e)}",
+                        "i" = "Rosters will fall back to THREE_WAY_ELO_START."))
+        data.frame(player_id = character(0), elo = numeric(0))
+      }
     )
 
     # Get latest bowling ELOs
     bowling_query <- sprintf("
-      WITH ranked AS (
-        SELECT bowler_id as player_id,
-               (bowler_run_elo_after + bowler_wicket_elo_after) / 2 as elo,
-               ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) as rn
-        FROM %s
-        WHERE bowler_id IN (%s) AND bowler_run_elo_after IS NOT NULL
+      WITH src AS (%s), ranked AS (
+        SELECT player_id, elo,
+               ROW_NUMBER() OVER (PARTITION BY player_id ORDER BY match_date DESC, delivery_id DESC) as rn
+        FROM src
       )
       SELECT player_id, elo FROM ranked WHERE rn = 1
-    ", elo_table, placeholders)
+    ", paste(elo_source("bowler_id", "bowler_run_elo_after",
+                        "bowler_wicket_elo_after"), collapse = " UNION ALL "))
 
     bowling_result <- tryCatch(
-      DBI::dbGetQuery(conn, bowling_query, params = as.list(player_ids)),
-      error = function(e) data.frame(player_id = character(0), elo = numeric(0))
+      DBI::dbGetQuery(conn, bowling_query,
+                      params = as.list(rep(player_ids, length(elo_tables)))),
+      error = function(e) {
+        # A failing query and an unrated squad both produce zero rows, and the
+        # difference matters: one is a bug, the other is a fact about the
+        # players. Malformed SQL hid here for the length of this ticket.
+        cli::cli_warn(c("The bowling ELO query failed: {conditionMessage(e)}",
+                        "i" = "Rosters will fall back to THREE_WAY_ELO_START."))
+        data.frame(player_id = character(0), elo = numeric(0))
+      }
     )
 
     # Merge results
@@ -88,6 +114,19 @@ calculate_roster_elo <- function(player_ids,
     bowl_match <- match(player_ids, bowling_result$player_id)
     player_elos$batting_elo[!is.na(bat_match)] <- batting_result$elo[bat_match[!is.na(bat_match)]]
     player_elos$bowling_elo[!is.na(bowl_match)] <- bowling_result$elo[bowl_match[!is.na(bowl_match)]]
+
+    # Nobody matching means every roster scores the same number, which reads as
+    # a working model rather than a missing join. Say so.
+    if (all(is.na(bat_match)) && all(is.na(bowl_match))) {
+      cli::cli_warn(c(
+        "No 3-way ELO found for any of the {length(player_ids)} player{?s} in {.val {format}}.",
+        "i" = "Every player falls back to THREE_WAY_ELO_START, so rosters cannot be told apart.",
+        "i" = "Searched: {.val {elo_tables}}."))
+    }
+  } else {
+    cli::cli_warn(c(
+      "No 3-way ELO table exists for {.val {format}}.",
+      "i" = "Searched: {.val {three_way_elo_tables(format)}}."))
   }
 
   # Calculate team aggregates
