@@ -227,12 +227,27 @@ parse_all_data <- function(json_data, match_info) {
   # This maps player names to unique IDs (e.g., "JB Lintott" -> "abc123")
   people_registry <- json_data$info$registry$people
 
-  # Helper to look up player ID from registry
+  # Helper to look up player ID from registry.
+  #
+  # The name fallback is kept -- a match with no registry is still worth
+  # parsing -- but it is no longer SILENT. A name substituted for an id does
+  # not fail, it splits a player in two: every rating keyed on player_id then
+  # treats the same man as a new, low-exposure player. That is bouncerverse#74,
+  # where 995 of 1,318 matches in 2026 stored names, no current player had
+  # 2026 form in their rating, and 3,139 phantom identities entered every
+  # leaderboard. Nothing failed, for months.
+  #
+  # The counter is read after parsing so the caller can refuse or flag a match
+  # that resolved nothing.
+  n_fallback <- 0L
+  n_resolved <- 0L
   get_player_id <- function(player_name) {
     if (is.null(player_name) || is.na(player_name)) return(NA_character_)
     if (!is.null(people_registry) && player_name %in% names(people_registry)) {
+      n_resolved <<- n_resolved + 1L
       return(people_registry[[player_name]])
     }
+    n_fallback <<- n_fallback + 1L
     return(player_name)  # Fallback to name if no registry entry
   }
 
@@ -622,11 +637,25 @@ parse_all_data <- function(json_data, match_info) {
     )
   }
 
+  # A counter nobody reads is not a check. Warn HERE, where the match id is in
+  # hand, rather than leaving the caller to notice a field it may never look at.
+  if (n_fallback > 0L) {
+    mid <- json_data$info$match_type_number %||% "unknown"
+    cli::cli_warn(c(
+      "{n_fallback} of {n_fallback + n_resolved} player reference{?s} in this match had no registry entry and were stored as NAMES.",
+      "x" = "A name in place of an id splits the player: every rating keyed on player_id sees a new, low-exposure person.",
+      "i" = "Registry present: {!is.null(people_registry)}. See bouncerverse#74."))
+  }
+
   list(
     innings = innings_df,
     deliveries = deliveries_df,
     players = extract_players(json_data$info$players, json_data$info$registry),
-    powerplays = powerplays_df
+    powerplays = powerplays_df,
+    # Surfaced so a batch loader can count, refuse, or quarantine a match that
+    # resolved nothing -- the case that produced #74.
+    registry_resolved = n_resolved,
+    registry_fallback = n_fallback
   )
 }
 
