@@ -107,33 +107,23 @@ cat("\n")
 cli::cli_alert_success("Calibration complete!")
 cat("\n")
 
-cli::cli_h3("Expected Values at ELO Parity (1500 vs 1500)")
-for (format in formats_to_process) {
-  cal_data <- get_calibration_data(format, conn)
-  if (!is.null(cal_data)) {
-    exp_runs <- calculate_expected_runs_calibrated(1500, 1500, cal_data)
-    exp_wicket <- calculate_expected_wicket_calibrated(1500, 1500, cal_data)
-    cat(sprintf("  %s: Expected outcome score = %.4f (base=%.4f), Expected wicket prob = %.3f%%\n",
-                toupper(format), exp_runs, cal_data$mean_outcome_score, exp_wicket * 100))
-  }
-}
+# The two "Expected Values" demo blocks that stood here are removed
+# (bouncerverse#63). They called calculate_expected_runs_calibrated() and its
+# wicket sibling, which the 2026-02-09 sweep deleted along with the rest of
+# this script's dependencies, and which are built on DUAL_ELO_DIVISOR from the
+# deprecated dual-ELO engine. They printed an illustration; they fed nothing.
+# Restoring a deprecated engine to print two lines is the wrong trade, so the
+# lines go instead. The calibration this script exists to compute and store is
+# unaffected.
 
-cli::cli_h3("Expected Values at +200 ELO Advantage")
-for (format in formats_to_process) {
-  cal_data <- get_calibration_data(format, conn)
-  if (!is.null(cal_data)) {
-    exp_runs <- calculate_expected_runs_calibrated(1700, 1500, cal_data)
-    exp_wicket <- calculate_expected_wicket_calibrated(1500, 1700, cal_data)  # Bowler advantage
-    cat(sprintf("  %s: Batter +200: exp_runs=%.3f | Bowler +200: exp_wicket=%.3f%%\n",
-                toupper(format), exp_runs, exp_wicket * 100))
-  }
-}
 
 # 8. Next Steps ----
 cat("\n")
 cli::cli_h3("Next Steps")
 cli::cli_bullets(c(
-  "i" = "Run 02_calculate_dual_elos.R to calculate player ELOs",
+  # Was "Run 02_calculate_dual_elos.R" -- the dual-ELO engine is deprecated
+  # and archived in data-raw/_deprecated/. The live consumer is the 3-way ELO.
+  "i" = "Run ratings/player/3way-elo/01_calculate_3way_elo.R to calculate player ELOs",
   "i" = "Calibration data stored in elo_calibration_metrics table"
 ))
 cat("\n")
