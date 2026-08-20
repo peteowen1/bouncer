@@ -41,9 +41,22 @@
 
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
 suppressMessages({library(DBI); library(data.table)})
-if (!requireNamespace("wheather", quietly = TRUE)) {
+# Load wheather from SOURCE, not from the installed library.
+#
+# It is under active development in a sibling repo, so an installed copy goes
+# stale the moment it is edited -- and a stale weather client is exactly the
+# kind of thing that fails quietly, since the API contract does not change.
+# load_all() picks up whatever is on disk right now.
+WHEATHER_SRC <- "C:/dev/wheather"
+if (dir.exists(WHEATHER_SRC)) {
+  suppressMessages(devtools::load_all(WHEATHER_SRC, quiet = TRUE))
+  cli::cli_alert_info("Loaded {.pkg wheather} from source: {.file {WHEATHER_SRC}}")
+} else if (requireNamespace("wheather", quietly = TRUE)) {
+  cli::cli_alert_warning(
+    "{.file {WHEATHER_SRC}} not found; using the INSTALLED {.pkg wheather} {packageVersion('wheather')}, which may be stale.")
+} else {
   cli::cli_abort(c("The {.pkg wheather} package is required.",
-                   "i" = "devtools::install('C:/dev/wheather')"))
+                   "i" = "Clone it to {.file {WHEATHER_SRC}}, or install it."))
 }
 
 PAD_DAYS      <- 7L    # cover a Test that runs past its scheduled span
@@ -114,7 +127,7 @@ flush_buf <- function() {
 for (i in seq_len(nrow(work))) {
   v <- work[i]
   daily <- tryCatch(
-    suppressMessages(wheather::fetch_weather(v$latitude, v$longitude,
+    suppressMessages(fetch_weather(v$latitude, v$longitude,
                                              v$range_start, v$range_end)),
     error = function(e) NULL)
   if (is.null(daily) || !nrow(daily)) {
