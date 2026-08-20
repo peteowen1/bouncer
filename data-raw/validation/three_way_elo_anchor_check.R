@@ -15,6 +15,31 @@
 # which is what a sane exposure response looks like. Both named batters sit
 # below the mean of their OWN exposure bucket, so small-sample inflation does
 # not account for them. The cause is not established; do not assume one.
+#
+# WHAT IS ESTABLISHED, from code rather than guesswork (2026-08-20):
+#
+# The package HAS exposure shrinkage -- calculate_reliability() and
+# blend_elo_with_replacement() in R/three_way_elo.R, reliability =
+# balls / (balls + halflife) -- and the production path NEVER CALLS IT. The
+# only callers are optimization/05_validate_3way_elo.R and the unit tests.
+# 01_calculate_3way_elo.R stores the raw ELO, calculate_roster_elo() reads the
+# raw value, and 02_train_full_model.R joins the raw *_elo_before columns. So
+# both the published rating and the model feature are unshrunk.
+#
+# That accounts for one half of the failure and not the other:
+#
+#   * IT EXPLAINS the top of the list. Dhruv Jurel sits at the 1800 ceiling on
+#     545 balls, Shashank Singh on 813, Pat Cummins -- a fast bowler -- ranks
+#     10th on 700. Low exposure, extreme rating, no shrinkage.
+#
+#   * IT DOES NOT EXPLAIN Suryakumar Yadav 828th on 5,718 balls or Babar Azam
+#     1,077th on 8,039. Blending moves a rating TOWARD replacement, so it would
+#     push them DOWN, not up. Whatever rates them below the mean of their own
+#     exposure bucket is a separate mechanism and is still unidentified.
+#
+# Do not "fix" this by switching the blend on and declaring victory: it would
+# tidy the ceiling while leaving the harder failure untouched, and the tidier
+# list would read as though both were solved.
 
 # Why do elite high-volume batters sit mid-table while 400-ball players top it?
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
