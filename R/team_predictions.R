@@ -56,9 +56,14 @@ calculate_roster_elo <- function(player_ids,
     # ROW_NUMBER() must rank over the UNION, not within each table, or a player
     # with rows in both would yield two "latest" ratings.
     elo_source <- function(id_col, run_col, wicket_col) {
+      # BOTH components must be non-null. The original guarded only the run
+      # column, so a null wicket ELO made (run + null)/2 null, and that null
+      # then overwrote the player's start rating with NA. Inert while the join
+      # matched nothing; live the moment the table name was fixed.
       sprintf("SELECT %s AS player_id, (%s + %s) / 2 AS elo, match_date, delivery_id
-               FROM %s WHERE %s IN (%s) AND %s IS NOT NULL",
-              id_col, run_col, wicket_col, elo_tables, id_col, placeholders, run_col)
+               FROM %s WHERE %s IN (%s) AND %s IS NOT NULL AND %s IS NOT NULL",
+              id_col, run_col, wicket_col, elo_tables, id_col, placeholders,
+              run_col, wicket_col)
     }
 
     # Get latest batting ELOs from 3-way ELO table
@@ -112,8 +117,18 @@ calculate_roster_elo <- function(player_ids,
     # Merge results
     bat_match <- match(player_ids, batting_result$player_id)
     bowl_match <- match(player_ids, bowling_result$player_id)
-    player_elos$batting_elo[!is.na(bat_match)] <- batting_result$elo[bat_match[!is.na(bat_match)]]
-    player_elos$bowling_elo[!is.na(bowl_match)] <- bowling_result$elo[bowl_match[!is.na(bowl_match)]]
+    assign_elo <- function(current, result, idx) {
+      hit <- !is.na(idx)
+      vals <- result$elo[idx[hit]]
+      # A matched-but-NA rating is worse than no match: it propagates NaN into
+      # the team mean. Fall back to the start rating and keep it numeric.
+      vals[is.na(vals)] <- start_elo
+      current[hit] <- vals
+      current
+    }
+    player_elos$batting_elo <- assign_elo(player_elos$batting_elo, batting_result, bat_match)
+    player_elos$bowling_elo <- assign_elo(player_elos$bowling_elo, bowling_result, bowl_match)
+    stopifnot(!anyNA(player_elos$batting_elo), !anyNA(player_elos$bowling_elo))
 
     # Nobody matching means every roster scores the same number, which reads as
     # a working model rather than a missing join. Say so.

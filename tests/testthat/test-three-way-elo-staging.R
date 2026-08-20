@@ -110,3 +110,19 @@ test_that("a normal full rebuild of similar size still promotes", {
   make_stage(conn, "mens_test", 1200)   # corpus grew, as it does
   expect_equal(promote_3way_elo_staging("mens_test", conn), 1200)
 })
+
+test_that("a staging table from an older schema is refused, not misaligned", {
+  # The promote copies rows into a freshly created live table. With SELECT *
+  # that is positional, so a staging table built before a schema change would
+  # write ELOs into the wrong columns and succeed.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_live(conn, "mens_t20", 1000)
+  DBI::dbExecute(conn, "CREATE TABLE mens_t20_staging_3way_elo
+                        (delivery_id VARCHAR, match_id VARCHAR)")
+  DBI::dbExecute(conn, "INSERT INTO mens_t20_staging_3way_elo
+                        SELECT 'd' || i, 'm' || i FROM range(2000) t(i)")
+  expect_error(promote_3way_elo_staging("mens_t20", conn), "older schema")
+  # and the live table is untouched
+  expect_equal(DBI::dbGetQuery(conn, "SELECT COUNT(*) n FROM mens_t20_3way_elo")$n, 1000)
+})

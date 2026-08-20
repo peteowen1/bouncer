@@ -149,7 +149,26 @@ promote_3way_elo_staging <- function(category, conn, min_rows = 1L,
   .in_transaction(conn, function() {
     DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", live))
     create_3way_elo_table(tolower(category), conn, overwrite = FALSE)
-    DBI::dbExecute(conn, sprintf("INSERT INTO %s SELECT * FROM %s", live, stage))
+    # Columns BY NAME, not SELECT *. Both tables come from
+    # create_3way_elo_table() today, so the order matches -- but a staging
+    # table left over from before a schema change would misalign silently and
+    # write ELOs into the wrong columns. Naming them makes that an error.
+    cols <- DBI::dbGetQuery(conn, sprintf(
+      "SELECT column_name FROM information_schema.columns
+       WHERE table_name = '%s' ORDER BY ordinal_position", live))$column_name
+    stage_cols <- DBI::dbGetQuery(conn, sprintf(
+      "SELECT column_name FROM information_schema.columns
+       WHERE table_name = '%s'", stage))$column_name
+    absent <- setdiff(cols, stage_cols)
+    if (length(absent)) {
+      cli::cli_abort(c(
+        "Staging {.val {stage}} is missing {length(absent)} column{?s} the live table has.",
+        "x" = "Missing: {.val {absent}}.",
+        "i" = "It was probably built by an older schema. Delete it and rebuild."))
+    }
+    q <- paste(sprintf("\"%s\"", cols), collapse = ", ")
+    DBI::dbExecute(conn, sprintf("INSERT INTO %s (%s) SELECT %s FROM %s",
+                                 live, q, q, stage))
     DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", stage))
   })
 
