@@ -207,16 +207,43 @@ store_venue_aliases <- function(map, conn = NULL, dry_run = TRUE) {
   } else data.table::data.table(alias = character(), existing_canonical = character())
 
   m <- merge(m, existing, by = "alias", all.x = TRUE)
+
   # A row already present with a DIFFERENT target is a disagreement between a
-  # hand-curated decision and a derived one. Report it; never silently overwrite
-  # somebody's deliberate mapping.
+  # hand-curated decision and a derived one.
+  #
+  # Deference is the right default -- but ONLY when the curated target actually
+  # exists in the corpus. It usually does not: 12 of the 13 disagreements point
+  # at names cricsheet never uses ("Trent Bridge Nottingham" against the real
+  # "Trent Bridge, Nottingham"). Keeping those splits the ground rather than
+  # merging it, because the alias resolves to a phantom while its sibling keeps
+  # the real name. Curation earns deference when its answer is reachable.
+  real <- DBI::dbGetQuery(conn,
+    "SELECT DISTINCT venue FROM cricsheet.matches WHERE venue IS NOT NULL")$venue
   clash <- m[!is.na(existing_canonical) & existing_canonical != canonical_venue]
-  if (nrow(clash)) {
+  clash[, `:=`(curated_real = existing_canonical %in% real,
+               derived_real = canonical_venue %in% real)]
+  keep_curated <- clash[curated_real == TRUE]
+  fix_curated  <- clash[curated_real == FALSE & derived_real == TRUE]
+
+  if (nrow(keep_curated)) {
+    cli::cli_alert_info(
+      "{nrow(keep_curated)} derived alias{?es} disagree with a curated mapping whose target IS real; curation kept.")
+  }
+  if (nrow(fix_curated)) {
     cli::cli_warn(c(
-      "{nrow(clash)} derived alias{?es} disagree with an existing hand-curated mapping and were skipped:",
-      stats::setNames(sprintf("%s: kept %s, derivation said %s",
-                              clash$alias, clash$existing_canonical, clash$canonical_venue),
-                      rep("*", nrow(clash)))))
+      "{nrow(fix_curated)} curated mapping{?s} point at a venue name cricsheet never uses, so they SPLIT the ground:",
+      stats::setNames(sprintf("%s: %s (absent) -> %s",
+                              fix_curated$alias, fix_curated$existing_canonical,
+                              fix_curated$canonical_venue),
+                      rep("*", nrow(fix_curated)))))
+    if (!dry_run) {
+      for (i in seq_len(nrow(fix_curated))) {
+        DBI::dbExecute(conn,
+          "UPDATE venue_aliases SET canonical_venue = ? WHERE alias = ?",
+          params = list(fix_curated$canonical_venue[i], fix_curated$alias[i]))
+      }
+      cli::cli_alert_success("Repointed {nrow(fix_curated)} curated alias{?es} at names that exist.")
+    }
   }
   new <- m[is.na(existing_canonical), .(alias, canonical_venue)]
 
