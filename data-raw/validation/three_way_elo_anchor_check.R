@@ -40,6 +40,30 @@
 # Do not "fix" this by switching the blend on and declaring victory: it would
 # tidy the ceiling while leaving the harder failure untouched, and the tidier
 # list would read as though both were solved.
+#
+# THE FORMAT CONTRAST, measured 2026-08-20 on the fresh ODI rebuild, separates
+# the two halves cleanly:
+#
+#   MENS ODI, 948 batters at 500+ balls: Kohli 11th (15,958 balls), Warner
+#   37th, Root 50th, Rohit 131st, Gill 166th, Babar 354th. A defensible
+#   ordering. Yet its top 10 still holds Simon Harmer -- a SPIN BOWLER -- at
+#   number one on 628 balls, and David Willey, another bowler, at five.
+#
+# So the two failures are separable, and only one is format-specific:
+#
+#   * the low-exposure ceiling appears in BOTH formats, which is what a missing
+#     shrinkage step predicts;
+#   * elite batters buried mid-table is T20-ONLY. It has no ODI counterpart.
+#
+# HYPOTHESIS, not a finding -- untested as of this writing. The T20 pool spans
+# wildly different competition strengths (D-P40/D-P42 and
+# docs/reference/COMPETITION-MATRIX.md: 34.4 runs per 100 balls between the
+# easiest and hardest buckets), and this ELO carries NO competition adjustment,
+# so beating expectation in a weak league pays exactly what beating it in the
+# IPL pays. Suryakumar Yadav and Babar Azam play most of their T20 cricket in
+# the strongest competitions. The ODI pool is almost entirely international and
+# near-homogeneous, which is where such an effect would vanish. The format
+# contrast is evidence for this, not proof of it. Test before acting.
 
 # Why do elite high-volume batters sit mid-table while 400-ball players top it?
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
