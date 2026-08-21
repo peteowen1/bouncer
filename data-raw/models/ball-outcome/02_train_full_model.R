@@ -384,6 +384,33 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_alert_success("Test accuracy: {.val {round(accuracy * 100, 2)}}%")
   cli::cli_alert_success("Test mlogloss: {.val {round(test_logloss, 4)}}")
 
+  # Compare with Agnostic Model (matched, same held-out set) ----
+  #
+  # This USED to read a stored `agnostic_model_results.rds` -- a different
+  # training run, on a different split, from an older corpus (t20 3,035,225
+  # rows against this run's 3,221,299), which printed an inflated 2.7% gain
+  # where the honest matched figure is 1.80% (bouncerverse#76). The fix is to
+  # score the agnostic model on THIS run's own `test_data` instead of a stale
+  # file -- vintage and split then cancel exactly, because it is the same
+  # rows. `test_data` already exists (built once, above, from
+  # build_full_model_frame()); this does not re-query the database, matching
+  # the pattern in data-raw/validation/full_vs_agnostic_matched.R, which
+  # remains the place to run this comparison standalone or with a bootstrap CI.
+  cli::cli_h3("Comparing with agnostic model (same held-out set)")
+  agnostic_test_logloss <- NA_real_
+  agnostic_model_obj <- tryCatch(load_agnostic_model(format), error = function(e) NULL)
+  if (is.null(agnostic_model_obj)) {
+    cli::cli_alert_info("Agnostic {format} model unavailable; skipping matched comparison")
+  } else {
+    agnostic_probs <- predict_agnostic_outcome(agnostic_model_obj, test_data, format)
+    agnostic_test_logloss <- mean(-log(pmax(
+      agnostic_probs[cbind(seq_len(nrow(agnostic_probs)), test_features$outcome + 1)], 1e-15)))
+    improvement <- round((agnostic_test_logloss - test_logloss) / agnostic_test_logloss * 100, 2)
+    cli::cli_alert_success(
+      "{toupper(format)}: Full={round(test_logloss, 4)}, Agnostic={round(agnostic_test_logloss, 4)}, Improvement={improvement}%"
+    )
+  }
+
   # Feature Importance
   importance_matrix <- xgb.importance(feature_names = feature_names, model = xgb_model)
   cli::cli_alert_info("Top 10 features:")
@@ -402,6 +429,15 @@ for (format in FORMATS_TO_TRAIN) {
   # release served a 2026-03-27 vintage in preference to corrected local files
   # for five months without anything noticing (bouncerverse#50).
   xgb.attr(xgb_model, "bouncer_build_date") <- as.character(Sys.Date())  # not format(): `format` is the loop variable here
+  # Stamp feature names AND order too (bouncerverse#76). The booster's own
+  # feature_names comes back length 0 after an xgb.save()/xgb.load() UBJ
+  # round-trip, so width was the only thing full_model_serving_alignment.R
+  # could check -- and two frames of the same width with columns in a
+  # different order predict nonsense, silently. FEATURE_NAMES_ATTR /
+  # .encode_feature_names() live in R/agnostic_model.R next to the build-date
+  # stamp this mirrors, so the trainer and the alignment check agree on the
+  # encoding without either duplicating it.
+  xgb.attr(xgb_model, FEATURE_NAMES_ATTR) <- .encode_feature_names(feature_names)
   xgb.save(xgb_model, model_path)
   cli::cli_alert_success("Model saved to {.file {model_path}}")
 
@@ -413,6 +449,7 @@ for (format in FORMATS_TO_TRAIN) {
     best_cv_score = best_score,
     test_accuracy = accuracy,
     test_logloss = test_logloss,
+    agnostic_test_logloss = agnostic_test_logloss,
     importance = importance_matrix,
     feature_names = feature_names,
     n_train = nrow(train_data),
@@ -436,21 +473,20 @@ for (format in names(all_results)) {
   cli::cli_alert_info("{toupper(format)}: Accuracy={round(res$test_accuracy*100,1)}%, LogLoss={round(res$test_logloss,4)}, Rounds={res$best_nrounds}")
 }
 
-# Compare with agnostic model
-cli::cli_h3("Comparison with Agnostic Model")
-agnostic_results_path <- file.path(models_dir, "agnostic_model_results.rds")
-if (file.exists(agnostic_results_path)) {
-  agnostic_results <- readRDS(agnostic_results_path)
-  for (format in names(all_results)) {
-    if (format %in% names(agnostic_results)) {
-      full_ll <- all_results[[format]]$test_logloss
-      agnostic_ll <- agnostic_results[[format]]$test_logloss
-      improvement <- round((agnostic_ll - full_ll) / agnostic_ll * 100, 1)
-      cli::cli_alert_info("{toupper(format)}: Full={round(full_ll, 4)}, Agnostic={round(agnostic_ll, 4)}, Improvement={improvement}%")
-    }
+# Compare with agnostic model ----
+#
+# Values were computed above, per format, against THIS run's own held-out
+# test_data -- not a stored agnostic_model_results.rds from a different
+# training run and split (bouncerverse#76). Just a summary printout here.
+cli::cli_h3("Comparison with Agnostic Model (matched, same held-out set)")
+for (format in names(all_results)) {
+  res <- all_results[[format]]
+  if (is.na(res$agnostic_test_logloss)) {
+    cli::cli_alert_info("{toupper(format)}: agnostic comparison unavailable")
+  } else {
+    improvement <- round((res$agnostic_test_logloss - res$test_logloss) / res$agnostic_test_logloss * 100, 2)
+    cli::cli_alert_info("{toupper(format)}: Full={round(res$test_logloss, 4)}, Agnostic={round(res$agnostic_test_logloss, 4)}, Improvement={improvement}%")
   }
-} else {
-  cli::cli_alert_info("Agnostic model results not found for comparison")
 }
 
 # Record Benchmarks ----

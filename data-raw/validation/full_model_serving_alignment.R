@@ -1,15 +1,23 @@
 # Does the serving path give the full model the features it was trained on?
-# (bouncerverse#65)
+# (bouncerverse#65, #76)
 #
 # THE TRAP: xgboost's predict() accepts a matrix with TOO FEW columns without
 # error. It does not warn, it does not abort -- it returns plausible numbers
 # computed from the wrong thing. So a serving path that drifts from its
 # training frame fails silently and forever.
 #
-# This compares the booster's own recorded feature list against what
+# This compares the booster's trained feature list against what
 # prepare_full_features() actually builds, per format. Names and ORDER both:
 # an xgb.DMatrix built from an unnamed matrix is positional, so two frames with
 # the same columns in a different order predict nonsense equally quietly.
+#
+# WHERE THE NAMES COME FROM. The booster's own `feature_names` slot comes back
+# length 0 after an xgb.save()/xgb.load() UBJ round-trip, so `02_train_full_model.R`
+# now stamps a `bouncer_feature_names` xgboost attribute at save time (same
+# pattern as the `bouncer_build_date` stamp, D-P43). This script reads that
+# attribute first and only falls back to `m$feature_names` (and, failing that,
+# width alone) for models saved before the stamp existed -- every `.ubj` on
+# disk as of #76, since re-saving them needs a training run, not a code fix.
 #
 # Usage: Rscript data-raw/validation/full_model_serving_alignment.R
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
@@ -49,10 +57,16 @@ for (fmt in c("t20", "odi", "test")) {
     next
   }
   checked <- c(checked, fmt)
-  trained <- m$feature_names
-  # The boosters carry NO feature names, so a name-level check is impossible
-  # and width is the only handle. xgb.attr("num_feature") is empty; the value
-  # lives in the booster config.
+  # Prefer the bouncer_feature_names attribute stamped at save time
+  # (bouncerverse#76) over the booster's own feature_names slot: the latter
+  # comes back length 0 after an xgb.save()/xgb.load() UBJ round-trip on every
+  # model saved before this fix, so it can never be trusted here. Models
+  # saved before #76 (every one as of this writing -- resaving needs a
+  # training run, not done here) carry no attribute either, and fall through
+  # to the width-only check below exactly as they did previously.
+  trained <- .stamped_feature_names(m)
+  if (is.null(trained)) trained <- m$feature_names
+  # xgb.attr("num_feature") is empty too; the value lives in the booster config.
   nfeat <- tryCatch({
     cfg <- xgb.config(m)
     if (is.character(cfg)) cfg <- jsonlite::fromJSON(cfg)
@@ -125,7 +139,7 @@ if (length(fail)) {
 }
 if (length(unnamed)) {
   cli::cli_alert_warning(c("Width matches for {.val {unnamed}}, but their boosters carry no feature names."))
-  cli::cli_alert_info("Same width with the columns in a DIFFERENT ORDER predicts nonsense silently, and this check cannot see it. Stamping feature names at save time would close that.")
+  cli::cli_alert_info("02_train_full_model.R now stamps a bouncer_feature_names attribute at save time (bouncerverse#76), so a future training run closes this gap -- these particular .ubj files on disk just predate it. Same width with the columns in a DIFFERENT ORDER predicts nonsense silently, and this check cannot see it until they are retrained.")
 } else {
   cli::cli_alert_success("Every format's serving path matches its trained feature frame.")
 }

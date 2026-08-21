@@ -70,6 +70,49 @@ MODEL_LEAK_FIX_DATE <- "2026-08-18"
 }
 
 
+#' The xgboost attribute name feature names are stamped under
+#'
+#' Boosters trained by `02_train_full_model.R` carry `feature_names` of length
+#' 0 (an xgboost/UBJ round-trip quirk), so `m$feature_names` cannot be trusted
+#' and `xgb.attr(m, "num_feature")` is empty too -- the width survives only
+#' inside the booster config. That leaves WIDTH as the only alignment check:
+#' two frames of the same width with columns in a different order predict
+#' nonsense, silently, and no width check can see it (bouncerverse#76).
+#'
+#' Same pattern as `bouncer_build_date` (D-P43): stamp a plain xgboost
+#' attribute at save time, and have the reader trust the attribute over the
+#' booster's own (unreliable) `feature_names` slot.
+#'
+#' @keywords internal
+FEATURE_NAMES_ATTR <- "bouncer_feature_names"
+
+#' Encode a feature name vector for the xgboost attribute
+#'
+#' `xgb.attr<-` stores a single character scalar, not a vector, so the names
+#' are joined on `|`. None of this package's feature names contain `|`.
+#'
+#' @param feature_names Character vector, in training column order.
+#' @return A single string.
+#' @keywords internal
+.encode_feature_names <- function(feature_names) {
+  paste(feature_names, collapse = "|")
+}
+
+#' Read the stamped feature-name attribute back off a model
+#'
+#' @param model Loaded xgb.Booster.
+#' @return Character vector of feature names in training order, or `NULL` if
+#'   the model predates this stamp (every model as of bouncerverse#76 -- this
+#'   fix only stamps NEW saves, it does not retroactively re-stamp existing
+#'   `.ubj` files, which needs a training run).
+#' @keywords internal
+.stamped_feature_names <- function(model) {
+  raw <- tryCatch(xgboost::xgb.attr(model, FEATURE_NAMES_ATTR), error = function(e) NULL)
+  if (is.null(raw) || !nzchar(raw)) return(NULL)
+  strsplit(raw, "|", fixed = TRUE)[[1]]
+}
+
+
 #' Should the loaders read local disk before the release?
 #'
 #' **The rule: release first, local disk as fallback.** A consumer who installs
