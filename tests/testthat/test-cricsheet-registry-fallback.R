@@ -56,3 +56,16 @@ test_that("a real cached 2026 match resolves entirely to registry ids", {
   expect_equal(res$registry_fallback, 0)
   expect_true(all(grepl("^[0-9a-f]{8}$", unique(res$deliveries$batter_id))))
 })
+
+test_that("the PUBLIC entry point forwards the registry counters", {
+  # parse_cricsheet_json() rebuilds its return list by hand, and it dropped
+  # registry_resolved/registry_fallback -- so the #74 instrumentation, whose
+  # whole purpose was letting a batch loader quarantine a match that resolved
+  # nothing, reached no caller. Found by a documentation audit, not a failure.
+  f <- file.path("C:/dev/bouncerverse/bouncerdata/json_files", "1512764.json")
+  skip_if_not(file.exists(f), "cricsheet json cache not available")
+  res <- parse_cricsheet_json(f)
+  expect_true(all(c("registry_resolved", "registry_fallback") %in% names(res)))
+  expect_equal(res$registry_fallback, 0)
+  expect_gt(res$registry_resolved, 0)
+})

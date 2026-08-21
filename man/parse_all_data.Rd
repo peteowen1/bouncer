@@ -12,7 +12,11 @@ parse_all_data(json_data, match_info)
 \item{match_info}{Match information data frame}
 }
 \value{
-List with innings, deliveries, and players data frames
+List with \code{innings}, \code{deliveries}, \code{players} and \code{powerplays} data
+frames, plus \code{registry_resolved} and \code{registry_fallback} -- the count of
+player references that resolved to a registry id and the count that fell
+back to a NAME. A non-zero fallback means players in this match will be
+split from their own history (bouncerverse#74).
 }
 \description{
 Extracts innings, deliveries, and players in a single JSON traversal.

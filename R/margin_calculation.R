@@ -69,7 +69,7 @@ balls_to_overs_cricket <- function(balls) {
 #' Calculate Unified Margin
 #'
 #' Converts all match outcomes to a runs-equivalent margin.
-#' Positive margin = team1 won, negative margin = team2 won.
+#' Positive margin = the side batting FIRST won, negative = the chasing side won.
 #'
 #' For runs wins: margin = team1_score - team2_score
 #' For wickets wins: project team2's final score using optimized projection,

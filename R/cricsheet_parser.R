@@ -59,7 +59,14 @@ parse_cricsheet_json <- function(file_path) {
     innings = parsed$innings,
     deliveries = parsed$deliveries,
     players = parsed$players,
-    powerplays = parsed$powerplays
+    powerplays = parsed$powerplays,
+    # Forwarded, not dropped. The whole point of counting registry fallbacks
+    # (bouncerverse#74) was to let a batch loader refuse or quarantine a match
+    # that resolved nothing -- and this wrapper is the PUBLIC entry point, so
+    # rebuilding the list without them left the instrumentation reaching
+    # nobody. Found by a documentation audit, not by anything failing.
+    registry_resolved = parsed$registry_resolved,
+    registry_fallback = parsed$registry_fallback
   )
 }
 
@@ -218,7 +225,11 @@ parse_match_info <- function(json_data, match_id) {
 #' @param json_data Parsed JSON data
 #' @param match_info Match information data frame
 #'
-#' @return List with innings, deliveries, and players data frames
+#' @return List with `innings`, `deliveries`, `players` and `powerplays` data
+#'   frames, plus `registry_resolved` and `registry_fallback` -- the count of
+#'   player references that resolved to a registry id and the count that fell
+#'   back to a NAME. A non-zero fallback means players in this match will be
+#'   split from their own history (bouncerverse#74).
 #' @keywords internal
 parse_all_data <- function(json_data, match_info) {
   innings_data <- json_data$innings

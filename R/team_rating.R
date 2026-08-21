@@ -62,6 +62,9 @@ value_per_match <- function(value, balls, format, role) {
 #'
 #' @param bat,bowl Numeric vectors, already on a common scale.
 #' @param min_share Numeric. Floor on either component's variance share.
+#' @return Invisibly, a named numeric of the two variance shares
+#'   (`bat`, `bowl`). Called for its side effect: it aborts when the
+#'   composition has collapsed into one component.
 #' @keywords internal
 assert_component_balance <- function(bat, bowl, min_share = 0.15) {
   ok <- stats::complete.cases(bat, bowl)

@@ -13,8 +13,11 @@ get_calibration_data(format = "t20", conn)
 }
 \value{
 A list with \code{format}, \code{wicket_rate}, \code{mean_runs},
-\code{mean_outcome_score} and \code{sample_size}, or \code{NULL} when the format has no
-calibration rows.
+\code{mean_outcome_score}, \code{sample_size}, and \code{defaulted} -- the names of any
+metrics that fell back to a hardcoded constant because the stored
+calibration was partial. \code{defaulted} is non-empty exactly when some of
+these numbers are not measurements. \code{NULL} when the format has no
+calibration rows at all.
 }
 \description{
 Reads the per-format expected-value calibration written by

@@ -58,7 +58,7 @@ Positive = the batting-first side won, Negative = the chasing side won,
 }
 \description{
 Converts all match outcomes to a runs-equivalent margin.
-Positive margin = team1 won, negative margin = team2 won.
+Positive margin = the side batting FIRST won, negative = the chasing side won.
 }
 \details{
 For runs wins: margin = team1_score - team2_score

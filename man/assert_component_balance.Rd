@@ -11,6 +11,11 @@ assert_component_balance(bat, bowl, min_share = 0.15)
 
 \item{min_share}{Numeric. Floor on either component's variance share.}
 }
+\value{
+Invisibly, a named numeric of the two variance shares
+(\code{bat}, \code{bowl}). Called for its side effect: it aborts when the
+composition has collapsed into one component.
+}
 \description{
 Anchor 5 from #60, declared before any rating was computed: neither batting
 nor bowling may fall below \code{min_share} of the composite's variance. Below

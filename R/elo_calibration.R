@@ -26,8 +26,11 @@
 #' @param conn A DBI connection.
 #'
 #' @return A list with `format`, `wicket_rate`, `mean_runs`,
-#'   `mean_outcome_score` and `sample_size`, or `NULL` when the format has no
-#'   calibration rows.
+#'   `mean_outcome_score`, `sample_size`, and `defaulted` -- the names of any
+#'   metrics that fell back to a hardcoded constant because the stored
+#'   calibration was partial. `defaulted` is non-empty exactly when some of
+#'   these numbers are not measurements. `NULL` when the format has no
+#'   calibration rows at all.
 #' @keywords internal
 get_calibration_data <- function(format = "t20", conn) {
 
