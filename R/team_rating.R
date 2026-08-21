@@ -76,3 +76,56 @@ assert_component_balance <- function(bat, bowl, min_share = 0.15) {
   }
   invisible(c(bat = share_bat, bowl = 1 - share_bat))
 }
+
+
+#' Pick the Rating Snapshot That Could Have Been Known Before a Match
+#'
+#' `calculate_player_rating_v2(as_at = D)` filters `match_date <= D`, so a
+#' snapshot dated D contains matches played ON D. Scoring a match on D with
+#' that snapshot leaks it. This returns the latest snapshot STRICTLY BEFORE
+#' each match date, or `NA` where none exists.
+#'
+#' Written as its own function with its own tests because the off-by-one here
+#' is invisible in output: a leaked team rating does not look wrong, it looks
+#' good (bouncerverse#61, and #29/#69 for the same shape).
+#'
+#' @param match_date Date vector.
+#' @param snapshot_dates Date vector of available snapshots.
+#' @return Date vector, `NA` where no snapshot precedes the match.
+#' @keywords internal
+pick_snapshot <- function(match_date, snapshot_dates) {
+  md <- as.Date(match_date)
+  sd <- sort(unique(as.Date(snapshot_dates)))
+  if (!length(sd)) return(as.Date(rep(NA, length(md))))
+  # findInterval with rightmost.closed = FALSE gives the count of snapshots
+  # <= md; we want STRICTLY <, so compare against md - 1 day equivalently by
+  # subtracting matches on the boundary.
+  idx <- findInterval(md, sd)
+  # drop the boundary case: snapshot exactly equal to the match date
+  idx[idx > 0 & sd[pmax(idx, 1)] == md] <- idx[idx > 0 & sd[pmax(idx, 1)] == md] - 1L
+  out <- rep(as.Date(NA), length(md))
+  ok <- idx > 0
+  out[ok] <- sd[idx[ok]]
+  out
+}
+
+#' Compose a Team Rating From the Players Who Appeared
+#'
+#' @param players data.frame with `player_id`, `bat_value`, `bowl_value`,
+#'   `bat_balls`, `bowl_balls`.
+#' @param format Character.
+#' @return Named numeric: `bat`, `bowl`, `total` (runs per standard match), and
+#'   `n_rated` -- how many of the supplied players actually carried a rating.
+#'
+#'   `n_rated` is returned rather than discarded because a team composed from
+#'   two rated players and nine unrated ones produces a perfectly plausible
+#'   number, and nothing downstream would otherwise know.
+#' @keywords internal
+compose_team_rating <- function(players, format) {
+  b <- value_per_match(players$bat_value, players$bat_balls, format, "bat")
+  w <- value_per_match(players$bowl_value, players$bowl_balls, format, "bowl")
+  c(bat = sum(b, na.rm = TRUE),
+    bowl = sum(w, na.rm = TRUE),
+    total = sum(b, na.rm = TRUE) + sum(w, na.rm = TRUE),
+    n_rated = sum(!is.na(b) | !is.na(w)))
+}

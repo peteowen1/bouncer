@@ -57,3 +57,46 @@ test_that("balance anchor refuses to judge on too little data", {
   # A variance ratio on five players is not evidence of anything.
   expect_error(assert_component_balance(rnorm(5), rnorm(5)), "cannot judge")
 })
+
+# pick_snapshot: the off-by-one that is invisible in output ------------------
+
+test_that("a snapshot dated the same day as the match is REFUSED", {
+  # calculate_player_rating_v2(as_at = D) includes matches ON D, so using that
+  # snapshot to score a match on D leaks it. This is the whole point.
+  snaps <- as.Date(c("2024-01-01", "2024-07-01", "2025-01-01"))
+  expect_equal(pick_snapshot(as.Date("2024-07-01"), snaps), as.Date("2024-01-01"))
+})
+
+test_that("it picks the latest snapshot strictly before the match", {
+  snaps <- as.Date(c("2024-01-01", "2024-07-01", "2025-01-01"))
+  expect_equal(pick_snapshot(as.Date("2024-08-15"), snaps), as.Date("2024-07-01"))
+  expect_equal(pick_snapshot(as.Date("2025-06-01"), snaps), as.Date("2025-01-01"))
+})
+
+test_that("a match before every snapshot returns NA, not the earliest", {
+  # Silently falling back to the earliest snapshot would score a 2023 match
+  # with 2024 information.
+  snaps <- as.Date(c("2024-01-01", "2024-07-01"))
+  expect_true(is.na(pick_snapshot(as.Date("2023-06-01"), snaps)))
+})
+
+test_that("it is vectorised and order-independent", {
+  snaps <- as.Date(c("2025-01-01", "2024-01-01", "2024-07-01"))  # unsorted
+  got <- pick_snapshot(as.Date(c("2024-08-15", "2023-01-01", "2025-06-01")), snaps)
+  expect_equal(got, as.Date(c("2024-07-01", NA, "2025-01-01")))
+})
+
+test_that("no snapshots at all gives NA rather than erroring", {
+  expect_true(is.na(pick_snapshot(as.Date("2024-01-01"), as.Date(character(0)))))
+})
+
+test_that("compose_team_rating reports how many players were actually rated", {
+  # Two rated players and nine unrated ones produce a plausible number, and
+  # nothing downstream would otherwise know.
+  p <- data.frame(player_id = paste0("p", 1:3),
+                  bat_value = c(10, 20, NA), bowl_value = c(NA, 5, NA),
+                  bat_balls = c(100, 200, 0), bowl_balls = c(0, 120, 0))
+  r <- compose_team_rating(p, "t20")
+  expect_equal(unname(r[["n_rated"]]), 2)
+  expect_true(is.finite(r[["total"]]))
+})
