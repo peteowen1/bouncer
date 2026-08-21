@@ -98,8 +98,9 @@ for (format in FORMATS_TO_TRAIN) {
   # comparison had to fall back on a stored result from another run (#65).
   model_data <- build_full_model_frame(conn, format, MATCH_LIMIT,
                                        include_elo = INCLUDE_ELO_FEATURES)
-  has_elo_features <- INCLUDE_ELO_FEATURES &&
-    "elo_run_diff" %in% names(model_data) && any(model_data$elo_run_diff != 0)
+  # has_elo_features was computed here and never read again -- a guard that
+  # looks load-bearing and is not. build_full_model_frame() aborts below 50%
+  # ELO coverage, which is the check that actually protects this.
 
   # Feature Engineering ----
   cli::cli_h3("Engineering features")

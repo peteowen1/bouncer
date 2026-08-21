@@ -35,13 +35,20 @@ suppressMessages(library(xgboost))
 }
 
 fail <- character(0); unnamed <- character(0)
+checked <- character(0); skipped <- character(0)
 for (fmt in c("t20", "odi", "test")) {
   cli::cli_h2(toupper(fmt))
   m <- tryCatch(load_full_model(fmt), error = function(e) NULL)
   if (is.null(m)) {
+    # Counted, not just warned. With every model missing -- a fresh clone, a
+    # wiped models dir, a wrong models_dir -- every iteration used to take this
+    # branch and the script still printed "every format's serving path
+    # matches", having checked nothing.
     cli::cli_alert_warning("no full model for {fmt}; skipping")
+    skipped <- c(skipped, fmt)
     next
   }
+  checked <- c(checked, fmt)
   trained <- m$feature_names
   # The boosters carry NO feature names, so a name-level check is impossible
   # and width is the only handle. xgb.attr("num_feature") is empty; the value
@@ -107,6 +114,11 @@ for (fmt in c("t20", "odi", "test")) {
   }
 }
 
+if (!length(checked)) {
+  cli::cli_abort(c("No model could be loaded, so NOTHING was verified.",
+                   "x" = "Skipped: {.val {skipped}}",
+                   "i" = "A check that examines nothing must not report success."))
+}
 if (length(fail)) {
   cli::cli_abort(c("Serving alignment FAILED.",
                    stats::setNames(fail, rep("x", length(fail)))))

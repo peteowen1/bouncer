@@ -56,8 +56,23 @@ get_calibration_data <- function(format = "t20", conn) {
     t20 = EXPECTED_WICKET_T20, odi = EXPECTED_WICKET_ODI,
     test = EXPECTED_WICKET_TEST, EXPECTED_WICKET_T20)
 
+  # The nrow(metrics) == 0 guard above only catches TOTAL absence. A PARTIAL
+  # row set -- say only wicket_rate stored -- returned a fully populated,
+  # entirely plausible list with 1.3 and 0.25 silently substituted, and the
+  # caller printed those fabricated numbers in a success line. Name what
+  # defaulted.
+  defaulted <- c("wicket_rate", "mean_runs", "mean_outcome_score")[
+    c(nrow(wicket_row) == 0, nrow(runs_row) == 0, nrow(outcome_row) == 0)]
+  if (length(defaulted)) {
+    cli::cli_warn(c(
+      "Calibration for {.val {format}} is missing {length(defaulted)} metric{?s}.",
+      "x" = "Defaulted: {.val {defaulted}} -- these are hardcoded constants, not measurements.",
+      "i" = "Re-run data-raw/ratings/player/shared/01_calibrate_expected_values.R."))
+  }
+
   list(
     format = format,
+    defaulted = defaulted,
     wicket_rate = if (nrow(wicket_row) > 0) wicket_row$metric_value else default_wicket,
     mean_runs = if (nrow(runs_row) > 0) runs_row$metric_value else 1.3,
     mean_outcome_score = if (nrow(outcome_row) > 0) outcome_row$metric_value else 0.25,

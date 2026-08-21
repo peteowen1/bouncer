@@ -54,6 +54,14 @@ build_matchup_matrices <- function(deliveries,
              filtered to {.code bowler_wicket_kinds_sql()}."))
     deliveries[, is_wicket_val := as.numeric(!is.na(player_out_id) & player_out_id != "")]
   } else {
+    # Zeroing every wicket produces a fully populated matchup matrix with no
+    # dismissals anywhere -- indistinguishable from a slice that legitimately
+    # had none. The branch above warns about a 7.6% overstatement; this one
+    # silently discards 100% of the signal, so it warns louder.
+    cli::cli_warn(c(
+      "No recognised wicket column, so EVERY delivery is counted as no-wicket.",
+      "x" = "The wicket matrix will be all zeros; any rating derived from it is meaningless.",
+      "i" = "Supply {.field wicket_kind}, {.field is_wicket_delivery} or {.field player_out_id}."))
     deliveries[, is_wicket_val := 0]
   }
 

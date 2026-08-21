@@ -27,6 +27,14 @@ q <- dbGetQuery(conn, sprintf("
   SELECT COUNT(*) AS total, %s FROM cricsheet.deliveries",
   paste(sprintf("SUM(CASE WHEN %s IS NULL OR regexp_matches(%s, %s) THEN 0 ELSE 1 END) AS %s_names",
                 cols, cols, HEX8, cols), collapse = ", ")))
+# 0/0 is not a pass. Without a floor, an empty table or the wrong database
+# makes every share 0 and the script concludes "every delivery carries a
+# registry id" having examined none.
+if (q$total < 1e6) {
+  cli::cli_abort(c("Only {format(q$total, big.mark = ',')} deliveries in cricsheet.deliveries.",
+                   "x" = "That is far below the expected corpus; refusing to report a pass.",
+                   "i" = "Wrong database, or an unfinished load."))
+}
 cli::cli_alert_info("{format(q$total, big.mark = ',')} deliveries")
 for (cl in cols) {
   n <- q[[paste0(cl, "_names")]]

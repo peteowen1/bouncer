@@ -32,6 +32,12 @@ q <- dbGetQuery(conn, sprintf("
   tbl, tbl, gdb, types, gdb, types))
 cli::cli_alert_info("rated {format(q$rated, big.mark=',')} of {format(q$corpus, big.mark=',')} ({round(100*q$rated/q$corpus,1)}%)")
 cli::cli_alert_info("rated to {q$rated_last}; corpus to {q$corpus_last}")
+# The final line claims the table "passes coverage". It has to actually check.
+cov <- q$rated / q$corpus
+if (cov < 0.98) {
+  cli::cli_abort(c("Coverage is {round(100*cov, 1)}%, not the ~100% a completed rebuild gives.",
+                   "x" = "Refusing to report a pass on a partial table."))
+}
 
 # 2. The leak anchor. exp_runs IS the baseline at that ball. At the first ball
 #    of an innings every match opens 0/0, so a baseline that has not been told

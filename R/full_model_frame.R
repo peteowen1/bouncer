@@ -15,6 +15,33 @@
 # two-declarations-of-one-truth defect that produced #63, where a table name
 # was rebuilt at each call site and drifted.
 
+
+#' Abort When a Skill Join Covered Almost Nothing
+#'
+#' The full model's skill joins all fill misses with a neutral value, so a join
+#' that matches ZERO rows trains the model on a constant and prints a green
+#' success line containing "0/N". That is exactly how the 3-way ELO features
+#' were inert in every model ever built (bouncerverse#63), and the gate added
+#' there was never extended to the player, team and venue joins twenty lines
+#' above it. Three of four independent reviewers flagged the asymmetry.
+#'
+#' @param n Integer. Rows that matched.
+#' @param total Integer. Rows in the frame.
+#' @param what Character. Which join, for the message.
+#' @param min_cov Numeric. Floor below which this aborts.
+#' @keywords internal
+.assert_skill_coverage <- function(n, total, what, min_cov = 0.5) {
+  if (total == 0) cli::cli_abort("{what}: frame is empty, nothing to join against.")
+  cov <- n / total
+  if (cov < min_cov) {
+    cli::cli_abort(c(
+      "Only {n}/{total} rows ({round(100*cov, 1)}%) matched a {what}.",
+      "x" = "Below {round(100*min_cov)}% these features are mostly the neutral fill and the model is not using them.",
+      "i" = "A wrong table name, schema drift or a gender mismatch all look exactly like this."))
+  }
+  cli::cli_alert_success("{n}/{total} ({round(100*cov, 1)}%) have {what}")
+}
+
 #' Build the Full Outcome Model's Training Frame
 #'
 #' Context features from cricsheet, then player/team/venue skills, then the
@@ -145,8 +172,13 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
   model_data <- DBI::dbGetQuery(conn, query)
 
   if (nrow(model_data) == 0) {
-    cli::cli_alert_warning("No data found for {format} format, skipping")
-    next
+    # This was `next` when the block lived inside the trainer's per-format
+    # loop. next() does not cross a function boundary in R, so calling this on
+    # an empty format threw "no loop for break/next" -- a crash unrelated to
+    # the actual problem, in the one place the code claims to handle it
+    # gracefully. An empty frame is what the caller can act on.
+    cli::cli_alert_warning("No data found for {format} format")
+    return(model_data)
   }
 
   cli::cli_alert_success("Loaded {.val {nrow(model_data)}} deliveries")
@@ -158,7 +190,7 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
   cli::cli_alert_info("Adding player skills...")
   model_data <- add_skill_features(model_data, format = format, conn = conn, fill_missing = TRUE)
   n_player <- sum(!is.na(model_data$batter_scoring_index))
-  cli::cli_alert_success("{n_player}/{nrow(model_data)} have player skills")
+  .assert_skill_coverage(n_player, nrow(model_data), "player skills")
 
   # Team skills
   cli::cli_alert_info("Adding team skills...")
@@ -173,7 +205,7 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
         bowling_team_wicket_skill = dplyr::coalesce(bowling_team_wicket_skill, 0)
       )
     n_team <- sum(!is.na(model_data$batting_team_runs_skill) & model_data$batting_team_runs_skill != 0)
-    cli::cli_alert_success("{n_team}/{nrow(model_data)} have team skills")
+    .assert_skill_coverage(n_team, nrow(model_data), "team skills")
   }, error = function(e) {
     cli::cli_alert_warning("Team skills not available: {e$message}")
     cli::cli_alert_info("Using neutral values (0) for team skills")
@@ -202,7 +234,7 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
         venue_dot_rate = dplyr::coalesce(venue_dot_rate, start_vals$dot_rate)
       )
     n_venue <- sum(!is.na(model_data$venue_run_rate) & model_data$venue_run_rate != 0)
-    cli::cli_alert_success("{n_venue}/{nrow(model_data)} have venue skills")
+    .assert_skill_coverage(n_venue, nrow(model_data), "venue skills")
   }, error = function(e) {
     cli::cli_alert_warning("Venue skills not available: {e$message}")
     cli::cli_alert_info("Using neutral values for venue skills")

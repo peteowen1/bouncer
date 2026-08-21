@@ -507,8 +507,24 @@ k_params <- list(
   venue_session = k_of("VENUE_SESSION")
 )
 # A missing name would otherwise arrive as a NULL k_max deep inside the loop.
-stopifnot(!vapply(unlist(k_params), is.null, logical(1)),
-          all(is.finite(unlist(k_params))))
+#
+# Check the NESTED list, not unlist(). unlist() DROPS NULL elements before
+# vapply ever sees them, so `any(vapply(unlist(x), is.null, ...))` is FALSE
+# for exactly the input it is meant to reject -- verified: a 3-element list
+# with one NULL unlists to length 2 and the guard passes. Checking the flat
+# vector's LENGTH is what actually catches a dropped element.
+.k_expected <- 3L * length(k_params)
+.k_flat <- unlist(k_params)
+if (length(.k_flat) != .k_expected) {
+  missing <- setdiff(
+    unlist(lapply(names(k_params), function(n) paste0(n, ".", c("k_max", "k_min", "halflife")))),
+    names(.k_flat))
+  cli::cli_abort(c(
+    "K-factor parameters are incomplete for {current_format}/{gender_db_value}.",
+    "x" = "Missing: {.val {missing}}",
+    "i" = "A NULL k_max would otherwise reach the delivery loop as a silent NA."))
+}
+stopifnot(all(is.finite(.k_flat)))
 
 # Pre-compute phase multipliers lookup (faster than switch in loop)
 phase_mult_lookup <- c(
