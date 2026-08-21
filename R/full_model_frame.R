@@ -277,3 +277,32 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
 
   model_data
 }
+
+
+#' The 7-Class Ball Outcome Used by the Outcome Models
+#'
+#' Wicket, dot, 1, 2, 3, 4, 6 as classes 0-6. Anything else (5s, 7s, and any
+#' row missing its inputs) is `NA` and is dropped by the trainer.
+#'
+#' Declared once because it was inline in `02_train_full_model.R`'s mutate,
+#' and any comparison against those models has to reproduce the label exactly.
+#' A checker that rebuilds the mapping by hand is one edit away from scoring
+#' against a different target and reporting the difference as a model result
+#' (bouncerverse#65).
+#'
+#' @param runs_batter Integer vector. Runs off the bat.
+#' @param is_wicket Logical or integer vector.
+#' @return Integer vector of class labels, `NA` where undefined.
+#' @keywords internal
+ball_outcome_class <- function(runs_batter, is_wicket) {
+  data.table::fcase(
+    as.logical(is_wicket), 0L,
+    runs_batter == 0, 1L,
+    runs_batter == 1, 2L,
+    runs_batter == 2, 3L,
+    runs_batter == 3, 4L,
+    runs_batter == 4, 5L,
+    runs_batter == 6, 6L,
+    default = NA_integer_
+  )
+}
