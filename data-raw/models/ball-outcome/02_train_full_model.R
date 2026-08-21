@@ -402,13 +402,24 @@ for (format in FORMATS_TO_TRAIN) {
   if (is.null(agnostic_model_obj)) {
     cli::cli_alert_info("Agnostic {format} model unavailable; skipping matched comparison")
   } else {
-    agnostic_probs <- predict_agnostic_outcome(agnostic_model_obj, test_data, format)
-    agnostic_test_logloss <- mean(-log(pmax(
-      agnostic_probs[cbind(seq_len(nrow(agnostic_probs)), test_features$outcome + 1)], 1e-15)))
-    improvement <- round((agnostic_test_logloss - test_logloss) / agnostic_test_logloss * 100, 2)
-    cli::cli_alert_success(
-      "{toupper(format)}: Full={round(test_logloss, 4)}, Agnostic={round(agnostic_test_logloss, 4)}, Improvement={improvement}%"
-    )
+    # The PREDICTION is wrapped too, not just the load. This block runs BEFORE
+    # xgb.save() below, so an error here would abort with the trained model
+    # never written -- hours of training destroyed by a reporting step. A
+    # diagnostic must not be able to lose the artefact it describes.
+    tryCatch({
+      agnostic_probs <- predict_agnostic_outcome(agnostic_model_obj, test_data, format)
+      agnostic_test_logloss <- mean(-log(pmax(
+        agnostic_probs[cbind(seq_len(nrow(agnostic_probs)), test_features$outcome + 1)], 1e-15)))
+      improvement <- round((agnostic_test_logloss - test_logloss) / agnostic_test_logloss * 100, 2)
+      cli::cli_alert_success(
+        "{toupper(format)}: Full={round(test_logloss, 4)}, Agnostic={round(agnostic_test_logloss, 4)}, Improvement={improvement}%"
+      )
+    }, error = function(e) {
+      # Loud, and named -- a skipped comparison must not read as a passing one.
+      cli::cli_alert_danger(
+        "Matched agnostic comparison FAILED for {format}: {conditionMessage(e)}")
+      cli::cli_alert_info("The model is still saved below; rerun full_vs_agnostic_matched.R for the number.")
+    })
   }
 
   # Feature Importance
