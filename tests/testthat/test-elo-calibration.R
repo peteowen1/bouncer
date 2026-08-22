@@ -27,6 +27,58 @@ test_that("calibration is read back for a format", {
   expect_equal(cal$sample_size, 1000)
 })
 
+# `defaulted` names which metrics are hardcoded constants rather than
+# measurements -- it is the one field that tells a caller the OTHER numbers
+# in the same list are not to be trusted as data. A caller that ignores it
+# cannot distinguish "all three measured" from "two defaulted, printed
+# alongside a real sample_size", which is exactly how the original deletion
+# went unnoticed: a fully populated, plausible-looking list (bouncerverse#63).
+
+test_that("defaulted is empty when every metric is present", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_cal(conn, "t20")
+  cal <- get_calibration_data("t20", conn)
+  expect_equal(cal$defaulted, character(0))
+})
+
+test_that("defaulted names exactly the metrics that fell back to a constant", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
+    format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
+    metric_value DOUBLE, sample_size INTEGER)")
+  # Only wicket_rate stored under the 'overall' key -- mean_runs and
+  # mean_outcome_score are absent entirely, not merely mis-keyed.
+  DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
+    VALUES ('t20','wicket_rate','overall',0.06,500)")
+
+  expect_warning(cal <- get_calibration_data("t20", conn), "missing 2 metrics")
+
+  expect_setequal(cal$defaulted, c("mean_runs", "mean_outcome_score"))
+  expect_false("wicket_rate" %in% cal$defaulted)
+  # The measured one is real; the defaulted ones are the hardcoded constants.
+  expect_equal(cal$wicket_rate, 0.06)
+  expect_equal(cal$mean_runs, 1.3)
+  expect_equal(cal$mean_outcome_score, 0.25)
+})
+
+test_that("a fully missing set of metrics defaults and names all three", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
+    format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
+    metric_value DOUBLE, sample_size INTEGER)")
+  # Present for the format, but none under the 'overall' key any of the
+  # three metric_type pick() looks for -- every fallback branch fires.
+  DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
+    VALUES ('t20','wicket_rate','phase_1',0.09,5)")
+
+  expect_warning(cal <- get_calibration_data("t20", conn), "missing 3 metrics")
+  expect_setequal(cal$defaulted, c("wicket_rate", "mean_runs", "mean_outcome_score"))
+  expect_equal(cal$sample_size, 0)
+})
+
 test_that("formats do not read each other's calibration", {
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)

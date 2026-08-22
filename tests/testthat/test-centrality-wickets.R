@@ -72,3 +72,28 @@ test_that("an explicit is_wicket_delivery is trusted, since the caller filtered 
   expect_equal(as.numeric(m$wicket_matrix["bat1", "bowl1"] *
                             m$matchup_matrix["bat1", "bowl1"]), 2)
 })
+
+test_that("no recognised wicket column warns loudly and zero-fills every wicket", {
+  # None of wicket_kind / is_wicket_delivery / player_out_id is present. This
+  # must be told apart from a slice that genuinely had zero dismissals: the
+  # warning is the only signal a caller has that the resulting wicket matrix
+  # carries no information at all, rather than a true all-dot-ball innings.
+  d <- data.table::data.table(
+    batter_id = c("bat1", "bat1", "bat2"),
+    bowler_id = c("bowl1", "bowl1", "bowl1"),
+    runs_batter = c(0, 4, 1),
+    match_type = "T20")
+
+  expect_warning(
+    m <- build_matchup_matrices(d, format = "all", min_deliveries = 1),
+    "No recognised wicket column"
+  )
+
+  # The wicket matrix (a proportion) must be all zero -- not merely absent --
+  # for every batter/bowler pair that was actually observed.
+  expect_true(all(as.matrix(m$wicket_matrix) == 0))
+  # And the matchup itself is real: deliveries were still counted, so a zero
+  # wicket matrix here is not indistinguishable from "no data at all".
+  expect_equal(as.numeric(m$matchup_matrix["bat1", "bowl1"]), 2)
+  expect_equal(as.numeric(m$matchup_matrix["bat2", "bowl1"]), 1)
+})
