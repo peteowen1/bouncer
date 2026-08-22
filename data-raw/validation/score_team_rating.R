@@ -53,7 +53,7 @@ for (fmt in fmts) {
   # Matches, with the side batting first -- the frame unified_margin uses.
   m <- as.data.table(dbGetQuery(conn, sprintf("
     SELECT m.match_id, CAST(m.match_date AS DATE) AS match_date,
-           m.team1, m.team2, m.unified_margin,
+           m.team1, m.team2, m.unified_margin, m.team_type,
            (SELECT batting_team FROM cricsheet.match_innings i
             WHERE i.match_id = m.match_id AND i.innings = 1 LIMIT 1) AS bat_first
     FROM cricsheet.matches m
@@ -88,7 +88,7 @@ for (fmt in fmts) {
                   n_rated = sum(!is.na(rating))), by = .(match_id, team)]
   side <- side[n_rated >= MIN_RATED]
 
-  d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin)],
+  d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin, team_type)],
              side[, .(match_id, bat_first = team, bf_rating = rating_sum, bf_n = n_rated)],
              by = c("match_id", "bat_first"))
   d <- merge(d, side[, .(match_id, chasing = team, ch_rating = rating_sum, ch_n = n_rated)],
@@ -100,10 +100,24 @@ for (fmt in fmts) {
   # Baseline: the rebuilt result-ELO, same matches, same frame.
   te <- as.data.table(dbGetQuery(conn, "
     SELECT match_id, team_id, elo_before FROM main.team_elo WHERE played_in_match"))
-  d <- merge(d, te[, .(match_id, bat_first = team_id, bf_elo = elo_before)],
-             by = c("match_id", "bat_first"), all.x = TRUE)
-  d <- merge(d, te[, .(match_id, chasing = team_id, ch_elo = elo_before)],
-             by = c("match_id", "chasing"), all.x = TRUE)
+  # team_elo keys on a SLUG (sylhet_super_stars_male_t20_club), not the display
+  # name cricsheet.matches carries. Joining on the name silently matched zero
+  # rows -- the join produced no error, just an empty result, which lm() then
+  # reported as "0 (non-NA) cases" three steps later. make_team_id_vec() is the
+  # existing builder; constructing the slug by hand here would be another
+  # two-declarations drift.
+  d[, `:=`(bf_id = make_team_id_vec(bat_first, "male", fmt, team_type),
+           ch_id = make_team_id_vec(chasing,  "male", fmt, team_type))]
+  d <- merge(d, te[, .(match_id, bf_id = team_id, bf_elo = elo_before)],
+             by = c("match_id", "bf_id"), all.x = TRUE)
+  d <- merge(d, te[, .(match_id, ch_id = team_id, ch_elo = elo_before)],
+             by = c("match_id", "ch_id"), all.x = TRUE)
+  matched <- sum(!is.na(d$bf_elo) & !is.na(d$ch_elo))
+  if (matched == 0) {
+    cli::cli_abort(c("No match joined an ELO -- the team id join found nothing.",
+                     "i" = "Example slug built: {.val {utils::head(d$bf_id, 1)}}",
+                     "i" = "Example in team_elo: {.val {utils::head(te$team_id, 1)}}"))
+  }
   d <- d[!is.na(bf_elo) & !is.na(ch_elo)]
   d[, elo_diff := bf_elo - ch_elo]
   cli::cli_alert_info("{format(nrow(d), big.mark=',')} with both an ELO and a rating")
