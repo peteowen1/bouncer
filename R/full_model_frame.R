@@ -188,9 +188,36 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
 
   # Player skills
   cli::cli_alert_info("Adding player skills...")
-  model_data <- add_skill_features(model_data, format = format, conn = conn, fill_missing = TRUE)
+  # Measure coverage BEFORE the fill, then fill -- in ONE pass.
+  #
+  # This ran as add_skill_features(fill_missing = TRUE) followed by
+  # sum(!is.na(batter_scoring_index)), but the fill had already coalesced every
+  # NA to a start value, so the count was structurally 100% and the gate below
+  # COULD NEVER FIRE. The team and venue checks happen to work only because
+  # they additionally test `!= 0`.
+  #
+  # That is the vacuous-guard defect this file's header describes, sitting
+  # inside the guard written against it. Found by an agent writing tests for
+  # this function, not by anything failing.
+  #
+  # add_skill_features() cannot be called twice -- the second call coalesces
+  # columns the first already created -- so the join runs unfilled, coverage is
+  # measured, and the fill is applied by the same function afterwards.
+  model_data <- add_skill_features(model_data, format = format, conn = conn,
+                                   fill_missing = FALSE)
   n_player <- sum(!is.na(model_data$batter_scoring_index))
   .assert_skill_coverage(n_player, nrow(model_data), "player skills")
+  # Fill now, using the same start values add_skill_features() would apply.
+  .sv <- get_skill_start_values(format)
+  model_data <- model_data %>%
+    dplyr::mutate(
+      batter_scoring_index = dplyr::coalesce(batter_scoring_index, .sv$scoring_index),
+      batter_survival_rate = dplyr::coalesce(batter_survival_rate, .sv$survival_rate),
+      bowler_economy_index = dplyr::coalesce(bowler_economy_index, .sv$economy_index),
+      bowler_strike_rate   = dplyr::coalesce(bowler_strike_rate, .sv$strike_rate),
+      batter_balls_faced   = dplyr::coalesce(batter_balls_faced, 0L),
+      bowler_balls_bowled  = dplyr::coalesce(bowler_balls_bowled, 0L)
+    )
 
   # Team skills
   cli::cli_alert_info("Adding team skills...")
