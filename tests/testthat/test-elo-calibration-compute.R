@@ -59,6 +59,89 @@ test_that("compute and store round-trip through get_calibration_data", {
 })
 
 
+# calculate_calibration_metrics() itself had NO test coverage before this --
+# only its output's round-trip through store_calibration_metrics() was
+# tested, so a bug in the query/aggregation logic passed every existing test.
+# Build a KNOWN small fixture in cricsheet.deliveries and hand-calculate the
+# expected wicket_rate, mean_runs_per_ball, and mean_outcome_score.
+
+make_deliveries_fixture <- function(conn) {
+  DBI::dbExecute(conn, "CREATE SCHEMA IF NOT EXISTS cricsheet")
+  DBI::dbExecute(conn, "CREATE TABLE cricsheet.deliveries (
+    match_type VARCHAR, runs_batter INTEGER, is_wicket BOOLEAN)")
+
+  # 10 balls that MUST be counted (match_type in T20/IT20, is_wicket known):
+  #   8 non-wicket balls: runs 0,0,1,1,4,6,2,1 -> total runs 15
+  #   2 wicket balls: runs_batter 0 each
+  # total_balls = 10, total_wickets = 2 -> wicket_rate = 0.2
+  # mean_runs_per_ball = (0+0+1+1+4+6+0+0+2+1)/10 = 15/10 = 1.5
+  counted <- data.frame(
+    match_type = c("T20", "IT20", "T20", "T20", "IT20", "T20", "T20", "IT20", "T20", "T20"),
+    runs_batter = c(0L, 0L, 1L, 1L, 4L, 6L, 0L, 0L, 2L, 1L),
+    is_wicket = c(FALSE, FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, FALSE, FALSE)
+  )
+
+  # Rows that must NOT be counted: wrong format, and unknown wicket status.
+  excluded <- data.frame(
+    match_type = c("ODI", "T20"),
+    runs_batter = c(4L, 100L),
+    is_wicket = c(FALSE, NA)
+  )
+
+  DBI::dbWriteTable(conn, DBI::Id(schema = "cricsheet", table = "deliveries"),
+                     rbind(counted, excluded), append = TRUE)
+}
+
+test_that("calculate_calibration_metrics matches a hand-calculated fixture", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_deliveries_fixture(conn)
+
+  cal <- calculate_calibration_metrics(format = "t20", conn = conn)
+
+  expect_equal(cal$total_balls, 10)
+  expect_equal(cal$wicket_rate, 0.2)
+  expect_equal(cal$mean_runs_per_ball, 1.5)
+
+  # mean_outcome_score = wicket_rate*RUN_SCORE_WICKET +
+  #   (1 - wicket_rate) * weighted-average outcome score over the 8
+  #   non-wicket balls' run distribution (proportions computed among
+  #   non-wicket balls only, per the run_distribution query):
+  #   runs 0 (2/8=.25)->0.15, 1 (3/8=.375)->0.35, 2 (1/8=.125)->0.45,
+  #   4 (1/8=.125)->0.75, 6 (1/8=.125)->1.0
+  #   weighted sum = .25*.15 + .375*.35 + .125*.45 + .125*.75 + .125*1.0
+  #                = 0.44375
+  #   mean_outcome_score = 0.2*0 + 0.8*0.44375 = 0.355
+  expect_equal(cal$mean_outcome_score, 0.355)
+
+  expect_equal(nrow(cal$run_distribution), 5)
+  expect_equal(sum(cal$run_distribution$proportion), 1)
+})
+
+test_that("calculate_calibration_metrics excludes other formats and unresolved wickets", {
+  # A regression here (e.g. dropping the is_wicket IS NOT NULL filter, or the
+  # format filter) would change total_balls from 10 without any other symptom.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_deliveries_fixture(conn)
+
+  cal <- calculate_calibration_metrics(format = "t20", conn = conn)
+  expect_equal(cal$total_balls, 10)  # NOT 12 -- the ODI and NA-wicket rows excluded
+
+  odi_cal <- calculate_calibration_metrics(format = "odi", conn = conn)
+  expect_equal(odi_cal$total_balls, 1)  # only the excluded ODI row belongs here
+})
+
+test_that("a format with zero matching rows returns NULL with a warning", {
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_deliveries_fixture(conn)
+
+  expect_message(res <- calculate_calibration_metrics(format = "test", conn = conn),
+                  "No deliveries found")
+  expect_null(res)
+})
+
 test_that("a failed store rolls back rather than half-writing", {
   # DELETE-then-INSERT unwrapped would leave the format with NO calibration,
   # and the ELO rebuild then falls back to defaults without saying so.
