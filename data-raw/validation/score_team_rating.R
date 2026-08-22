@@ -29,6 +29,7 @@ suppressMessages({library(DBI); library(data.table)})
 
 fmts <- commandArgs(trailingOnly = TRUE)
 if (!length(fmts)) fmts <- c("t20", "odi", "test")
+SEED <- 42        # lost in an earlier block edit; the split and bootstrap both need it
 MIN_RATED <- 6L   # a side composed from fewer than this is not a team rating
 
 conn <- get_db_connection(read_only = TRUE)
@@ -216,16 +217,34 @@ for (fmt in fmts) {
   r_both <- rmse(predict(f_both, te_set), te_set$unified_margin)
   cli::cli_alert_info("held-out RMSE -- result-ELO {round(r_elo,2)} | team rating {round(r_rat,2)} | both {round(r_both,2)}")
 
-  # Bootstrap BY MATCH. The match is the independent unit; this repo has twice
-  # reported per-unit intervals that overstated precision.
-  set.seed(42)
-  boot <- vapply(seq_len(2000), function(i) {
-    s <- te_set[sample(.N, .N, replace = TRUE)]
-    rmse(predict(f_elo, s), s$unified_margin) - rmse(predict(f_rat, s), s$unified_margin)
-  }, numeric(1))
-  ci <- quantile(boot, c(0.025, 0.975))
-  cli::cli_alert_info("ELO RMSE minus rating RMSE: {round(mean(boot),3)}, 95% CI [{round(ci[1],3)}, {round(ci[2],3)}]")
-  if (ci[1] > 0) cli::cli_alert_success("{toupper(fmt)}: the team rating BEATS the result-ELO.")
-  else if (ci[2] < 0) cli::cli_alert_danger("{toupper(fmt)}: the team rating LOSES to the result-ELO.")
-  else cli::cli_alert_warning("{toupper(fmt)}: not distinguishable from the result-ELO.")
+  # Bootstrap BY MATCH, and bootstrap the COMBINATION -- which is the question
+  # actually asked. Comparing the rating ALONE against the ELO answers "can it
+  # replace the ELO", and the answer is no. Whether ELO + rating beats ELO
+  # alone is a different question with a different answer, and it was reported
+  # as a bare point estimate with no interval until 2026-08-22.
+  set.seed(SEED)
+  idx <- replicate(2000, sample(nrow(te_set), nrow(te_set), replace = TRUE),
+                   simplify = FALSE)
+  boot_one <- function(fit_a, fit_b) {
+    vapply(idx, function(i) {
+      s <- te_set[i]
+      rmse(predict(fit_a, s), s$unified_margin) - rmse(predict(fit_b, s), s$unified_margin)
+    }, numeric(1))
+  }
+
+  b_rat <- boot_one(f_elo, f_rat)     # positive => rating better than ELO
+  ci_r <- quantile(b_rat, c(0.025, 0.975))
+  cli::cli_alert_info("ELO - rating : {round(mean(b_rat),3)}, 95% CI [{round(ci_r[1],3)}, {round(ci_r[2],3)}]")
+
+  b_both <- boot_one(f_elo, f_both)   # positive => BOTH better than ELO alone
+  ci_b <- quantile(b_both, c(0.025, 0.975))
+  cli::cli_alert_info("ELO - both   : {round(mean(b_both),3)}, 95% CI [{round(ci_b[1],3)}, {round(ci_b[2],3)}], {sum(b_both > 0)}/2000 favour both")
+
+  if (ci_r[1] > 0) cli::cli_alert_success("{toupper(fmt)}: rating ALONE beats the result-ELO.")
+  else if (ci_r[2] < 0) cli::cli_alert_danger("{toupper(fmt)}: rating alone LOSES to the result-ELO.")
+  else cli::cli_alert_warning("{toupper(fmt)}: rating alone not distinguishable from the result-ELO.")
+
+  if (ci_b[1] > 0) cli::cli_alert_success("{toupper(fmt)}: ELO + rating BEATS ELO alone -- the combination earns its place.")
+  else if (ci_b[2] < 0) cli::cli_alert_danger("{toupper(fmt)}: ELO + rating is WORSE than ELO alone.")
+  else cli::cli_alert_warning("{toupper(fmt)}: ELO + rating not distinguishable from ELO alone.")
 }
