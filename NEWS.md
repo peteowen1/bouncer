@@ -1,3 +1,48 @@
+# bouncer 0.7.2
+
+## Restored the four versebus.R silent-failure fixes, one of them corrected
+
+These four fixes shipped in 86e2ebc, then were entirely backed out same-day in
+5edd3ac for two reasons: `test-versebus-sync.R` requires this vendored file to
+match torp's canonical copy byte-for-byte function-by-function, and fixing it
+here alone broke that guard; and one of the four fixes was itself wrong.
+
+`vb_download()`'s `verify_by_size()` originally swallowed an asset-listing
+failure and did nothing -- the fix in 86e2ebc made that **abort**
+(`vb_error_transient`) instead, but that inverts the caller's own contract:
+the sha-mismatch path deliberately falls back to `verify_by_size()` on a stale
+(not corrupt) manifest, and `test-versebus.R` already documents that "cannot
+corroborate either way" means *trust the download*. Aborting there would
+brick an asset on any transient API blip. The real defect was only that the
+fallback was silent. It now warns (naming the file, stating it was accepted
+WITHOUT verification) and still falls through -- behaviour preserved, silence
+removed.
+
+The other three fixes are unchanged from 86e2ebc:
+
+* `vb_read_manifest()`'s momentary-absence retry classified every retry
+  failure as "the manifest is gone," permanently disabling sha256
+  verification for the rest of the session on a single network blip. The
+  retry is now classified exactly like the first attempt.
+* `vb_generation()` took `max()` of asset `updated_at` with no `na.rm`, so one
+  unrelated malformed asset nulled the generation for the whole tag.
+* `vb_publish()`'s cache-invalidation hook failure was swallowed by
+  `try(..., silent = TRUE)`, so a broken hook left consumers serving
+  pre-publish data with nothing recording why. It now warns.
+
+Because torp's canonical copy had also drifted independently since 86e2ebc --
+`.vb_generation_stamp()` no longer calls `sample()` (which silently advanced
+the caller's RNG stream) and `vb_publish()` now restores
+`piggyback_cache_duration` on exit instead of leaking it for the session --
+those two changes are pulled in too, or `test-versebus-sync.R` cannot pass.
+Neither is a behaviour change for any caller outside this file.
+
+`R/user_install.R`'s `download_release_asset()` fix (never unlink the
+destination before the swap) was bouncer-specific and was never backed out;
+untouched here.
+
+Refs peteowen1/panna#187.
+
 # bouncer 0.7.1
 
 ## The competition adjustment had the wrong sign for below-average players
