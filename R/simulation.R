@@ -103,10 +103,14 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     bowling_team_wicket_skill = team_skills$bowling_team_wicket_skill %||% 0,
 
     # Venue skills
-    venue_run_rate = venue_skills$venue_run_rate %||% 0,
-    venue_wicket_rate = venue_skills$venue_wicket_rate %||% 0,
-    venue_boundary_rate = venue_skills$venue_boundary_rate %||% 0.15,
-    venue_dot_rate = venue_skills$venue_dot_rate %||% 0.35,
+    # get_venue_skill() returns run_rate/wicket_rate/boundary_rate/dot_rate;
+    # this reads the venue_-prefixed spelling. Accept EITHER, or passing that
+    # function's output straight through silently neutralises every venue
+    # effect with no error.
+    venue_run_rate = venue_skills$venue_run_rate %||% venue_skills$run_rate %||% 0,
+    venue_wicket_rate = venue_skills$venue_wicket_rate %||% venue_skills$wicket_rate %||% 0,
+    venue_boundary_rate = venue_skills$venue_boundary_rate %||% venue_skills$boundary_rate %||% 0.15,
+    venue_dot_rate = venue_skills$venue_dot_rate %||% venue_skills$dot_rate %||% 0.35,
 
     stringsAsFactors = FALSE
   )
@@ -267,7 +271,26 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     )
 
     # Simulate delivery
-    sim_result <- simulate_delivery(model, match_state, current_batter, team_skills,
+    #
+    # simulate_delivery() reads BOTH batter and bowler skills out of one
+    # `player_skills` list. Passing only current_batter meant every bowler
+    # field fell through its %||% default (1.25 / 0.025 / 0) on EVERY ball,
+    # so the bowler rotation above ran but bowler identity had no effect on
+    # any simulated innings. Nothing errored; the innings just came out as
+    # though a league-average bowler delivered all of it.
+    delivery_skills <- current_batter
+    delivery_skills$bowler_economy_index <- current_bowler$bowler_economy_index
+    delivery_skills$bowler_strike_rate   <- current_bowler$bowler_strike_rate
+    delivery_skills$bowler_balls_bowled  <- current_bowler$bowler_balls_bowled
+    if (is.null(delivery_skills$bowler_economy_index) &&
+        is.null(delivery_skills$bowler_strike_rate)) {
+      # Loud, because a silent fall-back to neutral is the defect just fixed.
+      cli::cli_warn(c(
+        "Bowler {current_bowler_idx} carries no bowler skill fields; the delivery will use neutral defaults.",
+        "i" = "Expected {.field bowler_economy_index} and {.field bowler_strike_rate}."))
+    }
+
+    sim_result <- simulate_delivery(model, match_state, delivery_skills, team_skills,
                                      venue_skills, mode)
 
     # Update state

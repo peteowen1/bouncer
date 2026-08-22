@@ -110,16 +110,13 @@ for (format in FORMATS_TO_TRAIN) {
     model_data <- model_data %>%
       mutate(
         # Target variable
-        outcome = case_when(
-          is_wicket ~ 0L,
-          runs_batter == 0 ~ 1L,
-          runs_batter == 1 ~ 2L,
-          runs_batter == 2 ~ 3L,
-          runs_batter == 3 ~ 4L,
-          runs_batter == 4 ~ 5L,
-          runs_batter == 6 ~ 6L,
-          TRUE ~ NA_integer_
-        ),
+        # ball_outcome_class(), NOT a local case_when(). The mapping was
+        # extracted in #65 precisely so a comparison script could not rebuild
+        # it by hand and drift -- and then the trainer kept its own copy, so
+        # there were still two declarations of one truth. This is the second
+        # place today where extracted-and-tested code was never wired into the
+        # thing it was extracted for.
+        outcome = ball_outcome_class(runs_batter, is_wicket),
 
         # Overs left
         overs_left = pmax(0, max_overs - over_ball),
@@ -140,16 +137,13 @@ for (format in FORMATS_TO_TRAIN) {
     # Long-form (Test) features
     model_data <- model_data %>%
       mutate(
-        outcome = case_when(
-          is_wicket ~ 0L,
-          runs_batter == 0 ~ 1L,
-          runs_batter == 1 ~ 2L,
-          runs_batter == 2 ~ 3L,
-          runs_batter == 3 ~ 4L,
-          runs_batter == 4 ~ 5L,
-          runs_batter == 6 ~ 6L,
-          TRUE ~ NA_integer_
-        ),
+        # ball_outcome_class(), NOT a local case_when(). The mapping was
+        # extracted in #65 precisely so a comparison script could not rebuild
+        # it by hand and drift -- and then the trainer kept its own copy, so
+        # there were still two declarations of one truth. This is the second
+        # place today where extracted-and-tested code was never wired into the
+        # thing it was extracted for.
+        outcome = ball_outcome_class(runs_batter, is_wicket),
 
         # Phase based on ball age
         phase = case_when(

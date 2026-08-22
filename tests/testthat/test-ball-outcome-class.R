@@ -33,3 +33,20 @@ test_that("integer and logical wicket flags agree", {
   expect_equal(ball_outcome_class(1, 1L), ball_outcome_class(1, TRUE))
   expect_equal(ball_outcome_class(1, 0L), ball_outcome_class(1, FALSE))
 })
+
+test_that("the trainer uses ball_outcome_class() rather than its own copy", {
+  # The mapping was extracted in #65 so a checker could not rebuild it by hand
+  # and drift. The trainer then kept its own case_when() anyway, leaving two
+  # declarations of one truth -- the exact defect the extraction addressed.
+  # A grep test is crude but it is the only thing that notices a SECOND
+  # declaration reappearing.
+  f <- testthat::test_path("..", "..", "data-raw", "models", "ball-outcome",
+                           "02_train_full_model.R")
+  skip_if_not(file.exists(f), "trainer not available")
+  txt <- readLines(f, warn = FALSE)
+  expect_true(any(grepl("ball_outcome_class(", txt, fixed = TRUE)),
+              info = "trainer no longer calls the shared label function")
+  # and no local re-declaration of the same 7-class mapping
+  expect_false(any(grepl("runs_batter == 6 ~ 6L", txt, fixed = TRUE)),
+               info = "trainer has re-grown its own copy of the outcome mapping")
+})
