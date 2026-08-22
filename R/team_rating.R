@@ -1,3 +1,26 @@
+# ############################################################################
+# CORRECTION, 2026-08-22: value_per_match() and compose_team_rating() DO NOT
+# apply to calculate_player_value_v2()'s output, and the #61 scorer no longer
+# uses them.
+#
+# calculate_player_value_v2() returns bat_value/bowl_value ALREADY as runs per
+# match played -- quality (runs per ball, shrunk) x opportunity (balls per
+# match, shrunk) -- and its own documentation says "the quantity is
+# contribution, not quality -- so the two components can be added." It computes
+# total_value = bat_value + bowl_value itself.
+#
+# Feeding that through value_per_match(value, balls, ...) divides an
+# already-per-match rate by RAW CAREER BALLS and rescales by a standard
+# exposure. Two players of identical skill then differ by a factor of six
+# purely on career length. The functions below are correct for their
+# DOCUMENTED input -- a raw accumulated value and the raw ball count it
+# accumulated over -- and calculate_player_value_v2() does not provide that.
+#
+# Kept, not deleted: the contract is sound and something may yet supply that
+# input shape. But nothing in the #61 path calls them, and anything that does
+# should check its units against the tests in test-team-rating.R first.
+# ############################################################################
+
 # A team rating built from player ratings (bouncerverse#60, #61).
 #
 # WHY NOT A SUM. player_value_v2.total_value is bat_value + bowl_value, and on
