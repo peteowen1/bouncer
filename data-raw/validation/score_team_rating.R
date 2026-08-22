@@ -34,7 +34,7 @@ MIN_RATED <- 6L   # a side composed from fewer than this is not a team rating
 conn <- get_db_connection(read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-if (!table_exists(conn, "player_rating_v2_snapshots")) {
+if (!table_exists(conn, "player_value_v2_snapshots")) {
   cli::cli_abort("No rating snapshots. Run build_rating_snapshots.R first.")
 }
 
@@ -43,8 +43,11 @@ types <- list(t20 = "'t20','it20'", odi = "'odi','odm'", test = "'test','mdm'")
 for (fmt in fmts) {
   cli::cli_h1(toupper(fmt))
 
+  # value_v2, not per-role rating_v2: the two roles' ratings are NOT on a
+  # common scale and must not be added (R/player_rating_v2.R @return, #42).
   snaps <- as.data.table(dbGetQuery(conn, sprintf("
-    SELECT as_at, role, player_id, rating FROM main.player_rating_v2_snapshots
+    SELECT as_at, player_id, bat_value, bowl_value, bat_balls, bowl_balls
+    FROM main.player_value_v2_snapshots
     WHERE format = '%s' AND gender = 'male'", fmt)))
   if (!nrow(snaps)) { cli::cli_alert_warning("no snapshots for {fmt}"); next }
   snap_dates <- sort(unique(as.Date(snaps$as_at)))
@@ -54,11 +57,21 @@ for (fmt in fmts) {
   m <- as.data.table(dbGetQuery(conn, sprintf("
     SELECT m.match_id, CAST(m.match_date AS DATE) AS match_date,
            m.team1, m.team2, m.unified_margin, m.team_type,
-           (SELECT batting_team FROM cricsheet.match_innings i
-            WHERE i.match_id = m.match_id AND i.innings = 1 LIMIT 1) AS bat_first
+           -- MIN/MAX rather than LIMIT 1 with no ORDER BY: a duplicate
+           -- innings row would otherwise pick a side non-deterministically,
+           -- and that choice sets the unified_margin sign convention.
+           (SELECT MIN(batting_team) FROM cricsheet.match_innings i
+            WHERE i.match_id = m.match_id AND i.innings = 1) AS bat_first,
+           (SELECT MAX(batting_team) FROM cricsheet.match_innings i
+            WHERE i.match_id = m.match_id AND i.innings = 1) AS bat_first_max
     FROM cricsheet.matches m
     WHERE LOWER(m.match_type) IN (%s) AND m.gender = 'male'
       AND m.unified_margin IS NOT NULL AND m.unified_margin <> 0", types[[fmt]])))
+  amb <- sum(m$bat_first != m$bat_first_max, na.rm = TRUE)
+  if (amb > 0) {
+    cli::cli_abort("{amb} match{?es} have more than one first-innings batting team; the margin sign would be arbitrary.")
+  }
+  m[, bat_first_max := NULL]
   m <- m[!is.na(bat_first)]
   m[, chasing := fifelse(bat_first == team1, team2, team1)]
   m[, snap := pick_snapshot(match_date, snap_dates)]
@@ -66,49 +79,69 @@ for (fmt in fmts) {
   cli::cli_alert_info("{format(nrow(m), big.mark=',')} decided matches, {format(nrow(scorable), big.mark=',')} with a snapshot strictly before them")
   if (nrow(scorable) < 100) { cli::cli_alert_warning("too few to score {fmt}"); next }
 
-  # Who actually appeared, per side.
+  # Who actually appeared, per side. ONE row per (match, team, player):
+  # an all-rounder must not be counted twice, and value_v2 already carries
+  # both his batting and bowling contribution in one row.
   app <- as.data.table(dbGetQuery(conn, sprintf("
-    SELECT d.match_id, d.batting_team AS team, d.batter_id AS player_id, 'batter' AS role,
-           COUNT(*) AS balls
-    FROM cricsheet.deliveries d
-    WHERE LOWER(d.match_type) IN (%s) AND d.gender = 'male'
-    GROUP BY 1,2,3,4
-    UNION ALL
-    SELECT d.match_id, d.bowling_team AS team, d.bowler_id AS player_id, 'bowler' AS role,
-           COUNT(*) AS balls
-    FROM cricsheet.deliveries d
-    WHERE LOWER(d.match_type) IN (%s) AND d.gender = 'male'
-    GROUP BY 1,2,3,4", types[[fmt]], types[[fmt]])))
+    SELECT match_id, team, player_id FROM (
+      SELECT d.match_id, d.batting_team AS team, d.batter_id AS player_id
+      FROM cricsheet.deliveries d
+      WHERE LOWER(d.match_type) IN (%s) AND d.gender = 'male'
+      UNION
+      SELECT d.match_id, d.bowling_team AS team, d.bowler_id AS player_id
+      FROM cricsheet.deliveries d
+      WHERE LOWER(d.match_type) IN (%s) AND d.gender = 'male')", types[[fmt]], types[[fmt]])))
   app <- app[match_id %in% scorable$match_id]
+
+  # CANONICALISE. Snapshot ids are canonical (calculate_player_value_v2 runs
+  # canonicalise_player_ids before aggregating); raw delivery ids are not.
+  # 4.47% of appearances sit on the wrong side of the bare-name/hash split, so
+  # without this those players fail the join, arrive as NA, and get marked
+  # DEBUTANT -- a replacement-level fill covering an id-plumbing bug and a
+  # genuine debut with nothing to tell them apart.
+  id_map <- build_player_id_map(conn)
+  before_ids <- uniqueN(app$player_id)
+  canonicalise_player_ids(app, id_map)
+  cli::cli_alert_info("canonicalised player ids: {before_ids} -> {uniqueN(app$player_id)} distinct")
+
   app <- merge(app, scorable[, .(match_id, snap)], by = "match_id")
-  app <- merge(app, snaps[, .(snap = as.Date(as_at), role, player_id, rating)],
-               by = c("snap", "role", "player_id"), all.x = TRUE)
+  app <- merge(app, snaps[, .(snap = as.Date(as_at), player_id,
+                              bat_value, bowl_value, bat_balls, bowl_balls)],
+               by = c("snap", "player_id"), all.x = TRUE)
 
-  # REPLACEMENT LEVEL, and only where it is genuinely unavoidable.
-  #
-  # With the exposure floor off, a player has a rating after ANY prior
-  # deliveries -- shrunk hard toward the prior when thin, which is what
-  # shrinkage is for. So a missing rating now means one thing only: this is
-  # the player's FIRST appearance, with no earlier match to rate him from.
-  # That is the one case replacement level should ever cover.
-  #
-  # It is derived from the same snapshot rather than being a constant, so it
-  # tracks the scale instead of asserting one, and debutants are COUNTED --
-  # a side of eleven quietly-replacement-level players produces a perfectly
-  # plausible team number that means nothing.
-  repl <- snaps[, .(repl = stats::quantile(rating, 0.10, na.rm = TRUE)),
-                by = .(snap = as.Date(as_at), role)]
-  app <- merge(app, repl, by = c("snap", "role"), all.x = TRUE)
-  app[, debutant := is.na(rating)]
-  app[is.na(rating), rating := repl]
+  # Replacement level for DEBUTANTS ONLY -- a player with no prior snapshot
+  # row, i.e. no earlier match to value him from. Derived from the same
+  # snapshot so it tracks the scale rather than asserting one.
+  app[, debutant := is.na(bat_value) & is.na(bowl_value)]
+  repl <- snaps[, .(repl_bat = stats::quantile(bat_value, 0.10, na.rm = TRUE),
+                    repl_bowl = stats::quantile(bowl_value, 0.10, na.rm = TRUE)),
+                by = .(snap = as.Date(as_at))]
+  app <- merge(app, repl, by = "snap", all.x = TRUE)
+  app[debutant == TRUE, `:=`(bat_value = repl_bat, bowl_value = repl_bowl,
+                             bat_balls = 1, bowl_balls = 1)]
+  # A fill that silently failed would otherwise vanish into sum(na.rm = TRUE).
+  still_na <- sum(is.na(app$bat_value) & is.na(app$bowl_value))
+  if (still_na > 0) {
+    cli::cli_abort(c("{still_na} appearance{?s} have no value even after the debutant fill.",
+                     "i" = "The fill covered a cause it was not meant to cover."))
+  }
 
-  side <- app[, .(rating_sum = sum(rating, na.rm = TRUE),
-                  n_rated = sum(!debutant),
-                  n_debut = sum(debutant)), by = .(match_id, team)]
+  # COMPOSE through the runs-per-match machinery -- value_per_match() inside
+  # compose_team_rating(). Summing raw values skips the exposure conversion
+  # entirely, which is the whole reason #60 chose a conversion over a sum.
+  side <- app[, {
+      r <- compose_team_rating(.SD, fmt)
+      .(rating_sum = unname(r[["total"]]),
+        bat_part = unname(r[["bat"]]), bowl_part = unname(r[["bowl"]]),
+        n_rated = sum(!debutant), n_debut = sum(debutant))
+    }, by = .(match_id, team),
+    .SDcols = c("bat_value", "bowl_value", "bat_balls", "bowl_balls")]
   dbg <- side[, .(sides = .N, mean_rated = round(mean(n_rated), 1),
                   mean_debut = round(mean(n_debut), 2),
                   all_debut = sum(n_rated == 0))]
   cli::cli_alert_info("per side: {dbg$mean_rated} rated, {dbg$mean_debut} debutant{?s} on average; {dbg$all_debut} side{?s} entirely unrated")
+  # Anchor 5 from #60, finally wired in: neither component may collapse.
+  assert_component_balance(side$bat_part, side$bowl_part)
   side <- side[n_rated >= MIN_RATED]
 
   d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin, team_type)],
