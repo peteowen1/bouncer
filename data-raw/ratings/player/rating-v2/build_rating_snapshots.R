@@ -31,6 +31,20 @@ getopt <- function(flag, default) {
 FROM <- as.Date(getopt("--from", "2023-01-01"))
 BY_MONTHS <- as.integer(getopt("--by", "6"))
 SIZING <- "--sizing" %in% a
+# EXPOSURE FLOOR OFF BY DEFAULT for snapshots, and this is the whole point.
+# calculate_player_rating_v2() FILTERS its output at `balls >= min_balls`
+# (line ~1128) -- a player below the floor is not given a shrunk rating, he is
+# DROPPED. The floors from #57 exist to decide who is LISTED on a leaderboard,
+# where a name appearing must mean something. Applying them to team
+# composition left ODI with 330 rated batters instead of 3,974 and made 95% of
+# ODI matches unscorable (#61).
+#
+# Dropping the floor is safe because the shrinkage prior already does the job:
+# measured at as_at 2025-06-01, rating sd by exposure is 0.393 (<100 balls),
+# 0.842 (100-500), 1.049 (500-1500), 1.974 (1500+) -- low-exposure players sit
+# tight against the prior and the maximum is unchanged. Shrinkage handles
+# uncertainty; the floor was only ever about display.
+MIN_BALLS <- as.integer(getopt("--min-balls", "1"))
 
 conn <- get_db_connection(read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
@@ -39,7 +53,7 @@ if (SIZING) {
   cli::cli_h2("Sizing: one rating build")
   t0 <- Sys.time()
   r <- calculate_player_rating_v2("t20", "male", "batter", conn = conn,
-                                  as_at = FROM)
+                                  as_at = FROM, min_balls = MIN_BALLS)
   secs <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
   cli::cli_alert_info("t20/male/batter as at {FROM}: {nrow(r)} rated in {round(secs,1)}s")
   # 3 formats x 2 genders x 2 roles = 12 builds per snapshot date.
@@ -59,6 +73,7 @@ GRID <- expand.grid(as_at = dates,
                     gender = c("male", "female"),
                     role = c("batter", "bowler"),
                     stringsAsFactors = FALSE)
+cli::cli_alert_info("min_balls = {MIN_BALLS} (floor OFF; shrinkage handles low exposure)")
 cli::cli_alert_info("{nrow(GRID)} builds at ~19s each: roughly {round(nrow(GRID) * 19 / 60)} minutes")
 
 TBL <- "player_rating_v2_snapshots"
@@ -88,7 +103,7 @@ for (i in seq_len(nrow(todo))) {
   g <- todo[i, ]
   res <- tryCatch({
     r <- calculate_player_rating_v2(g$format, g$gender, g$role, conn = conn,
-                                    as_at = as.Date(g$as_at))
+                                    as_at = as.Date(g$as_at), min_balls = MIN_BALLS)
     if (is.null(r) || !nrow(r)) stop("no players rated")
     keep <- data.frame(
       as_at = as.Date(g$as_at), format = g$format, gender = g$gender, role = g$role,

@@ -84,14 +84,37 @@ for (fmt in fmts) {
   app <- merge(app, snaps[, .(snap = as.Date(as_at), role, player_id, rating)],
                by = c("snap", "role", "player_id"), all.x = TRUE)
 
+  # REPLACEMENT LEVEL, and only where it is genuinely unavoidable.
+  #
+  # With the exposure floor off, a player has a rating after ANY prior
+  # deliveries -- shrunk hard toward the prior when thin, which is what
+  # shrinkage is for. So a missing rating now means one thing only: this is
+  # the player's FIRST appearance, with no earlier match to rate him from.
+  # That is the one case replacement level should ever cover.
+  #
+  # It is derived from the same snapshot rather than being a constant, so it
+  # tracks the scale instead of asserting one, and debutants are COUNTED --
+  # a side of eleven quietly-replacement-level players produces a perfectly
+  # plausible team number that means nothing.
+  repl <- snaps[, .(repl = stats::quantile(rating, 0.10, na.rm = TRUE)),
+                by = .(snap = as.Date(as_at), role)]
+  app <- merge(app, repl, by = c("snap", "role"), all.x = TRUE)
+  app[, debutant := is.na(rating)]
+  app[is.na(rating), rating := repl]
+
   side <- app[, .(rating_sum = sum(rating, na.rm = TRUE),
-                  n_rated = sum(!is.na(rating))), by = .(match_id, team)]
+                  n_rated = sum(!debutant),
+                  n_debut = sum(debutant)), by = .(match_id, team)]
+  dbg <- side[, .(sides = .N, mean_rated = round(mean(n_rated), 1),
+                  mean_debut = round(mean(n_debut), 2),
+                  all_debut = sum(n_rated == 0))]
+  cli::cli_alert_info("per side: {dbg$mean_rated} rated, {dbg$mean_debut} debutant{?s} on average; {dbg$all_debut} side{?s} entirely unrated")
   side <- side[n_rated >= MIN_RATED]
 
   d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin, team_type)],
-             side[, .(match_id, bat_first = team, bf_rating = rating_sum, bf_n = n_rated)],
+             side[, .(match_id, bat_first = team, bf_rating = rating_sum, bf_n = n_rated, bf_debut = n_debut)],
              by = c("match_id", "bat_first"))
-  d <- merge(d, side[, .(match_id, chasing = team, ch_rating = rating_sum, ch_n = n_rated)],
+  d <- merge(d, side[, .(match_id, chasing = team, ch_rating = rating_sum, ch_n = n_rated, ch_debut = n_debut)],
              by = c("match_id", "chasing"))
   d[, rating_diff := bf_rating - ch_rating]
   cli::cli_alert_info("{format(nrow(d), big.mark=',')} matches with both sides rated ({MIN_RATED}+ players each)")
