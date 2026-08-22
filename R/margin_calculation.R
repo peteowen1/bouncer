@@ -207,6 +207,27 @@ calculate_unified_margin <- function(team1_score, team2_score,
 #' @keywords internal
 calculate_match_margin <- function(match_data) {
 
+  # A TRAP, and currently dead code -- nothing calls this (verified by grep
+  # across R/, data-raw/ and tests/ on 2026-08-22).
+  #
+  # calculate_unified_margin() treats its FIRST score argument as the side
+  # BATTING FIRST, not as the schema's team1: the stored sign agrees with
+  # batting-first 98.9% of the time and with team1 only 86.4%, and the 13%
+  # gap tracks the toss. This wrapper reads fields NAMED team1_score /
+  # team2_score and passes them straight through, so wiring it up with actual
+  # team1 data silently reproduces exactly the toss-shaped error the docstring
+  # above warns about.
+  #
+  # It aborts rather than guessing. If this is ever needed, pass the
+  # batting-first score explicitly under `innings1_total` / `innings2_total`,
+  # whose names carry the right meaning.
+  if (!is.null(match_data$team1_score) || !is.null(match_data$team2_score)) {
+    cli::cli_abort(c(
+      "{.fn calculate_match_margin} was given {.field team1_score}/{.field team2_score}.",
+      "x" = "The margin's sign is relative to the side BATTING FIRST, not to team1.",
+      "i" = "Supply {.field innings1_total} and {.field innings2_total} instead."))
+  }
+
   # Extract scores
   team1_score <- match_data$team1_score %||%
                  match_data$innings1_total %||%

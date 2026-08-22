@@ -116,7 +116,9 @@ calculate_calibration_metrics <- function(format = "t20", conn) {
   ", params = list(
     tolower(format),
     paste0("i", tolower(format)),
-    toupper(format)
+    # was toupper(format) -- compared against LOWER(match_type), so it could
+    # never match. Dead weight that read as if it caught a third variant.
+    paste0(tolower(format), "s")
   ))
 
   # Calculate mean outcome score using the scoring weights
