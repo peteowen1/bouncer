@@ -1,5 +1,19 @@
 # bouncer 0.7.2
 
+## Added a reusable calibration-and-bias audit for models and ratings
+
+`calibration_audit()`, `worst_calibration_buckets()`, and
+`audit_low_information_state()` (`R/calibration_audit.R`) generalise the check
+that caught the post-delivery leak in the ball-outcome model (below): bucket
+any prediction/actual pair by any cut (ball, over, innings, wickets, phase,
+competition, venue, gender, format, season, ...), refuse to judge a bucket
+below a caller-set `min_n` rather than silently dropping it, surface the
+worst buckets by `abs(bias)` rather than the average, and explicitly check a
+caller-nominated low-information state (e.g. the first ball of an innings)
+for the correlation-with-own-outcome signature a leak leaves behind. See
+`docs/reference/MODEL-VALIDATION-PROTOCOL.md` for the full protocol and the
+three incidents it is built from.
+
 ## Restored the four versebus.R silent-failure fixes, one of them corrected
 
 These four fixes shipped in 86e2ebc, then were entirely backed out same-day in

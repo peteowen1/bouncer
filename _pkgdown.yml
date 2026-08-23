@@ -362,6 +362,14 @@ reference:
     - RATING_VAL_MIN_WINDOW_BALLS
     - RATING_VAL_ORIGINS
 
+  - title: Model Validation
+    desc: Calibration-and-bias audit for any model or rating's predictions
+    contents:
+    - calibration_audit
+    - worst_calibration_buckets
+    - report_calibration_audit
+    - audit_low_information_state
+
   - title: S3 Methods
     desc: Print methods for bouncer objects
     contents:
@@ -373,6 +381,8 @@ reference:
     - print.bouncer_team
     - print.bouncer_team_comparison
     - print.bouncer_win_prob
+    - print.calibration_audit
+    - print.low_information_audit
 
   - title: Versebus (Internal)
     desc: Vendored data-bus helper (ECOSYSTEM-FIX-PLAN.md) - manifest-verified

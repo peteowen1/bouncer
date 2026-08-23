@@ -113,6 +113,7 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 | **Player Data** | `player_game_data.R`, `player_game_data_storage.R`, `player_game_ratings.R`, `player_career_ratings.R`, `player_career_display.R` | Per-game/career rating storage and display |
 | **Home Advantage** | `home_advantage.R` | Home-team detection, venue-country mapping |
 | **Models** | `agnostic_model.R`, `model_predictions.R`, `score_projection*.R`, `in_match_prediction.R`, `match_predictions.R`, `pre_match_features.R`, `team_predictions.R` | XGBoost models, predictions |
+| **Model Validation** | `calibration_audit.R` | `calibration_audit()`/`worst_calibration_buckets()`/`audit_low_information_state()` — per-cut calibration audit and the low-information-state leak check; see `docs/reference/MODEL-VALIDATION-PROTOCOL.md` |
 | **Features** | `feature_engineering.R`, `expected_outcomes.R`, `margin_calculation.R`, `win_probability_added.R`, `match_outcomes.R`, `player_attribution.R`, `hawkeye_features.R` | Feature calculation, WPA, outcomes, Hawkeye |
 | **Simulation** | `simulation.R` | Ball-by-ball match simulation |
 | **User API** | `user_install.R`, `user_api.R`, `player_metrics.R`, `team_metrics.R` | Public-facing functions, stats |
