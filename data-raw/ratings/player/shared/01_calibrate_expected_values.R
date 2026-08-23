@@ -41,20 +41,11 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 cli::cli_alert_success("Connected to database")
 
 # 4. Ensure Calibration Table Exists ----
-existing_tables <- DBI::dbListTables(conn)
-if (!"elo_calibration_metrics" %in% existing_tables) {
+# One declaration of this table lives in create_elo_calibration_metrics_table();
+# this step used to carry its own copy. See that function for why.
+if (!"elo_calibration_metrics" %in% DBI::dbListTables(conn)) {
   cli::cli_alert_info("Creating elo_calibration_metrics table...")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS elo_calibration_metrics (
-      format VARCHAR,
-      metric_type VARCHAR,
-      metric_key VARCHAR,
-      metric_value DOUBLE,
-      sample_size INTEGER,
-      calculated_date DATE,
-      PRIMARY KEY (format, metric_type, metric_key)
-    )
-  ")
+  create_elo_calibration_metrics_table(conn)
   cli::cli_alert_success("Created elo_calibration_metrics table")
 }
 

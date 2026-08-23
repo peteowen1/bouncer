@@ -6,13 +6,13 @@
 
 make_cal <- function(conn, format, wicket = 0.05, runs = 1.3, outcome = 0.25) {
   if (!DBI::dbExistsTable(conn, "elo_calibration_metrics")) {
-    DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
-      format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
-      metric_value DOUBLE, sample_size INTEGER)")
+    create_elo_calibration_metrics_table(conn)
   }
   for (m in list(c("wicket_rate", wicket), c("mean_runs", runs),
                  c("mean_outcome_score", outcome))) {
-    DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics VALUES (?,?,'overall',?,1000)",
+    DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
+      (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+      VALUES (?, ?, 'overall', ?, 1000, DATE '2026-01-01')",
                    params = list(format, m[[1]], as.numeric(m[[2]])))
   }
 }
@@ -45,13 +45,12 @@ test_that("defaulted is empty when every metric is present", {
 test_that("defaulted names exactly the metrics that fell back to a constant", {
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-  DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
-    format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
-    metric_value DOUBLE, sample_size INTEGER)")
+  create_elo_calibration_metrics_table(conn)
   # Only wicket_rate stored under the 'overall' key -- mean_runs and
   # mean_outcome_score are absent entirely, not merely mis-keyed.
   DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
-    VALUES ('t20','wicket_rate','overall',0.06,500)")
+    (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+    VALUES ('t20','wicket_rate','overall',0.06,500,DATE '2026-01-01')")
 
   expect_warning(cal <- get_calibration_data("t20", conn), "missing 2 metrics")
 
@@ -66,13 +65,12 @@ test_that("defaulted names exactly the metrics that fell back to a constant", {
 test_that("a fully missing set of metrics defaults and names all three", {
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-  DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
-    format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
-    metric_value DOUBLE, sample_size INTEGER)")
+  create_elo_calibration_metrics_table(conn)
   # Present for the format, but none under the 'overall' key any of the
   # three metric_type pick() looks for -- every fallback branch fires.
   DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
-    VALUES ('t20','wicket_rate','phase_1',0.09,5)")
+    (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+    VALUES ('t20','wicket_rate','phase_1',0.09,5,DATE '2026-01-01')")
 
   expect_warning(cal <- get_calibration_data("t20", conn), "missing 3 metrics")
   expect_setequal(cal$defaulted, c("wicket_rate", "mean_runs", "mean_outcome_score"))
@@ -102,12 +100,11 @@ test_that("the wicket fallback is per format and does not reference a deleted co
   # same sweep removed -- so the fallback would error instead of defaulting.
   conn <- DBI::dbConnect(duckdb::duckdb())
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
-  DBI::dbExecute(conn, "CREATE TABLE elo_calibration_metrics (
-    format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
-    metric_value DOUBLE, sample_size INTEGER)")
+  create_elo_calibration_metrics_table(conn)
   # present, but no 'overall' key -- exercises every fallback branch
   DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
-    VALUES ('test','wicket_rate','phase_1',0.9,5)")
+    (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+    VALUES ('test','wicket_rate','phase_1',0.9,5,DATE '2026-01-01')")
   cal <- get_calibration_data("test", conn)
   expect_equal(cal$wicket_rate, EXPECTED_WICKET_TEST)
   expect_false(cal$wicket_rate == EXPECTED_WICKET_T20)
@@ -123,4 +120,56 @@ test_that("every data-raw caller of get_calibration_data can still find it", {
   }, files)
   expect_gt(length(callers), 0)
   expect_true(is.function(get_calibration_data))
+})
+
+# The table had FOUR declarations -- create_schema(), the calibration-compute
+# path, the 01_calibrate_expected_values.R pipeline step and these fixtures --
+# and the compute one had already drifted to calculated_date VARCHAR with no
+# primary key. Both were CREATE TABLE IF NOT EXISTS, so whichever ran first on a
+# given database won and nothing complained. Same shape as #63.
+
+test_that("elo_calibration_metrics is declared in exactly one place", {
+  r_files <- list.files(testthat::test_path("..", "..", "R"),
+                        pattern = "[.]R$", full.names = TRUE)
+  decl <- Filter(function(f) {
+    any(grepl("CREATE TABLE IF NOT EXISTS elo_calibration_metrics",
+              readLines(f, warn = FALSE), fixed = TRUE))
+  }, r_files)
+  expect_equal(basename(decl), "database_schema.R")
+})
+
+test_that("the shared DDL carries the primary key and a DATE, not a VARCHAR", {
+  # The compute path's copy had neither. A VARCHAR date sorts lexically and a
+  # missing PK lets a format accumulate duplicate metrics silently.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  create_elo_calibration_metrics_table(conn)
+
+  cols <- DBI::dbGetQuery(conn, "
+    SELECT column_name, data_type FROM information_schema.columns
+    WHERE table_name = 'elo_calibration_metrics'")
+  expect_equal(cols$data_type[cols$column_name == "calculated_date"], "DATE")
+
+  DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
+    (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+    VALUES ('t20','wicket_rate','overall',0.05,10,DATE '2026-01-01')")
+  expect_error(
+    DBI::dbExecute(conn, "INSERT INTO elo_calibration_metrics
+      (format, metric_type, metric_key, metric_value, sample_size, calculated_date)
+      VALUES ('t20','wicket_rate','overall',0.09,10,DATE '2026-01-02')"))
+})
+
+test_that("storing calibration works on a database with no schema applied", {
+  # store_calibration_metrics() must not depend on create_schema() having run.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  cal <- list(format = "t20", wicket_rate = 0.05, mean_runs_per_ball = 1.3,
+              mean_outcome_score = 0.25, total_balls = 1000,
+              run_distribution = data.frame(runs_batter = c(0L, 1L, 4L),
+                                            proportion = c(0.4, 0.4, 0.2),
+                                            count = c(400L, 400L, 200L)))
+  expect_equal(store_calibration_metrics(cal, conn), 6)
+  back <- get_calibration_data("t20", conn)
+  expect_equal(back$wicket_rate, 0.05)
+  expect_equal(back$defaulted, character(0))
 })

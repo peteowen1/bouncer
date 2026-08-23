@@ -167,11 +167,10 @@ store_calibration_metrics <- function(calibration, conn) {
 
   # The refresh must work on a database that has not had the full schema
   # applied -- otherwise recalibrating is gated on a step that has nothing to
-  # do with calibration.
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS elo_calibration_metrics (
-      format VARCHAR, metric_type VARCHAR, metric_key VARCHAR,
-      metric_value DOUBLE, sample_size INTEGER, calculated_date VARCHAR)")
+  # do with calibration. This used to redeclare the table inline, with
+  # calculated_date as VARCHAR and no primary key, which silently diverged from
+  # create_schema()'s DATE-and-PK version.
+  create_elo_calibration_metrics_table(conn)
 
   rows <- 0
   # DELETE-then-INSERT in ONE transaction. Unwrapped, an interruption between

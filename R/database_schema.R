@@ -417,17 +417,7 @@ create_schema <- function(conn, verbose = TRUE) {
 
   # Create ELO calibration metrics table
   log_table("elo_calibration_metrics")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS elo_calibration_metrics (
-      format VARCHAR,
-      metric_type VARCHAR,
-      metric_key VARCHAR,
-      metric_value DOUBLE,
-      sample_size INTEGER,
-      calculated_date DATE,
-      PRIMARY KEY (format, metric_type, metric_key)
-    )
-  ")
+  create_elo_calibration_metrics_table(conn)
 
   # Create ELO normalization log table
   log_table("elo_normalization_log")
@@ -2301,3 +2291,40 @@ store_3way_skill_params <- function(params, last_delivery_id, last_match_date,
 
 
 NULL
+
+#' Create the ELO calibration metrics table
+#'
+#' The ONE declaration of this table. It had four: `create_schema()`, the
+#' calibration-compute path, the `01_calibrate_expected_values.R` pipeline step
+#' and the test fixtures -- and they had already drifted. The compute path
+#' declared `calculated_date` as VARCHAR with no primary key while the schema
+#' declared DATE with `PRIMARY KEY (format, metric_type, metric_key)`. Both are
+#' `CREATE TABLE IF NOT EXISTS`, so whichever ran first on a given database
+#' silently won and nothing ever complained.
+#'
+#' This is the same failure as the 3-way ELO table name (#63): two declarations
+#' of one truth drift, and the drift is invisible because each is individually
+#' correct.
+#'
+#' Callers must be able to run this on a database that has never had the full
+#' schema applied -- recalibrating should not be gated on a step that has
+#' nothing to do with calibration.
+#'
+#' @param conn A DuckDB connection object
+#'
+#' @return Invisibly returns TRUE
+#' @keywords internal
+create_elo_calibration_metrics_table <- function(conn) {
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS elo_calibration_metrics (
+      format VARCHAR,
+      metric_type VARCHAR,
+      metric_key VARCHAR,
+      metric_value DOUBLE,
+      sample_size INTEGER,
+      calculated_date DATE,
+      PRIMARY KEY (format, metric_type, metric_key)
+    )
+  ")
+  invisible(TRUE)
+}
