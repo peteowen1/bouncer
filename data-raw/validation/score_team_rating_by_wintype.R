@@ -58,6 +58,7 @@ for (fmt in fmts) {
   m <- as.data.table(dbGetQuery(conn, sprintf("
     SELECT m.match_id, CAST(m.match_date AS DATE) AS match_date,
            m.team1, m.team2, m.unified_margin, m.team_type,
+           m.outcome_by_runs, m.outcome_by_wickets,
            -- MIN/MAX rather than LIMIT 1 with no ORDER BY: a duplicate
            -- innings row would otherwise pick a side non-deterministically,
            -- and that choice sets the unified_margin sign convention.
@@ -179,7 +180,8 @@ for (fmt in fmts) {
   cli::cli_alert_info("component split: batting {round(100*vb/(vb+vw), 1)}% of summed variance")
   side <- side[n_rated >= MIN_RATED]
 
-  d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin, team_type)],
+  d <- merge(scorable[, .(match_id, match_date, bat_first, chasing, unified_margin, team_type,
+                          outcome_by_runs, outcome_by_wickets)],
              side[, .(match_id, bat_first = team, bf_rating = rating_sum, bf_n = n_rated, bf_debut = n_debut)],
              by = c("match_id", "bat_first"))
   d <- merge(d, side[, .(match_id, chasing = team, ch_rating = rating_sum, ch_n = n_rated, ch_debut = n_debut)],
@@ -213,50 +215,56 @@ for (fmt in fmts) {
   d[, elo_diff := bf_elo - ch_elo]
   cli::cli_alert_info("{format(nrow(d), big.mark=',')} with both an ELO and a rating")
 
-  # Split by DATE, not at random: a rating is used forward in time, so a
-  # random split would let the fit see the future of its own test matches.
-  setorder(d, match_date)
-  cut <- floor(0.8 * nrow(d))
-  tr <- d[1:cut]; te_set <- d[(cut + 1):nrow(d)]
-  cli::cli_alert_info("train {nrow(tr)} to {max(tr$match_date)}, test {nrow(te_set)} from {min(te_set$match_date)}")
+  # SPLIT BY HOW THE MATCH WAS WON.
+  #
+  # unified_margin is two different measurements sharing an axis. A runs win is
+  # an OBSERVED difference: team1_score - team2_score, no model. A wickets win
+  # is a MODEL OUTPUT: the chase is projected forward with a
+  # Duckworth-Lewis-style resource surface (calculate_projection_resource, with
+  # fitted z/y) to what the side would have scored batting out its allocation,
+  # and then differenced. Measured: wins by wickets average -35.2 (sd 53.4),
+  # wins by runs +48.9 (sd 85.7).
+  #
+  # So half the target carries the resource model's error, all of it on the
+  # negative side. If the rating does better on the runs-win subset -- where
+  # the target is a clean observed difference -- the projection is adding noise
+  # rather than the rating lacking signal.
+  d[, win_type := fifelse(!is.na(outcome_by_runs) & outcome_by_runs > 0, "runs",
+                   fifelse(!is.na(outcome_by_wickets) & outcome_by_wickets > 0, "wickets", NA_character_))]
+  d <- d[!is.na(win_type)]
 
-  rmse <- function(p, a) sqrt(mean((p - a)^2))
-  f_elo <- lm(unified_margin ~ elo_diff, data = tr)
-  f_rat <- lm(unified_margin ~ rating_diff, data = tr)
-  f_both <- lm(unified_margin ~ elo_diff + rating_diff, data = tr)
-  r_elo <- rmse(predict(f_elo, te_set), te_set$unified_margin)
-  r_rat <- rmse(predict(f_rat, te_set), te_set$unified_margin)
-  r_both <- rmse(predict(f_both, te_set), te_set$unified_margin)
-  cli::cli_alert_info("held-out RMSE -- result-ELO {round(r_elo,2)} | team rating {round(r_rat,2)} | both {round(r_both,2)}")
-
-  # Bootstrap BY MATCH, and bootstrap the COMBINATION -- which is the question
-  # actually asked. Comparing the rating ALONE against the ELO answers "can it
-  # replace the ELO", and the answer is no. Whether ELO + rating beats ELO
-  # alone is a different question with a different answer, and it was reported
-  # as a bare point estimate with no interval until 2026-08-22.
-  set.seed(SEED)
-  idx <- replicate(2000, sample(nrow(te_set), nrow(te_set), replace = TRUE),
-                   simplify = FALSE)
-  boot_one <- function(fit_a, fit_b) {
-    vapply(idx, function(i) {
-      s <- te_set[i]
-      rmse(predict(fit_a, s), s$unified_margin) - rmse(predict(fit_b, s), s$unified_margin)
+  for (wt in c("runs", "wickets", "both")) {
+    dd <- if (wt == "both") d else d[win_type == wt]
+    if (nrow(dd) < 200) {
+      cli::cli_alert_warning("{fmt}/{wt}: only {nrow(dd)} matches, skipping")
+      next
+    }
+    setorder(dd, match_date)
+    cut <- floor(0.8 * nrow(dd))
+    tr <- dd[1:cut]; te_set <- dd[(cut + 1):nrow(dd)]
+    rmse <- function(p, a) sqrt(mean((p - a)^2))
+    f_elo  <- lm(unified_margin ~ elo_diff, data = tr)
+    f_rat  <- lm(unified_margin ~ rating_diff, data = tr)
+    f_both <- lm(unified_margin ~ elo_diff + rating_diff, data = tr)
+    r_e <- rmse(predict(f_elo, te_set), te_set$unified_margin)
+    r_r <- rmse(predict(f_rat, te_set), te_set$unified_margin)
+    r_b <- rmse(predict(f_both, te_set), te_set$unified_margin)
+    set.seed(SEED)
+    idx <- replicate(2000, sample(nrow(te_set), nrow(te_set), replace = TRUE), simplify = FALSE)
+    bb <- vapply(idx, function(i) {
+      s2 <- te_set[i]
+      rmse(predict(f_elo, s2), s2$unified_margin) - rmse(predict(f_both, s2), s2$unified_margin)
     }, numeric(1))
+    ci <- quantile(bb, c(0.025, 0.975))
+    # RATING ALONE vs ELO, bootstrapped. Printing it as a bare point estimate
+    # beside the tested ones invited "rating 26.22 beats ELO 26.42" -- read off
+    # a 0.2 gap on 340 matches and reported as a finding without a CI.
+    br <- vapply(idx, function(i) {
+      s2 <- te_set[i]
+      rmse(predict(f_elo, s2), s2$unified_margin) - rmse(predict(f_rat, s2), s2$unified_margin)
+    }, numeric(1))
+    cir <- quantile(br, c(0.025, 0.975))
+    cli::cli_alert_info("   rating-alone vs ELO {round(mean(br),3)} CI [{round(cir[1],3)}, {round(cir[2],3)}] {sum(br>0)}/2000")
+    cli::cli_alert_info("{toupper(fmt)}/{wt}: n={nrow(dd)} (test {nrow(te_set)}) | ELO {round(r_e,2)} | rating {round(r_r,2)} | both {round(r_b,2)} | ELO-both {round(mean(bb),3)} CI [{round(ci[1],3)}, {round(ci[2],3)}] {sum(bb>0)}/2000")
   }
-
-  b_rat <- boot_one(f_elo, f_rat)     # positive => rating better than ELO
-  ci_r <- quantile(b_rat, c(0.025, 0.975))
-  cli::cli_alert_info("ELO - rating : {round(mean(b_rat),3)}, 95% CI [{round(ci_r[1],3)}, {round(ci_r[2],3)}]")
-
-  b_both <- boot_one(f_elo, f_both)   # positive => BOTH better than ELO alone
-  ci_b <- quantile(b_both, c(0.025, 0.975))
-  cli::cli_alert_info("ELO - both   : {round(mean(b_both),3)}, 95% CI [{round(ci_b[1],3)}, {round(ci_b[2],3)}], {sum(b_both > 0)}/2000 favour both")
-
-  if (ci_r[1] > 0) cli::cli_alert_success("{toupper(fmt)}: rating ALONE beats the result-ELO.")
-  else if (ci_r[2] < 0) cli::cli_alert_danger("{toupper(fmt)}: rating alone LOSES to the result-ELO.")
-  else cli::cli_alert_warning("{toupper(fmt)}: rating alone not distinguishable from the result-ELO.")
-
-  if (ci_b[1] > 0) cli::cli_alert_success("{toupper(fmt)}: ELO + rating BEATS ELO alone -- the combination earns its place.")
-  else if (ci_b[2] < 0) cli::cli_alert_danger("{toupper(fmt)}: ELO + rating is WORSE than ELO alone.")
-  else cli::cli_alert_warning("{toupper(fmt)}: ELO + rating not distinguishable from ELO alone.")
 }
