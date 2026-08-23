@@ -201,3 +201,26 @@ test_that("print.low_information_audit distinguishes a leak from a clean pass", 
   leaked <- audit_low_information_state(leaked_actual + 0.01, leaked_actual, rep(TRUE, 100))
   expect_message(print(leaked), "LEAK SIGNATURE")
 })
+
+test_that("NA in the state vector is excluded, not crashed on", {
+  # `NA & TRUE` is NA, and logical indexing with NA returns an NA ELEMENT
+  # rather than dropping it -- so sd() returned NA and the guard became
+  # `if (NA)`. A caller writing `state = over == 0 & ball == 1` hits this
+  # wherever either column is missing, which is ordinary, not exotic.
+  set.seed(42)
+  predicted <- rnorm(200, 1.2, 0.05)
+  actual <- rpois(200, 1.2)
+  state <- rep(TRUE, 200)
+  state[c(3, 7, 15)] <- NA
+
+  res <- expect_no_error(audit_low_information_state(predicted, actual, state))
+  # the three NA rows are excluded from the count, not silently included
+  expect_equal(res$n, 197)
+  expect_false(is.na(res$sd_prediction))
+  expect_equal(res$flag, "ok")
+})
+
+test_that("an all-NA state is refused rather than reported as clean", {
+  predicted <- rnorm(100); actual <- rnorm(100)
+  expect_error(audit_low_information_state(predicted, actual, rep(NA, 100)))
+})

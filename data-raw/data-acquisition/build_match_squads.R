@@ -33,7 +33,16 @@ if (!table_exists(conn, TBL)) {
     from_registry BOOLEAN)", TBL))
   cli::cli_alert_success("Created {TBL}")
 }
-done <- dbGetQuery(conn, sprintf("SELECT DISTINCT match_id FROM %s", TBL))$match_id
+# "Done" means BOTH teams landed, not merely that the match_id appears.
+#
+# The flush is a buffered dbWriteTable(append = TRUE) with no explicit
+# transaction. A DuckDB append should commit or roll back as a unit, so a
+# half-written match should not be possible -- but that rests on Appender
+# semantics rather than on anything this script guarantees, and the cost of
+# being wrong is a match permanently skipped as complete while missing a side.
+# Requiring two teams closes it for the price of a GROUP BY.
+done <- dbGetQuery(conn, sprintf(
+  "SELECT match_id FROM %s GROUP BY match_id HAVING COUNT(DISTINCT team) >= 2", TBL))$match_id
 todo <- files[!(tools::file_path_sans_ext(basename(files)) %in% done)]
 cli::cli_alert_info("{format(length(done), big.mark=',')} already done; {format(length(todo), big.mark=',')} to do")
 

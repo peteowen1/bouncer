@@ -242,7 +242,19 @@ audit_low_information_state <- function(predicted, actual, state, min_n = 30,
   if (length(predicted) != length(actual) || length(predicted) != length(state)) {
     cli::cli_abort("{.arg predicted}, {.arg actual} and {.arg state} must be the same length.")
   }
-  state <- as.logical(state) & !is.na(predicted) & !is.na(actual)
+  # NA in `state` must become FALSE, not stay NA.
+  #
+  # `NA & TRUE` is NA, and indexing a vector with a logical NA returns an NA
+  # ELEMENT rather than dropping it -- so pred_sub gained NAs that sum(state,
+  # na.rm = TRUE) had not counted, sd() returned NA, and the guard below became
+  # `if (NA)`, aborting with "missing value where TRUE/FALSE needed".
+  #
+  # Reachable the obvious way: a caller writing `state = over == 0 & ball == 1`
+  # gets NA wherever either column is missing. calibration_audit()'s own cuts
+  # already filter NA correctly; this did not.
+  state <- as.logical(state)
+  state[is.na(state)] <- FALSE
+  state <- state & !is.na(predicted) & !is.na(actual)
   n <- sum(state, na.rm = TRUE)
   if (n == 0) {
     cli::cli_abort("No rows matched {.arg state} -- nothing to check.")

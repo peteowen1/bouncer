@@ -32,11 +32,45 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 
 | System | Files | Use Case |
 |--------|-------|----------|
-| **3-Way ELO** | `three_way_elo.R` | Primary system: Batter + Bowler + Venue (dual session/permanent) |
-| **PageRank/Centrality** | `centrality.R`, `centrality_storage.R` | Network-based quality adjustment (detects isolated cluster inflation) |
+| **3-Way ELO** | `three_way_elo.R`, `three_way_elo_tables.R` | Batter + Bowler + Venue (dual session/permanent) |
+| **PageRank/Centrality** | `centrality.R`, `centrality_storage.R` | Network-based quality adjustment (detects isolated cluster inflation); feeds 3-Way ELO's K-factor and inactivity decay, not the outcome models directly |
 | **Stat Ratings** | `stat_ratings.R`, `stat_rating_config.R` | Bayesian per-game stat ratings (PSR, economy, SR, etc.) |
 
-3-Way ELO + centrality feed the delivery-level models. Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glicko is deprecated and archived in `data-raw/_deprecated/`.
+Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glicko is deprecated and archived in `data-raw/_deprecated/`.
+
+> ### ⚠️ "3-Way ELO is the primary system feeding the delivery-level models" was false for every model ever trained until 2026-08-20/21
+>
+> **The defect (bouncerverse#63, #65):** two production readers — `02_train_full_model.R` and `calculate_roster_elo()` — built the ELO table name as
+> `paste0(format, "_3way_elo")`. The ratings actually live in gender-keyed tables
+> (`mens_t20_3way_elo`, `womens_odi_3way_elo`, ...); the unprefixed name resolves
+> to a **legacy** set where `t20_3way_elo` is empty and `odi_3way_elo` /
+> `test_3way_elo` hold stale women's-only rows. Both readers coalesce a join miss
+> to a neutral 1400, so **all three ELO features were the constant 1400 for
+> every row, in every format, in every full model ever trained** — while the
+> pipeline printed `0/N have ELO features` as a success line. `calculate_roster_elo()`
+> gave every player 1400, so any two rosters scored identically.
+>
+> **Fixed** in `bouncer` `f800efa` (both readers now call `three_way_elo_table()`,
+> declared once) and `968125b` (rebuild writes to staging, promoted only above
+> 99% of expected rows — an interrupted rebuild used to leave a table empty,
+> which is how `t20_3way_elo` reached zero). Whether 3-Way ELO is worth keeping
+> at all past the ball-by-ball simulation is an open call, not a settled
+> "primary system" — see the "decide" verdict in `docs/reference/RATING-ARCHITECTURE.md`.
+>
+> **Retrained on clean inputs (#65, `434c14c`):** 100% ELO feature coverage for
+> the first time (3,221,299/3,221,299 T20 rows, was 0%). Matched comparison
+> against the agnostic model, identical held-out rows, bootstrapped by match:
+> **T20 +1.80%, ODI +1.69%, Test +2.34%** logloss, 2000/2000 bootstrap draws
+> favouring the full model in each format. This retires the earlier "near-irreducible,
+> 0.0/0.8/0.8%" ceiling (#16) — that figure was itself measured while these same
+> ELO features were zero-filled, so it was a symptom of this bug, not a bound.
+>
+> **But the retrained full model is still DORMANT** (`docs/reference/MODEL-INVENTORY.md`,
+> checked 2026-08-22): `load_full_model()`/`predict_full_outcome()` are absent from
+> `NAMESPACE`, no pipeline step or workflow reaches them, and they are not
+> republished to the `ball-outcome` release. So 3-Way ELO now genuinely feeds a
+> full delivery-outcome model with real signal — a reversal of the total defect
+> above — but that model does not yet feed anything else in production.
 
 > ### ⚠️ The WPA feeding the ratings is now OURS (D-P6, 2026-08-13) — but it barely matters
 >
@@ -225,7 +259,7 @@ Uses DuckDB schemas for namespace isolation: `cricsheet.*` for Cricsheet data, `
 | Table | Key Columns |
 |-------|-------------|
 | `{format}_player_skill` | batter_scoring_index, batter_survival_rate, bowler_economy_index, bowler_strike_rate |
-| `{format}_3way_elo` | batter_run_elo, bowler_run_elo, venue_session_elo, venue_perm_elo |
+| `{gender}_{format}_3way_elo` (e.g. `mens_t20_3way_elo`) | batter_run_elo, bowler_run_elo, venue_session_elo, venue_perm_elo — the LIVE tables, 100% coverage all six as of 2026-08-20 (bouncerverse#63). Name declared once by `three_way_elo_table()` in `R/three_way_elo_tables.R`; do not rebuild it inline (two inline declarations drifting is what caused #63). The unprefixed `{format}_3way_elo` names (`t20_3way_elo`, `odi_3way_elo`, `test_3way_elo`) are a **legacy, unpopulated** set — `t20_3way_elo` is empty, `odi_3way_elo`/`test_3way_elo` hold stale women's-only rows — kept only because `database_maintenance.R` still indexes them. |
 | `{format}_team_skill` | batting/bowling runs_skill, wicket_skill |
 | `{format}_venue_skill` | run_rate, wicket_rate, boundary_rate, dot_rate |
 | `{format}_score_projection` | projected_agnostic, projected_full, resource_remaining |
