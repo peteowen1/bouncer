@@ -23,6 +23,12 @@ METRIC    <- getopt("--metric", "composite")
 FROM      <- as.Date(getopt("--from", "2023-01-01"))
 BY_MONTHS <- as.integer(getopt("--by", "1"))
 MIN_BALLS <- as.integer(getopt("--min-balls", "1"))
+# Not every metric exists for every format. TSA is a projected-final-score
+# effect, which needs a fixed ball allocation, so Test has none by construction
+# (see validation/30_tsa_persist.R). Building the full grid anyway produced 264
+# builds that all "failed" with a binder error on a column that was never going
+# to be there -- loud, but indistinguishable from a real breakage.
+FORMATS <- strsplit(getopt("--formats", "t20,odi,test"), ",")[[1]]
 TBL <- paste0("player_metric_snapshots_", METRIC)
 
 conn <- get_db_connection(read_only = TRUE)
@@ -30,9 +36,9 @@ last <- as.Date(dbGetQuery(conn, "SELECT MAX(match_date) d FROM cricsheet.matche
 dbDisconnect(conn, shutdown = TRUE)
 dates <- seq(FROM, last, by = paste(BY_MONTHS, "months"))
 
-GRID <- expand.grid(as_at = dates, format = c("t20", "odi", "test"),
+GRID <- expand.grid(as_at = dates, format = FORMATS,
                     role = c("batter", "bowler"), stringsAsFactors = FALSE)
-cli::cli_alert_info("metric={METRIC}, male only: {nrow(GRID)} builds at ~19s -> ~{round(nrow(GRID)*19/60)} min")
+cli::cli_alert_info("metric={METRIC}, formats {FORMATS}, male only: {nrow(GRID)} builds at ~19s -> ~{round(nrow(GRID)*19/60)} min")
 
 conn <- get_db_connection(read_only = FALSE)
 on.exit(try(dbDisconnect(conn, shutdown = TRUE), silent = TRUE), add = TRUE)
@@ -75,3 +81,9 @@ for (i in seq_len(nrow(todo))) {
 cli::cli_alert_success("{ok} build{?s} stored in {TBL}")
 if (length(failed)) { cli::cli_alert_warning("{length(failed)} failed:")
   for (f in failed) cli::cli_bullets(c("*" = f)) }
+# Every build failing is a broken run, not a run with failures, and the
+# difference matters because the progress line looks identical either way --
+# "264/264 | 0 ok | 264 failed" scrolled past as if it were work being done.
+if (ok == 0L && nrow(todo) > 0L) {
+  cli::cli_abort("Every one of {nrow(todo)} builds failed -- {TBL} gained nothing.")
+}
