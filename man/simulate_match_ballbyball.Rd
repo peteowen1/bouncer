@@ -33,9 +33,17 @@ simulate_match_ballbyball(
 
 \item{team2_bowlers}{List. Bowler skill objects for team 2 (5+ bowlers)}
 
-\item{team1_skills}{List. Team-level skills for team 1}
+\item{team1_skills}{List. Team-level skills for team 1. Accepts either a
+flat \code{list(runs_skill=, wicket_skill=)} (used for BOTH the batting and
+bowling role, for backward compatibility with e.g.
+\code{\link[=quick_match_simulation]{quick_match_simulation()}}'s single overall strength number), or a
+role-specific \code{list(batting = list(runs_skill=, wicket_skill=), bowling = list(runs_skill=, wicket_skill=))} -- see "Team skill roles" below.
+\code{\link[=build_match_simulation_inputs]{build_match_simulation_inputs()}} always supplies the role-specific
+shape, because a real team's batting and bowling skill are different
+numbers.}
 
-\item{team2_skills}{List. Team-level skills for team 2}
+\item{team2_skills}{List. Team-level skills for team 2. Same shape rules
+as \code{team1_skills}.}
 
 \item{venue_skills}{List. Venue skills}
 
@@ -60,6 +68,20 @@ List with match summary:
 \description{
 Simulates a complete match ball-by-ball using the full model.
 }
+\section{Team skill roles}{
+
+Until bouncerverse#66, this function reused the SAME \code{team1_skills} object
+as both \code{batting_team_skills} (innings 1, team 1 batting) and
+\code{bowling_team_skills} (innings 2, team 1 bowling) -- silently applying
+team 1's batting-runs skill as if it were team 1's bowling-economy skill.
+Harmless for \code{\link[=quick_match_simulation]{quick_match_simulation()}}'s made-up single strength number,
+but wrong for \code{\link[=get_team_skill]{get_team_skill()}}'s real data, where the batting and
+bowling values for the same team are different quantities that happen to
+share field names (\code{runs_skill}/\code{wicket_skill}). Passing a nested
+\code{list(batting=, bowling=)} now selects the right one per role; a flat list
+still works exactly as before.
+}
+
 \examples{
 \dontrun{
 model <- load_full_model("shortform")
@@ -72,5 +94,7 @@ result$margin
 }
 \seealso{
 \code{\link{simulate_innings}} for single-innings simulation,
-\code{\link{simulate_delivery}} for ball-by-ball control
+\code{\link{simulate_delivery}} for ball-by-ball control,
+\code{\link{build_match_simulation_inputs}} to build real \code{team1_batters}/
+\code{team1_bowlers}/\code{team1_skills}/\code{venue_skills} arguments from a fixture
 }

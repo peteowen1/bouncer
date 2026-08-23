@@ -200,6 +200,7 @@ reference:
   - title: Simulation
     desc: Ball-by-ball match simulation
     contents:
+    - build_match_simulation_inputs
     - simulate_match_ballbyball
     - quick_match_simulation
     - simulate_innings
