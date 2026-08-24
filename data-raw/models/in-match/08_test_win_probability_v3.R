@@ -418,6 +418,32 @@ deliveries[, follow_on_possible := as.integer(
 )]
 deliveries[is.na(follow_on_possible), follow_on_possible := 0L]
 
+# Prior-innings declaration flags (bouncerverse#78).
+#
+# Same frame-of-reference discipline as follow_on_possible above: an
+# innings' OWN declared status is future information until it has actually
+# happened, so the raw declared_inn{k} column (from the dcast wide-merge at
+# the top of this script, unconditionally populated per match by the
+# match_id join) is only safe to read once innings k has ITSELF completed --
+# i.e. from innings k+1 onward. Reading it unmasked would leak the current
+# innings' own eventual declaration into predictions made mid-innings.
+#
+# Sized before building: 15.5% of all Test innings end by declaration, and
+# among innings that END at 1-3 wickets down, 60-72% are declarations rather
+# than dismissals or a stoppage -- exactly the state the model's other
+# features (wickets_in_hand, overs_remaining) cannot otherwise distinguish
+# from "still batting, not out" (D-P57).
+#
+# TRAINING-ONLY for now (D-P57, Pete's call): cricinfo, the live-serving data
+# source (.test_wp_features() / build_cricinfo_test_win_probability()), has
+# no declared field anywhere in its schema -- confirmed by grep across the
+# whole cricinfo ingestion path. Serving therefore cannot populate this
+# feature today; reconciling that is deliberately deferred rather than
+# blocking this cricsheet-side model improvement on it.
+deliveries[, prior_declared_inn1 := as.integer(innings > 1L & !is.na(declared_inn1) & declared_inn1)]
+deliveries[, prior_declared_inn2 := as.integer(innings > 2L & !is.na(declared_inn2) & declared_inn2)]
+deliveries[, prior_declared_inn3 := as.integer(innings > 3L & !is.na(declared_inn3) & declared_inn3)]
+
 # 4th innings specific features
 deliveries[innings == 4, `:=`(
   target = as.integer(team1_completed - team2_completed + 1L),
@@ -525,6 +551,7 @@ result_features <- c(
   "total_wickets_match", "runs_per_over_match",
   "abs_lead", "lead_per_over_remaining",
   "innings_num", "follow_on_possible",
+  "prior_declared_inn1", "prior_declared_inn2", "prior_declared_inn3",
   # Tier 1: derived rain proxies (always available)
   "overs_per_day", "overs_deficit",
   # Tier 2: causal weather (available if backfilled)
@@ -626,7 +653,8 @@ conditional_features <- c(
   "overs_remaining", "cum_overs",
   "venue_avg", "innings_num",
   "target", "runs_needed", "req_rate", "overs_per_wicket",
-  "current_run_rate"
+  "current_run_rate",
+  "prior_declared_inn1", "prior_declared_inn2", "prior_declared_inn3"
 )
 
 X_train_B <- as.matrix(train_results[, ..conditional_features])
