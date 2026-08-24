@@ -14,7 +14,8 @@ search_players(pattern, limit = 10, db_path = NULL)
 \item{db_path}{Character. Database path.}
 }
 \value{
-Data frame of matching players.
+Data frame of matching players. Its \code{country} column is NOT a
+nationality (bouncerverse#77) -- see \code{\link[=get_player]{get_player()}}'s \verb{@return} for why.
 }
 \description{
 Search for players by name pattern.
