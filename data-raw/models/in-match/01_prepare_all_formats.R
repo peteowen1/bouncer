@@ -352,7 +352,20 @@ for (current_format in FORMATS_TO_PREPARE) {
     cli::cli_alert_success("Saved {current_format}_stage2_data.rds")
   }
 
-  saveRDS(venue_stats, file.path(output_dir, paste0(current_format, "_inmatch_venue_stats.rds")))
+  # NOT `venue_stats` -- that name collides with the exported venue_stats()
+  # function in R/team_metrics.R, which devtools::load_all() (top of this
+  # script) puts in scope. The old local variable of that name was removed
+  # when this switched to the time-causal construction below, but the save
+  # line here still referenced it -- R found the PACKAGE FUNCTION instead of
+  # erroring, so every run of this script silently wrote the function object
+  # itself to this file instead of any data. Nothing in the codebase reads
+  # {format}_inmatch_venue_stats.rds (confirmed by grep), so this had no
+  # effect on model training -- deliveries_df's venue_avg_score/
+  # venue_chase_success_rate columns (what stage1_data.rds/stage2_data.rds
+  # actually carry) were unaffected by this and were already verified correct
+  # separately (bouncerverse#80).
+  saveRDS(list(venue_avgs = venue_avgs, venue_chases = venue_chases),
+          file.path(output_dir, paste0(current_format, "_inmatch_venue_stats.rds")))
   cli::cli_alert_success("Saved {current_format}_inmatch_venue_stats.rds")
 
   cat(sprintf("\n  %s complete: %d stage1, %s stage2 deliveries\n",
