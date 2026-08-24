@@ -1,3 +1,14 @@
+# bouncer 0.7.4
+
+## T20/ODI in-match models no longer leak venue-average features (bouncerverse#80)
+
+`venue_avg_score`/`venue_chase_success_rate` used to average over EVERY match
+at a venue, including the one being predicted -- the same leak already found
+and fixed for Test format. Switched to the time-causal construction built for
+that fix; sized directly (correlation with the match's own score at single-
+match venues was 1.000, dropping sharply once fixed). All six affected
+in-match models (t20/odi x stage1/innings1/stage2) retrained and republished.
+
 # bouncer 0.7.3
 
 ## Full outcome model is reachable and safe to use externally (bouncerverse#76, #79)
