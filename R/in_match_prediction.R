@@ -7,6 +7,38 @@
 .inmatch_model_cache <- new.env(parent = emptyenv())
 
 
+#' Load an in-match model results bundle, bouncermodels first
+#'
+#' `{model_name}.rds` bundles `$model` (an xgb.Booster) with `$feature_cols`
+#' and training metadata in one object -- both stage1 and stage2, and the
+#' decomposed Test v3 pair, are shaped this way. Mirrors the
+#' bouncermodels-then-local-fallback pattern in `load_agnostic_model()`
+#' (`R/agnostic_model.R`), which the in-match/prediction tags never used
+#' before this (bouncerverse#81 / D-P54) despite being published there.
+#'
+#' @param model_name Character. bouncermodels registry name, e.g.
+#'   "t20_stage1_results".
+#' @param local_path Character. Full path to the local `.rds` fallback.
+#' @return The deserialized list (`$model`, `$feature_cols`, ...), or NULL if
+#'   neither source has it.
+#' @keywords internal
+.load_inmatch_results <- function(model_name, local_path) {
+  if (!.prefer_local_models() && requireNamespace("bouncermodels", quietly = TRUE)) {
+    result <- tryCatch(
+      bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(result)) {
+      cli::cli_alert_success("Loaded {model_name} from bouncermodels")
+      return(result)
+    }
+  }
+
+  if (!file.exists(local_path)) return(NULL)
+  readRDS(local_path)
+}
+
+
 #' Load In-Match Prediction Models
 #'
 #' Loads the trained in-match prediction models for a given format.
@@ -54,24 +86,22 @@ load_in_match_models <- function(format = "t20",
     return(result)
   }
 
-  # Load Stage 1 results
+  # Load Stage 1 results (bouncermodels release first, local disk fallback)
   stage1_file <- file.path(models_path, get_model_filename("stage1", format))
-  if (!file.exists(stage1_file)) {
+  stage1_results <- .load_inmatch_results(paste0(format, "_stage1_results"), stage1_file)
+  if (is.null(stage1_results)) {
     cli::cli_alert_warning("Stage 1 model not found: {stage1_file}")
     cli::cli_alert_info("Run the in-match pipeline first (data-raw/models/in-match/)")
     return(NULL)
   }
 
-  stage1_results <- readRDS(stage1_file)
-
   # Load Stage 2 results
   stage2_file <- file.path(models_path, get_model_filename("stage2", format))
-  if (!file.exists(stage2_file)) {
+  stage2_results <- .load_inmatch_results(paste0(format, "_stage2_results"), stage2_file)
+  if (is.null(stage2_results)) {
     cli::cli_alert_warning("Stage 2 model not found: {stage2_file}")
     return(NULL)
   }
-
-  stage2_results <- readRDS(stage2_file)
 
   # Innings-1 win probability model, produced by
   # data-raw/models/in-match/04_win_probability_innings1.R.
@@ -127,20 +157,19 @@ load_in_match_models <- function(format = "t20",
 load_test_in_match_models <- function(models_path) {
 
   v3_file <- file.path(models_path, "test_winprob_v3_results.rds")
-  if (!file.exists(v3_file)) {
+  v3 <- .load_inmatch_results("test_winprob_v3_results", v3_file)
+  if (is.null(v3)) {
     cli::cli_alert_warning("Test v3 models not found: {v3_file}")
     cli::cli_alert_info("Run 08_test_win_probability_v3.R first")
     return(NULL)
   }
 
-  v3 <- readRDS(v3_file)
-
   # Also load Stage 1 for projected scores
   stage1_file <- file.path(models_path, get_model_filename("stage1", "test"))
+  stage1_results <- .load_inmatch_results("test_stage1_results", stage1_file)
   stage1_model <- NULL
   stage1_features <- NULL
-  if (file.exists(stage1_file)) {
-    stage1_results <- readRDS(stage1_file)
+  if (!is.null(stage1_results)) {
     stage1_model <- stage1_results$model
     stage1_features <- stage1_results$feature_cols
   }
