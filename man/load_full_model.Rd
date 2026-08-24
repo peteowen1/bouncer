@@ -31,4 +31,14 @@ The full model uses all available features:
 
 This is the model used for match simulation where maximum accuracy is needed.
 }
-\keyword{internal}
+\section{Feature order safety (bouncerverse#76)}{
+
+\code{predict()} on an xgboost matrix is positional -- it silently accepts a
+same-width frame with columns in the wrong order and returns plausible,
+wrong numbers. The three published full models carry their training-order
+feature list as a \code{bouncer_feature_names} attribute (verified against
+\code{prepare_full_features()}, \code{data-raw/validation/full_model_serving_alignment.R}),
+so use \code{\link[=predict_full_outcome]{predict_full_outcome()}}'s serving path rather than building a
+\code{xgb.DMatrix} by hand from an unnamed matrix.
+}
+

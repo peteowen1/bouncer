@@ -11,9 +11,13 @@
 }
 \value{
 Character vector of feature names in training order, or \code{NULL} if
-the model predates this stamp (every model as of bouncerverse#76 -- this
-fix only stamps NEW saves, it does not retroactively re-stamp existing
-\code{.ubj} files, which needs a training run).
+the model predates this stamp. \verb{02_train_full_model.R} stamps new saves
+automatically; an existing \code{.ubj} can also be re-stamped without a
+retrain when the exact training-order feature list can be recovered by
+other means (e.g. git history proving the trainer's column order hasn't
+changed since that model was saved) -- done for the three published
+\code{full_outcome_*.ubj} models on 2026-08-24 (bouncerverse#76/#79), verified
+by a byte-identical prediction round-trip before/after the re-save.
 }
 \description{
 Read the stamped feature-name attribute back off a model

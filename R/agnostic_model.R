@@ -102,9 +102,13 @@ FEATURE_NAMES_ATTR <- "bouncer_feature_names"
 #'
 #' @param model Loaded xgb.Booster.
 #' @return Character vector of feature names in training order, or `NULL` if
-#'   the model predates this stamp (every model as of bouncerverse#76 -- this
-#'   fix only stamps NEW saves, it does not retroactively re-stamp existing
-#'   `.ubj` files, which needs a training run).
+#'   the model predates this stamp. `02_train_full_model.R` stamps new saves
+#'   automatically; an existing `.ubj` can also be re-stamped without a
+#'   retrain when the exact training-order feature list can be recovered by
+#'   other means (e.g. git history proving the trainer's column order hasn't
+#'   changed since that model was saved) -- done for the three published
+#'   `full_outcome_*.ubj` models on 2026-08-24 (bouncerverse#76/#79), verified
+#'   by a byte-identical prediction round-trip before/after the re-save.
 #' @keywords internal
 .stamped_feature_names <- function(model) {
   raw <- tryCatch(xgboost::xgb.attr(model, FEATURE_NAMES_ATTR), error = function(e) NULL)
@@ -151,7 +155,13 @@ FEATURE_NAMES_ATTR <- "bouncer_feature_names"
 #' This makes it suitable for calculating baseline expectations, where
 #' actual performance minus expected gives the "skill residual".
 #'
-#' @keywords internal
+#' @section Feature order safety:
+#' Unlike [load_full_model()] (bouncerverse#76), this booster's own feature
+#' order has not been independently re-verified against
+#' [prepare_agnostic_features()] and stamped. Use [predict_agnostic_outcome()]
+#' rather than building a `xgb.DMatrix` by hand.
+#'
+#' @export
 load_agnostic_model <- function(format = c("t20", "odi", "test"),
                                  model_dir = NULL) {
 
@@ -347,7 +357,16 @@ calculate_agnostic_residuals <- function(model, delivery_data, format = c("t20",
 #'
 #' This is the model used for match simulation where maximum accuracy is needed.
 #'
-#' @keywords internal
+#' @section Feature order safety (bouncerverse#76):
+#' `predict()` on an xgboost matrix is positional -- it silently accepts a
+#' same-width frame with columns in the wrong order and returns plausible,
+#' wrong numbers. The three published full models carry their training-order
+#' feature list as a `bouncer_feature_names` attribute (verified against
+#' `prepare_full_features()`, `data-raw/validation/full_model_serving_alignment.R`),
+#' so use [predict_full_outcome()]'s serving path rather than building a
+#' `xgb.DMatrix` by hand from an unnamed matrix.
+#'
+#' @export
 load_full_model <- function(format = c("t20", "odi", "test"),
                              model_dir = NULL) {
 

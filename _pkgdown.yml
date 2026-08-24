@@ -189,6 +189,12 @@ reference:
     - analyze_match
     - query_matches
 
+  - title: Ball Outcome Models
+    desc: Load the per-delivery outcome models feeding simulation and skill indices
+    contents:
+    - load_agnostic_model
+    - load_full_model
+
   - title: Predictions
     desc: Match outcome and in-game predictions
     contents:

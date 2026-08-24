@@ -4,10 +4,13 @@
 \alias{load_test_in_match_models}
 \title{Load Test Match In-Match Models (Decomposed Pipeline)}
 \usage{
-load_test_in_match_models(models_path)
+load_test_in_match_models(models_path, allow_release = TRUE)
 }
 \arguments{
 \item{models_path}{Character. Path to models directory.}
+
+\item{allow_release}{Logical. FALSE skips bouncermodels and reads only
+\code{models_path} -- see \code{.load_inmatch_results()}.}
 }
 \value{
 List with result_model, conditional_model, and feature vectors, or NULL.
