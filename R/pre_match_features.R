@@ -607,6 +607,24 @@ load_margin_model <- function(format, model_dir = NULL) {
     cli::cli_abort("xgboost package required. Install with: install.packages('xgboost')")
   }
 
+  model_name <- paste0(format, "_margin_model")
+
+  # bouncermodels release first (bouncerverse#81 / D-P54) -- this is a bare
+  # .ubj model with no companion feature list to keep in sync, unlike the
+  # in-match stageN bundles, so it can reuse load_agnostic_model()'s exact
+  # release-then-local pattern with no data-shape complication.
+  if (is.null(model_dir) && !.prefer_local_models() &&
+      requireNamespace("bouncermodels", quietly = TRUE)) {
+    model <- tryCatch(
+      bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
+      error = function(e) NULL
+    )
+    if (!is.null(model)) {
+      cli::cli_alert_success("Loaded margin model for {toupper(format)} from bouncermodels")
+      return(model)
+    }
+  }
+
   # Default model directory
   if (is.null(model_dir)) {
     model_dir <- get_default_models_path()
@@ -620,7 +638,7 @@ load_margin_model <- function(format, model_dir = NULL) {
   }
 
   model <- xgboost::xgb.load(model_path)
-  cli::cli_alert_success("Loaded margin model for {toupper(format)}")
+  cli::cli_alert_success("Loaded margin model for {toupper(format)} from {.file {model_path}}")
   model
 }
 
