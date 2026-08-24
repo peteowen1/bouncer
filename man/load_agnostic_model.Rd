@@ -26,4 +26,13 @@ context features (match state) with no player/team/venue information.
 This makes it suitable for calculating baseline expectations, where
 actual performance minus expected gives the "skill residual".
 }
-\keyword{internal}
+\section{Feature order safety}{
+
+Unlike \code{\link[=load_full_model]{load_full_model()}} (bouncerverse#76), this booster's own feature
+order has not been independently re-verified against
+\code{\link[=prepare_agnostic_features]{prepare_agnostic_features()}} and stamped, so \code{\link[=predict_agnostic_outcome]{predict_agnostic_outcome()}}'s
+alignment check cannot run -- it warns once per session instead of
+verifying. Still prefer it over a hand-built \code{xgb.DMatrix}, which gets no
+check and no warning at all.
+}
+

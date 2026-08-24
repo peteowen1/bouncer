@@ -102,14 +102,75 @@ FEATURE_NAMES_ATTR <- "bouncer_feature_names"
 #'
 #' @param model Loaded xgb.Booster.
 #' @return Character vector of feature names in training order, or `NULL` if
-#'   the model predates this stamp (every model as of bouncerverse#76 -- this
-#'   fix only stamps NEW saves, it does not retroactively re-stamp existing
-#'   `.ubj` files, which needs a training run).
+#'   the model predates this stamp. `02_train_full_model.R` stamps new saves
+#'   automatically; an existing `.ubj` can also be re-stamped without a
+#'   retrain when the exact training-order feature list can be recovered by
+#'   other means (e.g. git history proving the trainer's column order hasn't
+#'   changed since that model was saved) -- done for the three published
+#'   `full_outcome_*.ubj` models on 2026-08-24 (bouncerverse#76/#79), verified
+#'   by a byte-identical prediction round-trip before/after the re-save.
 #' @keywords internal
 .stamped_feature_names <- function(model) {
   raw <- tryCatch(xgboost::xgb.attr(model, FEATURE_NAMES_ATTR), error = function(e) NULL)
   if (is.null(raw) || !nzchar(raw)) return(NULL)
   strsplit(raw, "|", fixed = TRUE)[[1]]
+}
+
+# Warn at most once per session per label -- a predict function called
+# per-delivery would otherwise print the same "no stamp, can't check" warning
+# thousands of times.
+.no_stamp_warned <- new.env(parent = emptyenv())
+
+#' Abort if a serving frame's columns don't match a model's training order
+#'
+#' Positional `xgb.DMatrix`/`predict()` silently accepts a same-width frame
+#' with columns in the wrong order and returns plausible, wrong numbers
+#' (bouncerverse#76). This is the runtime half of that fix: a script run by
+#' hand (`data-raw/validation/full_model_serving_alignment.R`) can catch drift
+#' only if someone remembers to run it and reads the output. This function
+#' runs on every `predict_full_outcome()`/`predict_agnostic_outcome()` call
+#' instead, so a drift aborts loudly at the point it would otherwise produce a
+#' silently wrong prediction.
+#'
+#' A model with no stamped names (every agnostic model as of bouncerverse#79 --
+#' only the full model has been independently re-verified and stamped) cannot
+#' be checked this way; that is reported once per session rather than silently,
+#' so "checked and fine" and "never checked" stay distinguishable.
+#'
+#' @param model Loaded xgb.Booster.
+#' @param features Data frame about to become the DMatrix, in serving order.
+#' @param label Character. Used in messages, e.g. "full model (t20)".
+#' @keywords internal
+.assert_feature_alignment <- function(model, features, label) {
+  trained <- .stamped_feature_names(model)
+  if (is.null(trained)) {
+    key <- paste0("nostamp:", label)
+    if (is.null(.no_stamp_warned[[key]])) {
+      assign(key, TRUE, envir = .no_stamp_warned)
+      cli::cli_warn(c(
+        "{label}: booster carries no stamped feature names -- column order is UNVERIFIED.",
+        "i" = "A same-width, differently-ordered frame would predict silently wrong numbers."
+      ))
+    }
+    return(invisible(NULL))
+  }
+
+  served <- names(features)
+  if (identical(trained, served)) return(invisible(NULL))
+
+  missing <- setdiff(trained, served)
+  extra <- setdiff(served, trained)
+  if (length(missing) || length(extra)) {
+    cli::cli_abort(c(
+      "{label}: serving frame does not match the model's trained features.",
+      "x" = if (length(missing)) "Missing at serving time: {.val {missing}}",
+      "x" = if (length(extra)) "Served but not trained on: {.val {extra}}"
+    ))
+  }
+  # Same set, different order -- an unnamed DMatrix is positional.
+  cli::cli_abort(
+    "{label}: same features as training, but in a DIFFERENT ORDER -- would predict nonsense silently."
+  )
 }
 
 
@@ -151,7 +212,15 @@ FEATURE_NAMES_ATTR <- "bouncer_feature_names"
 #' This makes it suitable for calculating baseline expectations, where
 #' actual performance minus expected gives the "skill residual".
 #'
-#' @keywords internal
+#' @section Feature order safety:
+#' Unlike [load_full_model()] (bouncerverse#76), this booster's own feature
+#' order has not been independently re-verified against
+#' [prepare_agnostic_features()] and stamped, so [predict_agnostic_outcome()]'s
+#' alignment check cannot run -- it warns once per session instead of
+#' verifying. Still prefer it over a hand-built `xgb.DMatrix`, which gets no
+#' check and no warning at all.
+#'
+#' @export
 load_agnostic_model <- function(format = c("t20", "odi", "test"),
                                  model_dir = NULL) {
 
@@ -163,7 +232,16 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
       requireNamespace("bouncermodels", quietly = TRUE)) {
     model <- tryCatch(
       bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
-      error = function(e) NULL
+      error = function(e) {
+        # Every condition load_bouncer_model() raises is a real one -- unknown
+        # registry name, download failure, or a sha256 INTEGRITY failure on a
+        # corrupted release asset -- never "the package isn't installed" (that
+        # already returned via requireNamespace() above). Silently falling
+        # through to local disk here used to look identical to a clean
+        # release load with nothing to distinguish them; warn instead.
+        cli::cli_warn("bouncermodels release load failed for {model_name}: {conditionMessage(e)}")
+        NULL
+      }
     )
     if (!is.null(model)) {
       .check_model_vintage(model, model_name, "bouncermodels")
@@ -210,7 +288,14 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
 #'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
 #'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
-#' @keywords internal
+#' @section Feature order safety:
+#' Aborts if the serving frame's columns don't match the model's stamped
+#' training-order feature list (bouncerverse#76) -- but the agnostic model has
+#' not been independently re-verified and stamped the way the full model has
+#' (bouncerverse#79), so this currently only warns once per session that the
+#' check could not run, rather than actually verifying alignment.
+#'
+#' @export
 predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -221,6 +306,7 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
 
   # Prepare features for agnostic model
   features <- prepare_agnostic_features(delivery_data, format)
+  .assert_feature_alignment(model, features, sprintf("agnostic model (%s)", format))
 
   # Create DMatrix and predict
   dmat <- xgboost::xgb.DMatrix(data = as.matrix(features))
@@ -347,7 +433,17 @@ calculate_agnostic_residuals <- function(model, delivery_data, format = c("t20",
 #'
 #' This is the model used for match simulation where maximum accuracy is needed.
 #'
-#' @keywords internal
+#' @section Feature order safety (bouncerverse#76):
+#' `predict()` on an xgboost matrix is positional -- it silently accepts a
+#' same-width frame with columns in the wrong order and returns plausible,
+#' wrong numbers. The three published full models carry their training-order
+#' feature list as a `bouncer_feature_names` attribute (verified against
+#' `prepare_full_features()`, `data-raw/validation/full_model_serving_alignment.R`).
+#' [predict_full_outcome()] checks the serving frame against that attribute on
+#' every call and aborts on a mismatch -- build a `xgb.DMatrix` by hand instead
+#' and that protection is gone.
+#'
+#' @export
 load_full_model <- function(format = c("t20", "odi", "test"),
                              model_dir = NULL) {
 
@@ -359,7 +455,14 @@ load_full_model <- function(format = c("t20", "odi", "test"),
       requireNamespace("bouncermodels", quietly = TRUE)) {
     model <- tryCatch(
       bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
-      error = function(e) NULL
+      error = function(e) {
+        # See load_agnostic_model()'s matching comment: every condition here
+        # is real (unknown name, download failure, sha256 integrity failure
+        # on a corrupted release asset), never "not installed". Warn rather
+        # than silently falling through to local disk.
+        cli::cli_warn("bouncermodels release load failed for {model_name}: {conditionMessage(e)}")
+        NULL
+      }
     )
     if (!is.null(model)) {
       .check_model_vintage(model, model_name, "bouncermodels")
@@ -407,7 +510,12 @@ load_full_model <- function(format = c("t20", "odi", "test"),
 #'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
 #'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 #'
-#' @keywords internal
+#' @section Feature order safety (bouncerverse#76):
+#' Aborts if the serving frame's columns don't match the model's stamped
+#' training-order feature list, rather than silently predicting from a
+#' misaligned positional matrix.
+#'
+#' @export
 predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", "test")) {
 
   format <- match.arg(format)
@@ -418,6 +526,7 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
 
   # Prepare features for full model
   features <- prepare_full_features(delivery_data, format)
+  .assert_feature_alignment(model, features, sprintf("full model (%s)", format))
 
   # Create DMatrix and predict
   dmat <- xgboost::xgb.DMatrix(data = as.matrix(features))

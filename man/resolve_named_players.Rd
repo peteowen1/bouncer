@@ -4,7 +4,7 @@
 \alias{resolve_named_players}
 \title{Resolve Caller-Supplied Player Names to Ids}
 \usage{
-resolve_named_players(names, conn)
+resolve_named_players(names, conn, format = NULL, gender = NULL)
 }
 \arguments{
 \item{names}{Character vector of player names.}

@@ -16,8 +16,11 @@
 # now stamps a `bouncer_feature_names` xgboost attribute at save time (same
 # pattern as the `bouncer_build_date` stamp, D-P43). This script reads that
 # attribute first and only falls back to `m$feature_names` (and, failing that,
-# width alone) for models saved before the stamp existed -- every `.ubj` on
-# disk as of #76, since re-saving them needs a training run, not a code fix.
+# width alone) for a model saved before the stamp existed. The three models
+# published as of 2026-08-24 were re-stamped without a retrain (bouncerverse#76) --
+# see .stamped_feature_names()'s roxygen for how that was verified safe -- so
+# this fallback is dormant for them; it stays for whatever gets trained next
+# with an older bouncer version, or restored from an old backup.
 #
 # Usage: Rscript data-raw/validation/full_model_serving_alignment.R
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
@@ -139,7 +142,7 @@ if (length(fail)) {
 }
 if (length(unnamed)) {
   cli::cli_alert_warning(c("Width matches for {.val {unnamed}}, but their boosters carry no feature names."))
-  cli::cli_alert_info("02_train_full_model.R now stamps a bouncer_feature_names attribute at save time (bouncerverse#76), so a future training run closes this gap -- these particular .ubj files on disk just predate it. Same width with the columns in a DIFFERENT ORDER predicts nonsense silently, and this check cannot see it until they are retrained.")
+  cli::cli_alert_info("02_train_full_model.R stamps a bouncer_feature_names attribute at save time (bouncerverse#76) -- this model predates that stamp and needs either a retrain or a verified re-stamp (see .stamped_feature_names()'s roxygen for the pattern used on 2026-08-24). Same width with the columns in a DIFFERENT ORDER predicts nonsense silently, and this check cannot see it until then.")
 } else {
   cli::cli_alert_success("Every format's serving path matches its trained feature frame.")
 }

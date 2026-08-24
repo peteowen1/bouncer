@@ -491,3 +491,75 @@ test_that(".encode_feature_names joins names on | and preserves order", {
   expect_equal(.encode_feature_names(character(0)), "")
   expect_equal(.encode_feature_names("solo"), "solo")
 })
+
+# .assert_feature_alignment() is the runtime half of the #76 fix -- a review
+# caught that the offline alignment script (full_model_serving_alignment.R)
+# was the ONLY thing checking names+order, and predict_full_outcome()/
+# predict_agnostic_outcome() still built an unnamed DMatrix by hand, so the
+# documented safety never actually ran. These tests exist to make sure it
+# does, and that a caught mismatch is loud, not a silently wrong prediction.
+
+.stamped_stub_model <- function(feature_names) {
+  dtrain <- xgboost::xgb.DMatrix(
+    data = matrix(runif(10 * length(feature_names)), nrow = 10),
+    label = rbinom(10, 1, 0.5)
+  )
+  m <- xgboost::xgb.train(
+    params = list(objective = "binary:logistic"),
+    data = dtrain, nrounds = 1, verbose = 0
+  )
+  xgboost::xgb.attr(m, FEATURE_NAMES_ATTR) <- .encode_feature_names(feature_names)
+  m
+}
+
+test_that(".assert_feature_alignment passes silently when names and order match", {
+  skip_if_not_installed("xgboost")
+  m <- .stamped_stub_model(c("a", "b", "c"))
+  features <- data.frame(a = 1, b = 2, c = 3)
+  expect_no_error(.assert_feature_alignment(m, features, "test model"))
+  expect_no_warning(.assert_feature_alignment(m, features, "test model"))
+})
+
+test_that(".assert_feature_alignment aborts on a missing/extra feature", {
+  skip_if_not_installed("xgboost")
+  m <- .stamped_stub_model(c("a", "b", "c"))
+  expect_error(
+    .assert_feature_alignment(m, data.frame(a = 1, b = 2), "test model"),
+    "does not match"
+  )
+  expect_error(
+    .assert_feature_alignment(m, data.frame(a = 1, b = 2, c = 3, d = 4), "test model"),
+    "does not match"
+  )
+})
+
+test_that(".assert_feature_alignment aborts on same features in a different order", {
+  # The specific failure mode this whole fix exists for: xgb.DMatrix() is
+  # positional, so same columns in a different order predict silently wrong
+  # numbers with no error from xgboost itself.
+  skip_if_not_installed("xgboost")
+  m <- .stamped_stub_model(c("a", "b", "c"))
+  expect_error(
+    .assert_feature_alignment(m, data.frame(c = 3, a = 1, b = 2), "test model"),
+    "DIFFERENT ORDER"
+  )
+})
+
+test_that(".assert_feature_alignment warns (not silently passes) when the model carries no stamp", {
+  skip_if_not_installed("xgboost")
+  dtrain <- xgboost::xgb.DMatrix(
+    data = matrix(runif(20), nrow = 10, ncol = 2), label = rbinom(10, 1, 0.5)
+  )
+  m <- xgboost::xgb.train(
+    params = list(objective = "binary:logistic"),
+    data = dtrain, nrounds = 1, verbose = 0
+  )
+  # Fresh warn-once key so a prior test in this run can't have already fired it.
+  rm(list = ls(envir = .no_stamp_warned), envir = .no_stamp_warned)
+  expect_warning(
+    .assert_feature_alignment(m, data.frame(a = 1, b = 2), "unstamped test model"),
+    "UNVERIFIED"
+  )
+  # Second call for the SAME label warns only once per session.
+  expect_no_warning(.assert_feature_alignment(m, data.frame(a = 1, b = 2), "unstamped test model"))
+})

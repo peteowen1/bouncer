@@ -1,3 +1,19 @@
+# bouncer 0.7.3
+
+## Full outcome model is reachable and safe to use externally (bouncerverse#76, #79)
+
+`load_full_model()`, `load_agnostic_model()`, `predict_full_outcome()` and
+`predict_agnostic_outcome()` are now exported. Doing that safely required
+closing a real gap first: xgboost's `predict()` is positional, so a serving
+frame with the same columns in a different order than training silently
+returns plausible, wrong numbers -- no error, no warning. The three published
+full models had this fixed by re-stamping their training-order feature list
+onto the already-trained boosters (verified via a byte-identical prediction
+round-trip, no retrain needed), and `predict_full_outcome()`/
+`predict_agnostic_outcome()` now check a serving frame against that stamp on
+every call, aborting loudly on a mismatch instead of relying on a standalone
+script nobody was forced to run.
+
 # bouncer 0.7.2
 
 ## Added a reusable calibration-and-bias audit for models and ratings
