@@ -23,4 +23,10 @@ col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 Generates outcome probability predictions using the full model with all features.
 Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
 }
-\keyword{internal}
+\section{Feature order safety (bouncerverse#76)}{
+
+Aborts if the serving frame's columns don't match the model's stamped
+training-order feature list, rather than silently predicting from a
+misaligned positional matrix.
+}
+

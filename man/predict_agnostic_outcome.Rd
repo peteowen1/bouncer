@@ -28,4 +28,12 @@ col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
 Generates outcome probability predictions using the agnostic model.
 Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
 }
-\keyword{internal}
+\section{Feature order safety}{
+
+Aborts if the serving frame's columns don't match the model's stamped
+training-order feature list (bouncerverse#76) -- but the agnostic model has
+not been independently re-verified and stamped the way the full model has
+(bouncerverse#79), so this currently only warns once per session that the
+check could not run, rather than actually verifying alignment.
+}
+
