@@ -23,7 +23,7 @@
 #      the venue check is what makes this decisive rather than suggestive.
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
 suppressMessages({library(DBI); library(data.table)})
-conn <- dbConnect(duckdb::duckdb(), dbdir = "C:/dev/bouncerverse/bouncerdata/bouncer.duckdb",
+conn <- dbConnect(duckdb::duckdb(), dbdir = file.path(find_bouncerdata_dir(), "bouncer.duckdb"),
                   read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 id_map <- build_player_id_map(conn)

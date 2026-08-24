@@ -220,60 +220,64 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
     )
 
   # Team skills
+  #
+  # The coverage abort below used to sit INSIDE this tryCatch, so it caught its
+  # own abort and downgraded a zero-coverage join to a warning-and-neutral-fill
+  # -- reintroducing #63's failure shape in the code written to guard against
+  # it. The tryCatch now wraps only the join call itself (a genuine query/table
+  # error), and coverage is asserted unconditionally afterwards so it cannot be
+  # caught by the fallback it is meant to prevent.
   cli::cli_alert_info("Adding team skills...")
-  tryCatch({
-    model_data <- join_team_skill_indices(model_data, format = format, conn = conn)
-    # Fill missing with 0 (neutral for residual-based)
-    model_data <- model_data %>%
-      dplyr::mutate(
-        batting_team_runs_skill = dplyr::coalesce(batting_team_runs_skill, 0),
-        batting_team_wicket_skill = dplyr::coalesce(batting_team_wicket_skill, 0),
-        bowling_team_runs_skill = dplyr::coalesce(bowling_team_runs_skill, 0),
-        bowling_team_wicket_skill = dplyr::coalesce(bowling_team_wicket_skill, 0)
-      )
-    n_team <- sum(!is.na(model_data$batting_team_runs_skill) & model_data$batting_team_runs_skill != 0)
-    .assert_skill_coverage(n_team, nrow(model_data), "team skills")
+  model_data <- tryCatch({
+    join_team_skill_indices(model_data, format = format, conn = conn)
   }, error = function(e) {
-    cli::cli_alert_warning("Team skills not available: {e$message}")
-    cli::cli_alert_info("Using neutral values (0) for team skills")
-    model_data <<- model_data %>%
+    cli::cli_alert_warning("Team skills join failed: {e$message}")
+    model_data %>%
       dplyr::mutate(
-        batting_team_runs_skill = 0,
-        batting_team_wicket_skill = 0,
-        bowling_team_runs_skill = 0,
-        bowling_team_wicket_skill = 0
+        batting_team_runs_skill = NA_real_,
+        batting_team_wicket_skill = NA_real_,
+        bowling_team_runs_skill = NA_real_,
+        bowling_team_wicket_skill = NA_real_
       )
   })
+  n_team <- sum(!is.na(model_data$batting_team_runs_skill))
+  .assert_skill_coverage(n_team, nrow(model_data), "team skills")
+  # Fill missing with 0 (neutral for residual-based)
+  model_data <- model_data %>%
+    dplyr::mutate(
+      batting_team_runs_skill = dplyr::coalesce(batting_team_runs_skill, 0),
+      batting_team_wicket_skill = dplyr::coalesce(batting_team_wicket_skill, 0),
+      bowling_team_runs_skill = dplyr::coalesce(bowling_team_runs_skill, 0),
+      bowling_team_wicket_skill = dplyr::coalesce(bowling_team_wicket_skill, 0)
+    )
 
   # Venue skills
   cli::cli_alert_info("Adding venue skills...")
-  tryCatch({
-    model_data <- join_venue_skill_indices(model_data, format = format, conn = conn)
-    # Fill missing with neutral values
-    # For residual-based (run_rate, wicket_rate): 0
-    # For raw EMA (boundary_rate, dot_rate): use format defaults
-    start_vals <- get_venue_start_values(format)
-    model_data <- model_data %>%
-      dplyr::mutate(
-        venue_run_rate = dplyr::coalesce(venue_run_rate, 0),
-        venue_wicket_rate = dplyr::coalesce(venue_wicket_rate, 0),
-        venue_boundary_rate = dplyr::coalesce(venue_boundary_rate, start_vals$boundary_rate),
-        venue_dot_rate = dplyr::coalesce(venue_dot_rate, start_vals$dot_rate)
-      )
-    n_venue <- sum(!is.na(model_data$venue_run_rate) & model_data$venue_run_rate != 0)
-    .assert_skill_coverage(n_venue, nrow(model_data), "venue skills")
+  model_data <- tryCatch({
+    join_venue_skill_indices(model_data, format = format, conn = conn)
   }, error = function(e) {
-    cli::cli_alert_warning("Venue skills not available: {e$message}")
-    cli::cli_alert_info("Using neutral values for venue skills")
-    start_vals <- get_venue_start_values(format)
-    model_data <<- model_data %>%
+    cli::cli_alert_warning("Venue skills join failed: {e$message}")
+    model_data %>%
       dplyr::mutate(
-        venue_run_rate = 0,
-        venue_wicket_rate = 0,
-        venue_boundary_rate = start_vals$boundary_rate,
-        venue_dot_rate = start_vals$dot_rate
+        venue_run_rate = NA_real_,
+        venue_wicket_rate = NA_real_,
+        venue_boundary_rate = NA_real_,
+        venue_dot_rate = NA_real_
       )
   })
+  n_venue <- sum(!is.na(model_data$venue_run_rate))
+  .assert_skill_coverage(n_venue, nrow(model_data), "venue skills")
+  # Fill missing with neutral values
+  # For residual-based (run_rate, wicket_rate): 0
+  # For raw EMA (boundary_rate, dot_rate): use format defaults
+  start_vals <- get_venue_start_values(format)
+  model_data <- model_data %>%
+    dplyr::mutate(
+      venue_run_rate = dplyr::coalesce(venue_run_rate, 0),
+      venue_wicket_rate = dplyr::coalesce(venue_wicket_rate, 0),
+      venue_boundary_rate = dplyr::coalesce(venue_boundary_rate, start_vals$boundary_rate),
+      venue_dot_rate = dplyr::coalesce(venue_dot_rate, start_vals$dot_rate)
+    )
 
   # 3-Way ELO features (optional, default to neutral if unavailable)
   has_elo_features <- FALSE
@@ -295,43 +299,52 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
       "bowler_wicket_elo_before AS bowler_wicket_elo",
       "venue_session_run_elo_before AS venue_session_run_elo",
       "venue_perm_run_elo_before AS venue_perm_run_elo"), conn)
-    tryCatch({
-      if (!is.null(elo_query)) {
-        elo_data <- DBI::dbGetQuery(conn, elo_query)
-
-        model_data <- model_data %>%
-          dplyr::left_join(elo_data, by = "delivery_id") %>%
-          dplyr::mutate(
-            # ELO differences (more useful as features than raw values)
-            elo_run_diff = dplyr::coalesce(batter_run_elo, 1400) - dplyr::coalesce(bowler_run_elo, 1400),
-            elo_wicket_diff = dplyr::coalesce(batter_wicket_elo, 1400) - dplyr::coalesce(bowler_wicket_elo, 1400),
-            elo_venue_run = dplyr::coalesce(venue_session_run_elo, 1400) + dplyr::coalesce(venue_perm_run_elo, 1400) - 2800
-          )
-
-        n_elo <- sum(!is.na(model_data$batter_run_elo))
-        cov <- n_elo / nrow(model_data)
-        # A zero-coverage join used to print as a success line with "0/N" in it.
-        # Neutral features for every row is a missing join, not a trained model.
-        if (cov < 0.5) {
-          cli::cli_abort(c(
-            "Only {n_elo}/{nrow(model_data)} rows ({round(100*cov, 1)}%) matched a 3-way ELO.",
-            "x" = "Below 50% the ELO features are mostly neutral and the model is not using them.",
-            "i" = "Read from: {.val {three_way_elo_tables(format, conn)}}.",
-            "i" = "Set INCLUDE_ELO_FEATURES <- FALSE to train without them deliberately."))
-        }
-        cli::cli_alert_success("{n_elo}/{nrow(model_data)} ({round(100*cov, 1)}%) have ELO features")
-        has_elo_features <- TRUE
-      } else {
-        cli::cli_alert_warning(
-          "No 3-way ELO table for {.val {format}}, skipping ELO features")
-        model_data <- model_data %>%
-          dplyr::mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
-      }
-    }, error = function(e) {
-      cli::cli_alert_warning("ELO features unavailable: {e$message}")
-      model_data <<- model_data %>%
+    if (is.null(elo_query)) {
+      # No table for this format -- a deliberate, known skip, not a coverage
+      # failure, so this branch alone still neutral-fills without aborting.
+      cli::cli_alert_warning(
+        "No 3-way ELO table for {.val {format}}, skipping ELO features")
+      model_data <- model_data %>%
         dplyr::mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
-    })
+    } else {
+      # The coverage abort below used to sit INSIDE this tryCatch, so it caught
+      # its own abort and downgraded a zero-coverage join to a warning -- the
+      # exact #63 failure shape ("0/N have ELO features" logged as success)
+      # this guard exists to catch. tryCatch now wraps only the query/join
+      # itself; coverage is asserted unconditionally afterwards.
+      elo_data <- tryCatch({
+        DBI::dbGetQuery(conn, elo_query)
+      }, error = function(e) {
+        cli::cli_alert_warning("ELO query failed: {e$message}")
+        empty_elo <- model_data["delivery_id"]
+        empty_elo[c("batter_run_elo", "bowler_run_elo", "batter_wicket_elo",
+                    "bowler_wicket_elo", "venue_session_run_elo", "venue_perm_run_elo")] <- NA_real_
+        empty_elo
+      })
+
+      model_data <- model_data %>%
+        dplyr::left_join(elo_data, by = "delivery_id") %>%
+        dplyr::mutate(
+          # ELO differences (more useful as features than raw values)
+          elo_run_diff = dplyr::coalesce(batter_run_elo, 1400) - dplyr::coalesce(bowler_run_elo, 1400),
+          elo_wicket_diff = dplyr::coalesce(batter_wicket_elo, 1400) - dplyr::coalesce(bowler_wicket_elo, 1400),
+          elo_venue_run = dplyr::coalesce(venue_session_run_elo, 1400) + dplyr::coalesce(venue_perm_run_elo, 1400) - 2800
+        )
+
+      n_elo <- sum(!is.na(model_data$batter_run_elo))
+      cov <- n_elo / nrow(model_data)
+      # A zero-coverage join used to print as a success line with "0/N" in it.
+      # Neutral features for every row is a missing join, not a trained model.
+      if (cov < 0.5) {
+        cli::cli_abort(c(
+          "Only {n_elo}/{nrow(model_data)} rows ({round(100*cov, 1)}%) matched a 3-way ELO.",
+          "x" = "Below 50% the ELO features are mostly neutral and the model is not using them.",
+          "i" = "Read from: {.val {three_way_elo_tables(format, conn)}}.",
+          "i" = "Set INCLUDE_ELO_FEATURES <- FALSE to train without them deliberately."))
+      }
+      cli::cli_alert_success("{n_elo}/{nrow(model_data)} ({round(100*cov, 1)}%) have ELO features")
+      has_elo_features <- TRUE
+    }
   }
 
   model_data

@@ -51,6 +51,27 @@ make_full_frame_fixture <- function(conn) {
     SELECT delivery_id, 0.8, 0.95, 0.8, 0.03, 10, 10
     FROM cricsheet.deliveries
   ")
+
+  # Team and venue skill coverage is asserted too (full_model_frame.R) -- an
+  # empty table used to be swallowed into a neutral fill by a tryCatch that
+  # caught its own coverage abort (bouncerverse#63's failure shape). Seed both
+  # so these tests exercise the leak-fix columns without tripping a coverage
+  # abort that has nothing to do with what they're testing.
+  DBI::dbExecute(conn, "
+    INSERT INTO t20_team_skill
+      (delivery_id, batting_team_runs_skill, batting_team_wicket_skill,
+       bowling_team_runs_skill, bowling_team_wicket_skill,
+       batting_team_balls, bowling_team_balls)
+    SELECT delivery_id, 0, 0, 0, 0, 10, 10
+    FROM cricsheet.deliveries
+  ")
+  DBI::dbExecute(conn, "
+    INSERT INTO t20_venue_skill
+      (delivery_id, venue_run_rate, venue_wicket_rate, venue_boundary_rate,
+       venue_dot_rate, venue_balls)
+    SELECT delivery_id, 0, 0, 0.15, 0.35, 10
+    FROM cricsheet.deliveries
+  ")
 }
 
 # batting_score itself isn't a returned column -- the query only exposes it

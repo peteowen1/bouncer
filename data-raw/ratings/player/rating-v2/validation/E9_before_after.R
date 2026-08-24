@@ -3,7 +3,7 @@
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
 suppressMessages({library(DBI); library(data.table); library(arrow)})
 SP <- "C:/Users/peteo/AppData/Local/Temp/claude/C--dev-bouncerverse/635fc43f-1352-411b-8c7d-693d0ebc00b2/scratchpad"
-conn <- dbConnect(duckdb::duckdb(), dbdir = "C:/dev/bouncerverse/bouncerdata/bouncer.duckdb",
+conn <- dbConnect(duckdb::duckdb(), dbdir = file.path(find_bouncerdata_dir(), "bouncer.duckdb"),
                   read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 

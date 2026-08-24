@@ -10,7 +10,7 @@
 # still being IMPROVED by a weak-league adjustment?
 suppressMessages(devtools::load_all("C:/dev/bouncerverse/bouncer", quiet = TRUE))
 suppressMessages({library(DBI); library(data.table)})
-conn <- dbConnect(duckdb::duckdb(), dbdir = "C:/dev/bouncerverse/bouncerdata/bouncer.duckdb",
+conn <- dbConnect(duckdb::duckdb(), dbdir = file.path(find_bouncerdata_dir(), "bouncer.duckdb"),
                   read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 DECAY <- 1095; KBALLS <- 850; MIN_PRIOR <- 10L

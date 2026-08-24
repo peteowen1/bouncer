@@ -70,6 +70,10 @@ for (i in seq_along(todo)) {
                  # the #74 defect, and a squad row is where it would re-enter.
                  from_registry = unname(ids) != nms)
     }))
+    # A match that never reaches 2 distinct teams (partial JSON, walkover)
+    # never satisfies the done-check above and gets reprocessed every rerun.
+    # Delete before append so that stays idempotent instead of duplicating rows.
+    dbExecute(conn, sprintf("DELETE FROM %s WHERE match_id = ?", TBL), params = list(mid))
     buf[[length(buf) + 1L]] <- rows
     ok <- ok + 1L
     "ok"

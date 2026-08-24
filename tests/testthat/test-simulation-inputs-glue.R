@@ -12,6 +12,11 @@ make_fixture <- function(conn, format = "t20") {
   DBI::dbExecute(conn, "CREATE TABLE cricsheet.matches (
     match_id VARCHAR, team1 VARCHAR, team2 VARCHAR, venue VARCHAR,
     match_type VARCHAR, gender VARCHAR, team_type VARCHAR)")
+  # Empty is fine -- resolve_named_players() now delegates to find_player(),
+  # which always queries this table for career-ball tie-breaking (empty just
+  # means every candidate ties at 0 balls, same as before that delegation).
+  DBI::dbExecute(conn, "CREATE TABLE cricsheet.deliveries (
+    match_id VARCHAR, batter_id VARCHAR, bowler_id VARCHAR, match_type VARCHAR)")
   DBI::dbExecute(conn, "CREATE TABLE main.match_squads (
     match_id VARCHAR, team VARCHAR, player_id VARCHAR, player_name VARCHAR,
     from_registry BOOLEAN)")

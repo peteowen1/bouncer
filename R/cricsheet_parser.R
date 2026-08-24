@@ -651,11 +651,10 @@ parse_all_data <- function(json_data, match_info) {
   # A counter nobody reads is not a check. Warn HERE, where the match id is in
   # hand, rather than leaving the caller to notice a field it may never look at.
   if (n_fallback > 0L) {
-    mid <- json_data$info$match_type_number %||% "unknown"
     cli::cli_warn(c(
       "{n_fallback} of {n_fallback + n_resolved} player reference{?s} in this match had no registry entry and were stored as NAMES.",
       "x" = "A name in place of an id splits the player: every rating keyed on player_id sees a new, low-exposure person.",
-      "i" = "Registry present: {!is.null(people_registry)}. See bouncerverse#74."))
+      "i" = "Match: {.val {match_info$match_id}}. Registry present: {!is.null(people_registry)}. See bouncerverse#74."))
   }
 
   list(

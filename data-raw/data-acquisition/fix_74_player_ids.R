@@ -28,13 +28,18 @@ ID_COLS <- c("batter_id", "bowler_id", "non_striker_id", "player_out_id",
              "fielder1_id", "fielder2_id")
 
 conn <- get_db_connection(read_only = FALSE)
-todo <- dbGetQuery(conn, "
+all_affected <- dbGetQuery(conn, "
   SELECT DISTINCT match_id FROM cricsheet.deliveries
   WHERE NOT regexp_matches(batter_id, '^[0-9a-f]{8}$')")$match_id
-todo <- todo[file.exists(file.path(SRC, paste0(todo, ".json")))]
+todo <- all_affected[file.exists(file.path(SRC, paste0(all_affected, ".json")))]
+n_missing_json <- length(all_affected) - length(todo)
 if (is.finite(lim)) todo <- head(todo, lim)
 mode <- if (commit) "" else " (DRY RUN -- nothing will be written)"
 cli::cli_alert_info("{length(todo)} match{?es} to fix{mode}")
+if (n_missing_json > 0L) {
+  cli::cli_alert_warning(
+    "{n_missing_json} affected match{?es} have no local JSON in {.file {SRC}} and will stay name-keyed.")
+}
 
 ok <- 0L; skipped <- character(0); t0 <- Sys.time()
 for (i in seq_along(todo)) {

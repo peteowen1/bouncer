@@ -134,15 +134,14 @@ lookup_match_squad <- function(match_id, team, conn) {
 #' @return data.table of `player_name` (the input, unchanged) and `player_id`
 #'   (`NA` if nothing matched).
 #' @keywords internal
-resolve_named_players <- function(names, conn) {
-  reg <- data.table::as.data.table(DBI::dbGetQuery(conn,
-    "SELECT player_id, ANY_VALUE(player_name) AS player_name
-     FROM cricsheet.players GROUP BY player_id"))
-
+resolve_named_players <- function(names, conn, format = NULL, gender = NULL) {
+  # Delegates to find_player() rather than re-picking hit[1] itself -- an
+  # unordered ambiguous match silently resolving to whichever row a GROUP BY
+  # happened to return first is exactly the class of bug find_player() was
+  # written to make loud (see R/find_player.R): it breaks ties by career ball
+  # volume and warns whenever more than one candidate matches.
   resolve_one <- function(nm) {
-    hit <- reg[player_name == nm]
-    if (!nrow(hit)) hit <- reg[tolower(player_name) == tolower(nm)]
-    if (!nrow(hit)) hit <- reg[grepl(nm, player_name, fixed = TRUE)]
+    hit <- find_player(nm, format = format, gender = gender, conn = conn, quiet = FALSE)
     if (!nrow(hit)) return(NA_character_)
     hit$player_id[1]
   }
@@ -287,7 +286,7 @@ build_team_simulation_inputs <- function(team, format, conn, gender, team_type,
         "i" = "A hypothetical fixture (no match_id) must supply player names explicitly."
       ))
     }
-    roster <- resolve_named_players(players, conn)
+    roster <- resolve_named_players(players, conn, format = format, gender = gender)
     source <- "caller_supplied"
   }
 

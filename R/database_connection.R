@@ -193,7 +193,18 @@ get_db_connection <- function(path = NULL, read_only = FALSE) {
   # Only for an implicitly resolved path -- see .check_db_is_plausible(). An
   # explicit path= is the caller's own choice, including the empty temporary
   # databases the tests build.
-  if (implicit) .check_db_is_plausible(conn, path)
+  #
+  # bouncer.strict_db turns that check into an abort -- and DuckDB permits
+  # only one write connection, so an abort here must not leave `conn` open
+  # holding the lock. Disconnect before re-raising.
+  if (implicit) {
+    tryCatch({
+      .check_db_is_plausible(conn, path)
+    }, error = function(e) {
+      DBI::dbDisconnect(conn, shutdown = TRUE)
+      stop(e)
+    })
+  }
 
   return(conn)
 }
