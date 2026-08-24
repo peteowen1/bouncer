@@ -130,6 +130,9 @@ reference:
     - calculate_impact
     - build_player_id_map
     - canonicalise_player_ids
+    - build_venue_id_map
+    - canonicalise_venues
+    - store_venue_aliases
     - calculate_player_rating_v2
     - player_career_context
     - derive_shrinkage_prior
@@ -140,6 +143,7 @@ reference:
     - default_competition_reference
     - competition_reference
     - fit_competition_factors
+    - fit_competition_offsets
     - fit_two_way_effects
     - build_cricsheet_raa
     - build_cricsheet_win_probability
@@ -196,6 +200,7 @@ reference:
   - title: Simulation
     desc: Ball-by-ball match simulation
     contents:
+    - build_match_simulation_inputs
     - simulate_match_ballbyball
     - quick_match_simulation
     - simulate_innings
@@ -358,6 +363,14 @@ reference:
     - RATING_VAL_MIN_WINDOW_BALLS
     - RATING_VAL_ORIGINS
 
+  - title: Model Validation
+    desc: Calibration-and-bias audit for any model or rating's predictions
+    contents:
+    - calibration_audit
+    - worst_calibration_buckets
+    - report_calibration_audit
+    - audit_low_information_state
+
   - title: S3 Methods
     desc: Print methods for bouncer objects
     contents:
@@ -369,6 +382,8 @@ reference:
     - print.bouncer_team
     - print.bouncer_team_comparison
     - print.bouncer_win_prob
+    - print.calibration_audit
+    - print.low_information_audit
 
   - title: Versebus (Internal)
     desc: Vendored data-bus helper (ECOSYSTEM-FIX-PLAN.md) - manifest-verified

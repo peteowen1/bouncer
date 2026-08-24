@@ -24,7 +24,9 @@ simulate_super_over(
 
 \item{format}{Character. Match format}
 
-\item{team1_skills, team2_skills}{Team skill lists}
+\item{team1_skills, team2_skills}{Team skill lists. Same flat-or-role-specific
+shape as \code{\link[=simulate_match_ballbyball]{simulate_match_ballbyball()}} (see its "Team skill roles"
+section).}
 
 \item{venue_skills}{Venue skill list}
 

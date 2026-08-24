@@ -10,6 +10,129 @@
 # EXCLUDES: player identity, team identity, venue identity
 
 
+#' Date the post-delivery leak was fixed in the ball-outcome features
+#'
+#' Any outcome model trained before this was fitted on `batting_score` and
+#' `wickets_fallen` in their POST-delivery frame — features that already knew
+#' the delivery's own outcome (D-P38). Such a model is not merely stale, it is
+#' wrong in a way that looks healthy: over-level calibration stayed at 0.856
+#' predicted against 0.909 actual throughout, while `runs_difference` correlated
+#' **1.000** with the runs off that ball.
+#'
+#' @keywords internal
+MODEL_LEAK_FIX_DATE <- "2026-08-18"
+
+#' Refuse an outcome model that predates the leak fix
+#'
+#' Models carry their build date as the xgboost attribute
+#' `bouncer_build_date`, stamped at save time by the trainers in
+#' `data-raw/models/ball-outcome/`. An **unstamped** model is refused too: every
+#' artefact built before the stamp existed also predates the fix, so "no stamp"
+#' and "stamped too early" mean the same thing.
+#'
+#' This exists because `load_agnostic_model()` and `load_full_model()` prefer the
+#' `bouncermodels` release over local disk, and the release served a 2026-03-27
+#' vintage — so any machine with `bouncermodels` installed silently got the
+#' leaked baseline in preference to the corrected one sitting on disk
+#' (bouncerverse#50).
+#'
+#' @param model Loaded xgb.Booster
+#' @param model_name Character, for the error message
+#' @param source Character, where it came from, for the error message
+#' @return `model`, invisibly, when it passes
+#' @keywords internal
+.check_model_vintage <- function(model, model_name, source) {
+  built <- tryCatch(xgboost::xgb.attr(model, "bouncer_build_date"),
+                    error = function(e) NULL)
+
+  if (is.null(built) || !nzchar(built)) {
+    cli::cli_abort(c(
+      "{.val {model_name}} from {source} carries no build date.",
+      "x" = "Every model built before the {MODEL_LEAK_FIX_DATE} leak fix is unstamped,
+             and was trained on post-delivery features that knew the answer (D-P38).",
+      "i" = "Retrain it, or re-stamp a known-good artefact with
+             {.code xgboost::xgb.attr(m, 'bouncer_build_date') <- '<date>'}.",
+      "i" = "See bouncerverse#50."
+    ))
+  }
+
+  if (as.Date(built) < as.Date(MODEL_LEAK_FIX_DATE)) {
+    cli::cli_abort(c(
+      "{.val {model_name}} from {source} was built {built}, before the
+       {MODEL_LEAK_FIX_DATE} leak fix.",
+      "x" = "It was trained on post-delivery {.field batting_score} and
+             {.field wickets_fallen} (D-P38), so its residuals are not skill.",
+      "i" = "Retrain it. See bouncerverse#50."
+    ))
+  }
+
+  invisible(model)
+}
+
+
+#' The xgboost attribute name feature names are stamped under
+#'
+#' Boosters trained by `02_train_full_model.R` carry `feature_names` of length
+#' 0 (an xgboost/UBJ round-trip quirk), so `m$feature_names` cannot be trusted
+#' and `xgb.attr(m, "num_feature")` is empty too -- the width survives only
+#' inside the booster config. That leaves WIDTH as the only alignment check:
+#' two frames of the same width with columns in a different order predict
+#' nonsense, silently, and no width check can see it (bouncerverse#76).
+#'
+#' Same pattern as `bouncer_build_date` (D-P43): stamp a plain xgboost
+#' attribute at save time, and have the reader trust the attribute over the
+#' booster's own (unreliable) `feature_names` slot.
+#'
+#' @keywords internal
+FEATURE_NAMES_ATTR <- "bouncer_feature_names"
+
+#' Encode a feature name vector for the xgboost attribute
+#'
+#' `xgb.attr<-` stores a single character scalar, not a vector, so the names
+#' are joined on `|`. None of this package's feature names contain `|`.
+#'
+#' @param feature_names Character vector, in training column order.
+#' @return A single string.
+#' @keywords internal
+.encode_feature_names <- function(feature_names) {
+  paste(feature_names, collapse = "|")
+}
+
+#' Read the stamped feature-name attribute back off a model
+#'
+#' @param model Loaded xgb.Booster.
+#' @return Character vector of feature names in training order, or `NULL` if
+#'   the model predates this stamp (every model as of bouncerverse#76 -- this
+#'   fix only stamps NEW saves, it does not retroactively re-stamp existing
+#'   `.ubj` files, which needs a training run).
+#' @keywords internal
+.stamped_feature_names <- function(model) {
+  raw <- tryCatch(xgboost::xgb.attr(model, FEATURE_NAMES_ATTR), error = function(e) NULL)
+  if (is.null(raw) || !nzchar(raw)) return(NULL)
+  strsplit(raw, "|", fixed = TRUE)[[1]]
+}
+
+
+#' Should the loaders read local disk before the release?
+#'
+#' **The rule: release first, local disk as fallback.** A consumer who installs
+#' `bouncermodels` should get the published model, not whatever happens to be in
+#' a sibling directory. Decided deliberately in bouncerverse#50 rather than left
+#' as an accident of load order — and the reason it is safe to keep is that
+#' `.check_model_vintage()` now makes a stale release **loud**: the failure this
+#' rule caused (a five-month-old baseline preferred over a corrected local file)
+#' is now an error, not a silent substitution.
+#'
+#' The one case the rule serves badly is a developer who has just retrained and
+#' wants to test before publishing. That is what the option is for:
+#' `options(bouncer.prefer_local_models = TRUE)`.
+#'
+#' @keywords internal
+.prefer_local_models <- function() {
+  isTRUE(getOption("bouncer.prefer_local_models", FALSE))
+}
+
+
 #' Load Agnostic Outcome Model
 #'
 #' Loads the trained agnostic outcome prediction model for a given format.
@@ -36,12 +159,14 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
   model_name <- paste0("agnostic_outcome_", format)
 
   # Try bouncermodels package first (preferred)
-  if (is.null(model_dir) && requireNamespace("bouncermodels", quietly = TRUE)) {
+  if (is.null(model_dir) && !.prefer_local_models() &&
+      requireNamespace("bouncermodels", quietly = TRUE)) {
     model <- tryCatch(
       bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
       error = function(e) NULL
     )
     if (!is.null(model)) {
+      .check_model_vintage(model, model_name, "bouncermodels")
       cli::cli_alert_success("Loaded agnostic {format} model from bouncermodels")
       return(model)
     }
@@ -64,6 +189,7 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
   }
 
   model <- xgboost::xgb.load(model_file)
+  .check_model_vintage(model, model_name, "local disk")
   cli::cli_alert_success("Loaded agnostic {format} model from {.file {model_file}}")
   return(model)
 }
@@ -229,12 +355,14 @@ load_full_model <- function(format = c("t20", "odi", "test"),
   model_name <- paste0("full_outcome_", format)
 
   # Try bouncermodels package first (preferred)
-  if (is.null(model_dir) && requireNamespace("bouncermodels", quietly = TRUE)) {
+  if (is.null(model_dir) && !.prefer_local_models() &&
+      requireNamespace("bouncermodels", quietly = TRUE)) {
     model <- tryCatch(
       bouncermodels::load_bouncer_model(model_name, verbose = FALSE),
       error = function(e) NULL
     )
     if (!is.null(model)) {
+      .check_model_vintage(model, model_name, "bouncermodels")
       cli::cli_alert_success("Loaded full {format} model from bouncermodels")
       return(model)
     }
@@ -257,6 +385,7 @@ load_full_model <- function(format = c("t20", "odi", "test"),
   }
 
   model <- xgboost::xgb.load(model_file)
+  .check_model_vintage(model, model_name, "local disk")
 
   cli::cli_alert_success("Loaded full {format} model from {.file {model_file}}")
 

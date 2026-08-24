@@ -144,27 +144,42 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
                  by = "match_id", all.x = TRUE)
 
   # ---- Venue statistics from cricinfo's own Test history --------------------
-  venue_avg_dt <- balls[innings == 1, .(inn1 = max(score, na.rm = TRUE)),
-                        by = .(ground_name, match_id)][
-    , .(venue_avg = mean(inn1), n = .N), by = ground_name]
-  venue_avg_dt[n < 3, venue_avg := NA_real_]
-
+  #
+  # Both of these are time-causal, per MATCH rather than per venue -- see
+  # R/venue_rates.R. They were averages over every match at the ground INCLUDING
+  # the one being scored, which is label information a live prediction cannot
+  # have (#29 for the result rate, #24 for the average). Training builds them
+  # the same way, so serving must too or the two diverge.
   outcomes <- data.table::as.data.table(DBI::dbGetQuery(conn, "
-    SELECT m.match_id, m.ground_name, m.status_text
+    SELECT m.match_id, m.ground_name, m.start_date AS match_date, m.status_text
     FROM cricinfo.matches m WHERE m.format = 'TEST'
   "))
+
+  inn1_by_match <- balls[innings == 1, .(inn1_total = max(score, na.rm = TRUE)),
+                         by = match_id]
+  venue_avg_src <- merge(
+    outcomes[, .(match_id, venue = ground_name, match_date = as.Date(match_date))],
+    inn1_by_match, by = "match_id", all.x = TRUE)
+  venue_avg_dt <- time_causal_venue_mean(venue_avg_src, "inn1_total",
+                                         prior_weight = 5)
+  data.table::setnames(venue_avg_dt, "venue_mean", "venue_avg")
   oc <- cricinfo_match_outcome(outcomes$status_text)
   outcomes[, is_result := as.integer(oc$result %in% c("batting_first", "chasing"))]
   outcomes[, decided := as.integer(!is.na(oc$result) & oc$result != "no_result")]
-  vr <- outcomes[decided == 1, .(n = .N, res = sum(is_result)), by = ground_name]
-  prior_rate <- vr[, sum(res) / sum(n)]
-  PRIOR <- 10
-  vr[, venue_result_rate := (res + PRIOR * prior_rate) / (n + PRIOR)]
+  vr <- time_causal_venue_result_rate(
+    outcomes[, .(match_id, venue = ground_name,
+                 match_date = as.Date(match_date), decided, is_result)],
+    prior_weight = 10)
+  prior_rate <- attr(vr, "prior_rate")
+  cli::cli_alert_info(
+    "Venue result rate: {sum(vr$at_prior)} of {nrow(vr)} matches
+     ({round(100 * mean(vr$at_prior), 1)}%) are the first at their ground and
+     fall back to the prior ({round(prior_rate, 3)}).")
 
-  balls <- merge(balls, venue_avg_dt[, .(ground_name, venue_avg)],
-                 by = "ground_name", all.x = TRUE)
-  balls <- merge(balls, vr[, .(ground_name, venue_result_rate)],
-                 by = "ground_name", all.x = TRUE)
+  balls <- merge(balls, venue_avg_dt[, .(match_id, venue_avg)],
+                 by = "match_id", all.x = TRUE)
+  balls <- merge(balls, vr[, .(match_id, venue_result_rate)],
+                 by = "match_id", all.x = TRUE)
   balls[is.na(venue_avg), venue_avg := 340]
   balls[is.na(venue_result_rate), venue_result_rate := prior_rate]
 
@@ -258,18 +273,25 @@ build_cricinfo_test_win_probability <- function(conn = NULL,
     format = "test", table_name = table_name
   )
 
-  DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS main.%s", detail_table_name))
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE main.%s (
-      id VARCHAR, match_id VARCHAR, innings_number INTEGER,
-      p_result DOUBLE, p_team1_win DOUBLE, p_draw DOUBLE, p_team2_win DOUBLE
-    )", detail_table_name))
+  # DROP, CREATE and INSERT share ONE transaction. DuckDB auto-commits each
+  # dbExecute, so without it an INSERT that fails leaves a table that was
+  # dropped and recreated EMPTY -- the drop-before-fill shape that left the
+  # 3-way ELO tables at 0 rows, and the same class of defect as #45. Nothing
+  # regenerates this quickly: it is 355,962 scored deliveries.
   duckdb::duckdb_register(conn, "twp_staging",
     as.data.frame(out[, .(id, match_id, innings_number,
                           p_result, p_team1_win, p_draw, p_team2_win)]))
   on.exit(duckdb::duckdb_unregister(conn, "twp_staging"), add = TRUE)
-  n_detail <- DBI::dbExecute(conn, sprintf(
-    "INSERT INTO main.%s SELECT * FROM twp_staging", detail_table_name))
+  n_detail <- .in_transaction(conn, function() {
+    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS main.%s", detail_table_name))
+    DBI::dbExecute(conn, sprintf("
+      CREATE TABLE main.%s (
+        id VARCHAR, match_id VARCHAR, innings_number INTEGER,
+        p_result DOUBLE, p_team1_win DOUBLE, p_draw DOUBLE, p_team2_win DOUBLE
+      )", detail_table_name))
+    DBI::dbExecute(conn, sprintf(
+      "INSERT INTO main.%s SELECT * FROM twp_staging", detail_table_name))
+  })
   cli::cli_alert_success("Stored {n_detail} rows in {.field main.{detail_table_name}}.")
 
   invisible(out[])

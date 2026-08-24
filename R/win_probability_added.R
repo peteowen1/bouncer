@@ -224,10 +224,23 @@ simulate_before_state <- function(deliveries) {
     before$balls_remaining <- before$balls_remaining + 1
   }
 
-  # Recalculate run rate
+  # Recalculate run rate, shrunk toward the format prior so it matches the
+  # in-match models' training and serving (#70). Raw division made the rate
+  # after one ball pure noise. The format comes from the data because this
+  # function takes only a delivery frame; without it the rate would have to be
+  # raw, and a second construction is how the four copies of this calculation
+  # drifted apart in the first place.
   if ("current_run_rate" %in% names(before) && "balls_bowled" %in% names(before)) {
-    overs <- before$balls_bowled / 6
-    before$current_run_rate <- ifelse(overs > 0, before$total_runs / overs, 0)
+    fmt <- if ("match_type" %in% names(before)) {
+      mt <- tolower(as.character(before$match_type[1]))
+      if (mt %in% c("t20", "it20")) "t20" else if (mt %in% c("odi", "odm")) "odi" else "test"
+    } else {
+      cli::cli_abort(c(
+        "{.arg deliveries} needs {.field match_type} to shrink the run rate.",
+        "i" = "Shrinkage is format-specific -- see {.fn shrunk_run_rate}."))
+    }
+    before$current_run_rate <- shrunk_run_rate(before$total_runs,
+                                               before$balls_bowled, fmt)
   }
 
   # Update wickets in hand

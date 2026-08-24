@@ -290,3 +290,128 @@ test_that("parquet magic check rejects files too short to frame, without reading
   expect_false(.vb_check_parquet_magic(
     file.path(tempdir(), "definitely-not-here.parquet")))
 })
+
+# ---------------------------------------------------------------------------
+# Silent-failure regressions (panna#187): originally fixed in 86e2ebc, backed
+# out in 5edd3ac because fixing the vendored copy here alone broke the
+# torp-sync guard AND one of the four fixes was wrong (see verify_by_size()
+# above). torp now carries the corrected set; these are modelled verbatim on
+# torp's tests/testthat/test-versebus.R.
+# ---------------------------------------------------------------------------
+
+test_that("vb_read_manifest retry classifies a transient listing error as transient, never absent (regression: silently disabled sha256 verification for the rest of the session)", {
+  # Only the RETRY branch is under test here -- it fires when the session
+  # has previously seen a manifest for this tag AND the first attempt just
+  # found it (legitimately) missing from the listing. If the retry then hits
+  # a genuine network blip, the old code swallowed every error as "absent"
+  # and fell through to legacy mode -- a network hiccup silently disabled
+  # sha256 verification for the rest of the session, the exact inversion of
+  # this file's own rule that uncertain classification is transient, not
+  # absent.
+  repo <- "test/fixture"; tag <- "retry-regression-tag"
+  key <- paste0(repo, "@", tag)
+  seen_key <- paste0("seen_", key)
+  assign(seen_key, TRUE, envir = .vb_state)
+  withr::defer(rm(list = seen_key, envir = .vb_state))
+
+  testthat::local_mocked_bindings(Sys.sleep = function(...) invisible(NULL), .package = "base")
+
+  call_n <- 0L
+  testthat::local_mocked_bindings(
+    gh = function(...) {
+      call_n <<- call_n + 1L
+      if (call_n == 1L) {
+        # First attempt: listing succeeds, manifest genuinely not present.
+        list(assets = list(list(name = "other.parquet", size = 1,
+                                updated_at = "2026-01-01T00:00:00Z", id = 1)))
+      } else {
+        # Retry: the LISTING CALL ITSELF fails -- a transient blip, not a
+        # confirmed absence.
+        stop(simpleError("simulated network timeout on retry"))
+      }
+    },
+    .package = "gh"
+  )
+
+  expect_error(
+    vb_read_manifest(repo, tag, required = FALSE),
+    class = "vb_error_transient"
+  )
+  expect_identical(call_n, 2L)  # confirms the retry branch actually ran
+})
+
+test_that("vb_download's verify_by_size WARNS when the listing call fails, and says the file was accepted unverified", {
+  # The defect was silence, not the fallback. Trusting an unverifiable
+  # download is deliberate (see the sha-mismatch test above); doing it
+  # without saying so is not. Aborting instead would brick the asset on any
+  # transient API failure -- bouncer tried that and reverted it in 5edd3ac.
+  dir <- withr::local_tempdir()
+  dest <- file.path(dir, "unmanifested.rds")
+
+  testthat::local_mocked_bindings(
+    pb_download = function(file, dest, repo, tag, overwrite = TRUE, ...) {
+      writeLines("some-content", file.path(dest, file))
+      invisible(NULL)
+    },
+    .package = "piggyback"
+  )
+  # Listing fails outright (not a 404) every time verify_by_size calls it.
+  testthat::local_mocked_bindings(
+    gh = function(...) stop(simpleError("simulated listing failure")),
+    .package = "gh"
+  )
+
+  # No manifest entry (the common, unmanifested-tag case) -- verify_by_size()
+  # is the ONLY integrity check on this path, so its inability to run must be
+  # audible.
+  expect_warning(
+    vb_download(repo = "test/fixture", tag = "verify-size-tag",
+                name = "unmanifested.rds", dest = dest,
+                manifest = list(assets = NULL)),
+    "WITHOUT verification"
+  )
+  # Behaviour preserved: the download still completes.
+  expect_true(file.exists(dest))
+  expect_true(file.exists(paste0(dest, ".sha256")))
+})
+
+test_that("vb_publish's cache-invalidation hook failure is surfaced as a warning, never swallowed (regression: consumers served pre-publish data indefinitely with nothing recording why)", {
+  dir <- withr::local_tempdir()
+  p <- write_fixture_file(dir, "hookfile.rds", content = "hook-test-content")
+  sz <- file.size(p)
+
+  testthat::local_mocked_bindings(
+    pb_upload = function(file, repo, tag, overwrite = TRUE, ...) invisible(NULL),
+    .package = "piggyback"
+  )
+  testthat::local_mocked_bindings(
+    gh = function(...) list(assets = list(
+      list(name = "hookfile.rds", size = sz, updated_at = "2026-01-01T00:00:00Z", id = 1)
+    )),
+    .package = "gh"
+  )
+  withr::local_options(list(versebus.on_publish = function(repo, tag) stop("hook boom")))
+
+  expect_warning(
+    vb_publish(p, repo = "test/fixture", tag = "hook-regression-tag",
+              carry_forward = FALSE, max_retries = 0),
+    "cache-invalidation hook failed"
+  )
+})
+
+test_that("vb_generation drops NA updated_at before max() instead of letting one malformed asset null the whole generation", {
+  # vb_list_assets() deliberately fills NA_character_ for an asset missing
+  # updated_at so ONE bad entry doesn't kill the whole listing -- but
+  # max(assets$updated_at) with no na.rm propagated that NA through,
+  # indistinguishable from the "no assets at all" case.
+  testthat::local_mocked_bindings(
+    gh = function(...) list(assets = list(
+      list(name = "a.parquet", size = 1, updated_at = "2026-01-01T00:00:00Z", id = 1),
+      list(name = "b.parquet", size = 1, updated_at = NULL, id = 2),  # malformed
+      list(name = "c.parquet", size = 1, updated_at = "2026-03-01T00:00:00Z", id = 3)
+    )),
+    .package = "gh"
+  )
+  gen <- vb_generation("test/fixture", "generation-na-tag")
+  expect_identical(gen, "2026-03-01T00:00:00Z")
+})

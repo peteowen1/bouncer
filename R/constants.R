@@ -163,3 +163,34 @@ model_exists <- function(model_type, format, models_dir = NULL) {
   path <- get_model_path(model_type, format, models_dir)
   file.exists(path)
 }
+
+
+#' Dismissal kinds credited to the bowler
+#'
+#' Run outs, retirements and obstruction are dismissals but not the bowler's
+#' work. Crediting them inflates a bowler's wickets and understates his average
+#' -- measured across T20 male cricket, **10,113 of 132,814 dismissals (7.6%)**
+#' are not the bowler's, 9,845 of them run outs. Fixed across `data_queries.R`,
+#' `player_metrics.R` and `user_api.R` in bouncerverse#31, where it had inflated
+#' T20 wickets by 9.7%, understated bowling averages by 1.94 runs, and
+#' **reordered** bowlers rather than merely rescaling them.
+#'
+#' This constant exists because the same six-element list was written out
+#' separately in five places. That is the shape that let the rating tables'
+#' schema drift in bouncerverse#45: two declarations of one truth.
+#'
+#' Note `retired hurt` is not a dismissal at all, and was being counted as one.
+#'
+#' @format Character vector of `wicket_kind` values.
+#' @keywords internal
+BOWLER_WICKET_KINDS <- c("caught", "bowled", "lbw", "caught and bowled",
+                         "stumped", "hit wicket")
+
+#' The same list as a SQL `IN` clause body
+#'
+#' @return Character scalar, quoted and comma-separated, for interpolation into
+#'   `COALESCE(wicket_kind,'') IN (...)`.
+#' @keywords internal
+bowler_wicket_kinds_sql <- function() {
+  paste0("'", BOWLER_WICKET_KINDS, "'", collapse = ",")
+}

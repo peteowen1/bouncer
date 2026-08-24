@@ -219,7 +219,15 @@ fetch_weather_openmeteo <- function(lat, lon, start_date, end_date) {
         ),
         timezone = "auto"
       ) |>
-      httr2::req_retry(max_tries = 2, backoff = ~ 5) |>
+      # Without a timeout a stalled connection blocks FOREVER. A fetch loop over
+      # 289 venues hung here for 13 minutes on one call before it was killed
+      # (#72); req_retry alone does not help, because a hang is not an error.
+      httr2::req_timeout(30) |>
+      # Open-Meteo weights a request by how much data it returns, so a wide date
+      # range earns HTTP 429 quickly. Two tries at 5s does not clear a rate
+      # limit; back off exponentially and give it room (#72).
+      httr2::req_retry(max_tries = 5, backoff = function(i) min(60, 5 * 2^(i - 1)),
+                       is_transient = function(resp) httr2::resp_status(resp) %in% c(429, 500, 502, 503)) |>
       httr2::req_perform()
   }, error = function(e) {
     cli::cli_alert_warning("Weather fetch failed: {conditionMessage(e)}")
@@ -518,4 +526,184 @@ fetch_forecast_weather <- function(lat, lon, match_date, match_days = 1) {
     log_wind = log1p(mean(daily$wind_speed_max, na.rm = TRUE)),
     stringsAsFactors = FALSE
   )
+}
+
+
+# ============================================================================
+# Per-day venue weather (bouncerverse#72)
+# ============================================================================
+#
+# `fetch_weather_openmeteo()` has always returned DAILY rows, and
+# `fetch_venue_weather_batch()` aggregated them to one row per match and threw
+# the daily frame away. That is why `main.match_weather` cannot express "rain on
+# the days BEFORE today", and why the only rain feature anyone could build was
+# the match-total proration disabled in #24 for not being causal.
+#
+# Persisting the daily frame is the whole enabling change. Everything causal --
+# rain already fallen, forecast risk over the days remaining -- is a query away
+# once these rows exist.
+
+#' Store Per-Day Venue Weather
+#'
+#' @param daily data.frame with `venue`, `date`, and the Open-Meteo daily
+#'   columns returned by [fetch_weather_openmeteo()].
+#' @param conn DBI connection with write access; opened and closed if NULL.
+#' @return Rows written, invisibly.
+#' @keywords internal
+save_venue_weather_daily <- function(daily, conn = NULL) {
+  own <- is.null(conn)
+  if (own) {
+    conn <- get_db_connection()
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  }
+  d <- data.table::as.data.table(daily)
+  if (!nrow(d)) return(invisible(0L))
+  # Column names are wheather::fetch_weather()'s, which returns 16 daily
+  # variables against the 5 bouncer's own client asked for. `precip_hours` is
+  # the one that matters most here -- hours of rain in a day is a far better
+  # proxy for overs lost than millimetres.
+  need <- c("venue", "date", "temp_max", "temp_min", "temp_mean",
+            "precip_total", "precip_hours", "rain_sum", "snowfall_sum",
+            "wind_max_kmh", "wind_gust_kmh", "humidity_mean",
+            "sunshine_secs", "daylight_secs", "cloud_cover")
+  miss <- setdiff(need, names(d))
+  if (length(miss)) {
+    cli::cli_abort(c("{.arg daily} is missing {.field {miss}}.",
+                     "i" = "Expected the frame returned by {.fn wheather::fetch_weather}."))
+  }
+  d <- unique(d[, ..need], by = c("venue", "date"))
+
+  DBI::dbExecute(conn, "
+    CREATE TABLE IF NOT EXISTS main.venue_weather_daily (
+      venue         VARCHAR,
+      date          DATE,
+      temp_max      DOUBLE,
+      temp_min      DOUBLE,
+      temp_mean     DOUBLE,
+      precip_total  DOUBLE,
+      precip_hours  DOUBLE,
+      rain_sum      DOUBLE,
+      snowfall_sum  DOUBLE,
+      wind_max_kmh  DOUBLE,
+      wind_gust_kmh DOUBLE,
+      humidity_mean DOUBLE,
+      sunshine_secs DOUBLE,
+      daylight_secs DOUBLE,
+      cloud_cover   DOUBLE
+    )")
+
+  # Replace only this venue's rows. The table holds every venue, so a whole
+  # table wipe on refresh would be the #45 defect again; DELETE and INSERT share
+  # one transaction so a failed insert cannot leave a venue empty.
+  venues <- unique(d$venue)
+  duckdb::duckdb_register(conn, "vwd_staging", as.data.frame(d))
+  on.exit(duckdb::duckdb_unregister(conn, "vwd_staging"), add = TRUE)
+  n <- .in_transaction(conn, function() {
+    DBI::dbExecute(conn, sprintf(
+      "DELETE FROM main.venue_weather_daily WHERE venue IN (%s)",
+      paste0("'", gsub("'", "''", venues), "'", collapse = ",")))
+    DBI::dbExecute(conn,
+      "INSERT INTO main.venue_weather_daily SELECT * FROM vwd_staging")
+  })
+  invisible(n)
+}
+
+#' Load Per-Day Venue Weather
+#'
+#' @param conn DBI connection; opened read-only and closed if NULL.
+#' @param venues Character vector to filter to, or NULL for all.
+#' @return data.table, or NULL when the table does not exist.
+#' @keywords internal
+load_venue_weather_daily <- function(conn = NULL, venues = NULL) {
+  own <- is.null(conn)
+  if (own) {
+    conn <- get_db_connection(read_only = TRUE)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  }
+  if (!table_exists(conn, "main.venue_weather_daily")) return(NULL)
+  sql <- "SELECT * FROM main.venue_weather_daily"
+  if (!is.null(venues) && length(venues)) {
+    sql <- paste0(sql, sprintf(" WHERE venue IN (%s)",
+      paste0("'", gsub("'", "''", venues), "'", collapse = ",")))
+  }
+  data.table::as.data.table(DBI::dbGetQuery(conn, sql))
+}
+
+
+#' Causal Rain Features for a Test Match Day
+#'
+#' Two features, both available at prediction time, replacing the match-total
+#' proration disabled in #24.
+#'
+#' @section Why the old one was not causal:
+#' `rain_days_so_far` was the match TOTAL scaled by progress through the match.
+#' On day 2 that still carries a share of days 3-5, which have not happened. A
+#' match rained off on day 5 had a day-2 feature that already knew. Scaling a
+#' leak down is not removing it -- the same mistake leave-one-out makes on venue
+#' rates (see R/venue_rates.R).
+#'
+#' @section The two features:
+#' * **`rain_mm_before`** -- rain that has ALREADY fallen, summed over days
+#'   strictly before the current one. Backward-looking and unambiguously known.
+#' * **`venue_rain_climatology`** -- the venue's mean daily rainfall for this
+#'   time of year, computed only from years strictly BEFORE this match. This is
+#'   the "possibility of rain" half: a forward risk that a prediction genuinely
+#'   has, unlike an actual forecast, which for historical matches would just be
+#'   the future in disguise.
+#'
+#' Deliberately NOT included: rain on the current day or later. A model asked
+#' "will this match be drawn" on the morning of day 3 cannot know that day 4
+#' washes out.
+#'
+#' @param match_days data.table with `match_id`, `venue`, `match_date` (day one)
+#'   and `day` (1-based day of the match the row belongs to).
+#' @param daily Per-day weather, from [load_venue_weather_daily()].
+#' @param window_days Half-width, in calendar days, of the seasonal window used
+#'   for the climatology. Default 15.
+#' @return `match_days` with `rain_mm_before`, `rain_days_before` and
+#'   `venue_rain_climatology` added.
+#' @keywords internal
+causal_rain_features <- function(match_days, daily, window_days = 15L) {
+  md <- data.table::as.data.table(match_days)
+  need <- c("match_id", "venue", "match_date", "day")
+  miss <- setdiff(need, names(md))
+  if (length(miss)) cli::cli_abort("{.arg match_days} is missing {.field {miss}}.")
+
+  if (is.null(daily) || !nrow(daily)) {
+    md[, `:=`(rain_mm_before = NA_real_, rain_days_before = NA_integer_,
+              venue_rain_climatology = NA_real_)]
+    return(md[])
+  }
+
+  w <- data.table::as.data.table(daily)[, .(venue, date = as.Date(date),
+                                            rain_sum = as.numeric(rain_sum))]
+  md[, match_date := as.Date(match_date)]
+
+  # ---- rain already fallen: days 1 .. day-1 ---------------------------------
+  # Cross-join each row to the days before it. Kept as an explicit non-equi
+  # join so the strict inequality is visible rather than buried in an offset.
+  md[, `:=`(win_start = match_date, win_end = match_date + (day - 2L))]
+  agg <- w[md, on = .(venue, date >= win_start, date <= win_end),
+           .(rain = sum(rain_sum, na.rm = TRUE),
+             wet = sum(rain_sum > 1, na.rm = TRUE)),
+           by = .EACHI, allow.cartesian = TRUE]
+  md[, `:=`(rain_mm_before = data.table::fifelse(day <= 1L, 0, agg$rain),
+            rain_days_before = as.integer(data.table::fifelse(day <= 1L, 0, agg$wet)))]
+  md[is.na(rain_mm_before), rain_mm_before := 0]
+  md[is.na(rain_days_before), rain_days_before := 0L]
+
+  # ---- seasonal climatology from EARLIER years only -------------------------
+  w[, `:=`(yr = as.integer(format(date, "%Y")), doy = as.integer(format(date, "%j")))]
+  md[, `:=`(m_yr = as.integer(format(match_date, "%Y")),
+            m_doy = as.integer(format(match_date, "%j")))]
+  clim <- md[, {
+    v <- .BY$venue
+    sub <- w[venue == v & yr < .BY$m_yr &
+               abs(((doy - .BY$m_doy + 182L) %% 365L) - 182L) <= window_days]
+    .(venue_rain_climatology = if (nrow(sub)) mean(sub$rain_sum, na.rm = TRUE) else NA_real_)
+  }, by = .(venue, m_yr, m_doy)]
+  md <- merge(md, clim, by = c("venue", "m_yr", "m_doy"), all.x = TRUE)
+
+  md[, c("win_start", "win_end", "m_yr", "m_doy") := NULL]
+  md[]
 }

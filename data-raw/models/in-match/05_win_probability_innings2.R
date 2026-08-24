@@ -33,11 +33,8 @@ cat("\n")
 cli::cli_h2("Loading prepared data")
 
 output_dir <- file.path(find_bouncerdata_dir(), "models")
+# Format-scoped, with no fallback -- see the note in 03_projected_score_model.R.
 stage2_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_stage2_data.rds"))
-if (!file.exists(stage2_path)) {
-  # Legacy fallback
-  stage2_path <- file.path(output_dir, "ipl_stage2_data.rds")
-}
 if (!file.exists(stage2_path)) {
   cli::cli_alert_danger("Data not found at {stage2_path}")
   cli::cli_alert_info("Run 01_prepare_all_formats.R first")
@@ -51,16 +48,15 @@ test_data <- stage2_data$test
 cli::cli_alert_success("Loaded {nrow(train_data)} training deliveries")
 cli::cli_alert_success("Loaded {nrow(test_data)} test deliveries")
 
-# Load Stage 1 model for predictions
-# Format-aware: this was hardcoded to ipl_*, so training or evaluating any
-# non-IPL format silently used IPL's model -- a plausible-looking result
-# fitted against the wrong projections. Falls back to IPL only if the
-# current format has no model of its own.
+# Load Stage 1 model for predictions.
+# This was hardcoded to ipl_*, so training or evaluating any non-IPL format
+# silently used IPL's model -- a plausible-looking result fitted against the
+# wrong projections. The IPL fallback that softened that has now gone too (#49):
+# a missing model should name the format it is missing for, not quietly load
+# another format's.
 stage1_results_path <- local({
   .f <- Sys.getenv("BOUNCER_FORMAT", unset = if (exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT else "")
-  .own <- file.path(file.path("..", "bouncerdata", "models"), paste0(.f, "_stage1_results.rds"))
-  if (nzchar(.f) && file.exists(.own)) .own
-  else file.path(file.path("..", "bouncerdata", "models"), "ipl_stage1_results.rds")
+  file.path(output_dir, paste0(.f, "_stage1_results.rds"))
 })
 if (!file.exists(stage1_results_path)) {
   cli::cli_alert_danger("Stage 1 model not found at {stage1_results_path}")

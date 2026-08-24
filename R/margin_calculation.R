@@ -69,7 +69,7 @@ balls_to_overs_cricket <- function(balls) {
 #' Calculate Unified Margin
 #'
 #' Converts all match outcomes to a runs-equivalent margin.
-#' Positive margin = team1 won, negative margin = team2 won.
+#' Positive margin = the side batting FIRST won, negative = the chasing side won.
 #'
 #' For runs wins: margin = team1_score - team2_score
 #' For wickets wins: project team2's final score using optimized projection,
@@ -88,7 +88,22 @@ balls_to_overs_cricket <- function(balls) {
 #' @param team_type Character. "international" or "club".
 #'
 #' @return Numeric. Unified margin in runs-equivalent.
-#'   Positive = team1 won, Negative = team2 won, 0 = tie/draw
+#'
+#'   **The sign is relative to whoever passed in as `team1_score`, which in the
+#'   stored `cricsheet.matches.unified_margin` is the side BATTING FIRST -- not
+#'   the `team1` column.** Measured on 17,636 decided limited-overs matches:
+#'   the sign agrees with "the side batting first won" **98.9%** of the time
+#'   and with "team1 won" only 86.4%, and `team1` is the batting-first side in
+#'   87.2% of matches. So the team1 reading looks almost right, which is how it
+#'   survived in this docstring, and it mislabels roughly one match in eight.
+#'
+#'   That misreading is not random: it tracks the toss, so anything fitted
+#'   against this column while treating the sign as team1-relative absorbs a
+#'   toss-shaped error. Same shape as bouncerverse#30, where training's `team1`
+#'   was cricsheet's listed team1 rather than the side batting first.
+#'
+#'   Positive = the batting-first side won, Negative = the chasing side won,
+#'   0 = tie, draw, or no result (1,283 stored rows are exactly 0).
 #' @keywords internal
 calculate_unified_margin <- function(team1_score, team2_score,
                                       wickets_remaining = 0,
@@ -191,6 +206,27 @@ calculate_unified_margin <- function(team1_score, team2_score,
 #' @return Numeric. Unified margin
 #' @keywords internal
 calculate_match_margin <- function(match_data) {
+
+  # A TRAP, and currently dead code -- nothing calls this (verified by grep
+  # across R/, data-raw/ and tests/ on 2026-08-22).
+  #
+  # calculate_unified_margin() treats its FIRST score argument as the side
+  # BATTING FIRST, not as the schema's team1: the stored sign agrees with
+  # batting-first 98.9% of the time and with team1 only 86.4%, and the 13%
+  # gap tracks the toss. This wrapper reads fields NAMED team1_score /
+  # team2_score and passes them straight through, so wiring it up with actual
+  # team1 data silently reproduces exactly the toss-shaped error the docstring
+  # above warns about.
+  #
+  # It aborts rather than guessing. If this is ever needed, pass the
+  # batting-first score explicitly under `innings1_total` / `innings2_total`,
+  # whose names carry the right meaning.
+  if (!is.null(match_data$team1_score) || !is.null(match_data$team2_score)) {
+    cli::cli_abort(c(
+      "{.fn calculate_match_margin} was given {.field team1_score}/{.field team2_score}.",
+      "x" = "The margin's sign is relative to the side BATTING FIRST, not to team1.",
+      "i" = "Supply {.field innings1_total} and {.field innings2_total} instead."))
+  }
 
   # Extract scores
   team1_score <- match_data$team1_score %||%

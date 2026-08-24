@@ -162,17 +162,22 @@ add_expected_outcome_features <- function(df,
   model_type <- match.arg(model_type)
   format <- match.arg(format)
 
-  # Load model if not provided
+  # Load model if not provided. There is deliberately no default path: the
+  # artefacts this used to reach for by name (model_xgb_outcome_*.json,
+  # model_bam_outcome_*.rds) were deleted in #48, and a default that silently
+  # resolves to a deprecated model is exactly how a stale vintage gets served.
   if (is.null(model)) {
     if (is.null(model_path)) {
-      # Use default path
-      model <- load_outcome_model(format, model_type)
+      cli::cli_abort(c(
+        "Either {.arg model} or {.arg model_path} must be supplied.",
+        "i" = "The legacy outcome models this defaulted to were removed (#48).",
+        "i" = "The current baseline is {.fn load_agnostic_model}."
+      ))
+    }
+    if (model_type == "bam") {
+      model <- readRDS(model_path)
     } else {
-      if (model_type == "bam") {
-        model <- readRDS(model_path)
-      } else {
-        model <- xgboost::xgb.load(model_path)
-      }
+      model <- xgboost::xgb.load(model_path)
     }
   }
 
@@ -440,49 +445,6 @@ get_models_dir <- function(create = TRUE) {
 }
 
 
-#' Load Outcome Model
-#'
-#' Loads a trained outcome prediction model from the models directory.
-#'
-#' @param format Character. Model format: "shortform" or "longform"
-#' @param model_type Character. Model type: "xgb" or "bam"
-#' @param model_dir Character. Directory where models are stored.
-#'   If NULL (default), automatically finds bouncerdata/models directory.
-#'
-#' @return Loaded model object (xgb.Booster for XGBoost, bam for BAM)
-#' @keywords internal
-load_outcome_model <- function(format = c("shortform", "longform"),
-                               model_type = c("xgb", "bam"),
-                               model_dir = NULL) {
-
-  format <- match.arg(format)
-  model_type <- match.arg(model_type)
-
-  if (is.null(model_dir)) {
-    model_dir <- get_models_dir()
-  }
-
-  if (model_type == "xgb") {
-    model_file <- file.path(model_dir, sprintf("model_xgb_outcome_%s.json", format))
-    if (!file.exists(model_file)) {
-      cli::cli_abort(c(
-        "XGBoost model not found at: {.file {model_file}}",
-        "i" = "Run model_xgb_outcome_{format}.R to train the model."
-      ))
-    }
-    model <- xgboost::xgb.load(model_file)
-  } else {
-    model_file <- file.path(model_dir, sprintf("model_bam_outcome_%s.rds", format))
-    if (!file.exists(model_file)) {
-      cli::cli_abort(c(
-        "BAM model not found at: {.file {model_file}}",
-        "i" = "Run model_bam_outcome_{format}.R to train the model."
-      ))
-    }
-    model <- readRDS(model_file)
-  }
-
-  cli::cli_alert_success("Loaded {model_type} {format} model from {.file {model_file}}")
-
-  return(model)
-}
+# load_outcome_model() was removed in #48 along with the nine legacy BAM/XGB
+# ball-outcome artefacts it loaded (287 MB, deprecated December 2025). The
+# current baseline is load_agnostic_model() in R/agnostic_model.R.

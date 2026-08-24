@@ -1,3 +1,22 @@
+# RETIRED 2026-08-20 (bouncerverse#52). Do not run.
+#
+# This trained a single 3-class Test win-probability model and it did not work:
+# holdout mlogloss 1.510 against a base-rate baseline of 1.099, which is
+# 37.2% WORSE than predicting the class frequencies, at accuracy 0.321 on three
+# classes. CV mlogloss was 0.78 against that 1.51 holdout, so it did not
+# generalise at all.
+#
+# The diagnosis, from 08_test_win_probability_v3.R's own header: one 3-class
+# model cannot simultaneously learn "who is ahead?" (lead, wickets) and "will
+# time run out?" (overs, pitch pace). Draws absorb probability uniformly when
+# the two signals are orthogonal.
+#
+# Replaced by 08_test_win_probability_v3.R, which decomposes into
+# P(result) and P(team1 wins | result), and beats the baseline in all four
+# innings. Its artefacts were deleted and unpublished at the same time.
+#
+# Kept for reference only.
+#
 # Test Cricket Win Probability Model (3-class: Win/Draw/Loss) ----
 #
 # Uses the PROJECTED SCORE MODEL output as a key feature.

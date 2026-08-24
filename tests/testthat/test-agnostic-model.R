@@ -435,3 +435,59 @@ test_that("prepare_full_features builds the 31 columns the trained models carry"
   expect_identical(tail(names(f_test), 3),
                    c("elo_run_diff", "elo_wicket_diff", "elo_venue_run"))
 })
+
+# ============================================================================
+# FEATURE-NAME STAMPING TESTS (bouncerverse#76)
+# ============================================================================
+#
+# The boosters saved by 02_train_full_model.R carry feature_names of length 0
+# after the xgb.save()/xgb.load() UBJ round-trip, so a name-and-order check
+# has to read something the round-trip DOES preserve: a plain xgboost
+# attribute, stamped at save time, same pattern as bouncer_build_date.
+
+test_that(".encode_feature_names / .stamped_feature_names round-trip through a real booster", {
+  skip_if_not_installed("xgboost")
+
+  feature_names <- c("alpha", "beta", "gamma")
+  dtrain <- xgboost::xgb.DMatrix(
+    data = matrix(runif(30), nrow = 10, ncol = 3, dimnames = list(NULL, feature_names)),
+    label = rbinom(10, 1, 0.5)
+  )
+  m <- xgboost::xgb.train(
+    params = list(objective = "binary:logistic"),
+    data = dtrain, nrounds = 2, verbose = 0
+  )
+
+  # Before stamping, nothing to read back.
+  expect_null(.stamped_feature_names(m))
+
+  xgboost::xgb.attr(m, FEATURE_NAMES_ATTR) <- .encode_feature_names(feature_names)
+  expect_identical(.stamped_feature_names(m), feature_names)
+
+  # Survives a save/load round-trip -- the whole point of using an xgboost
+  # attribute rather than relying on the booster's own feature_names slot.
+  tmp <- tempfile(fileext = ".ubj")
+  on.exit(unlink(tmp), add = TRUE)
+  xgboost::xgb.save(m, tmp)
+  reloaded <- xgboost::xgb.load(tmp)
+  expect_identical(.stamped_feature_names(reloaded), feature_names)
+})
+
+test_that(".stamped_feature_names returns NULL for a model with no attribute", {
+  skip_if_not_installed("xgboost")
+
+  dtrain <- xgboost::xgb.DMatrix(
+    data = matrix(runif(20), nrow = 10, ncol = 2), label = rbinom(10, 1, 0.5)
+  )
+  m <- xgboost::xgb.train(
+    params = list(objective = "binary:logistic"),
+    data = dtrain, nrounds = 1, verbose = 0
+  )
+  expect_null(.stamped_feature_names(m))
+})
+
+test_that(".encode_feature_names joins names on | and preserves order", {
+  expect_equal(.encode_feature_names(c("a", "b", "c")), "a|b|c")
+  expect_equal(.encode_feature_names(character(0)), "")
+  expect_equal(.encode_feature_names("solo"), "solo")
+})

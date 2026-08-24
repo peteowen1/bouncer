@@ -67,6 +67,108 @@ table_exists <- function(conn, table_name) {
 }
 
 
+#' Record how a data path was resolved
+#'
+#' Carried as an attribute so it travels with the path without changing its
+#' type — `file.path()`, `dirname()` and friends see a plain character string,
+#' so none of the ~60 callers of [find_bouncerdata_dir()] are affected.
+#'
+#' One of `"sibling"`, `"child"` (the repo tree was found), `"created"` (a
+#' fresh `bouncerdata/` was made next to `bouncer/`), or `"user_data"` (the
+#' rappdirs fallback — almost always wrong inside this workspace).
+#'
+#' @keywords internal
+.tag_resolution <- function(path, how) {
+  attr(path, "bouncer_resolution") <- how
+  path
+}
+
+#' Read back a resolution tag, defaulting to unknown
+#' @keywords internal
+.db_resolution <- function(path) {
+  how <- attr(path, "bouncer_resolution", exact = TRUE)
+  if (is.null(how)) "unknown" else how
+}
+
+# Warn at most once per session per (path, kind) -- get_db_connection() is
+# called from dozens of places and a repeated warning is a warning nobody reads.
+.db_warned <- new.env(parent = emptyenv())
+
+.warn_once <- function(key, message, .envir = parent.frame()) {
+  if (!is.null(.db_warned[[key]])) return(invisible(FALSE))
+  assign(key, TRUE, envir = .db_warned)
+  # .envir matters: cli interpolates against the CALLER's frame, and every
+  # `{path}` / `{how}` in these messages lives there, not here.
+  if (isTRUE(getOption("bouncer.strict_db", FALSE))) {
+    cli::cli_abort(message, .envir = .envir)
+  } else {
+    cli::cli_warn(message, .envir = .envir)
+  }
+  invisible(TRUE)
+}
+
+#' Warn when an implicitly-resolved database is probably not the one you want
+#'
+#' @section Why this exists:
+#' `find_bouncerdata_dir()` falls back to the rappdirs user-data directory when
+#' the walk up the tree finds no `bouncerdata/` sibling — and `ensure_db_exists()`
+#' then *initialises a database there*. The result is a structurally valid
+#' connection in which every schema exists and every table has **zero rows**, so
+#' every query succeeds and returns nothing. That is strictly worse than a
+#' missing file, which at least aborts and names the path: an empty corpus is
+#' indistinguishable from a legitimate "this format has no data" answer, and it
+#' cost a wrong conclusion and a debugging session on 2026-08-17
+#' (bouncerverse#46) — the same script, the same SQL, only the working directory
+#' different, returning 22,266 matches from the repo and 0 from a scratch
+#' directory.
+#'
+#' Two independent signals, because either alone can be the real story: the
+#' resolution strategy, and whether the corpus is actually populated.
+#'
+#' Only fires for an **implicitly** resolved path. An explicit `path=` is the
+#' caller's own choice — including the temporary empty databases the tests build.
+#'
+#' @param conn Open connection.
+#' @param path The resolved path, carrying its resolution attribute.
+#' @return Invisibly, TRUE if anything was reported.
+#' @keywords internal
+.check_db_is_plausible <- function(conn, path) {
+  how <- .db_resolution(path)
+  reported <- FALSE
+
+  if (how %in% c("user_data", "created")) {
+    reported <- .warn_once(paste0("res:", path), c(
+      "Database resolved by {.strong fallback}, not by finding the repo tree.",
+      "!" = "Using {.file {path}}",
+      "i" = "No {.file bouncerdata/} was found walking up from {.file {getwd()}}.",
+      "i" = "This location is usually EMPTY, so queries succeed and return nothing.",
+      "i" = "Run from inside the repo, or pass {.arg path} explicitly."
+    )) || reported
+  }
+
+  n <- tryCatch(
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.matches")$n,
+    error = function(e) NA_integer_
+  )
+
+  if (is.na(n)) {
+    reported <- .warn_once(paste0("schema:", path), c(
+      "Could not read {.field cricsheet.matches} from {.file {path}}.",
+      "i" = "The database may be uninitialised or of an older schema."
+    )) || reported
+  } else if (n == 0L) {
+    reported <- .warn_once(paste0("empty:", path), c(
+      "The database at {.file {path}} has {.strong zero} matches.",
+      "!" = "Every query against it will succeed and return nothing.",
+      "i" = "Resolved by: {how}. Size: {round(file.size(path) / 1e6, 1)} MB.",
+      "i" = "Set {.code options(bouncer.strict_db = TRUE)} to make this an error."
+    )) || reported
+  }
+
+  invisible(reported)
+}
+
+
 #' Get Database Connection
 #'
 #' Internal function to get a connection to the Bouncer DuckDB database.
@@ -79,6 +181,7 @@ table_exists <- function(conn, table_name) {
 #' @keywords internal
 get_db_connection <- function(path = NULL, read_only = FALSE) {
   check_duckdb_available()
+  implicit <- is.null(path)
   path <- ensure_db_exists(path)
 
   conn <- DBI::dbConnect(
@@ -86,6 +189,22 @@ get_db_connection <- function(path = NULL, read_only = FALSE) {
     dbdir = path,
     read_only = read_only
   )
+
+  # Only for an implicitly resolved path -- see .check_db_is_plausible(). An
+  # explicit path= is the caller's own choice, including the empty temporary
+  # databases the tests build.
+  #
+  # bouncer.strict_db turns that check into an abort -- and DuckDB permits
+  # only one write connection, so an abort here must not leave `conn` open
+  # holding the lock. Disconnect before re-raising.
+  if (implicit) {
+    tryCatch({
+      .check_db_is_plausible(conn, path)
+    }, error = function(e) {
+      DBI::dbDisconnect(conn, shutdown = TRUE)
+      stop(e)
+    })
+  }
 
   return(conn)
 }
@@ -176,13 +295,14 @@ get_db_path <- function(path = NULL) {
   # This works correctly from any working directory (bouncer/, data-raw/, etc.)
   bouncerdata_dir <- find_bouncerdata_dir(create = FALSE)
   if (!is.null(bouncerdata_dir)) {
-    return(file.path(bouncerdata_dir, "bouncer.duckdb"))
+    return(.tag_resolution(file.path(bouncerdata_dir, "bouncer.duckdb"),
+                           .db_resolution(bouncerdata_dir)))
   }
 
   # Fallback: R user data directory (for users without project structure)
   data_dir <- tools::R_user_dir("bouncerdata", which = "data")
   if (!dir.exists(data_dir)) dir.create(data_dir, recursive = TRUE)
-  file.path(data_dir, "bouncer.duckdb")
+  .tag_resolution(file.path(data_dir, "bouncer.duckdb"), "user_data")
 }
 
 
@@ -235,10 +355,16 @@ ensure_db_exists <- function(path = NULL) {
 #' disconnect_bouncer(conn)
 #' }
 connect_to_bouncer <- function(path = NULL, read_only = FALSE) {
-  if (is.null(path)) path <- get_db_path()
+  implicit <- is.null(path)
+  if (implicit) path <- get_db_path()
   cli::cli_alert_info("Connecting to database at {.file {path}}")
 
   conn <- get_db_connection(path = path, read_only = read_only)
+
+  # get_db_connection() only checks a path it resolved itself, and this function
+  # resolves its own before handing it over -- so without this line the check
+  # would be skipped at the one place a user without the repo layout arrives.
+  if (implicit) .check_db_is_plausible(conn, path)
 
   cli::cli_alert_success("Connected successfully")
   cli::cli_alert_info("Use {.fn disconnect_bouncer} when done")
@@ -412,13 +538,13 @@ find_bouncerdata_dir <- function(create = TRUE) {
     # Check for bouncerdata sibling
     sibling_path <- file.path(parent, "bouncerdata")
     if (dir.exists(sibling_path)) {
-      return(normalizePath(sibling_path, winslash = "/"))
+      return(.tag_resolution(normalizePath(sibling_path, winslash = "/"), "sibling"))
     }
 
     # Also check if bouncerdata is a child of current (if we're in bouncerverse/)
     child_path <- file.path(current, "bouncerdata")
     if (dir.exists(child_path)) {
-      return(normalizePath(child_path, winslash = "/"))
+      return(.tag_resolution(normalizePath(child_path, winslash = "/"), "child"))
     }
 
     current <- parent
@@ -436,7 +562,7 @@ find_bouncerdata_dir <- function(create = TRUE) {
       parent_bouncerdata <- file.path(dirname(current), "bouncerdata")
       dir.create(parent_bouncerdata, recursive = TRUE)
       cli::cli_alert_info("Created data directory: {.file {parent_bouncerdata}}")
-      return(normalizePath(parent_bouncerdata, winslash = "/"))
+      return(.tag_resolution(normalizePath(parent_bouncerdata, winslash = "/"), "created"))
     }
     parent <- dirname(current)
     if (parent == current) break
@@ -448,7 +574,7 @@ find_bouncerdata_dir <- function(create = TRUE) {
   if (!dir.exists(data_dir)) {
     dir.create(data_dir, recursive = TRUE)
   }
-  return(data_dir)
+  return(.tag_resolution(data_dir, "user_data"))
 }
 
 

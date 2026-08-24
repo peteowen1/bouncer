@@ -187,32 +187,51 @@ build_cricsheet_win_probability <- function(format = c("t20", "odi"),
 #' @param table_name Character. Target table in the `main` schema.
 #' @return Rows inserted, invisibly.
 #' @keywords internal
+.cricsheet_wp_schema <- c(
+  delivery_id = "VARCHAR", match_id = "VARCHAR", match_date = "DATE",
+  innings_number = "INTEGER", over_number = "INTEGER", ball_number = "INTEGER",
+  format = "VARCHAR", gender = "VARCHAR", batter_id = "VARCHAR",
+  bowler_id = "VARCHAR", win_prob_before = "DOUBLE", win_prob_after = "DOUBLE",
+  delta_wp = "DOUBLE", proj_score_before = "DOUBLE",
+  proj_score_after = "DOUBLE", delta_ps = "DOUBLE")
+
 store_cricsheet_wp <- function(conn, data, format,
                                table_name = "cricsheet_ball_win_probability") {
   db_format <- toupper(format)
   wanted <- names(data)
-  existing <- DBI::dbGetQuery(conn, sprintf("
-    SELECT column_name FROM information_schema.columns
-    WHERE table_schema = 'main' AND table_name = '%s'", table_name))$column_name
-  if (length(existing) > 0 && !setequal(existing, wanted)) {
-    cli::cli_alert_warning("{.field main.{table_name}} has an outdated shape; recreating it.")
-    DBI::dbExecute(conn, sprintf("DROP TABLE main.%s", table_name))
+  extra <- setdiff(wanted, names(.cricsheet_wp_schema))
+  if (length(extra)) {
+    cli::cli_abort(c(
+      "{.arg data} carries {length(extra)} column{?s} the table has no home for: {.field {extra}}.",
+      "i" = "Add them to {.code .cricsheet_wp_schema} deliberately, so the
+             migration can create them, rather than letting the shape drift."))
   }
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE IF NOT EXISTS main.%s (
-      delivery_id VARCHAR, match_id VARCHAR, match_date DATE,
-      innings_number INTEGER, over_number INTEGER, ball_number INTEGER,
-      format VARCHAR, gender VARCHAR, batter_id VARCHAR, bowler_id VARCHAR,
-      win_prob_before DOUBLE, win_prob_after DOUBLE, delta_wp DOUBLE,
-      proj_score_before DOUBLE, proj_score_after DOUBLE, delta_ps DOUBLE
-    )", table_name))
-  DBI::dbExecute(conn, sprintf("DELETE FROM main.%s WHERE format = '%s'",
-                               table_name, db_format))
+
+  # Replacement is PER FORMAT, and the table holds every format. This used to
+  # answer any shape mismatch by dropping the whole table, so a schema change
+  # would silently destroy the other formats' rows -- the same defect as
+  # bouncerverse#45, in a different file, on a 5.5M-row table that feeds TSA
+  # and the kappa fit. It now migrates instead.
+  #
+  # DELETE and INSERT also share ONE transaction. DuckDB auto-commits each
+  # dbExecute, so without it a DELETE that succeeds followed by an INSERT that
+  # fails leaves that format PERMANENTLY EMPTY -- "replacement" that destroys
+  # what it was replacing, on a table nothing else can regenerate quickly.
   duckdb::duckdb_register(conn, "cs_wp_staging", data)
   on.exit(duckdb::duckdb_unregister(conn, "cs_wp_staging"), add = TRUE)
-  n <- DBI::dbExecute(conn, sprintf(
-    "INSERT INTO main.%s (%s) SELECT %s FROM cs_wp_staging",
-    table_name, paste(wanted, collapse = ", "), paste(wanted, collapse = ", ")))
+  cols <- paste(wanted, collapse = ", ")
+
+  n <- .in_transaction(conn, function() {
+    DBI::dbExecute(conn, sprintf(
+      "CREATE TABLE IF NOT EXISTS main.%s (\n%s\n    )",
+      table_name, .schema_ddl(.cricsheet_wp_schema)))
+    .migrate_schema(conn, table_name, .cricsheet_wp_schema)
+    DBI::dbExecute(conn, sprintf("DELETE FROM main.%s WHERE format = '%s'",
+                                 table_name, db_format))
+    DBI::dbExecute(conn, sprintf(
+      "INSERT INTO main.%s (%s) SELECT %s FROM cs_wp_staging",
+      table_name, cols, cols))
+  })
   cli::cli_alert_success("Stored {n} {db_format} rows in {.field main.{table_name}}.")
   invisible(n)
 }

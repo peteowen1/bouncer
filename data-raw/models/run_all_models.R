@@ -34,8 +34,13 @@ RUN_PRE_MATCH <- TRUE         # Pre-game match prediction
 RUN_IN_MATCH <- TRUE          # Live win probability
 
 # Ball-outcome settings
-OUTCOME_FORMATS <- c("t20")   # Which formats: "t20", "odi", "test" (or combination)
-OUTCOME_MODEL_TYPE <- "xgboost"  # "xgboost" (default), "bam", or "both"
+OUTCOME_FORMATS <- c("t20", "odi", "test")  # Which formats: "t20", "odi", "test"
+
+# The full model is OFF by default because it cannot currently train: its 3-way
+# ELO inputs are empty (t20 0%, odi 16.9%, test 0.8%) and the ELO rebuild is
+# still open. Turning this on today produces a failure, not a model.
+# Tracked as #63 (rebuild the ELO) and #65 (retrain the full model).
+RUN_FULL_OUTCOME <- FALSE
 
 # Pre-match settings
 PRE_MATCH_FORMATS <- NULL     # NULL = all formats, or specific format
@@ -77,7 +82,15 @@ if (RUN_PRE_MATCH && !"team_elo" %in% tables) {
   missing_tables <- c(missing_tables, "team_elo")
 }
 
-for (fmt in unique(c(OUTCOME_FORMATS, IN_MATCH_FORMAT))) {
+# Player skills are required by the FULL outcome model and the in-match models,
+# not by the agnostic model — it is context-only by construction, which is the
+# whole point of it. Demanding them for an agnostic-only run blocks a run that
+# would have worked.
+skill_formats <- unique(c(
+  if (RUN_BALL_OUTCOME && RUN_FULL_OUTCOME) OUTCOME_FORMATS,
+  if (RUN_IN_MATCH) IN_MATCH_FORMAT
+))
+for (fmt in skill_formats) {
   skill_table <- paste0(fmt, "_player_skill")
   if (!skill_table %in% tables) {
     missing_tables <- c(missing_tables, skill_table)
@@ -103,35 +116,39 @@ cat("\n")
 if (RUN_BALL_OUTCOME) {
   cli::cli_rule("Ball-Outcome Models")
 
-  for (fmt in OUTCOME_FORMATS) {
-    cli::cli_h2("Format: {toupper(fmt)}")
+  # Both trainers loop over formats internally, so they are sourced once each
+  # rather than per format. Order matters: the agnostic model is the baseline
+  # every residual rating is measured against, and the full model builds on it.
+  outcome_steps <- list(
+    agnostic = "data-raw/models/ball-outcome/01_train_agnostic_model.R"
+  )
+  if (RUN_FULL_OUTCOME) {
+    outcome_steps$full <- "data-raw/models/ball-outcome/02_train_full_model.R"
+  } else {
+    cli::cli_alert_info("Full outcome model SKIPPED (RUN_FULL_OUTCOME = FALSE; see #65)")
+  }
+
+  for (step in names(outcome_steps)) {
+    script <- outcome_steps[[step]]
+    cli::cli_h2("Ball-outcome: {step} ({paste(OUTCOME_FORMATS, collapse = ', ')})")
     pipeline_start <- Sys.time()
 
-    # Set model type for child script
-    MODEL_TYPE <- OUTCOME_MODEL_TYPE
-
-    runner_script <- sprintf("data-raw/models/ball-outcome/run_outcome_models_%s.R", fmt)
-
-    if (!file.exists(runner_script)) {
-      cli::cli_alert_warning("Runner script not found: {runner_script}")
+    if (!file.exists(script)) {
+      cli::cli_alert_warning("Trainer script not found: {script}")
       next
     }
 
     tryCatch({
-      # Create environment with MODEL_TYPE set
       env <- new.env()
-      env$MODEL_TYPE <- OUTCOME_MODEL_TYPE
-      env$RUN_COMPARISON <- (OUTCOME_MODEL_TYPE == "both")
-      env$RUN_VISUALIZATION <- (OUTCOME_MODEL_TYPE == "both")
-      env$ADD_PREDICTIONS <- TRUE
+      env$FORMATS_TO_TRAIN <- OUTCOME_FORMATS
 
-      source(runner_script, local = env)
+      source(script, local = env)
 
-      pipeline_times[[paste0("ball_outcome_", fmt)]] <- difftime(Sys.time(), pipeline_start, units = "mins")
-      cli::cli_alert_success("{toupper(fmt)} ball-outcome complete ({round(pipeline_times[[paste0('ball_outcome_', fmt)]], 1)} mins)")
+      pipeline_times[[paste0("ball_outcome_", step)]] <- difftime(Sys.time(), pipeline_start, units = "mins")
+      cli::cli_alert_success("Ball-outcome {step} complete ({round(pipeline_times[[paste0('ball_outcome_', step)]], 1)} mins)")
     }, error = function(e) {
-      cli::cli_alert_danger("{toupper(fmt)} ball-outcome failed: {e$message}")
-      pipeline_times[[paste0("ball_outcome_", fmt)]] <- NA
+      cli::cli_alert_danger("Ball-outcome {step} failed: {e$message}")
+      pipeline_times[[paste0("ball_outcome_", step)]] <- NA
     })
 
     cat("\n")

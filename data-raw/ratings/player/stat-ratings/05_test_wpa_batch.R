@@ -64,18 +64,38 @@ innings_totals <- as.data.table(DBI::dbGetQuery(conn, "
   ORDER BY match_id, innings
 "))
 
-# Venue stats (average first innings score, result rate)
-venue_stats <- as.data.table(DBI::dbGetQuery(conn, "
-  SELECT
-    d.venue,
-    AVG(mi.total_runs) AS venue_avg,
-    AVG(CASE WHEN m.outcome_type != 'draw' THEN 1.0 ELSE 0.0 END) AS venue_result_rate
-  FROM cricsheet.match_innings mi
-  JOIN cricsheet.deliveries d ON mi.match_id = d.match_id AND mi.innings = 1
-  JOIN cricsheet.matches m ON mi.match_id = m.match_id
-  WHERE LOWER(d.match_type) IN ('test', 'mdm')
-  GROUP BY d.venue
+# Venue stats, TIME-CAUSAL and per match (#69).
+#
+# Both of these were averaged over EVERY match at the ground, including the one
+# being scored, and with no smoothing at all -- so at a one-match venue
+# venue_result_rate simply WAS that match's outcome and venue_avg simply WAS its
+# own first-innings total. #29 measured the smoothed version of the same
+# construction at 0.684 correlation with the match's own result below five
+# matches; unsmoothed is worse, because PRIOR = 10 was the only thing damping it.
+#
+# Do NOT repair this by subtracting the match's own value -- see the note at the
+# top of R/venue_rates.R for why leave-one-out concentrates the leak.
+venue_raw <- as.data.table(DBI::dbGetQuery(conn, "
+  SELECT m.match_id, m.venue, m.match_date, m.outcome_type,
+         MAX(CASE WHEN mi.innings = 1 THEN mi.total_runs END) AS inn1_total
+  FROM cricsheet.matches m
+  LEFT JOIN cricsheet.match_innings mi ON mi.match_id = m.match_id
+  WHERE LOWER(m.match_type) IN ('test', 'mdm')
+  GROUP BY 1, 2, 3, 4
 "))
+venue_raw[, `:=`(match_date = as.Date(match_date),
+                 decided    = as.integer(!is.na(outcome_type)),
+                 is_result  = as.integer(!is.na(outcome_type) & outcome_type != "draw"))]
+
+vr <- time_causal_venue_result_rate(venue_raw, prior_weight = 10)
+va <- time_causal_venue_mean(venue_raw, "inn1_total", prior_weight = 5)
+venue_stats <- merge(vr[, .(match_id, venue_result_rate)],
+                     va[, .(match_id, venue_avg = venue_mean)], by = "match_id")
+cli::cli_alert_info(paste0(
+  "Venue features: ", sum(vr$at_prior), " of ", nrow(vr), " matches (",
+  round(100 * mean(vr$at_prior), 1), "%) are the first at their ground and take ",
+  "the prior (result rate ", round(attr(vr, "prior_rate"), 3),
+  ", innings-1 total ", round(attr(va, "prior_value")), ")."))
 
 DBI::dbDisconnect(conn, shutdown = TRUE)
 
@@ -184,8 +204,10 @@ dt[, runs_needed := fifelse(innings == 4L, pmax(0, target - current_score), 0)]
 dt[, req_rate := fifelse(innings == 4L & overs_remaining > 0, runs_needed / overs_remaining, 0)]
 dt[, overs_per_wicket := fifelse(innings == 4L & wickets_in_hand > 0, overs_remaining / wickets_in_hand, 0)]
 
-# Venue stats
-dt[venue_stats, on = "venue", `:=`(venue_avg = i.venue_avg, venue_result_rate = i.venue_result_rate)]
+# Venue stats -- keyed on match_id, not venue: what a ground's history looked
+# like depends on when you ask (#69).
+dt[venue_stats, on = "match_id", `:=`(venue_avg = i.venue_avg,
+                                      venue_result_rate = i.venue_result_rate)]
 dt[is.na(venue_avg), venue_avg := 340]
 dt[is.na(venue_result_rate), venue_result_rate := 0.63]
 

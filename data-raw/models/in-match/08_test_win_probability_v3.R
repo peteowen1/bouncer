@@ -77,33 +77,56 @@ innings_totals <- DBI::dbGetQuery(conn, "
 ")
 setDT(innings_totals)
 
-# Venue averages (for 1st innings projected score context)
-venue_avgs <- DBI::dbGetQuery(conn, "
-  SELECT venue, AVG(total_runs) as venue_avg
-  FROM cricsheet.match_innings mi
-  JOIN cricsheet.matches m ON mi.match_id = m.match_id
-  WHERE LOWER(m.match_type) IN ('test', 'mdm') AND mi.innings = 1
-  GROUP BY venue HAVING COUNT(*) >= 3
+# Venue averages, TIME-CAUSAL and per match (#24).
+#
+# #29 made venue_result_rate causal and left this one behind, which was an
+# incomplete fix rather than a deliberate one: an average first-innings total
+# over EVERY match at the ground includes the match being predicted. Measured on
+# the sibling construction in the Test WPA batch, at the 79 one-match venues the
+# feature correlated 1.000 with that match's own innings-1 total -- it simply WAS
+# the value it was used to predict (#69).
+venue_avg_raw <- DBI::dbGetQuery(conn, "
+  SELECT m.match_id, m.venue, m.match_date,
+         MAX(CASE WHEN mi.innings = 1 THEN mi.total_runs END) AS inn1_total
+  FROM cricsheet.matches m
+  LEFT JOIN cricsheet.match_innings mi ON mi.match_id = m.match_id
+  WHERE LOWER(m.match_type) IN ('test', 'mdm')
+  GROUP BY 1, 2, 3
 ")
-setDT(venue_avgs)
+setDT(venue_avg_raw)
+venue_avg_raw[, match_date := as.Date(match_date)]
+venue_avgs <- time_causal_venue_mean(venue_avg_raw, "inn1_total", prior_weight = 5)
+venue_avgs <- venue_avgs[, .(match_id, venue_avg = venue_mean)]
 
-# Venue result rates (historical P(result) at each venue) — Bayesian smoothed
+# Venue result rates, TIME-CAUSAL and per match (#29).
+#
+# This was one rate per venue computed over every match at the ground --
+# including the match being predicted. A live prediction cannot know its own
+# outcome, and the weight is not small: the median Test venue has 3 matches, so
+# with prior_weight 10 the match's own result carried 7.7% of its own feature.
+# Because training and serving built it identically it never showed as a
+# train/serve divergence; it inflated both.
+#
+# Do NOT "fix" this by subtracting the match's own outcome. That was measured
+# and is far worse -- see the note at the top of R/venue_rates.R.
 venue_results <- DBI::dbGetQuery(conn, "
-  SELECT m.venue,
-         COUNT(*) AS n_matches,
-         SUM(CASE WHEN m.outcome_type != 'draw' THEN 1 ELSE 0 END) AS n_results
+  SELECT m.match_id, m.venue, m.match_date, m.outcome_type
   FROM cricsheet.matches m
   WHERE LOWER(m.match_type) IN ('test', 'mdm')
     AND m.outcome_type IS NOT NULL
-  GROUP BY m.venue
 ")
 setDT(venue_results)
-# Bayesian smoothing: prior_weight matches of which prior_rate are results
-prior_weight <- 10
-prior_rate <- mean(venue_results$n_results / venue_results$n_matches, na.rm = TRUE)
-venue_results[, venue_result_rate := (n_results + prior_weight * prior_rate) /
-                                      (n_matches + prior_weight)]
-venue_results <- venue_results[, .(venue, venue_result_rate)]
+venue_results[, `:=`(decided = 1L,
+                     is_result = as.integer(outcome_type != "draw"),
+                     match_date = as.Date(match_date))]
+venue_results <- time_causal_venue_result_rate(venue_results, prior_weight = 10)
+prior_rate <- attr(venue_results, "prior_rate")
+cli::cli_alert_info(paste0(
+  "Venue result rate: ", sum(venue_results$at_prior), " of ", nrow(venue_results),
+  " matches (", round(100 * mean(venue_results$at_prior), 1),
+  "%) are the first at their ground and fall back to the prior (",
+  round(prior_rate, 3), ")."))
+venue_results <- venue_results[, .(match_id, venue_result_rate)]
 
 DBI::dbDisconnect(conn, shutdown = TRUE)
 
@@ -171,9 +194,12 @@ inn_wide <- dcast(innings_totals, match_id ~ paste0("inn", innings),
                   value.var = c("innings_total", "innings_wickets", "innings_overs", "declared"),
                   fill = NA)
 deliveries <- merge(deliveries, inn_wide, by = "match_id", all.x = TRUE)
-deliveries <- merge(deliveries, venue_avgs, by = "venue", all.x = TRUE)
+# Keyed on match_id, not venue -- what a ground averaged depends on when you ask.
+deliveries <- merge(deliveries, venue_avgs, by = "match_id", all.x = TRUE)
 deliveries[is.na(venue_avg), venue_avg := 340]
-deliveries <- merge(deliveries, venue_results, by = "venue", all.x = TRUE)
+# Keyed on match_id, not venue: the rate is now per match, because what a
+# venue's history looked like depends on when you ask (#29).
+deliveries <- merge(deliveries, venue_results, by = "match_id", all.x = TRUE)
 deliveries[is.na(venue_result_rate), venue_result_rate := prior_rate]
 
 # Team1 lead (cumulative)
@@ -208,7 +234,11 @@ deliveries[, cum_overs := as.double(over) + fcase(
   default = 0
 )]
 
-MAX_OVERS <- 450
+# Overridable so the constant can be TESTED rather than assumed (#71). For a
+# tree model a constant divisor is a monotone reparameterisation, so this can
+# only change anything where it CLIPS -- and at 450 it clips for 3 of 3,071
+# matches -- or where overs_remaining is a DENOMINATOR.
+if (!exists("MAX_OVERS")) MAX_OVERS <- 450
 deliveries[, `:=`(
   overs_remaining = pmax(0, MAX_OVERS - cum_overs),
   match_progress = pmin(1, cum_overs / MAX_OVERS),
@@ -251,13 +281,26 @@ if (!is.null(weather_data)) {
                                                       temp_avg, wind_avg, is_rain)],
                          by = "match_id", all.x = TRUE)
 
-    # Causal rain_days_so_far: prorate by completed days (day N sees days 1..N-1 weather)
-    # On day 1: 0 rain days known. On day 3: we know ~2/5 of total rain days.
-    deliveries[, rain_days_so_far := fifelse(
-      !is.na(rain_days) & approx_day > 1,
-      rain_days * (approx_day - 1) / 5,  # Prorate: proportion of match days completed
-      0
-    )]
+    # NOT causal, and deliberately disabled (#24).
+    #
+    # `rain_days` is the MATCH TOTAL. Prorating it by how far through the match
+    # we are does not remove the future -- on day 2 the value still carries a
+    # scaled share of days 3-5, which have not happened. A match that gets
+    # rained out on day 5 has a day-2 feature that already knows. Scaling a leak
+    # down is not the same as removing it, which is the same mistake
+    # leave-one-out makes on venue rates (see R/venue_rates.R).
+    #
+    # A genuinely causal version needs PER-DAY weather -- rain on days strictly
+    # before the current one. `main.match_weather` holds one row per match and
+    # nothing per day, so that cannot be built from what exists today.
+    #
+    # Currently moot: main.match_weather has ZERO rows, so this branch has never
+    # run and rain_days_so_far has been constant 0 in every model trained so
+    # far. Left as 0 rather than restored, so populating the weather table
+    # cannot silently reintroduce the leak. Per-day weather is #71.
+    deliveries[, rain_days_so_far := 0]
+    cli::cli_alert_warning(
+      "rain_days_so_far held at 0: match-total rain cannot be made causal by prorating (#24). Per-day weather is #71.")
 
     weather_available <- TRUE
     n_with_weather <- sum(!is.na(deliveries$rain_days))

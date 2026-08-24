@@ -515,7 +515,7 @@ calculate_player_pagerank <- function(conn,
       d.batter_id,
       d.bowler_id,
       d.runs_batter,
-      CASE WHEN d.player_out_id IS NOT NULL AND d.player_out_id != '' THEN 1 ELSE 0 END as is_wicket,
+      CASE WHEN COALESCE(d.wicket_kind,'') IN ({bowler_wicket_kinds_sql()}) THEN 1 ELSE 0 END as is_wicket,
       m.match_type
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON d.match_id = m.match_id
@@ -790,7 +790,7 @@ calculate_player_centrality <- function(conn,
       d.batter_id,
       d.bowler_id,
       d.runs_batter,
-      CASE WHEN d.player_out_id IS NOT NULL AND d.player_out_id != '' THEN 1 ELSE 0 END as is_wicket,
+      CASE WHEN COALESCE(d.wicket_kind,'') IN ({bowler_wicket_kinds_sql()}) THEN 1 ELSE 0 END as is_wicket,
       m.match_type
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON d.match_id = m.match_id

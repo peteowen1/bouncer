@@ -103,10 +103,14 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     bowling_team_wicket_skill = team_skills$bowling_team_wicket_skill %||% 0,
 
     # Venue skills
-    venue_run_rate = venue_skills$venue_run_rate %||% 0,
-    venue_wicket_rate = venue_skills$venue_wicket_rate %||% 0,
-    venue_boundary_rate = venue_skills$venue_boundary_rate %||% 0.15,
-    venue_dot_rate = venue_skills$venue_dot_rate %||% 0.35,
+    # get_venue_skill() returns run_rate/wicket_rate/boundary_rate/dot_rate;
+    # this reads the venue_-prefixed spelling. Accept EITHER, or passing that
+    # function's output straight through silently neutralises every venue
+    # effect with no error.
+    venue_run_rate = venue_skills$venue_run_rate %||% venue_skills$run_rate %||% 0,
+    venue_wicket_rate = venue_skills$venue_wicket_rate %||% venue_skills$wicket_rate %||% 0,
+    venue_boundary_rate = venue_skills$venue_boundary_rate %||% venue_skills$boundary_rate %||% 0.15,
+    venue_dot_rate = venue_skills$venue_dot_rate %||% venue_skills$dot_rate %||% 0.35,
 
     stringsAsFactors = FALSE
   )
@@ -267,7 +271,26 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     )
 
     # Simulate delivery
-    sim_result <- simulate_delivery(model, match_state, current_batter, team_skills,
+    #
+    # simulate_delivery() reads BOTH batter and bowler skills out of one
+    # `player_skills` list. Passing only current_batter meant every bowler
+    # field fell through its %||% default (1.25 / 0.025 / 0) on EVERY ball,
+    # so the bowler rotation above ran but bowler identity had no effect on
+    # any simulated innings. Nothing errored; the innings just came out as
+    # though a league-average bowler delivered all of it.
+    delivery_skills <- current_batter
+    delivery_skills$bowler_economy_index <- current_bowler$bowler_economy_index
+    delivery_skills$bowler_strike_rate   <- current_bowler$bowler_strike_rate
+    delivery_skills$bowler_balls_bowled  <- current_bowler$bowler_balls_bowled
+    if (is.null(delivery_skills$bowler_economy_index) &&
+        is.null(delivery_skills$bowler_strike_rate)) {
+      # Loud, because a silent fall-back to neutral is the defect just fixed.
+      cli::cli_warn(c(
+        "Bowler {current_bowler_idx} carries no bowler skill fields; the delivery will use neutral defaults.",
+        "i" = "Expected {.field bowler_economy_index} and {.field bowler_strike_rate}."))
+    }
+
+    sim_result <- simulate_delivery(model, match_state, delivery_skills, team_skills,
                                      venue_skills, mode)
 
     # Update state
@@ -342,8 +365,17 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
 #' @param team1_bowlers List. Bowler skill objects for team 1 (5+ bowlers)
 #' @param team2_batters List. Batter skill objects for team 2 (11 batters)
 #' @param team2_bowlers List. Bowler skill objects for team 2 (5+ bowlers)
-#' @param team1_skills List. Team-level skills for team 1
-#' @param team2_skills List. Team-level skills for team 2
+#' @param team1_skills List. Team-level skills for team 1. Accepts either a
+#'   flat `list(runs_skill=, wicket_skill=)` (used for BOTH the batting and
+#'   bowling role, for backward compatibility with e.g.
+#'   [quick_match_simulation()]'s single overall strength number), or a
+#'   role-specific `list(batting = list(runs_skill=, wicket_skill=), bowling
+#'   = list(runs_skill=, wicket_skill=))` -- see "Team skill roles" below.
+#'   [build_match_simulation_inputs()] always supplies the role-specific
+#'   shape, because a real team's batting and bowling skill are different
+#'   numbers.
+#' @param team2_skills List. Team-level skills for team 2. Same shape rules
+#'   as `team1_skills`.
 #' @param venue_skills List. Venue skills
 #' @param mode Character. "categorical" or "expected"
 #' @param gender Character. "male" or "female"
@@ -357,9 +389,23 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
 #'   - margin: description of margin
 #'   - innings1, innings2: detailed ball-by-ball results
 #'
+#' @section Team skill roles:
+#' Until bouncerverse#66, this function reused the SAME `team1_skills` object
+#' as both `batting_team_skills` (innings 1, team 1 batting) and
+#' `bowling_team_skills` (innings 2, team 1 bowling) -- silently applying
+#' team 1's batting-runs skill as if it were team 1's bowling-economy skill.
+#' Harmless for [quick_match_simulation()]'s made-up single strength number,
+#' but wrong for [get_team_skill()]'s real data, where the batting and
+#' bowling values for the same team are different quantities that happen to
+#' share field names (`runs_skill`/`wicket_skill`). Passing a nested
+#' `list(batting=, bowling=)` now selects the right one per role; a flat list
+#' still works exactly as before.
+#'
 #' @seealso
 #' \code{\link{simulate_innings}} for single-innings simulation,
-#' \code{\link{simulate_delivery}} for ball-by-ball control
+#' \code{\link{simulate_delivery}} for ball-by-ball control,
+#' \code{\link{build_match_simulation_inputs}} to build real `team1_batters`/
+#' `team1_bowlers`/`team1_skills`/`venue_skills` arguments from a fixture
 #'
 #' @examples
 #' \dontrun{
@@ -380,14 +426,21 @@ simulate_match_ballbyball <- function(model, format = "t20",
                                        gender = "male", is_knockout = 0,
                                        event_tier = 2) {
 
+  # See "Team skill roles" above: a flat list is used for both roles
+  # (backward compatible); a list(batting=, bowling=) picks per-role values.
+  team1_bat_skills <- team_skills_for_role(team1_skills, "batting")
+  team1_bowl_skills <- team_skills_for_role(team1_skills, "bowling")
+  team2_bat_skills <- team_skills_for_role(team2_skills, "batting")
+  team2_bowl_skills <- team_skills_for_role(team2_skills, "bowling")
+
   # Simulate first innings: Team 1 bats, Team 2 bowls
   innings1 <- simulate_innings(
     model = model,
     format = format,
     innings = 1,
     target = NULL,
-    batting_team_skills = team1_skills,
-    bowling_team_skills = team2_skills,
+    batting_team_skills = team1_bat_skills,
+    bowling_team_skills = team2_bowl_skills,
     venue_skills = venue_skills,
     batters = team1_batters,
     bowlers = team2_bowlers,
@@ -406,8 +459,8 @@ simulate_match_ballbyball <- function(model, format = "t20",
     format = format,
     innings = 2,
     target = target,
-    batting_team_skills = team2_skills,
-    bowling_team_skills = team1_skills,
+    batting_team_skills = team2_bat_skills,
+    bowling_team_skills = team1_bowl_skills,
     venue_skills = venue_skills,
     batters = team2_batters,
     bowlers = team1_bowlers,
@@ -465,7 +518,9 @@ simulate_match_ballbyball <- function(model, format = "t20",
 #'
 #' @param model Model object for predictions
 #' @param format Character. Match format
-#' @param team1_skills,team2_skills Team skill lists
+#' @param team1_skills,team2_skills Team skill lists. Same flat-or-role-specific
+#'   shape as [simulate_match_ballbyball()] (see its "Team skill roles"
+#'   section).
 #' @param venue_skills Venue skill list
 #' @param team1_batters,team1_bowlers,team2_batters,team2_bowlers Player vectors
 #' @param mode Character. Simulation mode
@@ -479,11 +534,17 @@ simulate_super_over <- function(model, format,
                                 team2_batters, team2_bowlers,
                                 mode, gender, event_tier) {
 
+  # See simulate_match_ballbyball()'s "Team skill roles" section.
+  team1_bat_skills <- team_skills_for_role(team1_skills, "batting")
+  team1_bowl_skills <- team_skills_for_role(team1_skills, "bowling")
+  team2_bat_skills <- team_skills_for_role(team2_skills, "batting")
+  team2_bowl_skills <- team_skills_for_role(team2_skills, "bowling")
+
   # Team1 bats first in super over — 1 over max
   so_inn1 <- simulate_innings(
     model = model, format = format, innings = 1, target = NULL,
-    batting_team_skills = team1_skills,
-    bowling_team_skills = team2_skills,
+    batting_team_skills = team1_bat_skills,
+    bowling_team_skills = team2_bowl_skills,
     venue_skills = venue_skills,
     batters = team1_batters,
     bowlers = team2_bowlers,
@@ -496,8 +557,8 @@ simulate_super_over <- function(model, format,
   so_target <- so_inn1$total_runs + 1
   so_inn2 <- simulate_innings(
     model = model, format = format, innings = 2, target = so_target,
-    batting_team_skills = team2_skills,
-    bowling_team_skills = team1_skills,
+    batting_team_skills = team2_bat_skills,
+    bowling_team_skills = team1_bowl_skills,
     venue_skills = venue_skills,
     batters = team2_batters,
     bowlers = team1_bowlers,
@@ -1411,4 +1472,30 @@ simulate_playoffs_n <- function(teams, n_simulations = 10000, seed = NULL,
     championship_pct = championships / n_simulations * 100,
     stringsAsFactors = FALSE
   )
+}
+
+#' Pick a team's skills for one role
+#'
+#' Accepts either the flat `list(runs_skill=, wicket_skill=)` shape or the
+#' role-specific `list(batting=, bowling=)` shape, and returns the values that
+#' apply to `role`. See [simulate_match_ballbyball()]'s "Team skill roles".
+#'
+#' Deliberately NOT `skills$batting %||% skills`. `$` partial-matches on lists,
+#' so on a flat list whose only "batting"-prefixed element were, say,
+#' `batting_team_runs_skill`, `skills$batting` would return that bare NUMBER
+#' rather than NULL -- and the simulator would silently run an innings with a
+#' scalar where it expected a list of team skills. Today two such fields exist,
+#' making the match ambiguous and the result NULL by luck rather than by
+#' design; one rename would turn that luck into a silent wrong answer.
+#'
+#' @param skills List. Flat or role-specific team skills.
+#' @param role Character. "batting" or "bowling".
+#'
+#' @return The list of skills for `role`.
+#' @keywords internal
+team_skills_for_role <- function(skills, role) {
+  role <- match.arg(role, c("batting", "bowling"))
+  if (is.null(skills)) return(NULL)
+  nested <- skills[[role, exact = TRUE]]
+  if (is.list(nested)) nested else skills
 }

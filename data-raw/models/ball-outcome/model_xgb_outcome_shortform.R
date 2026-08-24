@@ -1,3 +1,10 @@
+# DEPRECATED (#48) — do not run. This trains the legacy ball-outcome family,
+# whose nine artefacts were deleted in August 2026 (287 MB, superseded in
+# December 2025). run_all_models.R no longer points here.
+#
+# The current trainers are 01_train_agnostic_model.R and 02_train_full_model.R.
+# Kept for reference only; see legacy/README.md.
+#
 # XGBoost Multinomial Outcome Model - SHORT-FORM CRICKET ----
 #
 # Predicts delivery outcome for T20 and ODI matches

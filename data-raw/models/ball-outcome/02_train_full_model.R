@@ -37,7 +37,9 @@ library(xgboost)
 if (!("bouncer" %in% loadedNamespaces())) devtools::load_all()
 
 # Configuration ----
-FORMATS_TO_TRAIN <- c("t20", "odi", "test")  # Which formats to train
+# Honour a caller-supplied value (run_all_models.R sets this) rather than
+# overwriting it, matching the TUNE_HYPERPARAMS idiom below.
+if (!exists("FORMATS_TO_TRAIN")) FORMATS_TO_TRAIN <- c("t20", "odi", "test")
 MATCH_LIMIT <- NULL  # NULL = all matches, or set number for testing
 RANDOM_SEED <- 42
 CV_FOLDS <- 5
@@ -91,210 +93,14 @@ for (format in FORMATS_TO_TRAIN) {
     max_overs <- NULL
   }
 
-  # Build SQL query with context features
-  query <- sprintf("
-    WITH innings_totals AS (
-      SELECT
-        match_id,
-        innings,
-        batting_team,
-        MAX(total_runs) AS innings_total
-      FROM cricsheet.deliveries
-      WHERE %s
-      GROUP BY match_id, innings, batting_team
-    ),
-    cumulative_scores AS (
-      SELECT
-        d.*,
-        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
-        -- the running total post-ball). Subtract the ball's own runs to get the score
-        -- BEFORE it, or runs_difference leaks the target it is used to predict.
-        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
-        COALESCE(
-          (SELECT SUM(it.innings_total)
-           FROM innings_totals it
-           WHERE it.match_id = d.match_id
-             AND it.batting_team = d.bowling_team
-             AND it.innings < d.innings),
-          0
-        ) AS bowling_score
-      FROM cricsheet.deliveries d
-      WHERE %s
-    ),
-    match_context AS (
-      SELECT DISTINCT
-        m.match_id,
-        CASE
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%eliminator%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%playoff%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%semi%%' THEN 1
-          ELSE 0
-        END AS is_knockout,
-        CASE
-          WHEN LOWER(m.event_name) LIKE '%%world cup%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%ipl%%' OR LOWER(m.event_name) LIKE '%%indian premier%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%big bash%%' OR LOWER(m.event_name) LIKE '%%bbl%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%psl%%' OR LOWER(m.event_name) LIKE '%%super league%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%cpl%%' OR LOWER(m.event_name) LIKE '%%caribbean%%' THEN 2
-          WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
-          ELSE 3
-        END AS event_tier
-      FROM cricsheet.matches m
-    )
-    SELECT
-      cs.delivery_id,
-      cs.match_id,
-      cs.match_type,
-      cs.innings,
-      cs.over,
-      cs.ball,
-      cs.over_ball,
-      cs.venue,
-      cs.gender,
-      cs.batter_id,
-      cs.bowler_id,
-      cs.batting_team,
-      cs.bowling_team,
-      cs.runs_batter,
-      cs.is_wicket,
-      -- FIX: wickets_fallen in Cricsheet is AFTER the delivery, so subtract is_wicket
-      -- to get the count BEFORE this delivery (prevents data leakage)
-      (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
-      (cs.batting_score - cs.bowling_score) AS runs_difference,
-      COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier
-    FROM cumulative_scores cs
-    LEFT JOIN match_context mc ON cs.match_id = mc.match_id
-    WHERE cs.runs_batter NOT IN (5)
-      AND cs.runs_batter <= 6
-    %s
-  ", format_filter, format_filter,
-     if (!is.null(MATCH_LIMIT)) sprintf("LIMIT %d", MATCH_LIMIT * 1000) else "")
-
-  # Execute query
-  cli::cli_h3("Loading data")
-  cli::cli_alert_info("Executing query...")
-  model_data <- DBI::dbGetQuery(conn, query)
-
-  if (nrow(model_data) == 0) {
-    cli::cli_alert_warning("No data found for {format} format, skipping")
-    next
-  }
-
-  cli::cli_alert_success("Loaded {.val {nrow(model_data)}} deliveries")
-
-  # Join Skill Indices ----
-  cli::cli_h3("Joining skill indices")
-
-  # Player skills
-  cli::cli_alert_info("Adding player skills...")
-  model_data <- add_skill_features(model_data, format = format, conn = conn, fill_missing = TRUE)
-  n_player <- sum(!is.na(model_data$batter_scoring_index))
-  cli::cli_alert_success("{n_player}/{nrow(model_data)} have player skills")
-
-  # Team skills
-  cli::cli_alert_info("Adding team skills...")
-  tryCatch({
-    model_data <- join_team_skill_indices(model_data, format = format, conn = conn)
-    # Fill missing with 0 (neutral for residual-based)
-    model_data <- model_data %>%
-      mutate(
-        batting_team_runs_skill = coalesce(batting_team_runs_skill, 0),
-        batting_team_wicket_skill = coalesce(batting_team_wicket_skill, 0),
-        bowling_team_runs_skill = coalesce(bowling_team_runs_skill, 0),
-        bowling_team_wicket_skill = coalesce(bowling_team_wicket_skill, 0)
-      )
-    n_team <- sum(!is.na(model_data$batting_team_runs_skill) & model_data$batting_team_runs_skill != 0)
-    cli::cli_alert_success("{n_team}/{nrow(model_data)} have team skills")
-  }, error = function(e) {
-    cli::cli_alert_warning("Team skills not available: {e$message}")
-    cli::cli_alert_info("Using neutral values (0) for team skills")
-    model_data <<- model_data %>%
-      mutate(
-        batting_team_runs_skill = 0,
-        batting_team_wicket_skill = 0,
-        bowling_team_runs_skill = 0,
-        bowling_team_wicket_skill = 0
-      )
-  })
-
-  # Venue skills
-  cli::cli_alert_info("Adding venue skills...")
-  tryCatch({
-    model_data <- join_venue_skill_indices(model_data, format = format, conn = conn)
-    # Fill missing with neutral values
-    # For residual-based (run_rate, wicket_rate): 0
-    # For raw EMA (boundary_rate, dot_rate): use format defaults
-    start_vals <- get_venue_start_values(format)
-    model_data <- model_data %>%
-      mutate(
-        venue_run_rate = coalesce(venue_run_rate, 0),
-        venue_wicket_rate = coalesce(venue_wicket_rate, 0),
-        venue_boundary_rate = coalesce(venue_boundary_rate, start_vals$boundary_rate),
-        venue_dot_rate = coalesce(venue_dot_rate, start_vals$dot_rate)
-      )
-    n_venue <- sum(!is.na(model_data$venue_run_rate) & model_data$venue_run_rate != 0)
-    cli::cli_alert_success("{n_venue}/{nrow(model_data)} have venue skills")
-  }, error = function(e) {
-    cli::cli_alert_warning("Venue skills not available: {e$message}")
-    cli::cli_alert_info("Using neutral values for venue skills")
-    start_vals <- get_venue_start_values(format)
-    model_data <<- model_data %>%
-      mutate(
-        venue_run_rate = 0,
-        venue_wicket_rate = 0,
-        venue_boundary_rate = start_vals$boundary_rate,
-        venue_dot_rate = start_vals$dot_rate
-      )
-  })
-
-  # 3-Way ELO features (optional, default to neutral if unavailable)
-  has_elo_features <- FALSE
-  if (!INCLUDE_ELO_FEATURES) {
-    model_data <- model_data %>%
-      mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
-  } else if (INCLUDE_ELO_FEATURES) {
-    cli::cli_alert_info("Adding 3-way ELO features...")
-    elo_table <- paste0(format, "_3way_elo")
-    tryCatch({
-      if (table_exists(conn, elo_table)) {
-        elo_data <- DBI::dbGetQuery(conn, sprintf("
-          SELECT
-            delivery_id,
-            batter_run_elo_before AS batter_run_elo,
-            bowler_run_elo_before AS bowler_run_elo,
-            batter_wicket_elo_before AS batter_wicket_elo,
-            bowler_wicket_elo_before AS bowler_wicket_elo,
-            venue_session_run_elo_before AS venue_session_run_elo,
-            venue_perm_run_elo_before AS venue_perm_run_elo
-          FROM %s
-        ", elo_table))
-
-        model_data <- model_data %>%
-          left_join(elo_data, by = "delivery_id") %>%
-          mutate(
-            # ELO differences (more useful as features than raw values)
-            elo_run_diff = coalesce(batter_run_elo, 1400) - coalesce(bowler_run_elo, 1400),
-            elo_wicket_diff = coalesce(batter_wicket_elo, 1400) - coalesce(bowler_wicket_elo, 1400),
-            elo_venue_run = coalesce(venue_session_run_elo, 1400) + coalesce(venue_perm_run_elo, 1400) - 2800
-          )
-
-        n_elo <- sum(!is.na(model_data$batter_run_elo))
-        cli::cli_alert_success("{n_elo}/{nrow(model_data)} have ELO features")
-        has_elo_features <- TRUE
-      } else {
-        cli::cli_alert_warning("No {elo_table} table found, skipping ELO features")
-        model_data <- model_data %>%
-          mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
-      }
-    }, error = function(e) {
-      cli::cli_alert_warning("ELO features unavailable: {e$message}")
-      model_data <<- model_data %>%
-        mutate(elo_run_diff = 0, elo_wicket_diff = 0, elo_venue_run = 0)
-    })
-  }
+  # Frame-building lives in R/full_model_frame.R so a comparison script can
+  # build the IDENTICAL frame. It was inline here, which is why the agnostic
+  # comparison had to fall back on a stored result from another run (#65).
+  model_data <- build_full_model_frame(conn, format, MATCH_LIMIT,
+                                       include_elo = INCLUDE_ELO_FEATURES)
+  # has_elo_features was computed here and never read again -- a guard that
+  # looks load-bearing and is not. build_full_model_frame() aborts below 50%
+  # ELO coverage, which is the check that actually protects this.
 
   # Feature Engineering ----
   cli::cli_h3("Engineering features")
@@ -304,16 +110,13 @@ for (format in FORMATS_TO_TRAIN) {
     model_data <- model_data %>%
       mutate(
         # Target variable
-        outcome = case_when(
-          is_wicket ~ 0L,
-          runs_batter == 0 ~ 1L,
-          runs_batter == 1 ~ 2L,
-          runs_batter == 2 ~ 3L,
-          runs_batter == 3 ~ 4L,
-          runs_batter == 4 ~ 5L,
-          runs_batter == 6 ~ 6L,
-          TRUE ~ NA_integer_
-        ),
+        # ball_outcome_class(), NOT a local case_when(). The mapping was
+        # extracted in #65 precisely so a comparison script could not rebuild
+        # it by hand and drift -- and then the trainer kept its own copy, so
+        # there were still two declarations of one truth. This is the second
+        # place today where extracted-and-tested code was never wired into the
+        # thing it was extracted for.
+        outcome = ball_outcome_class(runs_batter, is_wicket),
 
         # Overs left
         overs_left = pmax(0, max_overs - over_ball),
@@ -334,16 +137,13 @@ for (format in FORMATS_TO_TRAIN) {
     # Long-form (Test) features
     model_data <- model_data %>%
       mutate(
-        outcome = case_when(
-          is_wicket ~ 0L,
-          runs_batter == 0 ~ 1L,
-          runs_batter == 1 ~ 2L,
-          runs_batter == 2 ~ 3L,
-          runs_batter == 3 ~ 4L,
-          runs_batter == 4 ~ 5L,
-          runs_batter == 6 ~ 6L,
-          TRUE ~ NA_integer_
-        ),
+        # ball_outcome_class(), NOT a local case_when(). The mapping was
+        # extracted in #65 precisely so a comparison script could not rebuild
+        # it by hand and drift -- and then the trainer kept its own copy, so
+        # there were still two declarations of one truth. This is the second
+        # place today where extracted-and-tested code was never wired into the
+        # thing it was extracted for.
+        outcome = ball_outcome_class(runs_batter, is_wicket),
 
         # Phase based on ball age
         phase = case_when(
@@ -578,6 +378,44 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_alert_success("Test accuracy: {.val {round(accuracy * 100, 2)}}%")
   cli::cli_alert_success("Test mlogloss: {.val {round(test_logloss, 4)}}")
 
+  # Compare with Agnostic Model (matched, same held-out set) ----
+  #
+  # This USED to read a stored `agnostic_model_results.rds` -- a different
+  # training run, on a different split, from an older corpus (t20 3,035,225
+  # rows against this run's 3,221,299), which printed an inflated 2.7% gain
+  # where the honest matched figure is 1.80% (bouncerverse#76). The fix is to
+  # score the agnostic model on THIS run's own `test_data` instead of a stale
+  # file -- vintage and split then cancel exactly, because it is the same
+  # rows. `test_data` already exists (built once, above, from
+  # build_full_model_frame()); this does not re-query the database, matching
+  # the pattern in data-raw/validation/full_vs_agnostic_matched.R, which
+  # remains the place to run this comparison standalone or with a bootstrap CI.
+  cli::cli_h3("Comparing with agnostic model (same held-out set)")
+  agnostic_test_logloss <- NA_real_
+  agnostic_model_obj <- tryCatch(load_agnostic_model(format), error = function(e) NULL)
+  if (is.null(agnostic_model_obj)) {
+    cli::cli_alert_info("Agnostic {format} model unavailable; skipping matched comparison")
+  } else {
+    # The PREDICTION is wrapped too, not just the load. This block runs BEFORE
+    # xgb.save() below, so an error here would abort with the trained model
+    # never written -- hours of training destroyed by a reporting step. A
+    # diagnostic must not be able to lose the artefact it describes.
+    tryCatch({
+      agnostic_probs <- predict_agnostic_outcome(agnostic_model_obj, test_data, format)
+      agnostic_test_logloss <- mean(-log(pmax(
+        agnostic_probs[cbind(seq_len(nrow(agnostic_probs)), test_features$outcome + 1)], 1e-15)))
+      improvement <- round((agnostic_test_logloss - test_logloss) / agnostic_test_logloss * 100, 2)
+      cli::cli_alert_success(
+        "{toupper(format)}: Full={round(test_logloss, 4)}, Agnostic={round(agnostic_test_logloss, 4)}, Improvement={improvement}%"
+      )
+    }, error = function(e) {
+      # Loud, and named -- a skipped comparison must not read as a passing one.
+      cli::cli_alert_danger(
+        "Matched agnostic comparison FAILED for {format}: {conditionMessage(e)}")
+      cli::cli_alert_info("The model is still saved below; rerun full_vs_agnostic_matched.R for the number.")
+    })
+  }
+
   # Feature Importance
   importance_matrix <- xgb.importance(feature_names = feature_names, model = xgb_model)
   cli::cli_alert_info("Top 10 features:")
@@ -590,6 +428,21 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_h3("Saving model")
 
   model_path <- file.path(models_dir, sprintf("full_outcome_%s.ubj", format))
+  # Stamp the build date before saving. bouncer's loaders refuse an outcome
+  # model that is unstamped or predates the post-delivery leak fix
+  # (.check_model_vintage() in R/agnostic_model.R), because the bouncermodels
+  # release served a 2026-03-27 vintage in preference to corrected local files
+  # for five months without anything noticing (bouncerverse#50).
+  xgb.attr(xgb_model, "bouncer_build_date") <- as.character(Sys.Date())  # not format(): `format` is the loop variable here
+  # Stamp feature names AND order too (bouncerverse#76). The booster's own
+  # feature_names comes back length 0 after an xgb.save()/xgb.load() UBJ
+  # round-trip, so width was the only thing full_model_serving_alignment.R
+  # could check -- and two frames of the same width with columns in a
+  # different order predict nonsense, silently. FEATURE_NAMES_ATTR /
+  # .encode_feature_names() live in R/agnostic_model.R next to the build-date
+  # stamp this mirrors, so the trainer and the alignment check agree on the
+  # encoding without either duplicating it.
+  xgb.attr(xgb_model, FEATURE_NAMES_ATTR) <- .encode_feature_names(feature_names)
   xgb.save(xgb_model, model_path)
   cli::cli_alert_success("Model saved to {.file {model_path}}")
 
@@ -601,6 +454,7 @@ for (format in FORMATS_TO_TRAIN) {
     best_cv_score = best_score,
     test_accuracy = accuracy,
     test_logloss = test_logloss,
+    agnostic_test_logloss = agnostic_test_logloss,
     importance = importance_matrix,
     feature_names = feature_names,
     n_train = nrow(train_data),
@@ -624,21 +478,20 @@ for (format in names(all_results)) {
   cli::cli_alert_info("{toupper(format)}: Accuracy={round(res$test_accuracy*100,1)}%, LogLoss={round(res$test_logloss,4)}, Rounds={res$best_nrounds}")
 }
 
-# Compare with agnostic model
-cli::cli_h3("Comparison with Agnostic Model")
-agnostic_results_path <- file.path(models_dir, "agnostic_model_results.rds")
-if (file.exists(agnostic_results_path)) {
-  agnostic_results <- readRDS(agnostic_results_path)
-  for (format in names(all_results)) {
-    if (format %in% names(agnostic_results)) {
-      full_ll <- all_results[[format]]$test_logloss
-      agnostic_ll <- agnostic_results[[format]]$test_logloss
-      improvement <- round((agnostic_ll - full_ll) / agnostic_ll * 100, 1)
-      cli::cli_alert_info("{toupper(format)}: Full={round(full_ll, 4)}, Agnostic={round(agnostic_ll, 4)}, Improvement={improvement}%")
-    }
+# Compare with agnostic model ----
+#
+# Values were computed above, per format, against THIS run's own held-out
+# test_data -- not a stored agnostic_model_results.rds from a different
+# training run and split (bouncerverse#76). Just a summary printout here.
+cli::cli_h3("Comparison with Agnostic Model (matched, same held-out set)")
+for (format in names(all_results)) {
+  res <- all_results[[format]]
+  if (is.na(res$agnostic_test_logloss)) {
+    cli::cli_alert_info("{toupper(format)}: agnostic comparison unavailable")
+  } else {
+    improvement <- round((res$agnostic_test_logloss - res$test_logloss) / res$agnostic_test_logloss * 100, 2)
+    cli::cli_alert_info("{toupper(format)}: Full={round(res$test_logloss, 4)}, Agnostic={round(res$agnostic_test_logloss, 4)}, Improvement={improvement}%")
   }
-} else {
-  cli::cli_alert_info("Agnostic model results not found for comparison")
 }
 
 # Record Benchmarks ----

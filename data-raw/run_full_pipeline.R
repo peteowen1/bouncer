@@ -435,18 +435,22 @@ if (should_run("5b")) {
 
   step5b_fresh <- is_fresh_start("5b")
 
-  # If fresh start, clear 3-way ELO tables
+  # NO FRESH_START clear here, deliberately (bouncerverse#63).
+  #
+  # This block used to DELETE FROM paste0(fmt, "_3way_elo") -- which is not
+  # where the ratings live. They are keyed by gender AND format
+  # (mens_t20_3way_elo, womens_odi_3way_elo), so the clear emptied a legacy
+  # set nothing writes to and left the real tables alone. Pointing it at the
+  # right names would have made it WORSE, not better: emptying a table hours
+  # before the rebuild can refill it is precisely the failure mode that left
+  # t20_3way_elo at zero rows.
+  #
+  # 01_calculate_3way_elo.R now builds into a staging table and promotes it in
+  # one transaction, so a fresh run replaces the data atomically and an
+  # interrupted one changes nothing. There is no state left to clear.
   if (step5b_fresh) {
-    cli::cli_alert_warning("FRESH_START: Clearing 3-way ELO tables...")
-    conn <- get_db_connection(read_only = FALSE)
-    for (fmt in FORMATS) {
-      tbl <- paste0(fmt, "_3way_elo")
-      if (table_exists(conn, tbl)) {
-        DBI::dbExecute(conn, sprintf("DELETE FROM %s", tbl))
-        cli::cli_alert_info("Cleared {tbl}")
-      }
-    }
-    DBI::dbDisconnect(conn, shutdown = TRUE)
+    cli::cli_alert_info(
+      "FRESH_START: 3-way ELO rebuilds via staging; nothing to clear up front.")
   }
 
   # Check smart skip

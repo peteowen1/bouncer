@@ -26,8 +26,12 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 cli::cli_alert_success("Connected to database")
 
 # Configuration ----
-EVENT_FILTER <- "Indian Premier League"
-MATCH_TYPE <- "t20"
+# Honour caller-supplied values (run_in_match_pipeline.R sets these) rather than
+# overwriting them. Hard-coding MATCH_TYPE meant this always built a T20 IPL
+# baseline whatever format the pipeline was running, and then wrote it under an
+# ipl_* name that 04_win_probability_innings1.R read for every format. #49.
+if (!exists("EVENT_FILTER")) EVENT_FILTER <- "Indian Premier League"
+if (!exists("MATCH_TYPE")) MATCH_TYPE <- "t20"
 MIN_VENUE_MATCHES <- 10  # Need enough matches for reliable venue stats
 
 # Load Historical Match Data ----
@@ -319,12 +323,12 @@ if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
 
-baseline_path <- file.path(output_dir, "ipl_baseline_projected_score.rds")
+baseline_path <- file.path(output_dir, paste0(MATCH_TYPE, "_baseline_projected_score.rds"))
 saveRDS(baseline_model, baseline_path)
 cli::cli_alert_success("Saved baseline model to {baseline_path}")
 
 # Save venue stats separately for easy lookup
-venue_stats_path <- file.path(output_dir, "ipl_venue_stats.rds")
+venue_stats_path <- file.path(output_dir, paste0(MATCH_TYPE, "_baseline_venue_stats.rds"))
 saveRDS(venue_stats, venue_stats_path)
 cli::cli_alert_success("Saved venue stats to {venue_stats_path}")
 

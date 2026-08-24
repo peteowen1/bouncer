@@ -149,7 +149,12 @@ if (LOAD_FROM_CHECKPOINT && file.exists(checkpoint_file)) {
   cli::cli_alert_info("Skipping to database insert...")
 
   # Prepare table
-  create_3way_elo_table(current_category, conn, overwrite = TRUE)
+  # Build into STAGING, never over the live table. This call DROPs first and
+  # the insert is hours away; an interruption in between used to leave the
+  # live table empty with nothing to say so, which is how t20_3way_elo reached
+  # zero rows (bouncerverse#63). Dropping a staging table costs nothing.
+  build_category <- three_way_elo_staging_category(current_category)
+  create_3way_elo_table(build_category, conn, overwrite = TRUE)
 
   # Skip directly to section 4.10 (Build Result Data.Table)
   # The code below will be skipped via the flag
@@ -169,7 +174,12 @@ current_params$format <- current_category
 
 ## 4.2 Prepare Table ----
 if (FORCE_FULL) {
-  create_3way_elo_table(current_category, conn, overwrite = TRUE)
+  # Build into STAGING, never over the live table. This call DROPs first and
+  # the insert is hours away; an interruption in between used to leave the
+  # live table empty with nothing to say so, which is how t20_3way_elo reached
+  # zero rows (bouncerverse#63). Dropping a staging table costs nothing.
+  build_category <- three_way_elo_staging_category(current_category)
+  create_3way_elo_table(build_category, conn, overwrite = TRUE)
 }
 
 ## 4.3 Load Calibration Data ----
@@ -474,33 +484,47 @@ if (nrow(league_running_avgs) > 0) {
 current_match_baseline <- calibration$mean_runs
 
 ## 4.7.2 Pre-compute K-factor Parameters (OPTIMIZATION) ----
-# Avoid repeated switch() lookups inside the loop
-k_params <- list(
-  run = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_RUN_MAX_T20, k_min = THREE_WAY_K_RUN_MIN_T20, halflife = THREE_WAY_K_RUN_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_RUN_MAX_ODI, k_min = THREE_WAY_K_RUN_MIN_ODI, halflife = THREE_WAY_K_RUN_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_RUN_MAX_TEST, k_min = THREE_WAY_K_RUN_MIN_TEST, halflife = THREE_WAY_K_RUN_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_RUN_MAX_T20, k_min = THREE_WAY_K_RUN_MIN_T20, halflife = THREE_WAY_K_RUN_HALFLIFE_T20)
-  ),
-  wicket = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_WICKET_MAX_T20, k_min = THREE_WAY_K_WICKET_MIN_T20, halflife = THREE_WAY_K_WICKET_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_WICKET_MAX_ODI, k_min = THREE_WAY_K_WICKET_MIN_ODI, halflife = THREE_WAY_K_WICKET_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_WICKET_MAX_TEST, k_min = THREE_WAY_K_WICKET_MIN_TEST, halflife = THREE_WAY_K_WICKET_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_WICKET_MAX_T20, k_min = THREE_WAY_K_WICKET_MIN_T20, halflife = THREE_WAY_K_WICKET_HALFLIFE_T20)
-  ),
-  venue_perm = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_T20, k_min = THREE_WAY_K_VENUE_PERM_MIN_T20, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_ODI, k_min = THREE_WAY_K_VENUE_PERM_MIN_ODI, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_VENUE_PERM_MAX_TEST, k_min = THREE_WAY_K_VENUE_PERM_MIN_TEST, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_VENUE_PERM_MAX_T20, k_min = THREE_WAY_K_VENUE_PERM_MIN_T20, halflife = THREE_WAY_K_VENUE_PERM_HALFLIFE_T20)
-  ),
-  venue_session = switch(current_format,
-    "t20" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_T20, k_min = THREE_WAY_K_VENUE_SESSION_MIN_T20, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20),
-    "odi" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_ODI, k_min = THREE_WAY_K_VENUE_SESSION_MIN_ODI, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_ODI),
-    "test" = list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_TEST, k_min = THREE_WAY_K_VENUE_SESSION_MIN_TEST, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_TEST),
-    list(k_max = THREE_WAY_K_VENUE_SESSION_MAX_T20, k_min = THREE_WAY_K_VENUE_SESSION_MIN_T20, halflife = THREE_WAY_K_VENUE_SESSION_HALFLIFE_T20)
-  )
+# Read from THREE_WAY_PARAMS rather than per-format constants.
+#
+# This block used to switch() over THREE_WAY_K_RUN_MAX_T20 and 38 siblings,
+# all of which the 2026-02-09 constant consolidation removed -- which is why
+# this script has not run since (bouncerverse#63). The same values now live in
+# THREE_WAY_PARAMS under the identical names minus the format suffix.
+#
+# It is also a correctness fix, not just a rename: the deleted constants were
+# per FORMAT only, so a women's run used men's K-factors. get_3way_params() is
+# keyed by format AND gender.
+tw <- get_3way_params(current_format, gender_db_value)
+k_of <- function(prefix) list(
+  k_max    = tw[[paste0("THREE_WAY_K_", prefix, "_MAX")]],
+  k_min    = tw[[paste0("THREE_WAY_K_", prefix, "_MIN")]],
+  halflife = tw[[paste0("THREE_WAY_K_", prefix, "_HALFLIFE")]]
 )
+k_params <- list(
+  run           = k_of("RUN"),
+  wicket        = k_of("WICKET"),
+  venue_perm    = k_of("VENUE_PERM"),
+  venue_session = k_of("VENUE_SESSION")
+)
+# A missing name would otherwise arrive as a NULL k_max deep inside the loop.
+#
+# Check the NESTED list, not unlist(). unlist() DROPS NULL elements before
+# vapply ever sees them, so `any(vapply(unlist(x), is.null, ...))` is FALSE
+# for exactly the input it is meant to reject -- verified: a 3-element list
+# with one NULL unlists to length 2 and the guard passes. Checking the flat
+# vector's LENGTH is what actually catches a dropped element.
+.k_expected <- 3L * length(k_params)
+.k_flat <- unlist(k_params)
+if (length(.k_flat) != .k_expected) {
+  missing <- setdiff(
+    unlist(lapply(names(k_params), function(n) paste0(n, ".", c("k_max", "k_min", "halflife")))),
+    names(.k_flat))
+  cli::cli_abort(c(
+    "K-factor parameters are incomplete for {current_format}/{gender_db_value}.",
+    "x" = "Missing: {.val {missing}}",
+    "i" = "A NULL k_max would otherwise reach the delivery loop as a silent NA."))
+}
+stopifnot(all(is.finite(.k_flat)))
 
 # Pre-compute phase multipliers lookup (faster than switch in loop)
 phase_mult_lookup <- c(
@@ -518,12 +542,8 @@ tier_mult_lookup <- c(
 )
 
 # Pre-compute expected runs constant
-runs_per_elo <- switch(current_format,
-  "t20" = THREE_WAY_RUNS_PER_100_ELO_POINTS_T20,
-  "odi" = THREE_WAY_RUNS_PER_100_ELO_POINTS_ODI,
-  "test" = THREE_WAY_RUNS_PER_100_ELO_POINTS_TEST,
-  THREE_WAY_RUNS_PER_100_ELO_POINTS_T20
-) / 100
+runs_per_elo <- tw[["THREE_WAY_RUNS_PER_100_ELO_POINTS"]] / 100
+stopifnot(is.finite(runs_per_elo))
 
 ## 4.7.2 Pre-index Match Boundaries (OPTIMIZATION) ----
 # Avoid which() scans in the loop - compute all match start indices upfront
@@ -1096,7 +1116,7 @@ for (b in seq_len(n_batches)) {
   end_idx <- min(b * BATCH_SIZE, n_deliveries)
 
   batch_df <- as.data.frame(result_dt[start_idx:end_idx])
-  insert_3way_elos(batch_df, current_category, conn)
+  insert_3way_elos(batch_df, build_category, conn)
 
   cli::cli_progress_update()
 }
@@ -1104,6 +1124,12 @@ for (b in seq_len(n_batches)) {
 cli::cli_progress_done()
 
 cli::cli_alert_success("Inserted {format(n_deliveries, big.mark = ',')} deliveries")
+
+## 4.11b Promote Staging Over Live ----
+# Only now, with every row written, does the live table change -- in one
+# transaction, and only if the staging table is plausibly full.
+promote_3way_elo_staging(current_category, conn,
+                         min_rows = max(1L, floor(n_deliveries * 0.99)))
 
 ## 4.12 Store Parameters ----
 cli::cli_h2("Storing parameters")

@@ -26,7 +26,9 @@ for (script in scripts) {
     source(script_path, local = TRUE)
 
     # Get the main function name (matches script name)
-    fn_name <- gsub("\.R$", "", script)
+    # "\.R$" is not a valid R string escape -- this file has never parsed, so
+    # the check runner has never run. A character class avoids the escape.
+    fn_name <- gsub("[.]R$", "", script)
     if (exists(fn_name, mode = "function")) {
       results[[script]] <- get(fn_name)()
     } else {

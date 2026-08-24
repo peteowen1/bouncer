@@ -316,7 +316,10 @@ predict_win_probability <- function(current_score,
     balls_remaining = balls_remaining,
     overs_completed = balls_bowled / 6,
     overs_remaining = overs_remaining,
-    current_run_rate = if (balls_bowled > 0) current_score / (balls_bowled / 6) else 0,
+    # Shrunk toward the format prior, matching training exactly -- see
+    # shrunk_run_rate() in R/feature_engineering.R. Raw division here made the
+    # rate after one ball pure noise (#70).
+    current_run_rate = shrunk_run_rate(current_score, balls_bowled, format),
     innings = innings,
     stringsAsFactors = FALSE
   )
@@ -593,9 +596,11 @@ predict_win_probability_batch <- function(states,
   max_balls <- get_max_balls(format)
   balls_remaining <- max_balls - balls_bowled
 
-  # Scalar `if (balls_bowled > 0)` in the row-at-a-time path. pmax keeps the
-  # division defined so no Inf is ever produced and then discarded.
-  crr <- ifelse(balls_bowled > 0, states$current_score / (pmax(balls_bowled, 1L) / 6), 0)
+  # Shrunk toward the format prior, exactly as the scalar path and training now
+  # do (#70). This was the FIFTH independent construction of the same rate in
+  # the package; the batch-vs-scalar parity test is what caught it when the
+  # other four were changed and this one was not.
+  crr <- shrunk_run_rate(states$current_score, balls_bowled, format)
 
   fd <- data.frame(
     total_runs       = states$current_score,
@@ -821,11 +826,14 @@ predict_test_win_probability <- function(current_score,
     completed_wickets <- completed_wickets + inn_wickets
   }
 
-  # Current innings state. Training computed current_run_rate as 0 anywhere in
-  # the first over (its condition was on the 0-indexed whole over), so the
-  # serving path does the same -- diverging here was a train/serve skew.
+  # Current innings state. This used to compute the rate as 0 anywhere in the
+  # first over, mirroring what training then did. Both sides now shrink toward
+  # the format prior instead (#70): a rate off one ball is noise, and treating
+  # it as signal gave the first ball of an innings a free +4.6 TSA in ODI.
   current_over <- overs  # overs bowled in current innings (decimal)
-  current_run_rate <- if (current_over >= 1) current_score / current_over else 0
+  # "test" is hard-coded: this function IS the Test path and takes no format
+  # argument, so reading one from the enclosing scope would have been an error.
+  current_run_rate <- shrunk_run_rate(current_score, current_over * 6, "test")
   wickets_in_hand <- 10 - wickets
 
   # Team1 lead
