@@ -129,8 +129,9 @@ test_that("every data-raw caller of get_calibration_data can still find it", {
 # given database won and nothing complained. Same shape as #63.
 
 test_that("elo_calibration_metrics is declared in exactly one place", {
-  r_files <- list.files(testthat::test_path("..", "..", "R"),
-                        pattern = "[.]R$", full.names = TRUE)
+  root <- testthat::test_path("..", "..", "R")
+  skip_if_not(dir.exists(root), "R/ source not available (installed-package test run)")
+  r_files <- list.files(root, pattern = "[.]R$", full.names = TRUE)
   decl <- Filter(function(f) {
     any(grepl("CREATE TABLE IF NOT EXISTS elo_calibration_metrics",
               readLines(f, warn = FALSE), fixed = TRUE))
