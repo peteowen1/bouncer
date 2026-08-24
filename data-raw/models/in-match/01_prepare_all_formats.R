@@ -26,7 +26,6 @@ devtools::load_all()
 RANDOM_SEED <- 42
 if (!exists("FORMATS_TO_PREPARE")) FORMATS_TO_PREPARE <- c("t20", "odi")  # Test needs different handling
 TEST_SEASONS <- c("2024", "2025", "2023/24", "2024/25")
-MIN_VENUE_MATCHES <- 5
 
 FORMAT_MATCH_TYPES <- list(
   t20 = c("T20", "IT20"),
@@ -184,30 +183,54 @@ for (current_format in FORMATS_TO_PREPARE) {
     over_windows = c(3, 6)
   )
 
-  # Venue statistics ----
-  cli::cli_h2("Calculating venue statistics")
-  venue_stats <- calculate_venue_statistics(
-    conn,
-    venue_filter = unique(deliveries_df$venue),
-    match_type = current_format,
-    min_matches = MIN_VENUE_MATCHES
+  # Venue statistics, TIME-CAUSAL and per match (bouncerverse#80).
+  #
+  # calculate_venue_statistics() averaged EVERY match at a venue, including
+  # the match being predicted -- the same leak shape fixed for Test in #69
+  # (there, venue_result_rate/venue_avg correlated 1.000 with the label at
+  # single-match venues). This adopts the same construction already built for
+  # that fix (R/venue_rates.R), matching 08_test_win_probability_v3.R: matches
+  # strictly BEFORE the current one at that ground, expanding window, shrunk
+  # toward a global prior. Do NOT "fix" this with a leave-one-out subtraction
+  # instead -- that was measured for the Test case and made the metric
+  # IMPROVE, which is the sign a real leak concentrated rather than left (see
+  # the note at the top of R/venue_rates.R).
+  cli::cli_h2("Calculating venue statistics (time-causal)")
+
+  venue_avg_raw <- DBI::dbGetQuery(conn, sprintf("
+    SELECT m.match_id, m.venue, m.match_date,
+           MAX(CASE WHEN mi.innings = 1 THEN mi.total_runs END) AS inn1_total
+    FROM cricsheet.matches m
+    LEFT JOIN cricsheet.match_innings mi ON mi.match_id = m.match_id
+    WHERE LOWER(m.match_type) IN (%s)
+    GROUP BY 1, 2, 3
+  ", match_type_filter))
+  venue_avg_raw$match_date <- as.Date(venue_avg_raw$match_date)
+  venue_avgs <- time_causal_venue_mean(venue_avg_raw, "inn1_total", prior_weight = 5)
+  venue_avgs <- venue_avgs[, .(match_id, venue_avg_score = venue_mean)]
+
+  venue_chase_raw <- DBI::dbGetQuery(conn, sprintf("
+    SELECT m.match_id, m.venue, m.match_date, m.outcome_winner,
+           MAX(CASE WHEN mi.innings = 2 THEN mi.batting_team END) AS inn2_batting_team
+    FROM cricsheet.matches m
+    LEFT JOIN cricsheet.match_innings mi ON mi.match_id = m.match_id
+    WHERE LOWER(m.match_type) IN (%s)
+    GROUP BY 1, 2, 3, 4
+  ", match_type_filter))
+  venue_chase_raw$match_date <- as.Date(venue_chase_raw$match_date)
+  # NA (no innings-2 batting team recorded -- abandoned before a chase) stays
+  # NA rather than FALSE, so it contributes nothing to the average instead of
+  # counting as a failed chase, matching the original SQL's NULLIF denominator.
+  venue_chase_raw$chase_success <- ifelse(
+    is.na(venue_chase_raw$inn2_batting_team), NA_integer_,
+    as.integer(venue_chase_raw$inn2_batting_team == venue_chase_raw$outcome_winner)
   )
+  venue_chases <- time_causal_venue_mean(venue_chase_raw, "chase_success", prior_weight = 10)
+  venue_chases <- venue_chases[, .(match_id, venue_chase_success_rate = venue_mean)]
 
   deliveries_df <- deliveries_df %>%
-    left_join(
-      venue_stats %>% select(venue, venue_avg_score = avg_first_innings_score,
-                             venue_chase_success_rate = chase_success_rate),
-      by = "venue"
-    )
-
-  overall_avg_score <- mean(first_innings_totals$innings1_total, na.rm = TRUE)
-  overall_chase_rate <- mean(matches_df$outcome_winner == matches_df$team2, na.rm = TRUE)
-
-  deliveries_df <- deliveries_df %>%
-    mutate(
-      venue_avg_score = coalesce(venue_avg_score, overall_avg_score),
-      venue_chase_success_rate = coalesce(venue_chase_success_rate, overall_chase_rate)
-    )
+    left_join(as.data.frame(venue_avgs), by = "match_id") %>%
+    left_join(as.data.frame(venue_chases), by = "match_id")
 
   # Separate Stage 1 and Stage 2 ----
   cli::cli_h2("Separating innings")
