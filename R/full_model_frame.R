@@ -381,6 +381,17 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
 #' @return Integer vector of class labels, `NA` where undefined.
 #' @keywords internal
 ball_outcome_class <- function(runs_batter, is_wicket, wides = 0L) {
+  # Same type-guard shape as compute_is_free_hit()'s wides/noballs check
+  # (R/cricsheet_parser.R) -- as.integer() on a non-numeric/non-logical
+  # value (e.g. a character or factor column) can silently return NA or,
+  # for a factor, silently wrong level codes, with no warning either way.
+  if (!is.numeric(wides) && !is.logical(wides)) {
+    cli::cli_abort("{.arg wides} must be numeric or logical, got {.cls {class(wides)[1]}}.")
+  }
+  if (!length(wides) %in% c(1L, length(runs_batter))) {
+    cli::cli_abort(
+      "{.arg wides} has length {length(wides)}, but must be length 1 or match {.arg runs_batter}'s length {length(runs_batter)}.")
+  }
   is_wide <- data.table::fcoalesce(as.integer(wides), 0L) > 0L
   is_wide <- rep_len(is_wide, length(runs_batter))
   data.table::fcase(

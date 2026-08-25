@@ -632,11 +632,18 @@ prepare_full_features <- function(df, format) {
   df$venue_boundary_rate <- dplyr::coalesce(df$venue_boundary_rate, start_vals$boundary_rate)
   df$venue_dot_rate <- dplyr::coalesce(df$venue_dot_rate, start_vals$dot_rate)
 
-  # #81/D-P50 stage 5: is_free_hit_int, mirroring prepare_agnostic_features().
-  # Most callers have no free-hit data at all -- default to "not on a free
-  # hit"; the final coalesce(., 0) sweep below also catches a stray NA.
+  # #81/D-P50 stage 5: is_free_hit_int, mirroring prepare_agnostic_features()
+  # -- including its type guard (7b146df, review-gate on the RAA commit):
+  # as.logical() on an unparseable value (e.g. the strings "0"/"1") returns
+  # NA with no warning, which coalesce() would then silently launder to
+  # FALSE -- mispricing a real free hit with zero indication. Most callers
+  # have no free-hit data at all -- default to "not on a free hit"; a
+  # genuine NA (unbackfilled row) is still handled by the coalesce below.
   if (!"is_free_hit" %in% names(df)) df$is_free_hit <- FALSE
-  df$is_free_hit_int <- as.integer(dplyr::coalesce(as.logical(df$is_free_hit), FALSE))
+  if (!is.logical(df$is_free_hit)) {
+    cli::cli_abort("is_free_hit must be logical, got {.cls {class(df$is_free_hit)[1]}}.")
+  }
+  df$is_free_hit_int <- as.integer(dplyr::coalesce(df$is_free_hit, FALSE))
 
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
