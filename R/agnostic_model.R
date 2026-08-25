@@ -309,8 +309,14 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
   features <- prepare_agnostic_features(delivery_data, format)
   .assert_feature_alignment(model, features, sprintf("agnostic model (%s)", format))
 
-  # Create DMatrix and predict
-  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features))
+  # Create DMatrix and predict. nthread=4 matches the cap the agnostic
+  # trainer pins for the same reason (01_train_agnostic_model.R, #81/D-P50
+  # stage 3): unbounded default threading crashed reproducibly via a native
+  # OpenMP fault during Test-format xgb.cv() on this machine. predict() takes
+  # no nthread argument of its own -- the DMatrix's setting is the only
+  # lever -- and a single-shot predict() over millions of rows (RAA scoring)
+  # hits the same native code path CV did.
+  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features), nthread = 4)
   probs <- predict(model, dmat)
 
   # Ensure probabilities sum to 1 (numerical precision fix)
