@@ -798,6 +798,14 @@ prepare_agnostic_features <- function(df, format) {
   # at all -- default to "not on a free hit" rather than erroring, same
   # shape as the league_avg_* default above.
   if (!"is_free_hit" %in% names(df)) df$is_free_hit <- FALSE
+  if (!is.logical(df$is_free_hit)) {
+    # as.logical() on an unparseable value (e.g. the strings "0"/"1") returns
+    # NA with no warning, which coalesce() below would then silently launder
+    # to FALSE -- mispricing a real free hit as a normal delivery with zero
+    # indication. Fail loud instead; a genuine NA (unbackfilled row) is still
+    # fine and is handled by the coalesce.
+    cli::cli_abort("is_free_hit must be logical, got {.cls {class(df$is_free_hit)[1]}}.")
+  }
 
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
