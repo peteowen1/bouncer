@@ -453,7 +453,17 @@ for (format in FORMATS_TO_TRAIN) {
   fixed_params <- list(
     objective = "multi:softprob",
     num_class = length(OUTCOME_CATEGORIES),
-    eval_metric = "mlogloss"
+    eval_metric = "mlogloss",
+    # #81/D-P50 stage 3: Test format's xgb.cv() crashed reproducibly with
+    # zero R-level error (process fully gone, no message) on default
+    # (unbounded) threading -- 3 clean attempts, fold class-imbalance and
+    # memory pressure both ruled out. A controlled nthread=1 smoke test
+    # completed all 10 rounds cleanly where every default-threading attempt
+    # died before round 1, confirming a native OpenMP/threading crash.
+    # Fixed at a small bounded value rather than left unlimited, for all
+    # formats -- T20/ODI happening to succeed with default threading may
+    # have been luck, not proof of safety.
+    nthread = 4
   )
 
   if (TUNE_HYPERPARAMS) {
