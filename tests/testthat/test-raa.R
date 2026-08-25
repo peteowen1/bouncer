@@ -49,15 +49,16 @@ test_that("the RAA formula prices runs and wickets the way the spec says", {
 })
 
 test_that("prepare_agnostic_features carries the league features the model was trained with", {
-  # The 2026-03-14 models have 16 features; xgboost silently default-routes
-  # absent trailing columns instead of erroring, which biased every served
-  # expectation by +0.17 runs/ball until 2026-08-13. Never again.
+  # The 2026-03-14 models have 16 features (17 since #81/D-P50 stage 3 added
+  # is_free_hit_int); xgboost silently default-routes absent trailing
+  # columns instead of erroring, which biased every served expectation by
+  # +0.17 runs/ball until 2026-08-13. Never again.
   row <- data.frame(
     innings = 1, over = 5, ball = 3, wickets_fallen = 1,
     runs_difference = 42, gender = "male", is_knockout = 0L, event_tier = 1
   )
   f <- prepare_agnostic_features(row, "t20")
-  expect_equal(ncol(f), 16)
+  expect_equal(ncol(f), 17)
   expect_identical(tail(names(f), 2), c("league_avg_runs", "league_avg_wicket"))
   # No supplied league history -> training's own format defaults, not zero.
   expect_equal(f$league_avg_runs, EXPECTED_RUNS_T20)

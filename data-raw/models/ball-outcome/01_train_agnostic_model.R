@@ -597,6 +597,17 @@ for (format in FORMATS_TO_TRAIN) {
   # release served a 2026-03-27 vintage in preference to corrected local files
   # for five months without anything noticing (bouncerverse#50).
   xgb.attr(xgb_model, "bouncer_build_date") <- as.character(Sys.Date())  # not format(): `format` is the loop variable here
+  # Stamp feature names AND order too (#81/D-P50 stage 4, mirroring
+  # 02_train_full_model.R's #76 fix -- this trainer never had it, so
+  # .assert_feature_alignment() warned rather than protected for every
+  # agnostic model ever built here, discovered while wiring is_free_hit into
+  # the RAA scorer). The booster's own feature_names comes back length 0
+  # after an xgb.save()/xgb.load() UBJ round-trip, so width was the only
+  # thing checkable -- and two same-width frames with columns in a different
+  # order predict nonsense, silently. FEATURE_NAMES_ATTR /
+  # .encode_feature_names() live in R/agnostic_model.R next to the
+  # build-date stamp this mirrors.
+  xgb.attr(xgb_model, FEATURE_NAMES_ATTR) <- .encode_feature_names(feature_names)
   xgb.save(xgb_model, model_path)
   cli::cli_alert_success("Model saved to {.file {model_path}}")
 

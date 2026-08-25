@@ -123,13 +123,31 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     probs <- probs[1, ]
   }
 
-  # Outcome column order is OUTCOME_CATEGORIES (R/constants.R): wicket, 0, 1, 2, 3, 4, 6.
+  # Outcome column order is a PREFIX of OUTCOME_CATEGORIES (R/constants.R):
+  # wicket, 0, 1, 2, 3, 4, 6, [wide]. `predict_full_outcome()` -- what this
+  # function actually calls -- is still the pre-#81/D-P50 7-category full
+  # model as of stage 4 (only the agnostic model was retrained with WIDE;
+  # the full model's own retrain is stage 5, not done). Sizing off
+  # `length(probs)` rather than assuming the full `OUTCOME_CATEGORIES`
+  # width keeps this correct for BOTH today's 7-column full model and an
+  # eventual 8-column one, since new categories are appended at the end,
+  # never inserted -- confirmed here rather than assumed, since stage 2's
+  # refactor silently broke this exact assumption the moment stage 3
+  # extended OUTCOME_CATEGORIES to 8 (caught by test-simulation.R).
+  n_cat <- length(probs)
+  n_full <- length(OUTCOME_CATEGORIES)
+  if (n_cat != n_full && n_cat != n_full - 1L) {
+    cli::cli_abort("predict_full_outcome() returned {n_cat} categories; expected {n_full} or {n_full - 1L} (a model one category behind, e.g. pre-stage-5, #81/D-P50).")
+  }
+  categories <- OUTCOME_CATEGORIES[seq_len(n_cat)]
+  run_values <- OUTCOME_RUN_VALUES[seq_len(n_cat)]
+
   if (mode == "categorical") {
     # Draw from categorical distribution
-    outcome_idx <- sample(seq_along(OUTCOME_CATEGORIES), 1, prob = probs)
+    outcome_idx <- sample(seq_len(n_cat), 1, prob = probs)
 
-    is_wicket <- outcome_idx == which(OUTCOME_CATEGORIES == "wicket")
-    runs <- OUTCOME_RUN_VALUES[outcome_idx]
+    is_wicket <- outcome_idx == which(categories == "wicket")
+    runs <- run_values[outcome_idx]
 
     list(runs = runs, is_wicket = is_wicket, probs = probs)
 
@@ -139,8 +157,8 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     # from exp_wicket. Thresholding at > 0.5 would almost never fire since
     # ball-level wicket probabilities are ~0.02-0.05, so innings would never
     # end on a wicket (they'd just run to max_balls every time).
-    exp_runs <- sum(probs * OUTCOME_RUN_VALUES)
-    exp_wicket <- probs[which(OUTCOME_CATEGORIES == "wicket")]
+    exp_runs <- sum(probs * run_values)
+    exp_wicket <- probs[which(categories == "wicket")]
     is_wicket <- stats::runif(1) < exp_wicket
 
     list(runs = exp_runs, is_wicket = is_wicket, exp_wicket = exp_wicket, probs = probs)

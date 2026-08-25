@@ -276,7 +276,8 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
 #' Predict Agnostic Outcome Probabilities
 #'
 #' Generates outcome probability predictions using the agnostic model.
-#' Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
+#' Returns a matrix of probabilities in `OUTCOME_CATEGORIES` order
+#' (`R/constants.R`) -- wicket, 0-4, 6, wide, since #81/D-P50 stage 3.
 #'
 #' @param model XGBoost model object from load_agnostic_model()
 #' @param delivery_data Data frame of deliveries with required features:
@@ -324,7 +325,8 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
 
 #' Get Expected Runs from Agnostic Model Predictions
 #'
-#' Converts the 7-class probability distribution into expected runs.
+#' Converts the `OUTCOME_CATEGORIES`-shaped probability distribution into
+#' expected runs.
 #'
 #' @param probs Matrix of probabilities from predict_agnostic_outcome()
 #'
@@ -791,6 +793,12 @@ prepare_agnostic_features <- function(df, format) {
   df$league_avg_runs <- dplyr::coalesce(df$league_avg_runs, default_runs)
   df$league_avg_wicket <- dplyr::coalesce(df$league_avg_wicket, default_wicket)
 
+  # #81/D-P50 stage 3 added is_free_hit_int as a training feature. Most
+  # callers (cricinfo-sourced scoring, the simulator) have no free-hit data
+  # at all -- default to "not on a free hit" rather than erroring, same
+  # shape as the league_avg_* default above.
+  if (!"is_free_hit" %in% names(df)) df$is_free_hit <- FALSE
+
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
     # Short-form features
@@ -829,7 +837,8 @@ prepare_agnostic_features <- function(df, format) {
         innings_num = as.integer(as.character(innings)),
         # Optional context features (default to 0 if not present)
         is_knockout = as.integer(dplyr::coalesce(as.integer(is_knockout), 0L)),
-        event_tier = dplyr::coalesce(as.numeric(event_tier), 2)  # Default tier 2
+        event_tier = dplyr::coalesce(as.numeric(event_tier), 2),  # Default tier 2
+        is_free_hit_int = as.integer(dplyr::coalesce(as.logical(is_free_hit), FALSE))
       )
 
     # Select features (order must match training exactly)
@@ -840,7 +849,7 @@ prepare_agnostic_features <- function(df, format) {
         wickets_fallen, runs_difference, overs_left,
         phase_powerplay, phase_middle, phase_death,
         gender_male,
-        is_knockout, event_tier,
+        is_knockout, event_tier, is_free_hit_int,
         league_avg_runs, league_avg_wicket
       )
 
@@ -866,7 +875,8 @@ prepare_agnostic_features <- function(df, format) {
         innings_num = as.integer(as.character(innings)),
         # Optional context features
         is_knockout = as.integer(dplyr::coalesce(as.integer(is_knockout), 0L)),
-        event_tier = dplyr::coalesce(as.numeric(event_tier), 2)
+        event_tier = dplyr::coalesce(as.numeric(event_tier), 2),
+        is_free_hit_int = as.integer(dplyr::coalesce(as.logical(is_free_hit), FALSE))
       )
 
     # Select features (no overs_left for Test; order must match training)
@@ -876,7 +886,7 @@ prepare_agnostic_features <- function(df, format) {
         wickets_fallen, runs_difference,
         phase_new_ball, phase_middle, phase_old_ball,
         gender_male,
-        is_knockout, event_tier,
+        is_knockout, event_tier, is_free_hit_int,
         league_avg_runs, league_avg_wicket
       )
   }

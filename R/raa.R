@@ -29,10 +29,17 @@
 #     INCLUDING the current delivery minus the opponent's completed-innings
 #     total. That inclusion is reproduced here on purpose: serving must match
 #     training even where training's convention is arguable.
-#   - Training did not exclude wides (batter runs 0 by definition), so the
-#     expectation averages over them; scoring only batter-faced legal balls
-#     against it adds a uniform ~+0.02 runs/ball drift that cancels in any
-#     across-player comparison at the same states.
+#   - Training excludes wides from its own diagnostics/RAA population but,
+#     since #81/D-P50 stage 3, DOES train on them as their own dedicated
+#     OUTCOME_CATEGORIES bucket ("wide") rather than the pre-2026-08-18
+#     state this comment used to describe (blended into the run categories
+#     at runs_batter=0). Scoring here still excludes wides -- a wide is not
+#     a ball FACED (R/player_game_data.R's batting_balls_faced convention),
+#     so the model correctly having a dedicated wide category changes how
+#     well LEGAL-ball predictions are calibrated, not whether wides
+#     themselves should be scored. `is_free_hit_int` (also new in stage 3)
+#     has no cricinfo equivalent and defaults to FALSE in
+#     prepare_agnostic_features() for every row scored here.
 
 #' The Run Value of a Wicket for RAA
 #'

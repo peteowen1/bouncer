@@ -8,11 +8,19 @@
 
 #' Calculate Expected Runs from Probability Matrix
 #'
-#' Converts an `OUTCOME_CATEGORIES`-shaped probability distribution into
-#' expected runs per delivery.
+#' Converts a probability distribution into expected runs per delivery.
+#' Accepts a PREFIX of `OUTCOME_CATEGORIES` (see `R/constants.R`) one
+#' category short of the full count, not just the exact full length -- the
+#' agnostic and full models can be at different category counts mid-rollout
+#' (#81/D-P50: the agnostic model gained "wide" as an 8th category at stage
+#' 3, the full model stays at 7 until its own stage-5 retrain), since new
+#' categories are always appended at the end, never inserted. Bounded to
+#' `length(OUTCOME_CATEGORIES) - 1` rather than any smaller width, so a
+#' genuinely malformed input (e.g. 2 columns) still errors instead of
+#' silently computing a meaningless partial expectation.
 #'
-#' @param probs Matrix or data frame with `length(OUTCOME_CATEGORIES)` columns,
-#'   in `OUTCOME_CATEGORIES` order (see `R/constants.R`).
+#' @param probs Matrix or data frame with `length(OUTCOME_CATEGORIES)` or
+#'   `length(OUTCOME_CATEGORIES) - 1` columns, in `OUTCOME_CATEGORIES` order.
 #'
 #' @return Numeric vector of expected runs per delivery.
 #'   Formula: E(runs) = sum(prob_i * runs_i), `runs_i` = `OUTCOME_RUN_VALUES`.
@@ -20,12 +28,14 @@
 #' @keywords internal
 calculate_expected_runs <- function(probs) {
   probs <- as.matrix(probs)
+  n <- ncol(probs)
+  n_full <- length(OUTCOME_CATEGORIES)
 
-  if (ncol(probs) != length(OUTCOME_CATEGORIES)) {
-    cli::cli_abort("probs must have {length(OUTCOME_CATEGORIES)} columns: ({paste(OUTCOME_CATEGORIES, collapse = ', ')})")
+  if (n != n_full && n != n_full - 1L) {
+    cli::cli_abort("probs must have {n_full} columns ({paste(OUTCOME_CATEGORIES, collapse = ', ')}), or {n_full - 1L} if scoring a model one category behind (e.g. the full model pre-stage-5, #81/D-P50) -- got {n}.")
   }
 
-  as.vector(probs %*% OUTCOME_RUN_VALUES)
+  as.vector(probs %*% OUTCOME_RUN_VALUES[seq_len(n)])
 }
 
 

@@ -8,8 +8,11 @@
 fake_full_outcome <- function(captured_env) {
   function(model, delivery_data, format) {
     captured_env$calls <- c(captured_env$calls, list(delivery_data))
-    n <- length(OUTCOME_CATEGORIES)
-    matrix(1 / n, nrow = nrow(delivery_data), ncol = n)
+    # Deliberately 7, not length(OUTCOME_CATEGORIES) (8 since #81/D-P50
+    # stage 3) -- this mocks predict_full_outcome(), and the FULL model is
+    # still 7-category until its own stage-5 retrain. calculate_expected_runs()
+    # accepts any prefix width of OUTCOME_CATEGORIES for exactly this reason.
+    matrix(1 / 7, nrow = nrow(delivery_data), ncol = 7)
   }
 }
 
