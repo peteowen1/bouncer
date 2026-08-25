@@ -222,7 +222,13 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
       # No-ball penalty run, on top of whatever the batter/extras scored --
       # the drawn category's run value already reflects that (see the
       # header note: a no-ball's runs distribution mirrors a legal ball's).
-      list(runs = drawn$runs + 1, is_wicket = drawn$is_wicket, probs = probs,
+      # Wicket occurrence does NOT reuse the drawn category, though: only a
+      # run-out is legal on a no-ball, and the model's unconditional
+      # P(wicket) draw overstates that by 9-45x (see NO_BALL_WICKET_RATE_*
+      # in R/constants_skill.R for the measurement) -- drawn independently
+      # for the same reason no-ball occurrence itself is.
+      is_wicket <- stats::runif(1) < get_no_ball_wicket_rate(format)
+      list(runs = drawn$runs + 1, is_wicket = is_wicket, probs = probs,
            is_illegal = TRUE, sets_free_hit = TRUE)
     } else {
       list(runs = drawn$runs, is_wicket = drawn$is_wicket, probs = probs,
@@ -261,9 +267,14 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
       list(runs = run_values[wide_idx], is_wicket = FALSE, probs = probs,
            exp_wicket = 0, is_illegal = TRUE, sets_free_hit = FALSE)
     } else if (is_noball) {
-      is_wicket <- stats::runif(1) < cond_exp_wicket
+      # Same reasoning as the categorical branch: wicket occurrence on a
+      # no-ball is drawn from the measured run-out-only rate, not the
+      # model's unconditional P(wicket) (which overstates it 9-45x, since
+      # every non-run-out dismissal is void on a no-ball).
+      no_ball_wicket_rate <- get_no_ball_wicket_rate(format)
+      is_wicket <- stats::runif(1) < no_ball_wicket_rate
       list(runs = cond_exp_runs + 1, is_wicket = is_wicket, probs = probs,
-           exp_wicket = cond_exp_wicket, is_illegal = TRUE, sets_free_hit = TRUE)
+           exp_wicket = no_ball_wicket_rate, is_illegal = TRUE, sets_free_hit = TRUE)
     } else {
       is_wicket <- stats::runif(1) < cond_exp_wicket
       list(runs = cond_exp_runs, is_wicket = is_wicket, probs = probs,
@@ -286,6 +297,28 @@ get_no_ball_rate <- function(format) {
     "odi" = NO_BALL_RATE_ODI,
     "test" = NO_BALL_RATE_TEST,
     NO_BALL_RATE_T20
+  )
+}
+
+
+#' Wicket Rate Conditional on a No-Ball, for a Format
+#'
+#' Only a run-out is legal on a no-ball; every other dismissal type is void.
+#' The model's own P(wicket) is unconditional and overstates this 9-45x (see
+#' `NO_BALL_WICKET_RATE_*` in `R/constants_skill.R`), so `simulate_delivery()`
+#' draws no-ball wicket occurrence from this measured rate instead.
+#'
+#' @param format Character. "t20", "odi", or "test".
+#' @return Numeric. Measured wicket rate conditional on the delivery being a
+#'   no-ball.
+#' @keywords internal
+get_no_ball_wicket_rate <- function(format) {
+  fmt <- normalize_format(format)
+  switch(fmt,
+    "t20" = NO_BALL_WICKET_RATE_T20,
+    "odi" = NO_BALL_WICKET_RATE_ODI,
+    "test" = NO_BALL_WICKET_RATE_TEST,
+    NO_BALL_WICKET_RATE_T20
   )
 }
 

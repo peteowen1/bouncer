@@ -54,8 +54,15 @@ test_that("no-ball firing (model draws a non-wide category) adds the penalty run
     predict_full_outcome = function(model, delivery_data, format) noball_target_probs,
     .package = "bouncer"
   )
-  # runif = 0 guarantees is_noball = TRUE (below any positive rate).
-  local_mocked_bindings(runif = function(...) 0, .package = "stats")
+  # Call 1: is_noball check, forced TRUE (below any positive rate). Call 2:
+  # the independent no-ball-wicket check, forced FALSE (above any positive
+  # rate) -- a no-ball's wicket occurrence is NOT the drawn category's
+  # is_wicket (see the dedicated test below for why).
+  call_n <- 0L
+  local_mocked_bindings(runif = function(...) {
+    call_n <<- call_n + 1L
+    if (call_n == 1L) 0 else 0.99
+  }, .package = "stats")
 
   result <- simulate_delivery(NULL, fixed_state(), fixed_player(), fixed_team(),
                                fixed_venue(), mode = "categorical")
@@ -66,16 +73,65 @@ test_that("no-ball firing (model draws a non-wide category) adds the penalty run
   expect_false(result$is_wicket)
 })
 
+test_that("no-ball wicket occurrence uses the measured run-out-only rate, not the model's draw", {
+  # The drawn category IS "wicket" (all probability mass there), which would
+  # give is_wicket = TRUE if the no-ball branch reused it directly -- but
+  # only a run-out is legal on a no-ball, and the model's unconditional
+  # P(wicket) overstates that by 9-45x (NO_BALL_WICKET_RATE_* measurement).
+  # Forcing the independent wicket draw's runif call above the (tiny)
+  # no-ball-wicket rate must produce is_wicket = FALSE despite the model
+  # having drawn "wicket".
+  wicket_only_probs <- c(1, 0, 0, 0, 0, 0, 0, 0)
+  local_mocked_bindings(
+    predict_full_outcome = function(model, delivery_data, format) wicket_only_probs,
+    .package = "bouncer"
+  )
+  call_n <- 0L
+  local_mocked_bindings(runif = function(...) {
+    call_n <<- call_n + 1L
+    if (call_n == 1L) 0 else 0.99   # call 1: is_noball fires; call 2: no-ball-wicket does not
+  }, .package = "stats")
+
+  result <- simulate_delivery(NULL, fixed_state(), fixed_player(), fixed_team(),
+                               fixed_venue(), mode = "categorical")
+
+  expect_true(result$is_illegal)
+  expect_true(result$sets_free_hit)
+  expect_false(result$is_wicket)   # NOT the model's drawn "wicket" category
+
+  # And forcing the second runif call BELOW the no-ball-wicket rate must
+  # produce is_wicket = TRUE, confirming the independent draw is actually
+  # wired in (not just always FALSE).
+  call_n <- 0L
+  local_mocked_bindings(runif = function(...) {
+    call_n <<- call_n + 1L
+    0   # both calls fire
+  }, .package = "stats")
+  result2 <- simulate_delivery(NULL, fixed_state(), fixed_player(), fixed_team(),
+                                fixed_venue(), mode = "categorical")
+  expect_true(result2$is_wicket)
+})
+
 test_that("a no-ball/wide collision resolves as a no-ball, never as a wide", {
   # Wide gets almost all the mass; the model would draw wide on its own, but
   # the independent no-ball draw (forced to always fire) must win. wicket
   # gets zero mass throughout (including after the wide-excluding redraw),
-  # so is_wicket is deterministically checkable too.
+  # so is_wicket would be FALSE via the drawn category too -- but each
+  # delivery also makes a second runif call for the independent no-ball
+  # wicket draw, forced above the (tiny) no-ball-wicket rate here so that
+  # call doesn't itself introduce a wicket and confound this test's focus
+  # (collision resolution, not the wicket-rate fix covered by its own test
+  # above). Odd calls = is_noball check (always fires); even calls = the
+  # no-ball-wicket check (never fires).
   local_mocked_bindings(
     predict_full_outcome = function(model, delivery_data, format) wide_only_probs,
     .package = "bouncer"
   )
-  local_mocked_bindings(runif = function(...) 0, .package = "stats")   # always a no-ball
+  call_n <- 0L
+  local_mocked_bindings(runif = function(...) {
+    call_n <<- call_n + 1L
+    if (call_n %% 2L == 1L) 0 else 0.99
+  }, .package = "stats")
 
   set.seed(2)
   draws <- replicate(300, simulate_delivery(
