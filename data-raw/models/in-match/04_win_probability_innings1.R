@@ -139,14 +139,43 @@ prepare_innings1_winprob_features <- function(data, baseline_model = NULL) {
 
   # Calculate baseline projected score if we have the model
   if (!is.null(baseline_model)) {
-    # Join venue stats
+    # Causal, per-match_id first (#82) -- joining baseline_model$venue_stats by
+    # venue let every training row see its own match baked into its own
+    # baseline (the same leak #80 fixed one script upstream). venue_stats_by_match
+    # only covers IPL matches (this baseline is IPL-scoped, #82); this training
+    # corpus is ALL T20 matches (01_prepare_all_formats.R, any competition), so
+    # most rows fall through to venue_stats (as-of-now per-venue, still IPL-only
+    # but topically the right ground) or overall_avg for a non-IPL venue. Both
+    # fallbacks are correct, just weaker signal than the causal match -- not a
+    # leak, since neither depends on the row's own match.
+    n_before_join <- nrow(data)
     data <- data %>%
       left_join(
-        baseline_model$venue_stats %>% select(venue, venue_avg_baseline = venue_avg_score),
-        by = "venue"
+        baseline_model$venue_stats_by_match %>% select(match_id, venue_avg_baseline = venue_avg_score),
+        by = "match_id"
       ) %>%
+      left_join(
+        baseline_model$venue_stats %>% select(venue, venue_avg_fallback = venue_avg_score),
+        by = "venue"
+      )
+    # A duplicate match_id or venue key in either baseline table would fan this
+    # join out silently -- both are supposed to be 1 row per key (checked at
+    # source in 02_baseline_projected_score.R), but nothing here re-checks it.
+    stopifnot("baseline join must not change row count" = nrow(data) == n_before_join)
+
+    n_causal <- sum(!is.na(data$venue_avg_baseline))
+    n_fallback <- sum(is.na(data$venue_avg_baseline) & !is.na(data$venue_avg_fallback))
+    n_constant <- sum(is.na(data$venue_avg_baseline) & is.na(data$venue_avg_fallback))
+    cli::cli_alert_info(
+      "baseline_projected_score coverage: {round(100 * n_causal / n_before_join, 1)}% causal match_id, {round(100 * n_fallback / n_before_join, 1)}% venue-level fallback, {round(100 * n_constant / n_before_join, 1)}% flat overall_avg constant")
+    if (n_causal / n_before_join < 0.5) {
+      cli::cli_alert_warning(
+        "baseline_projected_score is a near-constant feature for most rows -- baseline_model's EVENT_FILTER scope (IPL only, #82) does not cover most of this training corpus (all T20 competitions, 01_prepare_all_formats.R). Real, not a regression from #82, but flagged since #82 is what made this measurable.")
+    }
+
+    data <- data %>%
       mutate(
-        venue_avg_baseline = coalesce(venue_avg_baseline, baseline_model$overall_avg)
+        venue_avg_baseline = coalesce(venue_avg_baseline, venue_avg_fallback, baseline_model$overall_avg)
       )
 
     # For simplicity, use venue average as baseline (toss/knockout adjustments are match-level)
