@@ -7,8 +7,8 @@
 tune_xgb_params(
   dtrain,
   folds,
-  fixed_params = list(objective = "multi:softprob", num_class = 7, eval_metric =
-    "mlogloss"),
+  fixed_params = list(objective = "multi:softprob", num_class =
+    length(OUTCOME_CATEGORIES), eval_metric = "mlogloss"),
   n_iter = 20,
   max_rounds = 2000,
   early_stopping = 20,

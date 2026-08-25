@@ -276,7 +276,8 @@ load_agnostic_model <- function(format = c("t20", "odi", "test"),
 #' Predict Agnostic Outcome Probabilities
 #'
 #' Generates outcome probability predictions using the agnostic model.
-#' Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
+#' Returns a matrix of probabilities in `OUTCOME_CATEGORIES` order
+#' (`R/constants.R`) -- wicket, 0-4, 6, wide, since #81/D-P50 stage 3.
 #'
 #' @param model XGBoost model object from load_agnostic_model()
 #' @param delivery_data Data frame of deliveries with required features:
@@ -308,8 +309,14 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
   features <- prepare_agnostic_features(delivery_data, format)
   .assert_feature_alignment(model, features, sprintf("agnostic model (%s)", format))
 
-  # Create DMatrix and predict
-  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features))
+  # Create DMatrix and predict. nthread=4 matches the cap the agnostic
+  # trainer pins for the same reason (01_train_agnostic_model.R, #81/D-P50
+  # stage 3): unbounded default threading crashed reproducibly via a native
+  # OpenMP fault during Test-format xgb.cv() on this machine. predict() takes
+  # no nthread argument of its own -- the DMatrix's setting is the only
+  # lever -- and a single-shot predict() over millions of rows (RAA scoring)
+  # hits the same native code path CV did.
+  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features), nthread = 4)
   probs <- predict(model, dmat)
 
   # Ensure probabilities sum to 1 (numerical precision fix)
@@ -324,7 +331,8 @@ predict_agnostic_outcome <- function(model, delivery_data, format = c("t20", "od
 
 #' Get Expected Runs from Agnostic Model Predictions
 #'
-#' Converts the 7-class probability distribution into expected runs.
+#' Converts the `OUTCOME_CATEGORIES`-shaped probability distribution into
+#' expected runs.
 #'
 #' @param probs Matrix of probabilities from predict_agnostic_outcome()
 #'
@@ -499,16 +507,16 @@ load_full_model <- function(format = c("t20", "odi", "test"),
 #' Predict Full Outcome Probabilities
 #'
 #' Generates outcome probability predictions using the full model with all features.
-#' Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
+#' Returns a matrix of `OUTCOME_CATEGORIES`-shaped probabilities (wicket, 0,
+#' 1, 2, 3, 4, 6, wide -- see `R/constants.R`).
 #'
 #' @param model XGBoost model object from load_full_model()
 #' @param delivery_data Data frame of deliveries with required features.
 #'   Must include all context, player, team, and venue skill features.
 #' @param format Character. Format type: "t20", "odi", or "test"
 #'
-#' @return Matrix with 7 columns representing probabilities for each outcome:
-#'   col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
-#'   col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
+#' @return Matrix with one column per `OUTCOME_CATEGORIES` entry, in that
+#'   order.
 #'
 #' @section Feature order safety (bouncerverse#76):
 #' Aborts if the serving frame's columns don't match the model's stamped
@@ -528,8 +536,10 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
   features <- prepare_full_features(delivery_data, format)
   .assert_feature_alignment(model, features, sprintf("full model (%s)", format))
 
-  # Create DMatrix and predict
-  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features))
+  # Create DMatrix and predict. nthread=4, same reasoning as
+  # predict_agnostic_outcome() above -- the full model trainer pins it for
+  # the same native OpenMP crash risk (#81/D-P50 stage 5).
+  dmat <- xgboost::xgb.DMatrix(data = as.matrix(features), nthread = 4)
   probs <- predict(model, dmat)
 
   # Ensure probabilities sum to 1 (numerical precision fix)
@@ -544,7 +554,8 @@ predict_full_outcome <- function(model, delivery_data, format = c("t20", "odi", 
 
 #' Get Expected Runs from Full Model Predictions
 #'
-#' Converts the 7-class probability distribution into expected runs.
+#' Converts the `OUTCOME_CATEGORIES`-shaped probability distribution into
+#' expected runs.
 #'
 #' @param probs Matrix of probabilities from predict_full_outcome()
 #'
@@ -621,6 +632,19 @@ prepare_full_features <- function(df, format) {
   df$venue_boundary_rate <- dplyr::coalesce(df$venue_boundary_rate, start_vals$boundary_rate)
   df$venue_dot_rate <- dplyr::coalesce(df$venue_dot_rate, start_vals$dot_rate)
 
+  # #81/D-P50 stage 5: is_free_hit_int, mirroring prepare_agnostic_features()
+  # -- including its type guard (7b146df, review-gate on the RAA commit):
+  # as.logical() on an unparseable value (e.g. the strings "0"/"1") returns
+  # NA with no warning, which coalesce() would then silently launder to
+  # FALSE -- mispricing a real free hit with zero indication. Most callers
+  # have no free-hit data at all -- default to "not on a free hit"; a
+  # genuine NA (unbackfilled row) is still handled by the coalesce below.
+  if (!"is_free_hit" %in% names(df)) df$is_free_hit <- FALSE
+  if (!is.logical(df$is_free_hit)) {
+    cli::cli_abort("is_free_hit must be logical, got {.cls {class(df$is_free_hit)[1]}}.")
+  }
+  df$is_free_hit_int <- as.integer(dplyr::coalesce(df$is_free_hit, FALSE))
+
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
     # Short-form features
@@ -682,6 +706,7 @@ prepare_full_features <- function(df, format) {
         phase_powerplay, phase_middle, phase_death,
         gender_male,
         is_knockout, event_tier,
+        is_free_hit_int,
         # Player skills
         batter_scoring_index, batter_survival_rate,
         bowler_economy_index, bowler_strike_rate,
@@ -731,6 +756,7 @@ prepare_full_features <- function(df, format) {
         phase_new_ball, phase_middle, phase_old_ball,
         gender_male,
         is_knockout, event_tier,
+        is_free_hit_int,
         # Player skills
         batter_scoring_index, batter_survival_rate,
         bowler_economy_index, bowler_strike_rate,
@@ -791,6 +817,20 @@ prepare_agnostic_features <- function(df, format) {
   df$league_avg_runs <- dplyr::coalesce(df$league_avg_runs, default_runs)
   df$league_avg_wicket <- dplyr::coalesce(df$league_avg_wicket, default_wicket)
 
+  # #81/D-P50 stage 3 added is_free_hit_int as a training feature. Most
+  # callers (cricinfo-sourced scoring, the simulator) have no free-hit data
+  # at all -- default to "not on a free hit" rather than erroring, same
+  # shape as the league_avg_* default above.
+  if (!"is_free_hit" %in% names(df)) df$is_free_hit <- FALSE
+  if (!is.logical(df$is_free_hit)) {
+    # as.logical() on an unparseable value (e.g. the strings "0"/"1") returns
+    # NA with no warning, which coalesce() below would then silently launder
+    # to FALSE -- mispricing a real free hit as a normal delivery with zero
+    # indication. Fail loud instead; a genuine NA (unbackfilled row) is still
+    # fine and is handled by the coalesce.
+    cli::cli_abort("is_free_hit must be logical, got {.cls {class(df$is_free_hit)[1]}}.")
+  }
+
   # Format-specific feature engineering
   if (format %in% c("t20", "odi")) {
     # Short-form features
@@ -829,7 +869,8 @@ prepare_agnostic_features <- function(df, format) {
         innings_num = as.integer(as.character(innings)),
         # Optional context features (default to 0 if not present)
         is_knockout = as.integer(dplyr::coalesce(as.integer(is_knockout), 0L)),
-        event_tier = dplyr::coalesce(as.numeric(event_tier), 2)  # Default tier 2
+        event_tier = dplyr::coalesce(as.numeric(event_tier), 2),  # Default tier 2
+        is_free_hit_int = as.integer(dplyr::coalesce(as.logical(is_free_hit), FALSE))
       )
 
     # Select features (order must match training exactly)
@@ -840,7 +881,7 @@ prepare_agnostic_features <- function(df, format) {
         wickets_fallen, runs_difference, overs_left,
         phase_powerplay, phase_middle, phase_death,
         gender_male,
-        is_knockout, event_tier,
+        is_knockout, event_tier, is_free_hit_int,
         league_avg_runs, league_avg_wicket
       )
 
@@ -866,7 +907,8 @@ prepare_agnostic_features <- function(df, format) {
         innings_num = as.integer(as.character(innings)),
         # Optional context features
         is_knockout = as.integer(dplyr::coalesce(as.integer(is_knockout), 0L)),
-        event_tier = dplyr::coalesce(as.numeric(event_tier), 2)
+        event_tier = dplyr::coalesce(as.numeric(event_tier), 2),
+        is_free_hit_int = as.integer(dplyr::coalesce(as.logical(is_free_hit), FALSE))
       )
 
     # Select features (no overs_left for Test; order must match training)
@@ -876,7 +918,7 @@ prepare_agnostic_features <- function(df, format) {
         wickets_fallen, runs_difference,
         phase_new_ball, phase_middle, phase_old_ball,
         gender_male,
-        is_knockout, event_tier,
+        is_knockout, event_tier, is_free_hit_int,
         league_avg_runs, league_avg_wicket
       )
   }

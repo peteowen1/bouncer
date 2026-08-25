@@ -157,7 +157,9 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
       (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier
+      COALESCE(mc.event_tier, 3) AS event_tier,
+      cs.wides,
+      cs.is_free_hit
     FROM cumulative_scores cs
     LEFT JOIN match_context mc ON cs.match_id = mc.match_id
     WHERE cs.runs_batter NOT IN (5)
@@ -351,10 +353,11 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
 }
 
 
-#' The 7-Class Ball Outcome Used by the Outcome Models
+#' The Ball Outcome Class Used by the Outcome Models
 #'
-#' Wicket, dot, 1, 2, 3, 4, 6 as classes 0-6. Anything else (5s, 7s, and any
-#' row missing its inputs) is `NA` and is dropped by the trainer.
+#' Wicket, dot, 1, 2, 3, 4, 6, wide as classes 0-7 (`OUTCOME_CATEGORIES`
+#' order, `R/constants.R`). Anything else (5s, 7s, and any row missing its
+#' inputs) is `NA` and is dropped by the trainer.
 #'
 #' Declared once because it was inline in `02_train_full_model.R`'s mutate,
 #' and any comparison against those models has to reproduce the label exactly.
@@ -362,13 +365,38 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
 #' against a different target and reporting the difference as a model result
 #' (bouncerverse#65).
 #'
+#' Wicket is checked first (a wicket on a wide -- stumped/run-out/hit-wicket
+#' only -- still categorizes as wicket, not wide), then wide, then run count
+#' -- matching `01_train_agnostic_model.R`'s `case_when()` priority exactly
+#' (#81/D-P50 stage 5). Before this, `wides` was not passed in at all: a wide
+#' delivery (`runs_batter` always 0, since a batter cannot play a genuine
+#' shot at a ball called wide) fell through to the `runs_batter == 0` branch
+#' and was silently trained as a dot ball -- the population mismatch
+#' documented in the plan's §(d).
+#'
 #' @param runs_batter Integer vector. Runs off the bat.
 #' @param is_wicket Logical or integer vector.
+#' @param wides Integer vector, or `NULL`/`0` (recycled) if unavailable.
+#'   Positive/non-missing means the delivery was called wide.
 #' @return Integer vector of class labels, `NA` where undefined.
 #' @keywords internal
-ball_outcome_class <- function(runs_batter, is_wicket) {
+ball_outcome_class <- function(runs_batter, is_wicket, wides = 0L) {
+  # Same type-guard shape as compute_is_free_hit()'s wides/noballs check
+  # (R/cricsheet_parser.R) -- as.integer() on a non-numeric/non-logical
+  # value (e.g. a character or factor column) can silently return NA or,
+  # for a factor, silently wrong level codes, with no warning either way.
+  if (!is.numeric(wides) && !is.logical(wides)) {
+    cli::cli_abort("{.arg wides} must be numeric or logical, got {.cls {class(wides)[1]}}.")
+  }
+  if (!length(wides) %in% c(1L, length(runs_batter))) {
+    cli::cli_abort(
+      "{.arg wides} has length {length(wides)}, but must be length 1 or match {.arg runs_batter}'s length {length(runs_batter)}.")
+  }
+  is_wide <- data.table::fcoalesce(as.integer(wides), 0L) > 0L
+  is_wide <- rep_len(is_wide, length(runs_batter))
   data.table::fcase(
     as.logical(is_wicket), 0L,
+    is_wide, 7L,
     runs_batter == 0, 1L,
     runs_batter == 1, 2L,
     runs_batter == 2, 3L,

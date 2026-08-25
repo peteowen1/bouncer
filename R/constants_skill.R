@@ -48,6 +48,37 @@ EXPECTED_WICKET_T20 <- 0.054        # Actual T20 wicket rate per ball
 EXPECTED_WICKET_ODI <- 0.028        # Actual ODI wicket rate per ball
 EXPECTED_WICKET_TEST <- 0.017       # Actual Test wicket rate per ball
 
+# #81/D-P50 stage 6: no-ball rate per format, measured from
+# cricsheet.deliveries (COALESCE(noballs,0) > 0 -- all match types 2026-08-25).
+# Not modelled as an OUTCOME_CATEGORIES class (see R/constants.R's own note --
+# a no-ball's batter-runs distribution is nearly identical to a legal
+# delivery's: mean runs off the bat 1.2122 (noball) vs 1.1825 (legal) T20,
+# 0.8828 vs 0.8025 ODI, 0.5080 vs 0.5206 Test -- so the trained model was
+# never given a no-ball feature and its unconditional draw already stands in
+# for "what did the batter do" whether or not the delivery turns out illegal).
+# The simulator draws no-ball occurrence independently of the model, using
+# these rates, then adds the deterministic penalty run and re-bowls.
+NO_BALL_RATE_T20 <- 0.004937    # 15,906 / 3,221,782 deliveries
+NO_BALL_RATE_ODI <- 0.003483    #  9,237 / 2,651,647 deliveries
+NO_BALL_RATE_TEST <- 0.005803   # 31,538 / 5,435,169 deliveries
+
+# Wicket rate CONDITIONAL ON a no-ball, same source and date. Only a run-out
+# is legal on a no-ball (ICC playing conditions) -- every other dismissal
+# type is void. The runs distribution on a no-ball mirrors a legal ball's
+# closely enough to reuse the model's unconditional draw (the comment
+# above), but the WICKET distribution does not: measured conditional rate is
+# 9.0x/12.3x/44.7x LOWER than the unconditional per-ball rate
+# (EXPECTED_WICKET_*), since almost every dismissal type is voided. Using
+# the model's unconditional P(wicket) on a no-ball branch would overstate
+# dismissals by that same factor (review-gate catch on the #81/D-P50 stage 6
+# commit -- the runs claim was validated, the wicket one wasn't). The
+# simulator draws no-ball wicket occurrence independently from this rate
+# instead of the model's own draw, for the same reason no-ball occurrence
+# itself is independent: the model has no signal to condition on here.
+NO_BALL_WICKET_RATE_T20 <- 0.005973    #    95 / 15,906 no-balls
+NO_BALL_WICKET_RATE_ODI <- 0.002273    #    21 /  9,237 no-balls
+NO_BALL_WICKET_RATE_TEST <- 0.000380   #    12 / 31,538 no-balls
+
 # Minimum deliveries for reliable skill index
 SKILL_MIN_BALLS_BATTER <- 30
 SKILL_MIN_BALLS_BOWLER <- 60

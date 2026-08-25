@@ -167,7 +167,11 @@ create_schema <- function(conn, verbose = TRUE) {
 
       -- Match State (running totals)
       total_runs INTEGER,
-      wickets_fallen INTEGER
+      wickets_fallen INTEGER,
+
+      -- Derived (bouncerverse#81/D-P50) -- see compute_is_free_hit(); no such
+      -- field exists in cricsheet's own data, this is computed post-parse.
+      is_free_hit BOOLEAN
     )
   ")
 

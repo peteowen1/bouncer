@@ -986,3 +986,60 @@ get_all_data_folders <- function() {
   }
   folders
 }
+
+
+#' Derive Free-Hit Status Per Delivery
+#'
+#' Cricsheet's JSON has no `free_hit` field (checked against the published
+#' schema and a real no-ball delivery, bouncerverse#81/D-P50) -- it has to be
+#' derived from what IS stored. A no-ball (not a wide) triggers a free hit on
+#' the next delivery; if that delivery is itself illegal (wide or no-ball),
+#' the free hit carries forward again until a legal delivery is actually
+#' bowled and faced (ICC playing conditions).
+#'
+#' @section Why this vectorizes without a loop:
+#' A legal delivery always exits with pending = FALSE (nothing carries past
+#' it). So within one uninterrupted run of illegal deliveries bounded by
+#' legal ones, the exit-pending value is just `cummax()` of "is this row a
+#' no-ball" from the start of that run -- `rleid()` on the illegal flag
+#' groups exactly those runs. `is_free_hit` for a row is the value CARRIED
+#' IN, i.e. the previous row's exit-pending, hence the trailing `shift()`.
+#'
+#' @param d data.table (or data.frame) with `match_id`, `innings`, `over`,
+#'   `ball`, `wides`, `noballs`, already in true bowling order (cricsheet
+#'   numbers `ball` by delivery sequence within an over, including illegal
+#'   deliveries, so sorting by `(match_id, innings, over, ball)` is bowling
+#'   order -- see the `over_ball` note in `CLAUDE.md`/D-P5).
+#' @return Logical vector, one value per row of `d`, in `d`'s own row order
+#'   (NOT resorted -- safe to assign straight back onto the input frame).
+#' @keywords internal
+compute_is_free_hit <- function(d) {
+  dt <- data.table::as.data.table(d)
+  need <- c("match_id", "innings", "over", "ball", "wides", "noballs")
+  miss <- setdiff(need, names(dt))
+  if (length(miss)) cli::cli_abort("{.arg d} is missing {.field {miss}}.")
+  # A non-numeric wides/noballs would silently become "no illegal delivery"
+  # through as.integer()'s NA-on-coercion-failure + fcoalesce() below -- catch
+  # the type mismatch here instead of laundering it into a wrong answer.
+  if (!is.numeric(dt$wides) && !is.logical(dt$wides)) {
+    cli::cli_abort("{.field wides} must be numeric or logical, got {.cls {class(dt$wides)}}.")
+  }
+  if (!is.numeric(dt$noballs) && !is.logical(dt$noballs)) {
+    cli::cli_abort("{.field noballs} must be numeric or logical, got {.cls {class(dt$noballs)}}.")
+  }
+
+  dt[, .orig_order := .I]
+  data.table::setorder(dt, match_id, innings, over, ball)
+
+  dt[, .is_nb := data.table::fcoalesce(as.integer(noballs), 0L) > 0L]
+  dt[, .illegal := .is_nb | (data.table::fcoalesce(as.integer(wides), 0L) > 0L)]
+  dt[, .run_id := data.table::rleid(.illegal), by = .(match_id, innings)]
+  dt[, .pending_exit := as.logical(cummax(as.integer(.is_nb))),
+     by = .(match_id, innings, .run_id)]
+  dt[.illegal == FALSE, .pending_exit := FALSE]
+  dt[, .is_free_hit := data.table::shift(.pending_exit, 1L, fill = FALSE),
+     by = .(match_id, innings)]
+
+  data.table::setorder(dt, .orig_order)
+  dt$.is_free_hit
+}

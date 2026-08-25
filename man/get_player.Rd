@@ -27,7 +27,12 @@ A \code{bouncer_player} object containing:
 \itemize{
 \item player_id - Unique player identifier
 \item player_name - Full name
-\item country - Country/team
+\item country - NOT a nationality (bouncerverse#77). Cricsheet carries no
+player-nationality field; this is whichever team name the player's
+first-ingested match happened to be listed under -- a national side
+for most internationals, but a T20 franchise for anyone whose first
+match on record was domestic league cricket, and never updated after
+that first insert. Do not read it as "where this player is from".
 \item batting_style - Left/right handed
 \item bowling_style - Bowling type
 \item skills - Current skill indices (if available)

@@ -656,3 +656,47 @@ migrate_to_schemas <- function(path = NULL, verbose = TRUE) {
 
   invisible(TRUE)
 }
+
+
+#' Ensure the is_free_hit Column Exists on cricsheet.deliveries
+#'
+#' Adds the `is_free_hit` column if missing. Does NOT populate it -- run
+#' `data-raw/data-acquisition/backfill_free_hit.R` afterward (or after any
+#' bulk cricsheet re-load) to compute and write the values via
+#' [compute_is_free_hit()].
+#'
+#' @param conn DBI connection. Optional existing connection; opened and
+#'   closed if NULL.
+#' @param path Character. Database file path. If NULL, uses default.
+#'   Ignored if `conn` is provided.
+#'
+#' @return Invisibly returns TRUE on success.
+#' @keywords internal
+ensure_free_hit_column <- function(conn = NULL, path = NULL) {
+  own_conn <- is.null(conn)
+  if (own_conn) {
+    if (is.null(path)) path <- get_default_db_path()
+    if (!file.exists(path)) {
+      cli::cli_alert_danger("Database not found at {.file {path}}")
+      return(invisible(FALSE))
+    }
+    check_duckdb_available()
+    conn <- DBI::dbConnect(duckdb::duckdb(), dbdir = path)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  }
+
+  cols <- DBI::dbGetQuery(conn, "
+    SELECT column_name FROM information_schema.columns
+    WHERE table_schema = 'cricsheet' AND table_name = 'deliveries'
+  ")$column_name
+
+  if (!"is_free_hit" %in% cols) {
+    cli::cli_alert_info("Adding is_free_hit column to cricsheet.deliveries...")
+    DBI::dbExecute(conn, "ALTER TABLE cricsheet.deliveries ADD COLUMN is_free_hit BOOLEAN")
+    cli::cli_alert_success("Added is_free_hit column (unpopulated -- run the backfill script)")
+  } else {
+    cli::cli_alert_info("is_free_hit column already exists")
+  }
+
+  invisible(TRUE)
+}

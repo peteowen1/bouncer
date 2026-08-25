@@ -10,33 +10,38 @@
 
 test_that("calculate_expected_runs returns correct expected value", {
   # Simple case: 100% probability of 4 runs
-  probs_4 <- matrix(c(0, 0, 0, 0, 0, 1, 0), nrow = 1)
+  probs_4 <- matrix(c(0, 0, 0, 0, 0, 1, 0, 0), nrow = 1)
   expect_equal(calculate_expected_runs(probs_4), 4)
 
   # Simple case: 100% probability of 6 runs
-  probs_6 <- matrix(c(0, 0, 0, 0, 0, 0, 1), nrow = 1)
+  probs_6 <- matrix(c(0, 0, 0, 0, 0, 0, 1, 0), nrow = 1)
   expect_equal(calculate_expected_runs(probs_6), 6)
 
   # Simple case: 100% probability of wicket (0 runs)
-  probs_wicket <- matrix(c(1, 0, 0, 0, 0, 0, 0), nrow = 1)
+  probs_wicket <- matrix(c(1, 0, 0, 0, 0, 0, 0, 0), nrow = 1)
   expect_equal(calculate_expected_runs(probs_wicket), 0)
 
   # Simple case: 100% probability of dot ball (0 runs)
-  probs_dot <- matrix(c(0, 1, 0, 0, 0, 0, 0), nrow = 1)
+  probs_dot <- matrix(c(0, 1, 0, 0, 0, 0, 0, 0), nrow = 1)
   expect_equal(calculate_expected_runs(probs_dot), 0)
+
+  # Simple case: 100% probability of wide (#81/D-P50 stage 3)
+  probs_wide <- matrix(c(0, 0, 0, 0, 0, 0, 0, 1), nrow = 1)
+  expect_equal(calculate_expected_runs(probs_wide), OUTCOME_RUN_VALUES[length(OUTCOME_RUN_VALUES)])
 })
 
 test_that("calculate_expected_runs handles uniform distribution", {
   # Uniform probability across all outcomes
-  probs <- matrix(rep(1/7, 7), nrow = 1)
-  expected <- (0 + 0 + 1 + 2 + 3 + 4 + 6) / 7  # 16/7 ≈ 2.286
+  n <- length(OUTCOME_CATEGORIES)
+  probs <- matrix(rep(1 / n, n), nrow = 1)
+  expected <- sum(OUTCOME_RUN_VALUES) / n
   expect_equal(calculate_expected_runs(probs), expected, tolerance = 0.001)
 })
 
 test_that("calculate_expected_runs handles multiple rows", {
   probs <- matrix(c(
-    1, 0, 0, 0, 0, 0, 0,  # Row 1: wicket = 0 runs
-    0, 0, 0, 0, 0, 0, 1   # Row 2: six = 6 runs
+    1, 0, 0, 0, 0, 0, 0, 0,  # Row 1: wicket = 0 runs
+    0, 0, 0, 0, 0, 0, 1, 0   # Row 2: six = 6 runs
   ), nrow = 2, byrow = TRUE)
 
   result <- calculate_expected_runs(probs)
@@ -46,21 +51,22 @@ test_that("calculate_expected_runs handles multiple rows", {
 test_that("calculate_expected_runs validates input columns", {
   # Wrong number of columns should error
   probs_wrong <- matrix(c(0.5, 0.5), nrow = 1)
-  expect_error(calculate_expected_runs(probs_wrong), "7 columns")
+  expect_error(calculate_expected_runs(probs_wrong), "8 columns")
 })
 
 test_that("calculate_expected_runs handles data frames", {
   probs_df <- data.frame(
-    col1 = 0, col2 = 0, col3 = 0.5, col4 = 0.5, col5 = 0, col6 = 0, col7 = 0
+    col1 = 0, col2 = 0, col3 = 0.5, col4 = 0.5, col5 = 0, col6 = 0, col7 = 0, col8 = 0
   )
   # Expected: 0.5 * 1 + 0.5 * 2 = 1.5
   expect_equal(calculate_expected_runs(probs_df), 1.5)
 })
 
 test_that("calculate_expected_runs produces realistic cricket values", {
-  # Typical T20 probability distribution (from real data)
-  # ~5% wicket, ~35% dot, ~30% single, ~10% double, ~2% three, ~12% four, ~6% six
-  typical_probs <- matrix(c(0.05, 0.35, 0.30, 0.10, 0.02, 0.12, 0.06), nrow = 1)
+  # Typical T20 probability distribution (from real data, #81/D-P50 stage 3
+  # calibration: T20 wide rate ~3.7%)
+  # ~5% wicket, ~34% dot, ~29% single, ~10% double, ~2% three, ~12% four, ~6% six, ~4% wide
+  typical_probs <- matrix(c(0.05, 0.337, 0.289, 0.096, 0.019, 0.116, 0.058, 0.036), nrow = 1)
   exp_runs <- calculate_expected_runs(typical_probs)
 
   # T20 average is ~1.2 runs per ball, should be in reasonable range
@@ -109,15 +115,15 @@ test_that("calculate_expected_wicket_prob validates input", {
 
 test_that("calculate_expected_runs handles all-zero probability row", {
   # All-zero probs (degenerate input) should produce 0 expected runs, not NaN
-  probs <- matrix(0, nrow = 1, ncol = 7)
+  probs <- matrix(0, nrow = 1, ncol = length(OUTCOME_CATEGORIES))
   result <- calculate_expected_runs(probs)
   expect_equal(result, 0)
   expect_false(is.nan(result))
 })
 
 test_that("calculate_expected_runs returns correct value for valid distribution", {
-  # Known distribution: P(wicket)=0.1, P(0)=0.3, P(1)=0.2, P(2)=0.15, P(3)=0.05, P(4)=0.12, P(6)=0.08
-  probs <- matrix(c(0.1, 0.3, 0.2, 0.15, 0.05, 0.12, 0.08), nrow = 1)
+  # Known distribution: P(wicket)=0.1, P(0)=0.3, P(1)=0.2, P(2)=0.15, P(3)=0.05, P(4)=0.12, P(6)=0.08, P(wide)=0
+  probs <- matrix(c(0.1, 0.3, 0.2, 0.15, 0.05, 0.12, 0.08, 0), nrow = 1)
   result <- calculate_expected_runs(probs)
   expected <- 0*0.1 + 0*0.3 + 1*0.2 + 2*0.15 + 3*0.05 + 4*0.12 + 6*0.08
   expect_equal(result, expected, tolerance = 1e-10)
@@ -135,12 +141,14 @@ test_that("calculate_expected_wicket_prob returns correct probability", {
 # ============================================================================
 
 test_that("expected runs is bounded [0, 6]", {
-  # All possible run values are non-negative (0, 0, 1, 2, 3, 4, 6)
-  # So expected value must be in [0, 6]
+  # All run values are in [0, 6] (0, 0, 1, 2, 3, 4, 6, 1.217 for wide -- see
+  # OUTCOME_RUN_VALUES), so a probability-weighted average is too, whatever
+  # the category count.
   set.seed(42)
+  n <- length(OUTCOME_CATEGORIES)
   # Test with 5 random distributions (mathematical property holds for any valid distribution)
   for (i in 1:5) {
-    probs <- runif(7)
+    probs <- runif(n)
     probs <- probs / sum(probs)
     probs <- matrix(probs, nrow = 1)
     result <- calculate_expected_runs(probs)
@@ -275,12 +283,11 @@ test_that("wicket residual is actual minus expected", {
 test_that("residuals have correct mean property", {
   # If model is well-calibrated, mean residual should be ~0
   # We test this property with known inputs
-  probs <- matrix(c(0.05, 0.35, 0.30, 0.10, 0.02, 0.12, 0.06), nrow = 1)
+  probs <- matrix(c(0.05, 0.33, 0.30, 0.10, 0.02, 0.12, 0.06, 0.02), nrow = 1)
   exp_runs <- calculate_expected_runs(probs)
 
   # Weighted average of possible outcomes
-  outcomes <- c(0, 0, 1, 2, 3, 4, 6)
-  expected_residual <- sum(probs * (outcomes - exp_runs))
+  expected_residual <- sum(probs * (OUTCOME_RUN_VALUES - exp_runs))
   expect_equal(expected_residual, 0, tolerance = 1e-10)
 })
 
@@ -342,20 +349,21 @@ test_that("model_exists returns FALSE for nonexistent model", {
 
 test_that("expected runs handles extreme probability distributions", {
   # All probability on one outcome
-  for (i in 1:7) {
-    probs <- rep(0, 7)
+  n <- length(OUTCOME_CATEGORIES)
+  for (i in 1:n) {
+    probs <- rep(0, n)
     probs[i] <- 1
     probs <- matrix(probs, nrow = 1)
 
     result <- calculate_expected_runs(probs)
-    expected <- c(0, 0, 1, 2, 3, 4, 6)[i]
+    expected <- OUTCOME_RUN_VALUES[i]
     expect_equal(result, expected)
   }
 })
 
 test_that("calculate functions handle near-zero probabilities", {
   # Very small but non-zero probabilities
-  probs <- matrix(c(1e-10, 1 - 6e-10, 1e-10, 1e-10, 1e-10, 1e-10, 1e-10), nrow = 1)
+  probs <- matrix(c(1e-10, 1 - 7e-10, 1e-10, 1e-10, 1e-10, 1e-10, 1e-10, 1e-10), nrow = 1)
 
   # Should not error or produce NaN
   runs <- calculate_expected_runs(probs)
@@ -370,7 +378,7 @@ test_that("calculate functions handle near-zero probabilities", {
 test_that("expected runs handles large number of rows efficiently", {
   # Performance test - should complete quickly
   n_rows <- 10000
-  probs <- matrix(runif(n_rows * 7), nrow = n_rows)
+  probs <- matrix(runif(n_rows * length(OUTCOME_CATEGORIES)), nrow = n_rows)
   probs <- probs / rowSums(probs)  # Normalize each row
 
   start_time <- Sys.time()
@@ -409,11 +417,12 @@ test_that("5 runs is not a standard outcome class", {
   expect_false(5 %in% runs_values)
 })
 
-test_that("prepare_full_features builds the 31 columns the trained models carry", {
-  # The trained full models have num_feature 31: 28 informative + 3 trailing
-  # ELO columns (zero-filled at training). This xgboost build default-routes
-  # absent columns silently instead of erroring -- same hazard class as the
-  # agnostic league features (2026-08-13) -- so the width is pinned here.
+test_that("prepare_full_features builds the 32 columns the trained models carry", {
+  # The trained full models have num_feature 32: 28 informative + is_free_hit_int
+  # (#81/D-P50 stage 5) + 3 trailing ELO columns (zero-filled at training).
+  # This xgboost build default-routes absent columns silently instead of
+  # erroring -- same hazard class as the agnostic league features
+  # (2026-08-13) -- so the width is pinned here.
   row <- data.frame(
     innings = 1, over = 5, ball = 3, wickets_fallen = 1,
     runs_difference = 42, gender = "male", is_knockout = 0L, event_tier = 1,
@@ -426,7 +435,7 @@ test_that("prepare_full_features builds the 31 columns the trained models carry"
     venue_boundary_rate = 0.15, venue_dot_rate = 0.4
   )
   f <- prepare_full_features(row, "t20")
-  expect_equal(ncol(f), 31)
+  expect_equal(ncol(f), 32)
   expect_identical(tail(names(f), 3),
                    c("elo_run_diff", "elo_wicket_diff", "elo_venue_run"))
   expect_equal(unlist(f[, tail(names(f), 3)], use.names = FALSE), c(0, 0, 0))

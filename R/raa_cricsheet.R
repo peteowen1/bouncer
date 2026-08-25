@@ -159,7 +159,8 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       COALESCE(mc.is_knockout, 0)                AS is_knockout,
       COALESCE(mc.event_tier, 3)                 AS event_tier,
       lra.league_avg_runs,
-      lra.league_avg_wicket
+      lra.league_avg_wicket,
+      d.is_free_hit
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
     LEFT JOIN match_context mc ON mc.match_id = d.match_id
@@ -167,6 +168,11 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
     WHERE LOWER(d.match_type) IN (%1$s)
       %2$s
       AND d.innings BETWEEN 1 AND %3$d
+      -- Stays, deliberately (#81/D-P50 stage 4). The agnostic model now
+      -- trains on wides as their own category, but a wide is not a ball
+      -- FACED -- cricket convention (and R/player_game_data.R's own
+      -- batting_balls_faced filter) never counts one. Scoring wides here
+      -- would credit/debit batters for balls that were never theirs.
       AND COALESCE(d.wides, 0) = 0
       AND d.runs_batter <> 5
       AND d.runs_batter <= 6
@@ -197,7 +203,10 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
     is_knockout = balls$is_knockout,
     event_tier = balls$event_tier,
     league_avg_runs = balls$league_avg_runs,
-    league_avg_wicket = balls$league_avg_wicket
+    league_avg_wicket = balls$league_avg_wicket,
+    # #81/D-P50 stage 3 added is_free_hit as a training feature; real value
+    # available here since stage 1 backfilled it onto cricsheet.deliveries.
+    is_free_hit = balls$is_free_hit
   )
 
   cli::cli_alert_info("Scoring with the agnostic {format} model...")

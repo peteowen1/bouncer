@@ -43,7 +43,12 @@ validate_format <- function(format, allow_null = TRUE) {
 #'   \itemize{
 #'     \item player_id - Unique player identifier
 #'     \item player_name - Full name
-#'     \item country - Country/team
+#'     \item country - NOT a nationality (bouncerverse#77). Cricsheet carries no
+#'       player-nationality field; this is whichever team name the player's
+#'       first-ingested match happened to be listed under -- a national side
+#'       for most internationals, but a T20 franchise for anyone whose first
+#'       match on record was domestic league cricket, and never updated after
+#'       that first insert. Do not read it as "where this player is from".
 #'     \item batting_style - Left/right handed
 #'     \item bowling_style - Bowling type
 #'     \item skills - Current skill indices (if available)
@@ -248,7 +253,9 @@ print.bouncer_player <- function(x, ...) {
   cli::cli_text("ID: {x$player_id}")
 
   if (!is.na(x$country)) {
-    cli::cli_text("Country: {x$country}")
+    # NOT a nationality (bouncerverse#77) -- whichever team the player's
+    # first-ingested match happened to be listed under.
+    cli::cli_text("Team (first seen): {x$country}")
   }
   if (!is.na(x$batting_style)) {
     cli::cli_text("Batting: {x$batting_style}")
@@ -378,7 +385,9 @@ print.bouncer_player_analysis <- function(x, ...) {
   cli::cli_h1("{x$player$player_name} - {format_label}")
 
   # Print player info
-  if (!is.na(x$player$country)) cli::cli_text("Country: {x$player$country}")
+  # NOT a nationality (bouncerverse#77) -- whichever team the player's
+  # first-ingested match happened to be listed under.
+  if (!is.na(x$player$country)) cli::cli_text("Team (first seen): {x$player$country}")
 
   # Batting stats
   if (!is.null(x$batting) && x$batting$balls_faced > 0) {
@@ -1033,7 +1042,8 @@ print.bouncer_prediction <- function(x, ...) {
 #' @param limit Integer. Maximum results to return. Default 10.
 #' @param db_path Character. Database path.
 #'
-#' @return Data frame of matching players.
+#' @return Data frame of matching players. Its `country` column is NOT a
+#'   nationality (bouncerverse#77) -- see [get_player()]'s `@return` for why.
 #'
 #' @seealso
 #' \code{\link{get_player}} to get detailed info for a specific player,

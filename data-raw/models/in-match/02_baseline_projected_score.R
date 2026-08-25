@@ -32,7 +32,8 @@ cli::cli_alert_success("Connected to database")
 # ipl_* name that 04_win_probability_innings1.R read for every format. #49.
 if (!exists("EVENT_FILTER")) EVENT_FILTER <- "Indian Premier League"
 if (!exists("MATCH_TYPE")) MATCH_TYPE <- "t20"
-MIN_VENUE_MATCHES <- 10  # Need enough matches for reliable venue stats
+# MIN_VENUE_MATCHES hard cutoff removed (#82) -- superseded by the
+# shrinkage-to-prior in time_causal_venue_mean(), same as #80.
 
 # Load Historical Match Data ----
 cli::cli_h2("Loading historical match data")
@@ -99,28 +100,54 @@ cli::cli_h2("Calculating venue statistics")
 # Get first innings scores by venue
 first_innings <- innings_df %>%
   filter(innings == 1) %>%
-  left_join(matches_df %>% select(match_id, venue, season), by = "match_id")
+  left_join(matches_df %>% select(match_id, venue, match_date, season), by = "match_id")
 
+# TIME-CAUSAL, not whole-history (bouncerverse#82 -- the same leak #80 fixed in
+# 01_prepare_all_formats.R, one script hop downstream and un-scoped to IPL, so
+# not fixed by that PR). Averaging every match at a venue including the one
+# being predicted meant a live prediction saw its own future: at a one-match
+# venue the feature simply WAS that match's own total. Kept scoped to IPL
+# (not reusing 01_prepare_all_formats.R's cross-competition venue_avg_score)
+# because this script's whole point is an IPL-specific baseline -- an IPL
+# ground's scoring level is not assumed identical to the same ground hosting
+# international cricket.
+fi_dt <- data.table::as.data.table(first_innings)
+fi_dt[, match_date := as.Date(match_date)]
+venue_causal <- time_causal_venue_mean(fi_dt, "total_runs", prior_weight = 5)
+venue_causal <- venue_causal[, .(match_id, venue_avg_score = venue_mean)]
+first_innings <- first_innings %>%
+  left_join(as.data.frame(venue_causal), by = "match_id")
+
+# Overall league average (used both as the shrinkage prior and as the
+# fallback for venues/matches with no causal value)
+overall_avg_score <- mean(first_innings$total_runs, na.rm = TRUE)
+overall_sd_score <- sd(first_innings$total_runs, na.rm = TRUE)
+
+cli::cli_alert_info("Overall IPL 1st innings average: {round(overall_avg_score, 1)} (SD: {round(overall_sd_score, 1)})")
+
+# Per-venue snapshot, for a genuinely new/unseen match at serving time. This is
+# NOT the training-time feature above -- it deliberately uses every known match
+# at the venue (a live prediction legitimately has all completed history
+# available), just regularized by the same shrinkage-to-prior instead of the
+# old hard MIN_VENUE_MATCHES cutoff (superseded by shrinkage, same as #80).
 venue_stats <- first_innings %>%
   group_by(venue) %>%
   summarise(
     n_matches = n(),
-    venue_avg_score = mean(total_runs, na.rm = TRUE),
+    venue_avg_score = (sum(total_runs, na.rm = TRUE) + 5 * overall_avg_score) /
+      (sum(!is.na(total_runs)) + 5),
     venue_sd_score = sd(total_runs, na.rm = TRUE),
     venue_median_score = median(total_runs, na.rm = TRUE),
     venue_min_score = min(total_runs, na.rm = TRUE),
     venue_max_score = max(total_runs, na.rm = TRUE),
     .groups = "drop"
-  ) %>%
-  filter(n_matches >= MIN_VENUE_MATCHES)
+  )
 
-cli::cli_alert_success("Calculated stats for {nrow(venue_stats)} venues (min {MIN_VENUE_MATCHES} matches)")
+cli::cli_alert_success("Calculated stats for {nrow(venue_stats)} venues")
 
-# Overall league average (for venues with insufficient data)
-overall_avg_score <- mean(first_innings$total_runs, na.rm = TRUE)
-overall_sd_score <- sd(first_innings$total_runs, na.rm = TRUE)
-
-cli::cli_alert_info("Overall IPL 1st innings average: {round(overall_avg_score, 1)} (SD: {round(overall_sd_score, 1)})")
+# Per-match causal values, for training/eval rows where the match itself is
+# known (04_win_probability_innings1.R joins this by match_id, not venue).
+venue_stats_by_match <- venue_causal
 
 # Build Match-Level Dataset ----
 cli::cli_h2("Building match-level dataset")
@@ -141,10 +168,14 @@ match_data <- matches_df %>%
       select(match_id, batting_team_2 = batting_team, innings2_total = total_runs),
     by = "match_id"
   ) %>%
-  # Add venue stats
-  left_join(venue_stats, by = "venue") %>%
+  # Venue AVERAGE: causal, per-match (#82) -- this feeds baseline_projected_score,
+  # so it must not see the match's own score. Joined by match_id, not venue.
+  left_join(as.data.frame(venue_causal), by = "match_id") %>%
+  # Venue SD: the as-of-now per-venue snapshot. Diagnostic-only (feeds just the
+  # printed z-score below, not baseline_projected_score), so left un-causal
+  # rather than duplicating the shrinkage machinery for a display-only number.
+  left_join(venue_stats %>% select(venue, venue_sd_score), by = "venue") %>%
   # Fill missing venue stats with overall average
-
   mutate(
     venue_avg_score = coalesce(venue_avg_score, overall_avg_score),
     venue_sd_score = coalesce(venue_sd_score, overall_sd_score)
@@ -178,6 +209,12 @@ match_data <- matches_df %>%
     innings1_vs_venue_zscore = (innings1_total - venue_avg_score) / venue_sd_score
   ) %>%
   filter(!is.na(innings1_total), !is.na(innings2_total))
+
+# A duplicate match_id anywhere upstream (venue_causal, an innings re-scrape)
+# would fan this join out silently -- every join above is meant to be at most
+# 1:1 on match_id, but nothing before this line actually checked that.
+stopifnot("match-level join must not exceed one row per source match" =
+            nrow(match_data) <= nrow(matches_df))
 
 cli::cli_alert_success("Built dataset with {nrow(match_data)} complete matches")
 
@@ -280,7 +317,14 @@ cli::cli_alert_info("Season trend: {round(season_slope, 2)} runs/year")
 baseline_model <- list(
   overall_avg = overall_avg_score,
   overall_sd = overall_sd_score,
+  # As-of-now per-venue snapshot (all history at that venue) -- correct for a
+  # genuinely new/unseen match at serving time, NOT for joining onto a
+  # training/eval row that's already in venue_stats_by_match (#82).
   venue_stats = venue_stats,
+  # Causal, per-match_id (#82). 04_win_probability_innings1.R must join this by
+  # match_id for any row from the training/eval corpus; venue_stats above is
+  # only the fallback for a match_id it doesn't recognize.
+  venue_stats_by_match = venue_stats_by_match,
   toss_bat_adjustment = toss_bat_adjustment,
   knockout_adjustment = knockout_adjustment,
   season_slope = season_slope,

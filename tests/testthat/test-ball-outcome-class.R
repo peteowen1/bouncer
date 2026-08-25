@@ -21,6 +21,38 @@ test_that("undefined run values are NA, not silently bucketed", {
   expect_true(is.na(ball_outcome_class(7, FALSE)))
 })
 
+test_that("a wide is its own class, not silently a dot ball (#81/D-P50 stage 5)", {
+  # runs_batter is always 0 on a genuine wide (the batter cannot play a shot
+  # at a ball called wide) -- before `wides` was wired in, this fell through
+  # to the runs_batter == 0 branch and trained as a dot ball. Class 7 matches
+  # OUTCOME_CATEGORIES's order: wicket, 0, 1, 2, 3, 4, 6, wide.
+  expect_equal(ball_outcome_class(0, FALSE, wides = 1L), 7L)
+  expect_equal(ball_outcome_class(0, FALSE, wides = 4L), 7L)
+  # A wicket on a wide (stumped/run-out/hit-wicket) still wins.
+  expect_equal(ball_outcome_class(0, TRUE, wides = 1L), 0L)
+  # A missing/zero wides value is "not wide", matching the old 7-class calls.
+  expect_equal(ball_outcome_class(0, FALSE, wides = 0L), 1L)
+  expect_equal(ball_outcome_class(0, FALSE, wides = NA_integer_), 1L)
+})
+
+test_that("the wides default keeps existing 3-argument-less callers unchanged", {
+  expect_equal(ball_outcome_class(0, TRUE), 0L)
+  expect_equal(ball_outcome_class(0, FALSE), 1L)
+  expect_equal(ball_outcome_class(6, FALSE), 6L)
+})
+
+test_that("wides is vectorised and recycles a scalar against a longer vector", {
+  r <- c(0L, 0L, 1L)
+  w <- c(FALSE, FALSE, FALSE)
+  out <- ball_outcome_class(r, w, wides = 0L)
+  expect_length(out, 3)
+  expect_equal(out, c(1L, 1L, 2L))
+
+  wides_vec <- c(0L, 3L, 0L)
+  out2 <- ball_outcome_class(r, w, wides = wides_vec)
+  expect_equal(out2, c(1L, 7L, 2L))
+})
+
 test_that("it is vectorised and preserves length", {
   r <- c(0L, 1L, 4L, 6L, 5L)
   w <- c(FALSE, FALSE, FALSE, FALSE, FALSE)

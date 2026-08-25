@@ -1,6 +1,6 @@
 # Ball-Outcome Models
 
-This directory contains models for predicting delivery outcomes in cricket - a 7-class classification problem predicting whether each ball results in a wicket, 0, 1, 2, 3, 4, or 6 runs.
+This directory contains models for predicting delivery outcomes in cricket - an 8-class classification problem predicting whether each ball results in a wicket, 0, 1, 2, 3, 4, 6 runs, or a wide (#81/D-P50).
 
 ## Overview
 
@@ -122,7 +122,7 @@ Models are saved to `bouncerdata/models/`:
 ### Accuracy
 - **What:** % of deliveries predicted correctly
 - **Higher is better**
-- Typical range: 35-45% (7-class is hard!)
+- Typical range: 35-45% (8-class is hard!)
 
 ### Log Loss
 - **What:** Calibration quality of probability predictions
