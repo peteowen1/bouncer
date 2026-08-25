@@ -27,8 +27,9 @@
 #
 # EXCLUDES: player identity, team identity, venue identity
 #
-# Target: 7-category multinomial outcome
-#   0 = Wicket, 1 = 0 runs, 2 = 1 run, 3 = 2 runs, 4 = 3 runs, 5 = 4 runs, 6 = 6 runs
+# Target: OUTCOME_CATEGORIES (R/constants.R) -- wicket, 0-4 runs, 6 runs, wide
+# (#81/D-P50 stage 3: wides are now trained on, not excluded; no-balls stay
+# folded into the run categories, unchanged from before).
 #
 # Usage:
 #   source("data-raw/models/ball-outcome/01_train_agnostic_model.R")
@@ -202,6 +203,8 @@ for (format in FORMATS_TO_TRAIN) {
       cs.gender,
       cs.runs_batter,
       cs.is_wicket,
+      cs.wides,
+      cs.is_free_hit,
       -- FIX: wickets_fallen in Cricsheet is AFTER the delivery, so subtract is_wicket
       -- to get the count BEFORE this delivery (prevents data leakage)
       (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
@@ -216,14 +219,17 @@ for (format in FORMATS_TO_TRAIN) {
     LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
-      -- The training population must match the population the model is SCORED on
-      -- (R/raa_cricsheet.R), or every expectation is biased by the difference.
-      -- Wides are runs_batter = 0 and the scorer drops them; leaving them in
-      -- training pulled expectations down by wide_rate x mean_runs -- measured
-      -- 2026-08-18 as +0.0463 mean RAA in T20 male against a +0.0418 prediction,
-      -- and the same relation held across a 16x range of wide rates (ODI 2.3%%,
-      -- Test 0.2%%). The other three conditions mirror the scorer likewise.
-      AND COALESCE(cs.wides, 0) = 0
+      -- Wides are no longer excluded (#81/D-P50 stage 3) -- they're now their
+      -- own OUTCOME_CATEGORIES bucket ('wide'), not zero training signal.
+      -- This REOPENS the population-mismatch risk the 2026-08-18 fix closed
+      -- the other way: R/raa_cricsheet.R and other consumers of this model
+      -- still filter wides out of what THEY score (stage 4, not done yet, is
+      -- the RAA-side half of this change) -- so until that lands, this model
+      -- will allocate some probability mass to a category none of its
+      -- current callers ever ask about for a specific ball. That's inert,
+      -- not wrong: expected-runs/wicket for a real (non-wide) ball still
+      -- correctly renormalizes over all 8 categories via
+      -- calculate_expected_runs()/calculate_expected_wicket_prob().
       AND cs.batter_id IS NOT NULL
       AND cs.bowler_id IS NOT NULL
       AND cs.innings BETWEEN 1
@@ -266,8 +272,13 @@ for (format in FORMATS_TO_TRAIN) {
     model_data <- model_data %>%
       mutate(
         # Target variable
+        # Wicket checked first, unchanged priority: a wicket on a wide
+        # (stumped/run-out/hit-wicket only -- rare) still categorizes as
+        # wicket, not wide. Category indices are 0-based, matching
+        # OUTCOME_CATEGORIES order (R/constants.R): wicket, 0-4, 6, wide.
         outcome = case_when(
           is_wicket ~ 0L,
+          coalesce(wides, 0) > 0 ~ 7L,
           runs_batter == 0 ~ 1L,
           runs_batter == 1 ~ 2L,
           runs_batter == 2 ~ 3L,
@@ -300,8 +311,13 @@ for (format in FORMATS_TO_TRAIN) {
     # Long-form (Test) features
     model_data <- model_data %>%
       mutate(
+        # Wicket checked first, unchanged priority: a wicket on a wide
+        # (stumped/run-out/hit-wicket only -- rare) still categorizes as
+        # wicket, not wide. Category indices are 0-based, matching
+        # OUTCOME_CATEGORIES order (R/constants.R): wicket, 0-4, 6, wide.
         outcome = case_when(
           is_wicket ~ 0L,
+          coalesce(wides, 0) > 0 ~ 7L,
           runs_batter == 0 ~ 1L,
           runs_batter == 1 ~ 2L,
           runs_batter == 2 ~ 3L,
@@ -328,7 +344,7 @@ for (format in FORMATS_TO_TRAIN) {
   # Check distribution
   outcome_table <- table(model_data$outcome)
   outcome_pct <- round(100 * outcome_table / sum(outcome_table), 1)
-  cli::cli_alert_info("Outcome distribution: {paste(paste0(c('W','0','1','2','3','4','6'), ':', outcome_pct, '%'), collapse = ', ')}")
+  cli::cli_alert_info("Outcome distribution: {paste(paste0(OUTCOME_CATEGORIES, ':', outcome_pct, '%'), collapse = ', ')}")
 
   # Train-Test Split ----
   cli::cli_h3("Creating train-test split")
@@ -371,7 +387,12 @@ for (format in FORMATS_TO_TRAIN) {
           phase_middle = as.integer(phase == "middle"),
           phase_death = as.integer(phase == "death"),
           gender_male = as.integer(tolower(gender) == "male"),
-          innings_num = as.integer(innings)
+          innings_num = as.integer(innings),
+          # #81/D-P50 stage 3: on a free hit the batter can (almost always)
+          # only be dismissed by run-out -- every other wicket type is void.
+          # A feature, not a masked wicket_kind rewrite, so the trees learn
+          # the interaction rather than having it imposed.
+          is_free_hit_int = as.integer(coalesce(is_free_hit, FALSE))
         ) %>%
         select(
           outcome,
@@ -381,6 +402,7 @@ for (format in FORMATS_TO_TRAIN) {
           phase_powerplay, phase_middle, phase_death,
           gender_male,
           is_knockout, event_tier,
+          is_free_hit_int,
           # NEW: League features as continuous values (enables generalization to new leagues)
           league_avg_runs, league_avg_wicket
         )
@@ -392,7 +414,8 @@ for (format in FORMATS_TO_TRAIN) {
           phase_middle = as.integer(phase == "middle"),
           phase_old_ball = as.integer(phase == "old_ball"),
           gender_male = as.integer(tolower(gender) == "male"),
-          innings_num = as.integer(innings)
+          innings_num = as.integer(innings),
+          is_free_hit_int = as.integer(coalesce(is_free_hit, FALSE))
         ) %>%
         select(
           outcome,
@@ -401,6 +424,7 @@ for (format in FORMATS_TO_TRAIN) {
           phase_new_ball, phase_middle, phase_old_ball,
           gender_male,
           is_knockout, event_tier,
+          is_free_hit_int,
           # NEW: League features as continuous values
           league_avg_runs, league_avg_wicket
         )
@@ -517,6 +541,38 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_alert_success("Test accuracy: {.val {round(accuracy * 100, 2)}}%")
   cli::cli_alert_success("Test mlogloss: {.val {round(test_logloss, 4)}}")
 
+  # Per-cut calibration (#81/D-P50 stage 3, per docs/plans/D-P50-...md §(f)):
+  # an aggregate improving while a reachable slice gets worse is exactly the
+  # failure mode this repo's own model-building doctrine warns about. Cut by
+  # the two things this stage actually changed -- wide (a brand-new category,
+  # previously zero training signal) and free-hit (a brand-new feature).
+  wide_idx <- which(OUTCOME_CATEGORIES == "wide") - 1L  # 0-based, matches `outcome`
+  is_wide_true <- test_features$outcome == wide_idx
+  is_wide_pred <- test_predictions == wide_idx
+  n_wide_true <- sum(is_wide_true)
+  wide_recall <- if (n_wide_true > 0) mean(is_wide_pred[is_wide_true]) else NA_real_
+  wide_precision <- if (sum(is_wide_pred) > 0) mean(is_wide_true[is_wide_pred]) else NA_real_
+  cli::cli_alert_info(
+    "Wide: n={.val {n_wide_true}} true, recall={.val {round(100*wide_recall,1)}}%, precision={.val {round(100*wide_precision,1)}}%")
+
+  non_wide <- !is_wide_true
+  nonwide_accuracy <- mean(test_predictions[non_wide] == test_features$outcome[non_wide])
+  nonwide_logloss <- mean(-log(pmax(
+    test_probs[cbind(which(non_wide), test_features$outcome[non_wide] + 1)], 1e-15)))
+  cli::cli_alert_info(
+    "Non-wide only (n={.val {sum(non_wide)}}, comparable to the pre-stage-3 population): accuracy={.val {round(100*nonwide_accuracy,2)}}%, mlogloss={.val {round(nonwide_logloss,4)}}")
+
+  fh <- test_features$is_free_hit_int == 1L
+  n_fh <- sum(fh)
+  if (n_fh > 0) {
+    fh_accuracy <- mean(test_predictions[fh] == test_features$outcome[fh])
+    nonfh_accuracy <- mean(test_predictions[!fh] == test_features$outcome[!fh])
+    cli::cli_alert_info(
+      "Free-hit rows (n={.val {n_fh}}): accuracy={.val {round(100*fh_accuracy,2)}}% vs non-free-hit accuracy={.val {round(100*nonfh_accuracy,2)}}%")
+  } else {
+    cli::cli_alert_warning("Zero free-hit rows in the test set -- cannot check that cut.")
+  }
+
   # Feature Importance
   importance_matrix <- xgb.importance(feature_names = feature_names, model = xgb_model)
   cli::cli_alert_info("Top features: {paste(head(importance_matrix$Feature, 5), collapse = ', ')}")
@@ -542,6 +598,11 @@ for (format in FORMATS_TO_TRAIN) {
     best_cv_score = best_score,
     test_accuracy = accuracy,
     test_logloss = test_logloss,
+    wide_recall = wide_recall,
+    wide_precision = wide_precision,
+    nonwide_accuracy = nonwide_accuracy,
+    nonwide_logloss = nonwide_logloss,
+    n_free_hit_test = n_fh,
     importance = importance_matrix,
     n_train = nrow(train_data),
     n_test = nrow(test_data)
@@ -583,12 +644,19 @@ tryCatch({
   # 2026-08-18 frame fix printed "All metrics stable or improved" while T20
   # mlogloss moved 1.3805 -> 1.4137 (+2.40%, over the 2% threshold).
   for (fmt in names(all_results)) {
+    # #81/D-P50 stage 3: test_logloss now spans 8 categories (added wide);
+    # the stored benchmark history is from the pre-stage-3 7-category model.
+    # Comparing them directly would be the SAME false-regression shape the
+    # comment above already documents for a different reason -- +2.4%/+2.0%
+    # measured on T20/ODI is the expected mechanical cost of representing an
+    # 8th category, not a real regression. nonwide_logloss is scored on the
+    # same population the stored benchmark was, so it's the comparable metric.
     regression <- check_benchmark_regression(
       conn = bench_conn,
       step_name = "agnostic_model",
       format = fmt,
       current_metrics = list(
-        mlogloss = all_results[[fmt]]$test_logloss
+        mlogloss = all_results[[fmt]]$nonwide_logloss
       )
     )
     if (regression$is_regression) {
@@ -606,7 +674,12 @@ tryCatch({
       model_name = paste0("agnostic_outcome_", fmt),
       format = fmt,
       metrics = list(
-        mlogloss = res$test_logloss,
+        # "mlogloss" stays the population-comparable metric so future runs'
+        # regression checks keep working across a category-count change
+        # (#81/D-P50 stage 3) -- see the check above. The raw all-category
+        # number is kept too, under its own name, not discarded.
+        mlogloss = res$nonwide_logloss,
+        mlogloss_all_categories = res$test_logloss,
         accuracy = res$test_accuracy,
         cv_mlogloss = res$best_cv_score,
         best_nrounds = res$best_nrounds

@@ -8,14 +8,14 @@
 
 #' Calculate Expected Runs from Probability Matrix
 #'
-#' Converts a 7-category probability distribution into expected runs per delivery.
-#' Categories: wicket, 0, 1, 2, 3, 4, 6 runs.
+#' Converts an `OUTCOME_CATEGORIES`-shaped probability distribution into
+#' expected runs per delivery.
 #'
-#' @param probs Matrix or data frame with 7 columns representing probabilities
-#'   for (wicket, 0, 1, 2, 3, 4, 6). Column order must match this exactly.
+#' @param probs Matrix or data frame with `length(OUTCOME_CATEGORIES)` columns,
+#'   in `OUTCOME_CATEGORIES` order (see `R/constants.R`).
 #'
 #' @return Numeric vector of expected runs per delivery.
-#'   Formula: E(runs) = sum(prob_i * runs_i) where runs = c(0, 0, 1, 2, 3, 4, 6)
+#'   Formula: E(runs) = sum(prob_i * runs_i), `runs_i` = `OUTCOME_RUN_VALUES`.
 #'
 #' @keywords internal
 calculate_expected_runs <- function(probs) {
@@ -33,8 +33,8 @@ calculate_expected_runs <- function(probs) {
 #'
 #' Extracts the wicket probability (first column) from the outcome distribution.
 #'
-#' @param probs Matrix or data frame with 7 columns representing probabilities.
-#'   First column must be P(wicket).
+#' @param probs Matrix or data frame of outcome probabilities. First column
+#'   must be P(wicket) (column count isn't otherwise checked here).
 #'
 #' @return Numeric vector of wicket probabilities.
 #'

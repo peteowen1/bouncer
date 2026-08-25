@@ -72,20 +72,33 @@ MODEL_MARGIN_PATTERN <- "%s_margin_model.ubj"
 # ============================================================================
 
 # Shared source of truth for the agnostic/full ball-outcome models' output
-# categories. Previously hardcoded independently in ~10 places (roxygen
+# categories. Previously hardcoded independently in ~15 places (roxygen
 # comments, num_class= literals, an outcome_labels vector, a runs_values
 # vector, the simulator's switch()) -- see
 # docs/plans/D-P50-WIDE-CATEGORY-REBUILD.md for the audit that found the
 # duplication. Column order in every trained model's probability output
 # matches this vector's order exactly; changing the order here without
 # retraining every model would silently misalign predictions.
-OUTCOME_CATEGORIES <- c("wicket", "0", "1", "2", "3", "4", "6")
+#
+# "wide" added #81/D-P50 stage 3. No-balls stay folded into the run
+# categories (a no-ball's batter-runs are a legitimate 0-6 value,
+# structurally identical to a legal ball's) -- see the plan doc for why
+# only wides needed a dedicated bucket. A wide where a wicket ALSO falls
+# (rare: stumped/run-out/hit-wicket only) still categorizes as "wicket",
+# checked first in every case_when() that builds this label -- adding
+# "wide" did not reprioritize that.
+OUTCOME_CATEGORIES <- c("wicket", "0", "1", "2", "3", "4", "6", "wide")
 
 # Run value contributed by each category, same order as OUTCOME_CATEGORIES.
 # Wicket is 0 by modeling convention -- this multinomial treats "a wicket
 # fell" as its own bucket regardless of any runs also scored on that ball,
-# unchanged from the pre-existing (pre-constant) behavior.
-OUTCOME_RUN_VALUES <- c(0, 0, 1, 2, 3, 4, 6)
+# unchanged from the pre-existing (pre-constant) behavior. "wide" is not a
+# single deterministic value like the run categories -- it's the empirical
+# mean extras conceded on a wide (1.217, measured over 195,133 real wide
+# deliveries: median 1, up to 5 on a chaotic one with byes run) rather than
+# its own sub-multinomial, per the plan doc's sizing (splitting it further
+# would starve each sub-bucket for a small accuracy gain).
+OUTCOME_RUN_VALUES <- c(0, 0, 1, 2, 3, 4, 6, 1.217)
 
 # In-match win probability models (2-stage)
 # Format: {format}_stage1_results.rds, {format}_stage2_results.rds

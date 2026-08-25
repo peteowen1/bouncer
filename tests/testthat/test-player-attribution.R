@@ -8,7 +8,8 @@
 fake_full_outcome <- function(captured_env) {
   function(model, delivery_data, format) {
     captured_env$calls <- c(captured_env$calls, list(delivery_data))
-    matrix(1 / 7, nrow = nrow(delivery_data), ncol = 7)
+    n <- length(OUTCOME_CATEGORIES)
+    matrix(1 / n, nrow = nrow(delivery_data), ncol = n)
   }
 }
 
