@@ -1,3 +1,53 @@
+# bouncer 0.7.5
+
+## Ball-outcome models trained on wides, no-balls and free hits (#81/D-P50)
+
+Wides are now a trained category in both the agnostic and full outcome
+models (`OUTCOME_CATEGORIES`), instead of being silently excluded from
+training or -- for the full model -- silently mislabeled as dot balls.
+`is_free_hit` is derived and backfilled onto every cricsheet delivery and
+wired in as a training feature. Both models retrained cleanly across
+T20/ODI/Test; a reproducible native OpenMP crash in Test's `xgb.cv()` was
+root-caused and fixed along the way (`nthread=4`).
+
+The match simulator (`simulate_delivery()`/`simulate_innings()`) now models
+illegal deliveries: a wide is drawn from the model's own trained category, a
+no-ball is drawn independently at a measured per-format rate (the model was
+never given a feature for it, since a no-ball's runs distribution mirrors a
+legal ball's), and only a no-ball grants a free hit -- matching real cricket
+law and this package's own `compute_is_free_hit()` derivation. Wicket
+occurrence on a no-ball is also drawn independently, since only a run-out is
+legal there and the model's unconditional wicket probability overstated
+that by 9-45x.
+
+RAA scoring (`build_cricsheet_raa()`) now passes `is_free_hit` through to
+the agnostic model; the existing wides-exclusion filter is unchanged (a
+wide is never a "ball faced").
+
+## IPL baseline projected score no longer leaks the venue average (bouncerverse#82)
+
+`02_baseline_projected_score.R`'s "par score" averaged every match at a
+venue including the one being predicted. Fixed with the same time-causal
+construction already used for the T20/ODI and Test in-match leaks.
+
+## Causal per-day rain features added to the Test win-probability model (bouncerverse#72)
+
+`rain_mm_before`/`rain_days_before`/`venue_rain_climatology` replace a
+disabled stub, backfilled from 285 venues of daily weather history. Ball-
+level results are mixed (see the project decision log) and shipped because
+the code itself is correct and honestly evaluated, not because it's a clear
+win.
+
+## `cricsheet.players.country` no longer described as a nationality (bouncerverse#77)
+
+No player-nationality field exists anywhere in cricsheet's data; the column
+is kept (still meaningful as "first team seen") but relabeled honestly.
+
+## Prior-innings declaration flags added to the Test win-probability model (bouncerverse#78)
+
+Training-only for now -- cricinfo, the live serving source, has no
+`declared` field.
+
 # bouncer 0.7.4
 
 ## T20/ODI in-match models no longer leak venue-average features (bouncerverse#80)
