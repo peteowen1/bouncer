@@ -417,11 +417,12 @@ test_that("5 runs is not a standard outcome class", {
   expect_false(5 %in% runs_values)
 })
 
-test_that("prepare_full_features builds the 31 columns the trained models carry", {
-  # The trained full models have num_feature 31: 28 informative + 3 trailing
-  # ELO columns (zero-filled at training). This xgboost build default-routes
-  # absent columns silently instead of erroring -- same hazard class as the
-  # agnostic league features (2026-08-13) -- so the width is pinned here.
+test_that("prepare_full_features builds the 32 columns the trained models carry", {
+  # The trained full models have num_feature 32: 28 informative + is_free_hit_int
+  # (#81/D-P50 stage 5) + 3 trailing ELO columns (zero-filled at training).
+  # This xgboost build default-routes absent columns silently instead of
+  # erroring -- same hazard class as the agnostic league features
+  # (2026-08-13) -- so the width is pinned here.
   row <- data.frame(
     innings = 1, over = 5, ball = 3, wickets_fallen = 1,
     runs_difference = 42, gender = "male", is_knockout = 0L, event_tier = 1,
@@ -434,7 +435,7 @@ test_that("prepare_full_features builds the 31 columns the trained models carry"
     venue_boundary_rate = 0.15, venue_dot_rate = 0.4
   )
   f <- prepare_full_features(row, "t20")
-  expect_equal(ncol(f), 31)
+  expect_equal(ncol(f), 32)
   expect_identical(tail(names(f), 3),
                    c("elo_run_diff", "elo_wicket_diff", "elo_venue_run"))
   expect_equal(unlist(f[, tail(names(f), 3)], use.names = FALSE), c(0, 0, 0))

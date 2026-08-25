@@ -28,7 +28,7 @@ conn <- get_db_connection(read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
 logloss <- function(pr, y) {
-  if (!is.matrix(pr)) pr <- matrix(pr, ncol = 7, byrow = TRUE)
+  if (!is.matrix(pr)) pr <- matrix(pr, ncol = length(OUTCOME_CATEGORIES), byrow = TRUE)
   stopifnot(nrow(pr) == length(y))
   pr <- pmax(pr, 1e-15)
   -mean(log(pr[cbind(seq_len(nrow(pr)), y + 1L)]))
@@ -45,7 +45,7 @@ for (fmt in fmts) {
   d <- as.data.table(build_full_model_frame(conn, fmt))
   # Same label the models were trained against, from the shared declaration --
   # not rebuilt here, or this would score against a different target.
-  d[, outcome := ball_outcome_class(runs_batter, is_wicket)]
+  d[, outcome := ball_outcome_class(runs_batter, is_wicket, wides)]
   d <- d[!is.na(outcome)]
   # The frame must not arrive zero-filled -- that is the defect this whole
   # ticket is about, and it has appeared twice in this code path today.

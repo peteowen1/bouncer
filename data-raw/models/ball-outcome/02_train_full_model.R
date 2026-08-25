@@ -10,7 +10,7 @@
 #
 # Features used:
 #   - Context: over, ball, wickets, runs_difference, phase, innings, format, gender
-#   - Match context: is_knockout, event_tier
+#   - Match context: is_knockout, event_tier, is_free_hit_int
 #   - Player skills: batter_scoring_index, batter_survival_rate,
 #                   bowler_economy_index, bowler_strike_rate
 #   - Team skills: batting_team_runs_skill, batting_team_wicket_skill,
@@ -24,8 +24,11 @@
 #   3. Run 02_calculate_team_skill_indices.R - for team skills
 #   4. Run 01_calculate_venue_skill_indices.R - for venue skills
 #
-# Target: 7-category multinomial outcome
-#   0 = Wicket, 1 = 0 runs, 2 = 1 run, 3 = 2 runs, 4 = 3 runs, 5 = 4 runs, 6 = 6 runs
+# Target: OUTCOME_CATEGORIES (R/constants.R) -- wicket, 0-4 runs, 6 runs, wide
+# (#81/D-P50 stage 5: wides now get their own class via ball_outcome_class()'s
+# new `wides` argument, instead of silently falling into the "0 runs" class --
+# see the plan's §(d), a pre-existing bug independent of D-P50. is_free_hit_int
+# added as a feature, mirroring the agnostic model since stage 3.)
 #
 # Output:
 #   - bouncerdata/models/full_outcome_{format}.ubj
@@ -116,7 +119,7 @@ for (format in FORMATS_TO_TRAIN) {
         # there were still two declarations of one truth. This is the second
         # place today where extracted-and-tested code was never wired into the
         # thing it was extracted for.
-        outcome = ball_outcome_class(runs_batter, is_wicket),
+        outcome = ball_outcome_class(runs_batter, is_wicket, wides),
 
         # Overs left
         overs_left = pmax(0, max_overs - over_ball),
@@ -143,7 +146,7 @@ for (format in FORMATS_TO_TRAIN) {
         # there were still two declarations of one truth. This is the second
         # place today where extracted-and-tested code was never wired into the
         # thing it was extracted for.
-        outcome = ball_outcome_class(runs_batter, is_wicket),
+        outcome = ball_outcome_class(runs_batter, is_wicket, wides),
 
         # Phase based on ball age
         phase = case_when(
@@ -165,7 +168,7 @@ for (format in FORMATS_TO_TRAIN) {
   # Check distribution
   outcome_table <- table(model_data$outcome)
   outcome_pct <- round(100 * outcome_table / sum(outcome_table), 1)
-  cli::cli_alert_info("Outcome distribution: {paste(paste0(c('W','0','1','2','3','4','6'), ':', outcome_pct, '%'), collapse = ', ')}")
+  cli::cli_alert_info("Outcome distribution: {paste(paste0(OUTCOME_CATEGORIES, ':', outcome_pct, '%'), collapse = ', ')}")
 
   # Train-Test Split ----
   cli::cli_h3("Creating train-test split")
@@ -211,7 +214,11 @@ for (format in FORMATS_TO_TRAIN) {
           innings_num = as.integer(innings),
           # Experience indicators (log transform for stability)
           batter_experience = log1p(coalesce(batter_balls_faced, 0)),
-          bowler_experience = log1p(coalesce(bowler_balls_bowled, 0))
+          bowler_experience = log1p(coalesce(bowler_balls_bowled, 0)),
+          # #81/D-P50 stage 5: mirrors the agnostic trainer's is_free_hit_int
+          # since stage 3 -- on a free hit the batter can (almost always) only
+          # be dismissed by run-out.
+          is_free_hit_int = as.integer(coalesce(is_free_hit, FALSE))
         ) %>%
         select(
           outcome,
@@ -222,6 +229,7 @@ for (format in FORMATS_TO_TRAIN) {
           phase_powerplay, phase_middle, phase_death,
           gender_male,
           is_knockout, event_tier,
+          is_free_hit_int,
           # Player skills
           batter_scoring_index, batter_survival_rate,
           bowler_economy_index, bowler_strike_rate,
@@ -245,7 +253,8 @@ for (format in FORMATS_TO_TRAIN) {
           gender_male = as.integer(tolower(gender) == "male"),
           innings_num = as.integer(innings),
           batter_experience = log1p(coalesce(batter_balls_faced, 0)),
-          bowler_experience = log1p(coalesce(bowler_balls_bowled, 0))
+          bowler_experience = log1p(coalesce(bowler_balls_bowled, 0)),
+          is_free_hit_int = as.integer(coalesce(is_free_hit, FALSE))
         ) %>%
         select(
           outcome,
@@ -255,6 +264,7 @@ for (format in FORMATS_TO_TRAIN) {
           phase_new_ball, phase_middle, phase_old_ball,
           gender_male,
           is_knockout, event_tier,
+          is_free_hit_int,
           # Player skills
           batter_scoring_index, batter_survival_rate,
           bowler_economy_index, bowler_strike_rate,
@@ -293,7 +303,15 @@ for (format in FORMATS_TO_TRAIN) {
   fixed_params <- list(
     objective = "multi:softprob",
     num_class = length(OUTCOME_CATEGORIES),
-    eval_metric = "mlogloss"
+    eval_metric = "mlogloss",
+    # #81/D-P50 stage 5: pinned proactively, before ever seeing a crash here.
+    # The agnostic trainer's Test-format xgb.cv() crashed reproducibly under
+    # xgboost's default (unbounded) threading -- a native OpenMP fault, zero
+    # R-level error -- root-caused and fixed the same way (01_train_agnostic_model.R,
+    # stage 3). This trainer runs the identical xgb.cv() code path on a
+    # similarly-sized Test corpus, so there is no reason to wait for the same
+    # crash to happen twice.
+    nthread = 4
   )
 
   if (TUNE_HYPERPARAMS) {
@@ -368,7 +386,7 @@ for (format in FORMATS_TO_TRAIN) {
   test_probs <- predict(xgb_model, dtest)
   # Reshape to matrix if needed (for multi-class, returns n_samples x n_classes)
   if (!is.matrix(test_probs)) {
-    test_probs <- matrix(test_probs, ncol = 7, byrow = TRUE)
+    test_probs <- matrix(test_probs, ncol = length(OUTCOME_CATEGORIES), byrow = TRUE)
   }
   test_predictions <- max.col(test_probs) - 1
 
@@ -377,6 +395,39 @@ for (format in FORMATS_TO_TRAIN) {
 
   cli::cli_alert_success("Test accuracy: {.val {round(accuracy * 100, 2)}}%")
   cli::cli_alert_success("Test mlogloss: {.val {round(test_logloss, 4)}}")
+
+  # Per-cut calibration (#81/D-P50 stage 5, mirroring 01_train_agnostic_model.R's
+  # stage-3 check): an aggregate improving while a reachable slice gets worse
+  # is exactly the failure mode this repo's model-building doctrine warns
+  # about. Cut by wide (brand-new category here -- previously silently
+  # mislabeled as a dot ball, per the plan's §(d)) and free-hit (brand-new
+  # feature).
+  wide_idx <- which(OUTCOME_CATEGORIES == "wide") - 1L  # 0-based, matches `outcome`
+  is_wide_true <- test_features$outcome == wide_idx
+  is_wide_pred <- test_predictions == wide_idx
+  n_wide_true <- sum(is_wide_true)
+  wide_recall <- if (n_wide_true > 0) mean(is_wide_pred[is_wide_true]) else NA_real_
+  wide_precision <- if (sum(is_wide_pred) > 0) mean(is_wide_true[is_wide_pred]) else NA_real_
+  cli::cli_alert_info(
+    "Wide: n={.val {n_wide_true}} true, recall={.val {round(100*wide_recall,1)}}%, precision={.val {round(100*wide_precision,1)}}%")
+
+  non_wide <- !is_wide_true
+  nonwide_accuracy <- mean(test_predictions[non_wide] == test_features$outcome[non_wide])
+  nonwide_logloss <- mean(-log(pmax(
+    test_probs[cbind(which(non_wide), test_features$outcome[non_wide] + 1)], 1e-15)))
+  cli::cli_alert_info(
+    "Non-wide only (n={.val {sum(non_wide)}}, comparable to the pre-stage-5 population): accuracy={.val {round(100*nonwide_accuracy,2)}}%, mlogloss={.val {round(nonwide_logloss,4)}}")
+
+  fh <- test_features$is_free_hit_int == 1L
+  n_fh <- sum(fh)
+  if (n_fh > 0) {
+    fh_accuracy <- mean(test_predictions[fh] == test_features$outcome[fh])
+    nonfh_accuracy <- mean(test_predictions[!fh] == test_features$outcome[!fh])
+    cli::cli_alert_info(
+      "Free-hit rows (n={.val {n_fh}}): accuracy={.val {round(100*fh_accuracy,2)}}% vs non-free-hit accuracy={.val {round(100*nonfh_accuracy,2)}}%")
+  } else {
+    cli::cli_alert_warning("Zero free-hit rows in the test set -- cannot check that cut.")
+  }
 
   # Compare with Agnostic Model (matched, same held-out set) ----
   #
@@ -454,6 +505,11 @@ for (format in FORMATS_TO_TRAIN) {
     best_cv_score = best_score,
     test_accuracy = accuracy,
     test_logloss = test_logloss,
+    wide_recall = wide_recall,
+    wide_precision = wide_precision,
+    nonwide_accuracy = nonwide_accuracy,
+    nonwide_logloss = nonwide_logloss,
+    n_free_hit_test = n_fh,
     agnostic_test_logloss = agnostic_test_logloss,
     importance = importance_matrix,
     feature_names = feature_names,
@@ -511,11 +567,18 @@ tryCatch({
   # checking afterwards compares this run against itself and can never fire.
   # Check regressions and compare with agnostic
   for (fmt in names(all_results)) {
+    # #81/D-P50 stage 5: test_logloss now spans 8 categories (added wide);
+    # the stored benchmark history is from the pre-stage-5 7-category model.
+    # Comparing them directly is the exact false-regression shape
+    # 01_train_agnostic_model.R's stage-3 fix already documents -- the
+    # mechanical cost of representing an 8th category is not a real
+    # regression. nonwide_logloss is scored on the same population the
+    # stored benchmark was, so it's the comparable metric.
     regression <- check_benchmark_regression(
       conn = bench_conn,
       step_name = "full_model",
       format = fmt,
-      current_metrics = list(mlogloss = all_results[[fmt]]$test_logloss)
+      current_metrics = list(mlogloss = all_results[[fmt]]$nonwide_logloss)
     )
     if (regression$is_regression) {
       cli::cli_alert_danger("{toupper(fmt)}: {paste(regression$messages, collapse = '; ')}")
@@ -532,7 +595,11 @@ tryCatch({
       model_name = paste0("full_outcome_", fmt),
       format = fmt,
       metrics = list(
-        mlogloss = res$test_logloss,
+        # "mlogloss" stays the population-comparable metric so future runs'
+        # regression checks keep working across a category-count change --
+        # see the check above. The raw all-category number is kept too.
+        mlogloss = res$nonwide_logloss,
+        mlogloss_all_categories = res$test_logloss,
         accuracy = res$test_accuracy,
         cv_mlogloss = res$best_cv_score,
         best_nrounds = res$best_nrounds

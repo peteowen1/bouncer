@@ -8,11 +8,13 @@
 fake_full_outcome <- function(captured_env) {
   function(model, delivery_data, format) {
     captured_env$calls <- c(captured_env$calls, list(delivery_data))
-    # Deliberately 7, not length(OUTCOME_CATEGORIES) (8 since #81/D-P50
-    # stage 3) -- this mocks predict_full_outcome(), and the FULL model is
-    # still 7-category until its own stage-5 retrain. calculate_expected_runs()
-    # accepts any prefix width of OUTCOME_CATEGORIES for exactly this reason.
-    matrix(1 / 7, nrow = nrow(delivery_data), ncol = 7)
+    # length(OUTCOME_CATEGORIES) columns (8): the full model is retrained to
+    # this shape as of #81/D-P50 stage 5. What this test actually verifies --
+    # ablated columns get neutralized, not dropped -- doesn't depend on the
+    # column count, so this just matches the real model's current shape
+    # rather than pinning an arbitrary width.
+    matrix(1 / length(OUTCOME_CATEGORIES), nrow = nrow(delivery_data),
+           ncol = length(OUTCOME_CATEGORIES))
   }
 }
 
