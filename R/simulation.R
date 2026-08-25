@@ -10,12 +10,28 @@
 # Delivery Simulation Primitives ===========================================
 #
 # Functions for simulating cricket matches ball-by-ball using the full model.
-# The full model predicts 7-class outcome probabilities, which are used to
+# The full model predicts OUTCOME_CATEGORIES-shaped probabilities, used to
 # either draw categorical outcomes or calculate expected values.
 #
 # Two simulation modes:
-#   - categorical: Draw from P(wicket), P(0), P(1), ..., P(6) distribution
+#   - categorical: Draw from P(wicket), P(0), P(1), ..., P(6), [P(wide)]
 #   - expected: Use E[runs] = sum(P(i) * runs(i)) directly (faster)
+#
+# Illegal deliveries (#81/D-P50 stage 6). A wide is one of the model's own
+# trained categories; a no-ball is NOT -- its batter-runs distribution is
+# nearly identical to a legal delivery's (see NO_BALL_RATE_* in
+# R/constants_skill.R for the measurement), so the trainer never gave it a
+# distinguishing feature, and the model's unconditional draw already stands
+# in for "what did the batter do" whether or not this specific ball turns
+# out illegal. The simulator therefore draws no-ball occurrence
+# INDEPENDENTLY of the model, at the measured per-format rate, and treats
+# both wide and no-ball as "illegal": the ball is re-bowled (over/ball do
+# not advance) and a no-ball (never a wide -- ICC playing conditions) grants
+# a free hit on the delivery that finally resolves the over legally. This
+# mirrors compute_is_free_hit()'s real derivation from historical data
+# exactly (R/cricsheet_parser.R): illegal = wide OR no-ball; free-hit-pending
+# is set only by a no-ball, and carries through any further illegal
+# deliveries in the same streak until a legal ball is bowled.
 
 
 #' Simulate Single Delivery
@@ -34,6 +50,10 @@
 #'   - gender: "male" or "female"
 #'   - is_knockout: 0 or 1
 #'   - event_tier: 1, 2, or 3
+#'   - is_free_hit: 0/1 or TRUE/FALSE, whether THIS delivery is a free hit
+#'     (a pending free hit from a prior no-ball that hasn't yet been resolved
+#'     by a legal ball). Passed through to the model as a feature; defaults
+#'     to 0/FALSE. [simulate_innings()] tracks and supplies this.
 #' @param player_skills List with batter and bowler skills:
 #'   - batter_scoring_index, batter_survival_rate, batter_balls_faced
 #'   - bowler_economy_index, bowler_strike_rate, bowler_balls_bowled
@@ -45,10 +65,18 @@
 #' @param mode Character. "categorical" (draw outcome) or "expected" (use expected runs)
 #'
 #' @return List with outcome details:
-#'   - runs: runs scored (0-6, or fractional if mode = "expected")
+#'   - runs: runs scored, INCLUDING the no-ball penalty run if `is_illegal`
+#'     and this was a no-ball (0-6+1, or fractional if mode = "expected")
 #'   - is_wicket: TRUE if wicket fell
-#'   - probs: 7-class probability vector
+#'   - probs: `OUTCOME_CATEGORIES`-shaped probability vector from the model
+#'     (unrelated to the independent no-ball draw)
 #'   - exp_wicket: numeric wicket probability (expected mode only)
+#'   - is_illegal: TRUE if this delivery must be re-bowled (wide or no-ball)
+#'     -- [simulate_innings()] must not advance `balls`/`over` when this is
+#'     TRUE
+#'   - sets_free_hit: TRUE only when `is_illegal` was caused by a no-ball
+#'     (never a wide) -- the delivery that eventually resolves this over
+#'     legally must be scored with `is_free_hit = TRUE`
 #'
 #' @seealso
 #' \code{\link{simulate_innings}} to simulate a full innings,
@@ -112,6 +140,12 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     venue_boundary_rate = venue_skills$venue_boundary_rate %||% venue_skills$boundary_rate %||% 0.15,
     venue_dot_rate = venue_skills$venue_dot_rate %||% venue_skills$dot_rate %||% 0.35,
 
+    # #81/D-P50 stage 6: whether this specific delivery is a pending free
+    # hit. simulate_innings() tracks and supplies this; a caller invoking
+    # simulate_delivery() directly gets the documented default (not on a
+    # free hit) via prepare_full_features()'s own fallback if omitted.
+    is_free_hit = as.logical(match_state$is_free_hit %||% FALSE),
+
     stringsAsFactors = FALSE
   )
 
@@ -124,16 +158,13 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
   }
 
   # Outcome column order is a PREFIX of OUTCOME_CATEGORIES (R/constants.R):
-  # wicket, 0, 1, 2, 3, 4, 6, [wide]. `predict_full_outcome()` -- what this
-  # function actually calls -- is still the pre-#81/D-P50 7-category full
-  # model as of stage 4 (only the agnostic model was retrained with WIDE;
-  # the full model's own retrain is stage 5, not done). Sizing off
-  # `length(probs)` rather than assuming the full `OUTCOME_CATEGORIES`
-  # width keeps this correct for BOTH today's 7-column full model and an
-  # eventual 8-column one, since new categories are appended at the end,
-  # never inserted -- confirmed here rather than assumed, since stage 2's
-  # refactor silently broke this exact assumption the moment stage 3
-  # extended OUTCOME_CATEGORIES to 8 (caught by test-simulation.R).
+  # wicket, 0, 1, 2, 3, 4, 6, [wide]. Sizing off `length(probs)` rather than
+  # assuming the full `OUTCOME_CATEGORIES` width keeps this correct for
+  # BOTH an 8-column model (current, since #81/D-P50 stage 5) and an older
+  # cached 7-column one, since new categories are appended at the end, never
+  # inserted -- confirmed here rather than assumed, since stage 2's refactor
+  # silently broke this exact assumption the moment stage 3 extended
+  # OUTCOME_CATEGORIES to 8 (caught by test-simulation.R).
   n_cat <- length(probs)
   n_full <- length(OUTCOME_CATEGORIES)
   if (n_cat != n_full && n_cat != n_full - 1L) {
@@ -141,28 +172,121 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
   }
   categories <- OUTCOME_CATEGORIES[seq_len(n_cat)]
   run_values <- OUTCOME_RUN_VALUES[seq_len(n_cat)]
+  has_wide_category <- "wide" %in% categories   # FALSE for an old 7-column model
+  wide_idx <- if (has_wide_category) which(categories == "wide") else NA_integer_
+
+  # Illegal-delivery draw (#81/D-P50 stage 6), independent of the model --
+  # see this file's header note for why a no-ball has no distinguishing
+  # feature. A wide is illegal by construction whenever the model's own
+  # category draw lands there; a no-ball is illegal via this separate,
+  # measured-rate Bernoulli draw. The two are mutually exclusive in real
+  # cricket (a delivery is called wide XOR no-ball, not both), so if the
+  # model's draw would have been wide AND the no-ball draw also fires,
+  # no-ball wins (it is the more consequential of the two -- it grants a
+  # free hit) and the outcome is redrawn excluding the wide category.
+  no_ball_rate <- get_no_ball_rate(format)
+  is_noball <- stats::runif(1) < no_ball_rate
+
+  draw_outcome <- function(probs_in, categories_in, run_values_in) {
+    idx <- sample(seq_along(probs_in), 1, prob = probs_in)
+    list(idx = idx, is_wicket = categories_in[idx] == "wicket",
+         runs = run_values_in[idx])
+  }
 
   if (mode == "categorical") {
-    # Draw from categorical distribution
-    outcome_idx <- sample(seq_len(n_cat), 1, prob = probs)
+    drawn <- draw_outcome(probs, categories, run_values)
 
-    is_wicket <- outcome_idx == which(categories == "wicket")
-    runs <- run_values[outcome_idx]
+    if (is_noball && has_wide_category && drawn$idx == wide_idx) {
+      # Collision: redraw excluding wide, renormalised over the rest.
+      keep <- seq_len(n_cat) != wide_idx
+      drawn <- draw_outcome(probs[keep] / sum(probs[keep]),
+                             categories[keep], run_values[keep])
+    }
 
-    list(runs = runs, is_wicket = is_wicket, probs = probs)
+    is_wide <- has_wide_category && drawn$idx == wide_idx && !is_noball
+    # Redundant guard: the collision branch above already prevents a
+    # simultaneous no-ball+wide from reaching here as `is_wide`, but keeping
+    # both conditions explicit (rather than relying on that branch alone)
+    # means this stays correct even if the collision handling above is ever
+    # edited to stop always redrawing.
+
+    if (is_wide) {
+      # WIDE was checked ahead of wicket priority during training's own
+      # label construction (case_when(is_wicket ~ 0L, wides > 0 ~ 7L, ...)),
+      # so a wide outcome is wicket-free BY CONSTRUCTION of the label the
+      # model was trained on -- any wicket-on-wide event in the training
+      # data was already absorbed into the "wicket" class, never "wide".
+      list(runs = drawn$runs, is_wicket = FALSE, probs = probs,
+           is_illegal = TRUE, sets_free_hit = FALSE)
+    } else if (is_noball) {
+      # No-ball penalty run, on top of whatever the batter/extras scored --
+      # the drawn category's run value already reflects that (see the
+      # header note: a no-ball's runs distribution mirrors a legal ball's).
+      list(runs = drawn$runs + 1, is_wicket = drawn$is_wicket, probs = probs,
+           is_illegal = TRUE, sets_free_hit = TRUE)
+    } else {
+      list(runs = drawn$runs, is_wicket = drawn$is_wicket, probs = probs,
+           is_illegal = FALSE, sets_free_hit = FALSE)
+    }
 
   } else {
-    # Expected value mode: runs use the expected value directly (fast,
-    # deterministic), but wicket occurrence must still be drawn stochastically
-    # from exp_wicket. Thresholding at > 0.5 would almost never fire since
-    # ball-level wicket probabilities are ~0.02-0.05, so innings would never
-    # end on a wicket (they'd just run to max_balls every time).
-    exp_runs <- sum(probs * run_values)
-    exp_wicket <- probs[which(categories == "wicket")]
-    is_wicket <- stats::runif(1) < exp_wicket
+    # Expected mode: runs are (conditionally) deterministic, but illegality
+    # and wicket occurrence must still be drawn stochastically -- ball
+    # advancement and innings-ending are inherently discrete events. Runs
+    # and wicket probability are computed CONDITIONAL on the branch already
+    # decided (excluding wide's probability mass when this specific ball has
+    # been decided not-wide), so a wide's non-zero run value is never
+    # blended into every ball's expectation regardless of what actually
+    # happens on it.
+    p_wide <- if (has_wide_category) probs[wide_idx] else 0
+    is_wide <- has_wide_category && stats::runif(1) < p_wide && !is_noball
+    # (no-ball wins the same collision as the categorical branch: if both
+    # the wide draw and the no-ball draw fire, is_wide is forced FALSE above)
 
-    list(runs = exp_runs, is_wicket = is_wicket, exp_wicket = exp_wicket, probs = probs)
+    if (has_wide_category) {
+      keep <- seq_len(n_cat) != wide_idx
+      nonwide_mass <- sum(probs[keep])
+      cond_probs <- probs[keep] / nonwide_mass
+      cond_categories <- categories[keep]
+      cond_run_values <- run_values[keep]
+    } else {
+      cond_probs <- probs
+      cond_categories <- categories
+      cond_run_values <- run_values
+    }
+    cond_exp_runs <- sum(cond_probs * cond_run_values)
+    cond_exp_wicket <- cond_probs[cond_categories == "wicket"]
+
+    if (is_wide) {
+      list(runs = run_values[wide_idx], is_wicket = FALSE, probs = probs,
+           exp_wicket = 0, is_illegal = TRUE, sets_free_hit = FALSE)
+    } else if (is_noball) {
+      is_wicket <- stats::runif(1) < cond_exp_wicket
+      list(runs = cond_exp_runs + 1, is_wicket = is_wicket, probs = probs,
+           exp_wicket = cond_exp_wicket, is_illegal = TRUE, sets_free_hit = TRUE)
+    } else {
+      is_wicket <- stats::runif(1) < cond_exp_wicket
+      list(runs = cond_exp_runs, is_wicket = is_wicket, probs = probs,
+           exp_wicket = cond_exp_wicket, is_illegal = FALSE, sets_free_hit = FALSE)
+    }
   }
+}
+
+
+#' No-Ball Rate for a Format
+#'
+#' @param format Character. "t20", "odi", or "test".
+#' @return Numeric. Measured no-ball rate (see `NO_BALL_RATE_*` in
+#'   `R/constants_skill.R` for how these were derived).
+#' @keywords internal
+get_no_ball_rate <- function(format) {
+  fmt <- normalize_format(format)
+  switch(fmt,
+    "t20" = NO_BALL_RATE_T20,
+    "odi" = NO_BALL_RATE_ODI,
+    "test" = NO_BALL_RATE_TEST,
+    NO_BALL_RATE_T20
+  )
 }
 
 
@@ -188,9 +312,14 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
 #' @return List with innings summary:
 #'   - total_runs: final score
 #'   - wickets_lost: wickets that fell
-#'   - balls_faced: total balls faced
+#'   - balls_faced: total LEGAL balls faced (excludes wides and no-ball
+#'     retries; a no-ball still counts toward the batter's own faced count,
+#'     matching `player_game_data.R`'s convention, but not toward `balls`/
+#'     over progression -- #81/D-P50 stage 6)
 #'   - overs_faced: overs used (decimal format)
-#'   - ball_by_ball: data frame of each delivery
+#'   - ball_by_ball: data.table of every delivery, including illegal retries
+#'     (`is_illegal` column; `over`/`ball` repeat across a retry of the same
+#'     slot, since it doesn't advance)
 #'   - result: "completed", "all_out", or "target_reached"
 #'
 #' @seealso
@@ -225,14 +354,24 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
   max_balls <- if (!is.null(max_overs)) max_overs * 6 else 999999L  # Test effectively unlimited
 
   # OPTIMIZED: Pre-allocate vectors for max possible deliveries
-  # This avoids expensive list appending in the while loop
-  max_deliveries <- if (!is.null(max_overs)) as.integer(max_overs * 6) else 1000L
+  # This avoids expensive list appending in the while loop. #81/D-P50 stage 6:
+  # illegal deliveries (wide/no-ball) are re-bowled -- MORE deliveries can now
+  # occur than max_overs*6, so the base allocation gets ~15% headroom (well
+  # above the expected extra draws at any format's measured illegal rate --
+  # T20 is the worst case at ~4.4%) and .grow_delivery_vectors() below is a
+  # correctness backstop for an unlucky tail, not the expected path.
+  max_deliveries <- if (!is.null(max_overs)) {
+    as.integer(ceiling(max_overs * 6 * 1.15)) + 10L
+  } else {
+    1000L
+  }
   result_over <- integer(max_deliveries)
   result_ball <- integer(max_deliveries)
   result_runs <- numeric(max_deliveries)
   result_is_wicket <- logical(max_deliveries)
   result_total_runs <- numeric(max_deliveries)
   result_wickets <- integer(max_deliveries)
+  result_is_illegal <- logical(max_deliveries)
 
   # Initialize state
   runs <- 0
@@ -241,6 +380,18 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
   delivery_count <- 0L
   current_batter_idx <- 1L
   current_bowler_idx <- 1L
+  # #81/D-P50 stage 6: a no-ball (never a wide) grants a free hit on the
+  # delivery that finally resolves the over legally; it carries through any
+  # further illegal deliveries in the same streak. Mirrors
+  # compute_is_free_hit()'s historical derivation (R/cricsheet_parser.R).
+  pending_free_hit <- FALSE
+  # An illegal delivery doesn't advance `balls`, which is the loop's own
+  # termination condition -- at the real ~0.4-4.4% illegal rate an unbroken
+  # streak is practically impossible, but a misconfigured model or a future
+  # bug pushing that rate too high would hang this loop forever rather than
+  # erroring. Cheap insurance, never expected to fire.
+  consecutive_illegal <- 0L
+  MAX_CONSECUTIVE_ILLEGAL <- 1000L
 
   # Track batter/bowler balls faced/bowled
   batter_balls <- rep(0L, length(batters))
@@ -277,7 +428,8 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
       target = target,
       gender = gender,
       is_knockout = is_knockout,
-      event_tier = event_tier
+      event_tier = event_tier,
+      is_free_hit = pending_free_hit
     )
 
     # Simulate delivery
@@ -303,33 +455,77 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     sim_result <- simulate_delivery(model, match_state, delivery_skills, team_skills,
                                      venue_skills, mode)
 
-    # Update state
+    # Update state. #81/D-P50 stage 6: an illegal delivery (wide or no-ball)
+    # must be re-bowled -- `balls`/`over` do not advance, and the bowler's
+    # over-completion count does not either. A no-ball still counts as a ball
+    # FACED by the batter (a wide does not) -- the same convention already
+    # used by player_game_data.R's batting_balls_faced. `sim_result$sets_free_hit`
+    # is TRUE only for a no-ball, never a wide, so it doubles as that signal
+    # here rather than adding a redundant field.
+    is_illegal <- isTRUE(sim_result$is_illegal)
+    is_noball_delivery <- isTRUE(sim_result$sets_free_hit)
+
     runs <- runs + sim_result$runs
-    balls <- balls + 1L
-    batter_balls[current_batter_idx] <- batter_balls[current_batter_idx] + 1L
-    bowler_balls[current_bowler_idx] <- bowler_balls[current_bowler_idx] + 1L
+
+    if (!is_illegal) {
+      balls <- balls + 1L
+      bowler_balls[current_bowler_idx] <- bowler_balls[current_bowler_idx] + 1L
+      pending_free_hit <- FALSE
+      consecutive_illegal <- 0L
+    } else {
+      pending_free_hit <- pending_free_hit || is_noball_delivery
+      consecutive_illegal <- consecutive_illegal + 1L
+      if (consecutive_illegal >= MAX_CONSECUTIVE_ILLEGAL) {
+        cli::cli_abort(c(
+          "{consecutive_illegal} consecutive illegal deliveries at over {over}, ball {ball} -- refusing to loop forever.",
+          "i" = "Expected illegal rate is under 5% (NO_BALL_RATE_* plus the model's own P(wide)); this many in a row means something is misconfigured."))
+      }
+    }
+
+    if (!is_illegal || is_noball_delivery) {
+      # Faced: a legal ball or a no-ball. Not faced: a wide.
+      batter_balls[current_batter_idx] <- batter_balls[current_batter_idx] + 1L
+    }
 
     if (sim_result$is_wicket) {
       wickets <- wickets + 1L
       current_batter_idx <- min(current_batter_idx + 1L, length(batters))
     }
 
-    # Store result in pre-allocated vectors (no list appending)
+    # Store result in pre-allocated vectors (no list appending). Growing here
+    # is the correctness backstop noted where max_deliveries is computed --
+    # illegal deliveries can push delivery_count past the padded allocation
+    # on an unlucky streak.
     delivery_count <- delivery_count + 1L
+    if (delivery_count > length(result_over)) {
+      grown <- .grow_delivery_vectors(result_over, result_ball, result_runs,
+                                       result_is_wicket, result_total_runs,
+                                       result_wickets, result_is_illegal)
+      result_over <- grown$result_over
+      result_ball <- grown$result_ball
+      result_runs <- grown$result_runs
+      result_is_wicket <- grown$result_is_wicket
+      result_total_runs <- grown$result_total_runs
+      result_wickets <- grown$result_wickets
+      result_is_illegal <- grown$result_is_illegal
+    }
     result_over[delivery_count] <- over
     result_ball[delivery_count] <- ball
     result_runs[delivery_count] <- sim_result$runs
     result_is_wicket[delivery_count] <- sim_result$is_wicket
     result_total_runs[delivery_count] <- runs
     result_wickets[delivery_count] <- wickets
+    result_is_illegal[delivery_count] <- is_illegal
 
     # Check if target reached (innings 2)
     if (!is.null(target) && runs >= target) {
       break
     }
 
-    # Rotate bowler every over
-    if (ball == 6L) {
+    # Rotate bowler at the end of an over -- only once it is actually
+    # complete (6 LEGAL balls). An illegal 6th-slot retry must not rotate;
+    # the over isn't done.
+    if (!is_illegal && ball == 6L) {
       current_bowler_idx <- ((current_bowler_idx) %% length(bowlers)) + 1L
     }
   }
@@ -343,14 +539,18 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     "completed"
   }
 
-  # Create single data.table at end (trimmed to actual size)
+  # Create single data.table at end (trimmed to actual size). over/ball
+  # repeat across any illegal retries of the same slot (balls doesn't
+  # advance for those) -- is_illegal distinguishes a retry from the legal
+  # delivery that finally resolves it.
   ball_by_ball <- data.table::data.table(
     over = result_over[seq_len(delivery_count)],
     ball = result_ball[seq_len(delivery_count)],
     runs = result_runs[seq_len(delivery_count)],
     is_wicket = result_is_wicket[seq_len(delivery_count)],
     total_runs = result_total_runs[seq_len(delivery_count)],
-    wickets = result_wickets[seq_len(delivery_count)]
+    wickets = result_wickets[seq_len(delivery_count)],
+    is_illegal = result_is_illegal[seq_len(delivery_count)]
   )
 
   list(
@@ -361,6 +561,33 @@ simulate_innings <- function(model, format = "t20", innings = 1, target = NULL,
     overs_decimal = balls / 6,  # True decimal overs for arithmetic (e.g., RPO calculations)
     ball_by_ball = ball_by_ball,
     result = result_type
+  )
+}
+
+
+#' Grow simulate_innings()'s Pre-Allocated Result Vectors
+#'
+#' Doubles each vector's length, preserving existing values. Illegal
+#' deliveries (#81/D-P50 stage 6) mean the total delivery count can exceed
+#' the initial padded allocation on an unlucky streak; this is the
+#' correctness backstop for that case, not the expected path.
+#'
+#' @param result_over,result_ball,result_runs,result_is_wicket,result_total_runs,result_wickets,result_is_illegal
+#'   The vectors to grow.
+#' @return Named list of the grown vectors, same names as the parameters.
+#' @keywords internal
+.grow_delivery_vectors <- function(result_over, result_ball, result_runs,
+                                    result_is_wicket, result_total_runs,
+                                    result_wickets, result_is_illegal) {
+  n <- length(result_over)
+  list(
+    result_over = c(result_over, integer(n)),
+    result_ball = c(result_ball, integer(n)),
+    result_runs = c(result_runs, numeric(n)),
+    result_is_wicket = c(result_is_wicket, logical(n)),
+    result_total_runs = c(result_total_runs, numeric(n)),
+    result_wickets = c(result_wickets, integer(n)),
+    result_is_illegal = c(result_is_illegal, logical(n))
   )
 }
 
