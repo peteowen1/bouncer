@@ -68,7 +68,7 @@ add_predictions_to_deliveries <- function(model_path,
 
   # Add prediction columns to schema if they don't exist
   cli::cli_h2("Adding prediction columns to schema")
-  outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+  outcome_labels <- OUTCOME_CATEGORIES
   for (label in outcome_labels) {
     col_name <- paste0(column_prefix, "_", label)
 

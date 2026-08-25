@@ -15,6 +15,7 @@
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+if (!("bouncer" %in% loadedNamespaces())) devtools::load_all(quiet = TRUE)  # for OUTCOME_CATEGORIES
 
 cat("\n=== MODEL COMPARISON VISUALIZATIONS ===\n\n")
 
@@ -38,7 +39,7 @@ load_model_results <- function(model_type, format) {
     test_probs <- predict(model, newdata = test_data, type = "response")
     predicted_int <- max.col(test_probs)
 
-    outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+    outcome_labels <- OUTCOME_CATEGORIES
     predicted_label <- factor(predicted_int, levels = 1:7, labels = outcome_labels, ordered = TRUE)
     conf_matrix <- table(Actual = test_data$outcome_label, Predicted = predicted_label)
     accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
@@ -123,7 +124,7 @@ load_model_results <- function(model_type, format) {
     test_probs <- predict(xgb_results$model, dtest)
     test_predictions <- max.col(test_probs) - 1
 
-    outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+    outcome_labels <- OUTCOME_CATEGORIES
     predicted_label <- factor(test_predictions, levels = 0:6, labels = outcome_labels)
 
     return(list(
@@ -297,7 +298,7 @@ for (name in names(all_results)) {
   actual_outcome <- as.integer(res$test_data$outcome)
 
   # Calculate average predicted probability for each outcome category
-  outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+  outcome_labels <- OUTCOME_CATEGORIES
 
   for (outcome_idx in 1:7) {
     # Get rows where this is the actual outcome

@@ -321,9 +321,7 @@ for (format in FORMATS_TO_PROCESS) {
     # Classes: 0=Wicket, 1=0runs, 2=1run, 3=2runs, 4=3runs, 5=4runs, 6=6runs
 
     # Calculate expected runs: weighted sum of outcome probabilities
-    # Run values: 0, 0, 1, 2, 3, 4, 6 (wicket counts as 0 runs)
-    run_values <- c(0, 0, 1, 2, 3, 4, 6)
-    expected_runs <- probs %*% run_values
+    expected_runs <- probs %*% OUTCOME_RUN_VALUES
 
     # Expected wicket probability is class 0
     expected_wicket <- probs[, 1]

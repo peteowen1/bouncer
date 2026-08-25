@@ -34,7 +34,7 @@ tune_xgb_params <- function(dtrain,
                             folds,
                             fixed_params = list(
                               objective = "multi:softprob",
-                              num_class = 7,
+                              num_class = length(OUTCOME_CATEGORIES),
                               eval_metric = "mlogloss"
                             ),
                             n_iter = 20,

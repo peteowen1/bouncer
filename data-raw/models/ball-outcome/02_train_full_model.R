@@ -292,7 +292,7 @@ for (format in FORMATS_TO_TRAIN) {
 
   fixed_params <- list(
     objective = "multi:softprob",
-    num_class = 7,
+    num_class = length(OUTCOME_CATEGORIES),
     eval_metric = "mlogloss"
   )
 

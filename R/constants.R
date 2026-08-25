@@ -67,6 +67,26 @@ MODEL_FULL_PATTERN <- "full_outcome_%s.ubj"
 # Format: {format}_margin_model.ubj where format = t20|odi|test
 MODEL_MARGIN_PATTERN <- "%s_margin_model.ubj"
 
+# ============================================================================
+# BALL-OUTCOME MODEL CATEGORIES (bouncerverse#81/D-P50, stage 2)
+# ============================================================================
+
+# Shared source of truth for the agnostic/full ball-outcome models' output
+# categories. Previously hardcoded independently in ~10 places (roxygen
+# comments, num_class= literals, an outcome_labels vector, a runs_values
+# vector, the simulator's switch()) -- see
+# docs/plans/D-P50-WIDE-CATEGORY-REBUILD.md for the audit that found the
+# duplication. Column order in every trained model's probability output
+# matches this vector's order exactly; changing the order here without
+# retraining every model would silently misalign predictions.
+OUTCOME_CATEGORIES <- c("wicket", "0", "1", "2", "3", "4", "6")
+
+# Run value contributed by each category, same order as OUTCOME_CATEGORIES.
+# Wicket is 0 by modeling convention -- this multinomial treats "a wicket
+# fell" as its own bucket regardless of any runs also scored on that ball,
+# unchanged from the pre-existing (pre-constant) behavior.
+OUTCOME_RUN_VALUES <- c(0, 0, 1, 2, 3, 4, 6)
+
 # In-match win probability models (2-stage)
 # Format: {format}_stage1_results.rds, {format}_stage2_results.rds
 MODEL_STAGE1_PATTERN <- "%s_stage1_results.rds"

@@ -1,6 +1,7 @@
 # One variant of #59, run alone so a long fit survives being interrupted.
 # Usage: Rscript exp59_fit.R <variant>
 suppressMessages({library(data.table); library(xgboost)})
+if (!("bouncer" %in% loadedNamespaces())) devtools::load_all(quiet = TRUE)  # for OUTCOME_CATEGORIES
 # Scratch location for the cached split and the per-variant scores. Override
 # with the first command-line argument; defaults to the session temp dir so the
 # script is reproducible on any machine.
@@ -24,7 +25,7 @@ stopifnot(!is.null(feats), all(feats %in% names(tr)))
 
 dtr <- xgb.DMatrix(as.matrix(tr[, ..feats]), label = tr$outcome)
 dte <- xgb.DMatrix(as.matrix(te[, ..feats]), label = te$outcome)
-p <- list(objective = "multi:softprob", num_class = 7, eval_metric = "mlogloss",
+p <- list(objective = "multi:softprob", num_class = length(OUTCOME_CATEGORIES), eval_metric = "mlogloss",
           max_depth = 6, eta = 0.1, subsample = 0.8, colsample_bytree = 0.8, nthread = 0)
 set.seed(SEED)
 m <- xgb.train(p, dtr, nrounds = MAX_ROUNDS, early_stopping_rounds = EARLY,

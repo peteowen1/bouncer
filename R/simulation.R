@@ -123,21 +123,13 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     probs <- probs[1, ]
   }
 
-  # Outcome: [1]=wicket, [2]=0runs, [3]=1run, [4]=2runs, [5]=3runs, [6]=4runs, [7]=6runs
+  # Outcome column order is OUTCOME_CATEGORIES (R/constants.R): wicket, 0, 1, 2, 3, 4, 6.
   if (mode == "categorical") {
     # Draw from categorical distribution
-    outcome_idx <- sample(1:7, 1, prob = probs)
+    outcome_idx <- sample(seq_along(OUTCOME_CATEGORIES), 1, prob = probs)
 
-    is_wicket <- outcome_idx == 1
-    runs <- switch(outcome_idx,
-      0L,  # wicket - 0 runs
-      0L,  # dot ball
-      1L,  # single
-      2L,  # double
-      3L,  # three
-      4L,  # boundary
-      6L   # six
-    )
+    is_wicket <- outcome_idx == which(OUTCOME_CATEGORIES == "wicket")
+    runs <- OUTCOME_RUN_VALUES[outcome_idx]
 
     list(runs = runs, is_wicket = is_wicket, probs = probs)
 
@@ -147,8 +139,8 @@ simulate_delivery <- function(model, match_state, player_skills, team_skills,
     # from exp_wicket. Thresholding at > 0.5 would almost never fire since
     # ball-level wicket probabilities are ~0.02-0.05, so innings would never
     # end on a wicket (they'd just run to max_balls every time).
-    exp_runs <- sum(probs * c(0, 0, 1, 2, 3, 4, 6))
-    exp_wicket <- probs[1]
+    exp_runs <- sum(probs * OUTCOME_RUN_VALUES)
+    exp_wicket <- probs[which(OUTCOME_CATEGORIES == "wicket")]
     is_wicket <- stats::runif(1) < exp_wicket
 
     list(runs = exp_runs, is_wicket = is_wicket, exp_wicket = exp_wicket, probs = probs)

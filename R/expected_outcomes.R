@@ -19,16 +19,13 @@
 #'
 #' @keywords internal
 calculate_expected_runs <- function(probs) {
-  # Run values for each category: wicket=0, dot=0, 1, 2, 3, 4, 6
-  runs_values <- c(0, 0, 1, 2, 3, 4, 6)
-
   probs <- as.matrix(probs)
 
-  if (ncol(probs) != 7) {
-    cli::cli_abort("probs must have 7 columns: (wicket, 0, 1, 2, 3, 4, 6)")
+  if (ncol(probs) != length(OUTCOME_CATEGORIES)) {
+    cli::cli_abort("probs must have {length(OUTCOME_CATEGORIES)} columns: ({paste(OUTCOME_CATEGORIES, collapse = ', ')})")
   }
 
-  as.vector(probs %*% runs_values)
+  as.vector(probs %*% OUTCOME_RUN_VALUES)
 }
 
 

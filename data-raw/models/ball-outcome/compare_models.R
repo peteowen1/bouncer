@@ -17,6 +17,7 @@
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+if (!("bouncer" %in% loadedNamespaces())) devtools::load_all(quiet = TRUE)  # for OUTCOME_CATEGORIES
 
 cat("\n=== MODEL COMPARISON: BAM vs XGBoost (Short-form & Long-form) ===\n\n")
 
@@ -53,7 +54,7 @@ load_model_results <- function(model_type, format) {
     predicted_int <- max.col(test_probs)
 
     # Calculate metrics
-    outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+    outcome_labels <- OUTCOME_CATEGORIES
     predicted_label <- factor(predicted_int, levels = 1:7, labels = outcome_labels, ordered = TRUE)
     conf_matrix <- table(Actual = test_data$outcome_label, Predicted = predicted_label)
 
@@ -139,7 +140,7 @@ load_model_results <- function(model_type, format) {
     test_probs <- predict(xgb_results$model, dtest)
     test_predictions <- max.col(test_probs) - 1
 
-    outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+    outcome_labels <- OUTCOME_CATEGORIES
     predicted_label <- factor(test_predictions, levels = 0:6, labels = outcome_labels)
 
     results <- list(
@@ -258,7 +259,7 @@ cli::cli_h1("Category-Specific Accuracy Comparison")
 
 # Build comparison table
 category_comparison <- data.frame(
-  Outcome = c("wicket", "0", "1", "2", "3", "4", "6")
+  Outcome = OUTCOME_CATEGORIES
 )
 
 for (name in names(all_results)) {

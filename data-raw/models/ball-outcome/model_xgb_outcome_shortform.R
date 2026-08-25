@@ -156,7 +156,7 @@ model_data <- model_data %>%
     outcome_label = factor(
       outcome,
       levels = 0:6,
-      labels = c("wicket", "0", "1", "2", "3", "4", "6"),
+      labels = OUTCOME_CATEGORIES,
       ordered = TRUE
     ),
 
@@ -322,7 +322,7 @@ cli::cli_h2("Finding optimal number of rounds via CV")
 # Default parameters (good starting point for most problems)
 params <- list(
   objective = "multi:softprob",  # Multinomial classification
-  num_class = 7,                  # 7 categories (wicket, 0-6 runs)
+  num_class = length(OUTCOME_CATEGORIES),  # wicket, 0-6 runs (see R/constants.R)
   max_depth = 6,                  # Tree depth
   eta = 0.1,                     # Learning rate
   subsample = 0.8,                # Row sampling
@@ -401,7 +401,7 @@ test_probs <- predict(xgb_model_sf, dtest)
 test_predictions <- max.col(test_probs) - 1  # Convert back to 0-6
 
 # Confusion matrix
-outcome_labels <- c("wicket", "0", "1", "2", "3", "4", "6")
+outcome_labels <- OUTCOME_CATEGORIES
 conf_matrix <- table(
   Actual = factor(test_features$outcome, levels = 0:6, labels = outcome_labels),
   Predicted = factor(test_predictions, levels = 0:6, labels = outcome_labels)
