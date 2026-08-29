@@ -195,12 +195,18 @@ time_causal_hierarchical_mean <- function(matches, value_col, levels, weights,
 
   # Root: causal running mean over ALL matches to date (every level pooled),
   # itself shrunk toward the whole-sample mean -- this is what the coarsest
-  # level in `levels` will shrink toward.
+  # level in `levels` will shrink toward. Grouped by match_date (not just
+  # subtracting the current row) so same-day siblings exclude EACH OTHER, not
+  # just themselves -- matching the per-level loop below exactly. A row-only
+  # subtraction here leaked same-day matches into each other's root estimate
+  # (bouncerverse#83 review, 2026-08-29): verified two same-day matches with no
+  # shared venue/competition still moved each other's hier_mean.
   data.table::setorder(m, match_date, match_id)
   m[, cum_n_g := cumsum(.has)]
   m[, cum_v_g := cumsum(.v)]
-  m[, n_prior_g := cum_n_g - .has]
-  m[, v_prior_g := cum_v_g - .v]
+  m[, `:=`(n_prior_g = max(cum_n_g) - sum(.has),
+           v_prior_g = max(cum_v_g) - sum(.v)),
+    by = match_date]
   m[, parent_mean := (v_prior_g + root_prior_weight * overall_mean) /
       (n_prior_g + root_prior_weight)]
   m[, c("cum_n_g", "cum_v_g", "n_prior_g", "v_prior_g") := NULL]

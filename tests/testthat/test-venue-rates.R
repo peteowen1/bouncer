@@ -239,6 +239,30 @@ test_that("a sparse competition borrows strength from the root, not just its own
   expect_equal(hier_of(r, "y2"), 700)  # everything upstream is 700, so it stays 700
 })
 
+test_that("the root level cannot see a same-day sibling at a different venue/competition", {
+  # bouncerverse#83 review (2026-08-29): the root causal mean originally
+  # subtracted only the current row's own value, not every row sharing its
+  # match_date -- so two same-day matches with NOTHING else in common (no
+  # shared venue, no shared competition) still leaked into each other's root
+  # estimate via cumsum/match_id tie-break order. With root_prior_value
+  # pinned, match b has zero legitimate causal evidence at any level and must
+  # come out at exactly the pinned prior regardless of match a's value.
+  same_day <- function(a_value) {
+    mk(match_id = c("a", "b"), venue = c("VA", "VB"), competition = c("CA", "CB"),
+       match_date = c("2020-01-01", "2020-01-01"), inn1 = c(a_value, NA))
+  }
+  r_lo <- time_causal_hierarchical_mean(same_day(100), "inn1",
+                                        levels = c("venue", "competition"),
+                                        weights = c(venue = 5, competition = 20),
+                                        root_prior_weight = 30, root_prior_value = 300)
+  r_hi <- time_causal_hierarchical_mean(same_day(100000), "inn1",
+                                        levels = c("venue", "competition"),
+                                        weights = c(venue = 5, competition = 20),
+                                        root_prior_weight = 30, root_prior_value = 300)
+  expect_equal(hier_of(r_lo, "b"), 300)
+  expect_equal(hier_of(r_hi, "b"), 300)
+})
+
 test_that("weights must be named exactly by levels", {
   m <- mk(match_id = "a", venue = "A", competition = "X",
           match_date = "2020-01-01", inn1 = 300)

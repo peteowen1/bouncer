@@ -21,14 +21,18 @@ cat("\n")
 
 # Database Connection ----
 cli::cli_h2("Connecting to database")
-conn <- get_db_connection(read_only = TRUE)
-# No on.exit() -- fires immediately, not at script end, when this script is
-# sourced from a wrapper (run_in_match_pipeline.R sources every numbered step):
-# source() gives each top-level line its own eval() frame, and on.exit() binds
-# to THAT frame, so the very next query sees an already-closed connection.
-# Repro'd directly; same fix already applied in 01_prepare_all_formats.R.
-# Closed explicitly, right after the last query, below.
-cli::cli_alert_success("Connected to database")
+# with_db_connection(), not a bare open + top-level on.exit(): on.exit() at a
+# script's top level binds to source()'s per-statement eval() frame and fires
+# IMMEDIATELY rather than at script end, when this script is sourced from a
+# wrapper (run_in_match_pipeline.R sources every numbered step) -- repro'd
+# directly, same fix already applied in 01_prepare_all_formats.R. A bare
+# explicit dbDisconnect() after the last query fixes that but drops cleanup on
+# the error path (a query throwing between open and that line leaks the
+# connection); with_db_connection() closes on both the normal and error path,
+# which matters here because run_in_match_pipeline.R treats this script's
+# failure as non-fatal and keeps running (a leaked read-only connection still
+# holds a lock that can fail a later WRITE connection in the same session --
+# see this repo's CLAUDE.md DuckDB-lock troubleshooting section).
 
 # Configuration ----
 # Honour caller-supplied values (run_in_match_pipeline.R sets these) rather than
@@ -61,6 +65,8 @@ if (!exists("MATCH_TYPE")) MATCH_TYPE <- "t20"
 # comparison for those formats too rather than assuming the T20 result holds.
 if (!exists("CROSS_COMPETITION")) CROSS_COMPETITION <- TRUE
 if (!exists("OUTPUT_SUFFIX")) OUTPUT_SUFFIX <- ""
+
+query_data <- with_db_connection(function(conn) {
 
 # Load Historical Match Data ----
 cli::cli_h2("Loading historical match data")
@@ -135,6 +141,8 @@ if (CROSS_COMPETITION) {
     WHERE mi.match_id IN (
       SELECT match_id FROM cricsheet.matches
       WHERE LOWER(match_type) = ?
+        AND outcome_winner IS NOT NULL
+        AND outcome_winner != ''
     )
     ORDER BY mi.match_id, mi.innings
   "
@@ -153,6 +161,8 @@ if (CROSS_COMPETITION) {
       SELECT match_id FROM cricsheet.matches
       WHERE event_name LIKE ?
         AND LOWER(match_type) = ?
+        AND outcome_winner IS NOT NULL
+        AND outcome_winner != ''
     )
     ORDER BY mi.match_id, mi.innings
   "
@@ -164,9 +174,13 @@ if (CROSS_COMPETITION) {
 
 cli::cli_alert_success("Loaded innings data for {length(unique(innings_df$match_id))} matches")
 
-# All querying done -- close explicitly here rather than via on.exit() (see
-# the note at connection-open above).
-DBI::dbDisconnect(conn, shutdown = TRUE)
+list(matches_df = matches_df, innings_df = innings_df)
+
+}, read_only = TRUE)
+
+matches_df <- query_data$matches_df
+innings_df <- query_data$innings_df
+cli::cli_alert_success("Connected to database, queried, and disconnected")
 
 # Calculate Venue Statistics ----
 cli::cli_h2("Calculating venue statistics")
@@ -201,6 +215,18 @@ if (CROSS_COMPETITION) {
   # against the single-level IPL-only prior in docs/plans/MODELLING-IDEAS.md:
   # cross-competition scope cut T20 male RMSE 39.49 -> 36.58, the added
   # competition level a further -0.7%.
+  # paste(NA, "Male") is the STRING "NA Male", not NA -- so any row with a
+  # join-miss venue/gender/event_name (rain-affected/abandoned matches with a
+  # recorded innings total but no outcome_winner) would silently blend into
+  # one shared pseudo-venue/competition bucket instead of erroring or standing
+  # out. The outcome_winner filter above on innings_query already keeps these
+  # out in practice; this is a second, defensive line in case some other gap
+  # (a genuinely missing venue/gender in cricsheet.matches) produces an NA here.
+  n_before <- nrow(fi_dt)
+  fi_dt <- fi_dt[!is.na(venue) & !is.na(gender) & !is.na(event_name)]
+  if (nrow(fi_dt) < n_before) {
+    cli::cli_warn("Dropped {n_before - nrow(fi_dt)} first-innings row(s) with NA venue/gender/event_name before hierarchical shrinkage.")
+  }
   fi_dt[, venue_g := paste(venue, gender)]
   fi_dt[, competition_g := paste(event_name, gender)]
   venue_causal <- time_causal_hierarchical_mean(
