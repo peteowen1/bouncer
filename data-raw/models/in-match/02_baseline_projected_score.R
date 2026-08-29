@@ -22,7 +22,12 @@ cat("\n")
 # Database Connection ----
 cli::cli_h2("Connecting to database")
 conn <- get_db_connection(read_only = TRUE)
-on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+# No on.exit() -- fires immediately, not at script end, when this script is
+# sourced from a wrapper (run_in_match_pipeline.R sources every numbered step):
+# source() gives each top-level line its own eval() frame, and on.exit() binds
+# to THAT frame, so the very next query sees an already-closed connection.
+# Repro'd directly; same fix already applied in 01_prepare_all_formats.R.
+# Closed explicitly, right after the last query, below.
 cli::cli_alert_success("Connected to database")
 
 # Configuration ----
@@ -35,113 +40,239 @@ if (!exists("MATCH_TYPE")) MATCH_TYPE <- "t20"
 # MIN_VENUE_MATCHES hard cutoff removed (#82) -- superseded by the
 # shrinkage-to-prior in time_causal_venue_mean(), same as #80.
 
+# CROSS_COMPETITION: bouncerverse#83 found this script's IPL-only scope leaves
+# 82-89% of 04_win_probability_innings1.R's cross-competition T20 training
+# corpus with a single flat constant (no venue signal at all), because that
+# script trains on EVERY T20 competition while this one only ever saw IPL.
+# When TRUE, EVENT_FILTER is ignored, the query covers every competition for
+# MATCH_TYPE, and venue shrinkage becomes a 2-level hierarchy (venue ->
+# competition -> global root, time_causal_hierarchical_mean()) instead of a
+# single shrink straight to one flat scalar -- a sparse competition borrows
+# strength from the global level instead of degenerating to a constant.
+#
+# Default TRUE as of 2026-08-29 (MODELLING-IDEAS.md), after an end-to-end
+# retrain comparison on T20: 04's held-out log loss 0.5960 -> 0.5913, Brier
+# 0.2063 -> 0.2045, AUC 0.7379 -> 0.7426, causal coverage 4.3% -> 100%, no
+# metric moved the wrong way. Also fixes a worse, previously-unmeasured defect
+# for ODI/Test specifically: run_in_match_pipeline.R sets EVENT_FILTER to the
+# IPL for every format, and the IPL has no ODI or Test matches at all, so the
+# FALSE-default path queries ZERO rows for those two formats. Not re-validated
+# for ODI/Test tonight -- flagged in DECISIONS.md, worth a proper retrain
+# comparison for those formats too rather than assuming the T20 result holds.
+if (!exists("CROSS_COMPETITION")) CROSS_COMPETITION <- TRUE
+if (!exists("OUTPUT_SUFFIX")) OUTPUT_SUFFIX <- ""
+
 # Load Historical Match Data ----
 cli::cli_h2("Loading historical match data")
 
-matches_query <- "
-  SELECT
-    m.match_id,
-    m.season,
-    m.match_date,
-    m.venue,
-    m.city,
-    m.team1,
-    m.team2,
-    m.toss_winner,
-    m.toss_decision,
-    m.outcome_winner,
-    m.event_match_number,
-    m.event_group
-  FROM cricsheet.matches m
-  WHERE m.event_name LIKE ?
-    AND LOWER(m.match_type) = ?
-    AND m.outcome_winner IS NOT NULL
-    AND m.outcome_winner != ''
-  ORDER BY m.match_date
-"
-
-matches_df <- DBI::dbGetQuery(conn, matches_query, params = list(
-  paste0("%", EVENT_FILTER, "%"),
-  MATCH_TYPE
-))
+if (CROSS_COMPETITION) {
+  matches_query <- "
+    SELECT
+      m.match_id,
+      m.season,
+      m.match_date,
+      m.venue,
+      m.city,
+      m.gender,
+      m.event_name,
+      m.team1,
+      m.team2,
+      m.toss_winner,
+      m.toss_decision,
+      m.outcome_winner,
+      m.event_match_number,
+      m.event_group
+    FROM cricsheet.matches m
+    WHERE LOWER(m.match_type) = ?
+      AND m.outcome_winner IS NOT NULL
+      AND m.outcome_winner != ''
+    ORDER BY m.match_date
+  "
+  matches_df <- DBI::dbGetQuery(conn, matches_query, params = list(MATCH_TYPE))
+} else {
+  matches_query <- "
+    SELECT
+      m.match_id,
+      m.season,
+      m.match_date,
+      m.venue,
+      m.city,
+      m.team1,
+      m.team2,
+      m.toss_winner,
+      m.toss_decision,
+      m.outcome_winner,
+      m.event_match_number,
+      m.event_group
+    FROM cricsheet.matches m
+    WHERE m.event_name LIKE ?
+      AND LOWER(m.match_type) = ?
+      AND m.outcome_winner IS NOT NULL
+      AND m.outcome_winner != ''
+    ORDER BY m.match_date
+  "
+  matches_df <- DBI::dbGetQuery(conn, matches_query, params = list(
+    paste0("%", EVENT_FILTER, "%"),
+    MATCH_TYPE
+  ))
+}
 
 cli::cli_alert_success("Loaded {nrow(matches_df)} matches")
 
 # Load Innings Totals ----
 cli::cli_h2("Loading innings totals")
 
-innings_query <- "
-  SELECT
-    mi.match_id,
-    mi.innings,
-    mi.batting_team,
-    mi.total_runs,
-    mi.total_wickets,
-    mi.total_overs
-  FROM cricsheet.match_innings mi
-  WHERE mi.match_id IN (
-    SELECT match_id FROM cricsheet.matches
-    WHERE event_name LIKE ?
-      AND LOWER(match_type) = ?
-  )
-  ORDER BY mi.match_id, mi.innings
-"
-
-innings_df <- DBI::dbGetQuery(conn, innings_query, params = list(
-  paste0("%", EVENT_FILTER, "%"),
-  MATCH_TYPE
-))
+if (CROSS_COMPETITION) {
+  innings_query <- "
+    SELECT
+      mi.match_id,
+      mi.innings,
+      mi.batting_team,
+      mi.total_runs,
+      mi.total_wickets,
+      mi.total_overs
+    FROM cricsheet.match_innings mi
+    WHERE mi.match_id IN (
+      SELECT match_id FROM cricsheet.matches
+      WHERE LOWER(match_type) = ?
+    )
+    ORDER BY mi.match_id, mi.innings
+  "
+  innings_df <- DBI::dbGetQuery(conn, innings_query, params = list(MATCH_TYPE))
+} else {
+  innings_query <- "
+    SELECT
+      mi.match_id,
+      mi.innings,
+      mi.batting_team,
+      mi.total_runs,
+      mi.total_wickets,
+      mi.total_overs
+    FROM cricsheet.match_innings mi
+    WHERE mi.match_id IN (
+      SELECT match_id FROM cricsheet.matches
+      WHERE event_name LIKE ?
+        AND LOWER(match_type) = ?
+    )
+    ORDER BY mi.match_id, mi.innings
+  "
+  innings_df <- DBI::dbGetQuery(conn, innings_query, params = list(
+    paste0("%", EVENT_FILTER, "%"),
+    MATCH_TYPE
+  ))
+}
 
 cli::cli_alert_success("Loaded innings data for {length(unique(innings_df$match_id))} matches")
+
+# All querying done -- close explicitly here rather than via on.exit() (see
+# the note at connection-open above).
+DBI::dbDisconnect(conn, shutdown = TRUE)
 
 # Calculate Venue Statistics ----
 cli::cli_h2("Calculating venue statistics")
 
 # Get first innings scores by venue
-first_innings <- innings_df %>%
-  filter(innings == 1) %>%
-  left_join(matches_df %>% select(match_id, venue, match_date, season), by = "match_id")
+if (CROSS_COMPETITION) {
+  first_innings <- innings_df %>%
+    filter(innings == 1) %>%
+    left_join(matches_df %>% select(match_id, venue, match_date, season, gender, event_name),
+              by = "match_id")
+} else {
+  first_innings <- innings_df %>%
+    filter(innings == 1) %>%
+    left_join(matches_df %>% select(match_id, venue, match_date, season), by = "match_id")
+}
 
 # TIME-CAUSAL, not whole-history (bouncerverse#82 -- the same leak #80 fixed in
 # 01_prepare_all_formats.R, one script hop downstream and un-scoped to IPL, so
 # not fixed by that PR). Averaging every match at a venue including the one
 # being predicted meant a live prediction saw its own future: at a one-match
-# venue the feature simply WAS that match's own total. Kept scoped to IPL
-# (not reusing 01_prepare_all_formats.R's cross-competition venue_avg_score)
-# because this script's whole point is an IPL-specific baseline -- an IPL
-# ground's scoring level is not assumed identical to the same ground hosting
-# international cricket.
+# venue the feature simply WAS that match's own total.
 fi_dt <- data.table::as.data.table(first_innings)
 fi_dt[, match_date := as.Date(match_date)]
-venue_causal <- time_causal_venue_mean(fi_dt, "total_runs", prior_weight = 5)
-venue_causal <- venue_causal[, .(match_id, venue_avg_score = venue_mean)]
+
+if (CROSS_COMPETITION) {
+  # 2-level hierarchical shrink (bouncerverse#83): venue, WITHIN gender (a
+  # shared ground name like "Melbourne Cricket Ground" hosts very differently
+  # scoring men's and women's matches) -> competition, within gender -> global
+  # root (both genders pooled -- root_prior_weight is small enough that this
+  # pooling only matters for the very first handful of matches of a brand new
+  # venue/competition, before its own level has any evidence). Screened
+  # against the single-level IPL-only prior in docs/plans/MODELLING-IDEAS.md:
+  # cross-competition scope cut T20 male RMSE 39.49 -> 36.58, the added
+  # competition level a further -0.7%.
+  fi_dt[, venue_g := paste(venue, gender)]
+  fi_dt[, competition_g := paste(event_name, gender)]
+  venue_causal <- time_causal_hierarchical_mean(
+    fi_dt, "total_runs",
+    levels = c("venue_g", "competition_g"),
+    weights = c(venue_g = 5, competition_g = 20),
+    root_prior_weight = 30
+  )
+  venue_causal <- venue_causal[, .(match_id, venue_avg_score = hier_mean)]
+} else {
+  # Kept scoped to IPL (not reusing 01_prepare_all_formats.R's cross-competition
+  # venue_avg_score) because this script's whole point, in this mode, is an
+  # IPL-specific baseline -- an IPL ground's scoring level is not assumed
+  # identical to the same ground hosting international cricket.
+  venue_causal <- time_causal_venue_mean(fi_dt, "total_runs", prior_weight = 5)
+  venue_causal <- venue_causal[, .(match_id, venue_avg_score = venue_mean)]
+}
+
 first_innings <- first_innings %>%
   left_join(as.data.frame(venue_causal), by = "match_id")
 
-# Overall league average (used both as the shrinkage prior and as the
-# fallback for venues/matches with no causal value)
+# Overall average (used both as the shrinkage prior and as the fallback for
+# venues/matches with no causal value)
 overall_avg_score <- mean(first_innings$total_runs, na.rm = TRUE)
 overall_sd_score <- sd(first_innings$total_runs, na.rm = TRUE)
 
-cli::cli_alert_info("Overall IPL 1st innings average: {round(overall_avg_score, 1)} (SD: {round(overall_sd_score, 1)})")
+cli::cli_alert_info("Overall {if (CROSS_COMPETITION) 'T20 (all competitions)' else 'IPL'} 1st innings average: {round(overall_avg_score, 1)} (SD: {round(overall_sd_score, 1)})")
 
 # Per-venue snapshot, for a genuinely new/unseen match at serving time. This is
 # NOT the training-time feature above -- it deliberately uses every known match
 # at the venue (a live prediction legitimately has all completed history
 # available), just regularized by the same shrinkage-to-prior instead of the
 # old hard MIN_VENUE_MATCHES cutoff (superseded by shrinkage, same as #80).
-venue_stats <- first_innings %>%
-  group_by(venue) %>%
-  summarise(
-    n_matches = n(),
-    venue_avg_score = (sum(total_runs, na.rm = TRUE) + 5 * overall_avg_score) /
-      (sum(!is.na(total_runs)) + 5),
-    venue_sd_score = sd(total_runs, na.rm = TRUE),
-    venue_median_score = median(total_runs, na.rm = TRUE),
-    venue_min_score = min(total_runs, na.rm = TRUE),
-    venue_max_score = max(total_runs, na.rm = TRUE),
-    .groups = "drop"
-  )
+# Only reached for a match_id absent from venue_stats_by_match, i.e. a
+# genuinely new fixture -- everything in THIS script's own training/eval
+# corpus gets the causal value above, keyed by venue alone (not gender) to
+# match 04_win_probability_innings1.R's existing fallback join key.
+if (CROSS_COMPETITION) {
+  comp_stats <- first_innings %>%
+    group_by(event_name) %>%
+    summarise(
+      comp_avg_score = (sum(total_runs, na.rm = TRUE) + 30 * overall_avg_score) /
+        (sum(!is.na(total_runs)) + 30),
+      .groups = "drop"
+    )
+  venue_stats <- first_innings %>%
+    left_join(comp_stats, by = "event_name") %>%
+    group_by(venue) %>%
+    summarise(
+      n_matches = n(),
+      venue_avg_score = (sum(total_runs, na.rm = TRUE) + 5 * mean(comp_avg_score, na.rm = TRUE)) /
+        (sum(!is.na(total_runs)) + 5),
+      venue_sd_score = sd(total_runs, na.rm = TRUE),
+      venue_median_score = median(total_runs, na.rm = TRUE),
+      venue_min_score = min(total_runs, na.rm = TRUE),
+      venue_max_score = max(total_runs, na.rm = TRUE),
+      .groups = "drop"
+    )
+} else {
+  venue_stats <- first_innings %>%
+    group_by(venue) %>%
+    summarise(
+      n_matches = n(),
+      venue_avg_score = (sum(total_runs, na.rm = TRUE) + 5 * overall_avg_score) /
+        (sum(!is.na(total_runs)) + 5),
+      venue_sd_score = sd(total_runs, na.rm = TRUE),
+      venue_median_score = median(total_runs, na.rm = TRUE),
+      venue_min_score = min(total_runs, na.rm = TRUE),
+      venue_max_score = max(total_runs, na.rm = TRUE),
+      .groups = "drop"
+    )
+}
 
 cli::cli_alert_success("Calculated stats for {nrow(venue_stats)} venues")
 
@@ -362,17 +493,20 @@ cli::cli_alert_info("The baseline captures venue/context effects, not team quali
 # Save Baseline Model ----
 cli::cli_h2("Saving baseline model")
 
-output_dir <- file.path("..", "bouncerdata", "models")
+if (!exists("output_dir")) output_dir <- file.path(find_bouncerdata_dir(), "models")
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
 
-baseline_path <- file.path(output_dir, paste0(MATCH_TYPE, "_baseline_projected_score.rds"))
+# OUTPUT_SUFFIX lets a CROSS_COMPETITION run be compared against the
+# production IPL-only baseline without overwriting it (e.g. "_hier" ->
+# t20_hier_baseline_projected_score.rds). Empty by default: unchanged path.
+baseline_path <- file.path(output_dir, paste0(MATCH_TYPE, OUTPUT_SUFFIX, "_baseline_projected_score.rds"))
 saveRDS(baseline_model, baseline_path)
 cli::cli_alert_success("Saved baseline model to {baseline_path}")
 
 # Save venue stats separately for easy lookup
-venue_stats_path <- file.path(output_dir, paste0(MATCH_TYPE, "_baseline_venue_stats.rds"))
+venue_stats_path <- file.path(output_dir, paste0(MATCH_TYPE, OUTPUT_SUFFIX, "_baseline_venue_stats.rds"))
 saveRDS(venue_stats, venue_stats_path)
 cli::cli_alert_success("Saved venue stats to {venue_stats_path}")
 

@@ -28,6 +28,12 @@ MAX_ROUNDS <- 2000
 EARLY_STOPPING <- 20
 PRINT_EVERY_N <- 50
 if (!exists("IN_MATCH_FORMAT")) IN_MATCH_FORMAT <- "t20"
+# BASELINE_SUFFIX/OUTPUT_SUFFIX let a candidate baseline (e.g. the
+# CROSS_COMPETITION hierarchical variant from 02_baseline_projected_score.R,
+# bouncerverse#83) be evaluated end-to-end without touching the production
+# baseline/model/results files. Both empty by default: unchanged behaviour.
+if (!exists("BASELINE_SUFFIX")) BASELINE_SUFFIX <- ""
+if (!exists("OUTPUT_SUFFIX")) OUTPUT_SUFFIX <- ""
 
 cat("\n")
 cli::cli_h1("Innings 1 Win Probability Model ({toupper(IN_MATCH_FORMAT)})")
@@ -81,7 +87,7 @@ cli::cli_alert_success("Loaded Stage 1 projected score model")
 # innings-1 model was handed a baseline fitted on IPL T20 scores (#49). Absent
 # baseline still degrades to the venue average rather than erroring, but the
 # warning now names the file you need to build.
-baseline_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_baseline_projected_score.rds"))
+baseline_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, BASELINE_SUFFIX, "_baseline_projected_score.rds"))
 if (file.exists(baseline_path)) {
   baseline_model <- readRDS(baseline_path)
   cli::cli_alert_success("Loaded baseline model")
@@ -570,7 +576,7 @@ cat("\n")
 cli::cli_h2("Saving model and results")
 
 # Save XGBoost model
-model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_innings1_win_probability.ubj"))
+model_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, OUTPUT_SUFFIX, "_innings1_win_probability.ubj"))
 xgb.save(final_model, model_path)
 cli::cli_alert_success("Model saved to {model_path}")
 
@@ -603,7 +609,7 @@ results <- list(
   )
 )
 
-results_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, "_innings1_results.rds"))
+results_path <- file.path(output_dir, paste0(IN_MATCH_FORMAT, OUTPUT_SUFFIX, "_innings1_results.rds"))
 saveRDS(results, results_path)
 cli::cli_alert_success("Results saved to {results_path}")
 

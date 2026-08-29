@@ -168,3 +168,92 @@ test_that("a missing value column is named", {
   m <- mk(match_id = "a", venue = "A", match_date = "2020-01-01", inn1 = 300)
   expect_error(time_causal_venue_mean(m, "not_a_column"), "not_a_column")
 })
+
+# ---- time_causal_hierarchical_mean: nested venue -> competition -> root -----
+#
+# bouncerverse#83: a single flat scalar prior serves 82-89% of a cross-
+# competition T20 corpus, because most competitions have too little history at
+# a shared venue to move away from the prior at all. This shrinks a chain of
+# levels instead, so a sparse competition still borrows strength from the
+# global root rather than being indistinguishable from every other sparse one.
+
+hier_of <- function(r, id) r$hier_mean[match(id, r$match_id)]
+
+test_that("the very first match anywhere gets the whole-sample mean", {
+  m <- mk(match_id = "m1", venue = "A", competition = "X",
+          match_date = "2020-01-01", inn1 = 400)
+  r <- time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                     weights = c(venue = 5, competition = 20))
+  expect_equal(r$hier_mean, attr(r, "overall_mean"))
+  expect_equal(attr(r, "overall_mean"), 400)
+})
+
+test_that("a match cannot see its own total, at any level", {
+  # root_prior_value pinned so the fixed root scalar itself (which, like
+  # time_causal_venue_mean()'s default prior, is one constant shared by every
+  # row rather than computed row-by-row) doesn't confound this toy 2-row case.
+  base <- function(v2) mk(match_id = c("a", "b"), venue = "A", competition = "X",
+                          match_date = c("2020-01-01", "2021-01-01"),
+                          inn1 = c(400, v2))
+  hi <- time_causal_hierarchical_mean(base(600), "inn1", levels = c("venue", "competition"),
+                                      weights = c(venue = 5, competition = 20),
+                                      root_prior_value = 300)
+  lo <- time_causal_hierarchical_mean(base(100), "inn1", levels = c("venue", "competition"),
+                                      weights = c(venue = 5, competition = 20),
+                                      root_prior_value = 300)
+  expect_equal(hier_of(hi, "b"), hier_of(lo, "b"))
+})
+
+test_that("a huge root prior weight degenerates to a single-level shrink", {
+  # With root_prior_weight enormous, the root causal mean is pinned to the
+  # whole-sample mean for every row (the causal component is negligible), so a
+  # one-level hierarchy should agree with time_causal_venue_mean() using that
+  # same fixed prior.
+  m <- mk(match_id = c("a", "b", "c"), venue = c("A", "A", "B"), competition = "X",
+          match_date = c("2020-01-01", "2021-01-01", "2020-06-01"),
+          inn1 = c(400, 500, 200))
+  overall <- mean(m$inn1)
+  single <- time_causal_venue_mean(m, "inn1", prior_weight = 5, prior_value = overall)
+  hier <- time_causal_hierarchical_mean(m, "inn1", levels = "venue",
+                                        weights = c(venue = 5),
+                                        root_prior_weight = 1e9)
+  expect_equal(hier$hier_mean, single$venue_mean, tolerance = 1e-6)
+})
+
+test_that("a sparse competition borrows strength from the root, not just its own venue prior", {
+  # Competition Y has one prior match (700) at a DIFFERENT venue than the one
+  # being predicted, so the venue level alone has zero history and would fall
+  # straight to the (unknown) competition mean. The hierarchy should show
+  # competition Y's causal mean pulling AWAY from the flat root as its own
+  # evidence accumulates.
+  m <- mk(match_id = c("y1", "y2"), venue = c("V1", "V2"), competition = "Y",
+          match_date = c("2020-01-01", "2020-06-01"), inn1 = c(700, 700))
+  r <- time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                     weights = c(venue = 5, competition = 20),
+                                     root_prior_weight = 30)
+  # y1: no venue or competition history -> pure root (== overall mean, its only value).
+  expect_equal(hier_of(r, "y1"), 700)
+  # y2: venue V2 has no history either, but competition Y now has one prior
+  # match at 700 -- its estimate should move toward 700, away from the root.
+  expect_gt(hier_of(r, "y2"), hier_of(r, "y1") - 1e-9)
+  expect_equal(hier_of(r, "y2"), 700)  # everything upstream is 700, so it stays 700
+})
+
+test_that("weights must be named exactly by levels", {
+  m <- mk(match_id = "a", venue = "A", competition = "X",
+          match_date = "2020-01-01", inn1 = 300)
+  expect_error(
+    time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                  weights = c(venue = 5)),
+    "weights"
+  )
+})
+
+test_that("a missing level column is named", {
+  m <- mk(match_id = "a", venue = "A", match_date = "2020-01-01", inn1 = 300)
+  expect_error(
+    time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                  weights = c(venue = 5, competition = 20)),
+    "competition"
+  )
+})

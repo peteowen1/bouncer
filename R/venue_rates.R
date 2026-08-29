@@ -136,3 +136,90 @@ time_causal_venue_mean <- function(matches, value_col, prior_weight = 5,
   data.table::setattr(out, "prior_value", prior_value)
   out[]
 }
+
+#' Mean of a per-match value, shrunk through a chain of nested causal levels
+#'
+#' The multi-level sibling of [time_causal_venue_mean()]. That function shrinks
+#' a venue average toward one fixed global scalar, which is a poor prior for a
+#' venue whose competition is itself unusual (bouncerverse#83: a T20 baseline
+#' scoped to one competition serves a flat constant to 82-89% of a
+#' cross-competition training corpus). This shrinks through a chain instead:
+#' the finest level shrinks toward the next-coarsest level's OWN causal
+#' (already-shrunk) value for that same match, all the way up to a causal
+#' running mean over every match to date, which is itself regularized toward
+#' the whole-sample mean via `root_prior_weight` (so the very first matches in
+#' the corpus, before any group has evidence, still get a defined estimate).
+#'
+#' Every level uses the same as-of-date discipline as [time_causal_venue_mean()]:
+#' strictly earlier matches by date, same-day fixtures cannot see each other.
+#'
+#' @param matches data.table with `match_id`, `match_date`, every column named
+#'   in `levels`, and the column named by `value_col`.
+#' @param value_col Name of the numeric column to average.
+#' @param levels Character vector of grouping columns, ordered FINEST to
+#'   COARSEST (e.g. `c("venue", "competition")`). The row's estimate is the
+#'   finest level's causal mean, shrunk toward the next level up.
+#' @param weights Named numeric vector of prior weights (in matches), one per
+#'   entry of `levels`, keyed by the same names.
+#' @param root_prior_weight Prior weight (in matches) regularizing the root
+#'   causal running mean toward `root_prior_value`. Default 30.
+#' @param root_prior_value Value the root level shrinks toward. NULL (default)
+#'   means the whole-sample mean of `value_col` over `matches` -- matching
+#'   [time_causal_venue_mean()]'s `prior_value = NULL` behaviour, including
+#'   that this constant is shared by every row and is NOT itself computed
+#'   causally match-by-match (it is one fixed scalar, the same as every other
+#'   caller of this codebase's shrinkage-to-a-global-average pattern).
+#'
+#' @return data.table with `match_id` and `hier_mean`. Carries the whole-sample
+#'   `overall_mean` as an attribute.
+#' @keywords internal
+time_causal_hierarchical_mean <- function(matches, value_col, levels, weights,
+                                          root_prior_weight = 30,
+                                          root_prior_value = NULL) {
+  m <- data.table::as.data.table(matches)
+  need <- c("match_id", "match_date", value_col, levels)
+  miss <- setdiff(need, names(m))
+  if (length(miss)) cli::cli_abort("{.arg matches} is missing {.field {miss}}.")
+  if (!setequal(names(weights), levels)) {
+    cli::cli_abort("{.arg weights} must be named exactly by {.arg levels}.")
+  }
+
+  m[, .v := as.numeric(get(value_col))]
+  m[, .has := as.integer(!is.na(.v))]
+  m[is.na(.v), .v := 0]
+  if (is.null(root_prior_value)) {
+    if (sum(m$.has) == 0L) cli::cli_abort("No usable values to estimate a prior from.")
+    root_prior_value <- sum(m$.v) / sum(m$.has)
+  }
+  overall_mean <- root_prior_value
+
+  # Root: causal running mean over ALL matches to date (every level pooled),
+  # itself shrunk toward the whole-sample mean -- this is what the coarsest
+  # level in `levels` will shrink toward.
+  data.table::setorder(m, match_date, match_id)
+  m[, cum_n_g := cumsum(.has)]
+  m[, cum_v_g := cumsum(.v)]
+  m[, n_prior_g := cum_n_g - .has]
+  m[, v_prior_g := cum_v_g - .v]
+  m[, parent_mean := (v_prior_g + root_prior_weight * overall_mean) /
+      (n_prior_g + root_prior_weight)]
+  m[, c("cum_n_g", "cum_v_g", "n_prior_g", "v_prior_g") := NULL]
+
+  # Walk COARSEST to FINEST, so each level's parent is the previous level's
+  # already-shrunk causal value for that row, not the raw group average.
+  for (lvl in rev(levels)) {
+    w <- weights[[lvl]]
+    data.table::setorderv(m, c(lvl, "match_date", "match_id"))
+    m[, `:=`(cum_n_l = cumsum(.has), cum_v_l = cumsum(.v)), by = c(lvl)]
+    m[, `:=`(n_prior_l = max(cum_n_l) - sum(.has),
+             v_prior_l = max(cum_v_l) - sum(.v)),
+      by = c(lvl, "match_date")]
+    m[, level_mean := (v_prior_l + w * parent_mean) / (n_prior_l + w)]
+    m[, parent_mean := level_mean]
+    m[, c("cum_n_l", "cum_v_l", "n_prior_l", "v_prior_l", "level_mean") := NULL]
+  }
+
+  out <- m[, .(match_id, hier_mean = parent_mean)]
+  data.table::setattr(out, "overall_mean", overall_mean)
+  out[]
+}
