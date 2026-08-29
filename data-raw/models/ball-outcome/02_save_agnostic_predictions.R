@@ -69,19 +69,19 @@ for (format in FORMATS_TO_PROCESS) {
   # Need different prefixes depending on which CTE we're in:
   # - format_filter_bare: standalone deliveries query (no join)
   # - format_filter_d: for d.match_type (deliveries aliased as d in joins)
-  # - format_filter_m: for m.match_type (matches aliased as m in joins)
+  # - type_list: bare IN-list body, for compute_context_features()
   if (format == "t20") {
     format_filter_bare <- "LOWER(match_type) IN ('t20', 'it20')"
     format_filter_d <- "LOWER(d.match_type) IN ('t20', 'it20')"
-    format_filter_m <- "LOWER(m.match_type) IN ('t20', 'it20')"
+    type_list <- "'t20', 'it20'"
   } else if (format == "odi") {
     format_filter_bare <- "LOWER(match_type) IN ('odi', 'odm')"
     format_filter_d <- "LOWER(d.match_type) IN ('odi', 'odm')"
-    format_filter_m <- "LOWER(m.match_type) IN ('odi', 'odm')"
+    type_list <- "'odi', 'odm'"
   } else {
     format_filter_bare <- "LOWER(match_type) IN ('test', 'mdm')"
     format_filter_d <- "LOWER(d.match_type) IN ('test', 'mdm')"
-    format_filter_m <- "LOWER(m.match_type) IN ('test', 'mdm')"
+    type_list <- "'test', 'mdm'"
   }
 
   # Get default expected values for format
@@ -106,6 +106,15 @@ for (format in FORMATS_TO_PROCESS) {
   ", format_filter_d)
   total_count <- DBI::dbGetQuery(conn, count_query)$n
   cli::cli_alert_info("Total deliveries to process: {format(total_count, big.mark = ',')}")
+
+  # league_avg_runs/league_avg_wicket (bouncerverse#84/#85): computed by the
+  # SAME shared function 01_train_agnostic_model.R and raa_cricsheet.R call --
+  # this script used to carry a THIRD independently hand-written copy of the
+  # flat league_stats/league_running_avg CTEs, which would have silently
+  # skewed ELO-optimization predictions relative to the retrained model.
+  # Computed once per format (match-level), merged into each delivery batch
+  # below by match_id.
+  ctx <- compute_context_features(conn, type_list)
 
   # Create/recreate output table ----
   table_name <- sprintf("agnostic_predictions_%s", format)
@@ -179,35 +188,6 @@ for (format in FORMATS_TO_PROCESS) {
           ELSE 3
         END AS event_tier
       FROM cricsheet.matches m
-    ),
-    league_stats AS (
-      SELECT
-        m.event_name,
-        m.match_id,
-        m.match_date,
-        AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
-        AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
-      FROM cricsheet.matches m
-      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
-      WHERE %s
-        AND m.event_name IS NOT NULL
-      GROUP BY m.event_name, m.match_id, m.match_date
-    ),
-    league_running_avg AS (
-      SELECT
-        event_name,
-        match_id,
-        AVG(match_avg_runs) OVER (
-          PARTITION BY event_name
-          ORDER BY match_date, match_id
-          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS league_avg_runs,
-        AVG(match_wicket_rate) OVER (
-          PARTITION BY event_name
-          ORDER BY match_date, match_id
-          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS league_avg_wicket
-      FROM league_stats
     )
     SELECT
       cs.delivery_id,
@@ -221,22 +201,20 @@ for (format in FORMATS_TO_PROCESS) {
       (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier,
-      COALESCE(lra.league_avg_runs, %f) AS league_avg_runs,
-      COALESCE(lra.league_avg_wicket, %f) AS league_avg_wicket
+      COALESCE(mc.event_tier, 3) AS event_tier
     FROM cumulative_scores cs
     LEFT JOIN match_context mc ON cs.match_id = mc.match_id
-    LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
     ORDER BY cs.match_id, cs.delivery_id
-  ", format_filter_bare, format_filter_d, format_filter_m, default_runs, default_wicket)
+  ", format_filter_bare, format_filter_d)
 
   # Process in batches ----
   cli::cli_h3("Processing deliveries in batches")
 
   n_batches <- ceiling(total_count / BATCH_SIZE)
   processed <- 0
+  ctx_missing <- 0
 
   for (batch in 1:n_batches) {
     offset <- (batch - 1) * BATCH_SIZE
@@ -245,6 +223,16 @@ for (format in FORMATS_TO_PROCESS) {
     batch_data <- DBI::dbGetQuery(conn, batch_query)
 
     if (nrow(batch_data) == 0) break
+
+    # Merge in league_avg_runs/league_avg_wicket, coalescing to the format
+    # default for any match compute_context_features() doesn't cover (its
+    # query requires event_name IS NOT NULL) -- restoring the same
+    # default-fill contract the removed COALESCE(lra..., %f) SQL guaranteed.
+    batch_data <- merge(batch_data, ctx, by = "match_id", all.x = TRUE)
+    ctx_missing <- ctx_missing + sum(is.na(batch_data$league_avg_runs))
+    batch_data$league_avg_runs <- dplyr::coalesce(batch_data$league_avg_runs, default_runs)
+    batch_data$league_avg_wicket <- dplyr::coalesce(batch_data$league_avg_wicket, default_wicket)
+    batch_data <- batch_data[order(batch_data$match_id, batch_data$delivery_id), ]
 
     # Feature engineering (matching training script)
     if (format %in% c("t20", "odi")) {
@@ -341,6 +329,17 @@ for (format in FORMATS_TO_PROCESS) {
   }
 
   cli::cli_alert_success("Saved {format(processed, big.mark = ',')} predictions to {table_name}")
+
+  # Coverage check (review, 2026-08-29): a silently-collapsed join here would
+  # recreate the exact bug this whole fix exists to close -- every affected
+  # row quietly becomes the flat constant default with success lines
+  # printing throughout, and this table feeds ELO optimization directly.
+  # Known baseline is ~0.5% (matches with no event_name).
+  pct_ctx_missing <- 100 * ctx_missing / processed
+  cli::cli_alert_info("Context features: {ctx_missing} rows ({round(pct_ctx_missing, 2)}%) fell back to the format default.")
+  if (pct_ctx_missing > 5) {
+    cli::cli_abort("Context feature coverage collapsed to {round(pct_ctx_missing, 2)}% (expected ~0.5%) -- compute_context_features() join is likely broken.")
+  }
 
   # Create index on delivery_id for fast lookups
   cli::cli_alert_info("Creating index on delivery_id...")

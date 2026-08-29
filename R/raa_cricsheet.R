@@ -115,25 +115,6 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
           ELSE 3
         END AS event_tier
       FROM cricsheet.matches m
-    ),
-    league_stats AS (
-      SELECT m.event_name, m.match_id, m.match_date,
-             AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
-             AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
-      FROM cricsheet.matches m
-      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
-      WHERE LOWER(m.match_type) IN (%1$s) AND m.event_name IS NOT NULL
-      GROUP BY m.event_name, m.match_id, m.match_date
-    ),
-    league_running_avg AS (
-      SELECT event_name, match_id,
-             AVG(match_avg_runs) OVER (
-               PARTITION BY event_name ORDER BY match_date, match_id
-               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS league_avg_runs,
-             AVG(match_wicket_rate) OVER (
-               PARTITION BY event_name ORDER BY match_date, match_id
-               ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING) AS league_avg_wicket
-      FROM league_stats
     )
     SELECT
       d.delivery_id,
@@ -158,13 +139,10 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
                   AND it.innings < d.innings), 0) AS bowling_score,
       COALESCE(mc.is_knockout, 0)                AS is_knockout,
       COALESCE(mc.event_tier, 3)                 AS event_tier,
-      lra.league_avg_runs,
-      lra.league_avg_wicket,
       d.is_free_hit
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
     LEFT JOIN match_context mc ON mc.match_id = d.match_id
-    LEFT JOIN league_running_avg lra ON lra.match_id = d.match_id
     WHERE LOWER(d.match_type) IN (%1$s)
       %2$s
       AND d.innings BETWEEN 1 AND %3$d
@@ -189,6 +167,16 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
   cli::cli_alert_info(
     "{nrow(balls)} deliveries across {data.table::uniqueN(balls$match_id)} matches."
   )
+
+  # league_avg_runs/league_avg_wicket (bouncerverse#84/#85): a decayed
+  # venue->league causal hierarchy, not the flat all-time mean this used to
+  # inline here -- see agnostic_context_features.R's header for why. One
+  # shared function, called identically by training
+  # (01_train_agnostic_model.R) and here, so the two cannot independently
+  # drift the way this exact feature already had (two hand-written copies of
+  # the same SQL window function).
+  ctx <- compute_context_features(conn, type_list)
+  balls <- merge(balls, ctx, by = "match_id", all.x = TRUE)
 
   # Exactly training's feature block. league_avg_* stay NA where a league has no
   # prior match; prepare_agnostic_features() fills them with the format default,

@@ -92,16 +92,16 @@ for (format in FORMATS_TO_TRAIN) {
   # Determine format filters - different prefixes for different CTEs
   if (format == "t20") {
     format_filter_d <- "LOWER(d.match_type) IN ('t20', 'it20')"
-    format_filter_m <- "LOWER(m.match_type) IN ('t20', 'it20')"
     format_filter_bare <- "LOWER(match_type) IN ('t20', 'it20')"
+    type_list <- "'t20', 'it20'"
   } else if (format == "odi") {
     format_filter_d <- "LOWER(d.match_type) IN ('odi', 'odm')"
-    format_filter_m <- "LOWER(m.match_type) IN ('odi', 'odm')"
     format_filter_bare <- "LOWER(match_type) IN ('odi', 'odm')"
+    type_list <- "'odi', 'odm'"
   } else {
     format_filter_d <- "LOWER(d.match_type) IN ('test', 'mdm')"
-    format_filter_m <- "LOWER(m.match_type) IN ('test', 'mdm')"
     format_filter_bare <- "LOWER(match_type) IN ('test', 'mdm')"
+    type_list <- "'test', 'mdm'"
   }
 
   # Build SQL query with context features including league running averages
@@ -159,38 +159,6 @@ for (format in FORMATS_TO_TRAIN) {
           ELSE 3
         END AS event_tier
       FROM cricsheet.matches m
-    ),
-    -- League running averages: compute avg runs/wicket rate for each league
-    -- as of each match date (to prevent data leakage, we use LAG approach)
-    league_stats AS (
-      SELECT
-        m.event_name,
-        m.match_id,
-        m.match_date,
-        AVG(d.runs_batter + d.runs_extras) AS match_avg_runs,
-        AVG(CAST(d.is_wicket AS DOUBLE)) AS match_wicket_rate
-      FROM cricsheet.matches m
-      JOIN cricsheet.deliveries d ON m.match_id = d.match_id
-      WHERE %s
-        AND m.event_name IS NOT NULL
-      GROUP BY m.event_name, m.match_id, m.match_date
-    ),
-    league_running_avg AS (
-      SELECT
-        event_name,
-        match_id,
-        -- Running average EXCLUDING current match (lag to prevent data leakage)
-        AVG(match_avg_runs) OVER (
-          PARTITION BY event_name
-          ORDER BY match_date, match_id
-          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS league_avg_runs,
-        AVG(match_wicket_rate) OVER (
-          PARTITION BY event_name
-          ORDER BY match_date, match_id
-          ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
-        ) AS league_avg_wicket
-      FROM league_stats
     )
     SELECT
       cs.delivery_id,
@@ -210,13 +178,9 @@ for (format in FORMATS_TO_TRAIN) {
       (cs.wickets_fallen - CAST(cs.is_wicket AS INT)) AS wickets_fallen,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
-      COALESCE(mc.event_tier, 3) AS event_tier,
-      -- League features: use running average or format default if first match in league
-      COALESCE(lra.league_avg_runs, %f) AS league_avg_runs,
-      COALESCE(lra.league_avg_wicket, %f) AS league_avg_wicket
+      COALESCE(mc.event_tier, 3) AS event_tier
     FROM cumulative_scores cs
     LEFT JOIN match_context mc ON cs.match_id = mc.match_id
-    LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
       -- Wides are no longer excluded (#81/D-P50 stage 3) -- they're now their
@@ -238,24 +202,63 @@ for (format in FORMATS_TO_TRAIN) {
     %s
   ", format_filter_bare,  # innings_totals: bare deliveries table
      format_filter_d,      # cumulative_scores: d. prefix
-     format_filter_m,      # league_stats: m. prefix for the join
-     # Default league averages by format (used when league has no history)
-     switch(format,
-       "t20" = EXPECTED_RUNS_T20,
-       "odi" = EXPECTED_RUNS_ODI,
-       "test" = EXPECTED_RUNS_TEST,
-       EXPECTED_RUNS_T20),
-     switch(format,
-       "t20" = EXPECTED_WICKET_T20,
-       "odi" = EXPECTED_WICKET_ODI,
-       "test" = EXPECTED_WICKET_TEST,
-       EXPECTED_WICKET_T20),
      if (!is.null(MATCH_LIMIT)) sprintf("LIMIT %d", MATCH_LIMIT * 1000) else "")
 
   # Execute query
   cli::cli_h3("Loading data")
   cli::cli_alert_info("Executing query...")
   model_data <- DBI::dbGetQuery(conn, query)
+
+  # league_avg_runs/league_avg_wicket (bouncerverse#84/#85): a decayed
+  # venue->league causal hierarchy, computed by the SAME shared function
+  # raa_cricsheet.R calls at serving time, so training and serving cannot
+  # independently drift the way this exact feature already had (two
+  # hand-written copies of the same flat SQL window function). Replaces the
+  # inline league_stats/league_running_avg CTEs this query used to carry.
+  if (nrow(model_data) > 0) {
+    ctx <- compute_context_features(conn, type_list)
+    model_data <- merge(model_data, ctx, by = "match_id", all.x = TRUE)
+
+    # Two real gaps caught by review (2026-08-29), both from merge()'s
+    # defaults rather than the feature computation itself:
+    #
+    # 1. The removed SQL's COALESCE(lra.league_avg_runs, %f) guaranteed
+    #    model_data NEVER carried NA in these two columns -- any match
+    #    compute_context_features() doesn't cover (its query requires
+    #    event_name IS NOT NULL) now arrives as a real NA after this merge.
+    #    The SERVING path already coalesces (prepare_agnostic_features(),
+    #    agnostic_model.R), but nothing downstream here does, so an NA would
+    #    reach xgb.DMatrix() silently -- restoring the same default-fill
+    #    contract training always had.
+    default_runs <- switch(format,
+      t20 = EXPECTED_RUNS_T20, odi = EXPECTED_RUNS_ODI, EXPECTED_RUNS_TEST)
+    default_wicket <- switch(format,
+      t20 = EXPECTED_WICKET_T20, odi = EXPECTED_WICKET_ODI, EXPECTED_WICKET_TEST)
+
+    # Coverage check (review, 2026-08-29): a silently-collapsed join here would
+    # recreate the exact bug this whole fix exists to close -- every affected
+    # row quietly becomes the flat constant default with success lines
+    # printing throughout. Known baseline is ~0.5% (matches with no
+    # event_name). Abort rather than train on a broken join.
+    n_missing <- sum(is.na(model_data$league_avg_runs))
+    pct_missing <- 100 * n_missing / nrow(model_data)
+    cli::cli_alert_info("Context features: {n_missing} rows ({round(pct_missing, 2)}%) fell back to the format default.")
+    if (pct_missing > 5) {
+      cli::cli_abort("Context feature coverage collapsed to {round(pct_missing, 2)}% (expected ~0.5%) -- compute_context_features() join is likely broken.")
+    }
+
+    model_data$league_avg_runs <- dplyr::coalesce(model_data$league_avg_runs, default_runs)
+    model_data$league_avg_wicket <- dplyr::coalesce(model_data$league_avg_wicket, default_wicket)
+
+    # 2. merge() defaults to sort = TRUE, reordering model_data by match_id
+    #    (a lexicographic STRING sort -- "1000" < "999") as a side effect.
+    #    The train/test split below is a positional cut of
+    #    unique(model_data$match_id), not a random sample, so silently
+    #    changing row order silently changes which matches land in train vs
+    #    test. Restored to a deterministic, meaningful order explicitly
+    #    rather than leaving it as an accidental byproduct of the merge.
+    model_data <- model_data[order(model_data$match_id, model_data$delivery_id), ]
+  }
 
   if (nrow(model_data) == 0) {
     cli::cli_alert_warning("No data found for {format} format, skipping")
@@ -350,7 +353,7 @@ for (format in FORMATS_TO_TRAIN) {
   cli::cli_h3("Creating train-test split")
 
   set.seed(RANDOM_SEED)
-  unique_matches <- unique(model_data$match_id)
+  unique_matches <- sample(unique(model_data$match_id))
   n_train <- floor(0.8 * length(unique_matches))
   train_matches <- unique_matches[1:n_train]
   test_matches <- unique_matches[(n_train + 1):length(unique_matches)]
@@ -664,6 +667,18 @@ tryCatch({
   # itself, reports 0% change, and can never flag a regression. That is why the
   # 2026-08-18 frame fix printed "All metrics stable or improved" while T20
   # mlogloss moved 1.3805 -> 1.4137 (+2.40%, over the 2% threshold).
+  # bouncerverse#84/#85 (2026-08-29): this run's train/test split membership
+  # differs from every prior stored benchmark -- the split used to be a
+  # positional slice of unique(match_id) with an unconsumed set.seed(), now
+  # genuinely sample()'d, and the league_avg_runs/wicket feature itself
+  # changed from a flat all-time mean to a decayed venue->league hierarchy.
+  # A move in either direction on THIS run's regression check is not a clean
+  # apples-to-apples signal against the pre-fix baseline -- don't treat a red
+  # "regression" print from this specific run as proof the fix hurt accuracy,
+  # or a green one as proof it helped. Re-evaluate from the NEXT run onward,
+  # once the stored baseline itself reflects the new split/feature.
+  cli::cli_alert_warning("Benchmark comparisons below are vs. a pre-fix baseline with a different train/test split AND feature -- not apples-to-apples for this run only.")
+
   for (fmt in names(all_results)) {
     # #81/D-P50 stage 3: test_logloss now spans 8 categories (added wide);
     # the stored benchmark history is from the pre-stage-3 7-category model.
