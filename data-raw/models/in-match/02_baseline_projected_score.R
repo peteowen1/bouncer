@@ -174,13 +174,43 @@ if (CROSS_COMPETITION) {
 
 cli::cli_alert_success("Loaded innings data for {length(unique(innings_df$match_id))} matches")
 
-list(matches_df = matches_df, innings_df = innings_df)
+# venue_aliases (bouncerverse#73): the same ground appears under several
+# names (suffix creep, renames, spelling variants -- see venue_canonical.R's
+# header for the full taxonomy). Fetched here, inside the connection, so it
+# can be applied after the connection closes below -- avoids a second
+# connection just for this lookup.
+venue_alias_map <- if (table_exists(conn, "venue_aliases")) {
+  DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases")
+} else {
+  data.frame(alias = character(), canonical_venue = character())
+}
+
+list(matches_df = matches_df, innings_df = innings_df, venue_alias_map = venue_alias_map)
 
 }, read_only = TRUE)
 
 matches_df <- query_data$matches_df
 innings_df <- query_data$innings_df
+venue_alias_map <- query_data$venue_alias_map
 cli::cli_alert_success("Connected to database, queried, and disconnected")
+
+# Canonicalise venue names BEFORE any venue-keyed feature is built --
+# bouncerverse#73: fragmentation ("M Chinnaswamy Stadium" / "M Chinnaswamy
+# Stadium, Bengaluru" / "M.Chinnaswamy Stadium" as three separate venues)
+# means every venue-level feature was computed on a fraction of the ground's
+# real history, understating n_prior and over-shrinking toward the parent.
+# The alias table already exists and is populated (214 rows, including this
+# exact case) but nothing in this script applied it until now.
+if (nrow(venue_alias_map)) {
+  alias_lookup <- stats::setNames(venue_alias_map$canonical_venue, venue_alias_map$alias)
+  n_before <- length(unique(matches_df$venue))
+  hit <- match(matches_df$venue, names(alias_lookup))
+  matches_df$venue[!is.na(hit)] <- alias_lookup[hit[!is.na(hit)]]
+  n_after <- length(unique(matches_df$venue))
+  if (n_after < n_before) {
+    cli::cli_alert_info("Canonicalised venue names: {n_before} -> {n_after} distinct venues.")
+  }
+}
 
 # Calculate Venue Statistics ----
 cli::cli_h2("Calculating venue statistics")
