@@ -17,7 +17,7 @@
 #' Build Win Probability for Every Cricsheet Delivery
 #'
 #' Scores every Cricsheet limited-overs delivery with the in-match models and
-#' writes `main.cricsheet_ball_win_probability`.
+#' writes `main.bouncer_wp_from_cricsheet`.
 #'
 #' @param format Character. "t20" or "odi". Test is decomposed differently --
 #'   see [build_cricinfo_test_win_probability()].
@@ -36,7 +36,7 @@ build_cricsheet_win_probability <- function(format = c("t20", "odi"),
                                             conn = NULL,
                                             models = NULL,
                                             write = TRUE,
-                                            table_name = "cricsheet_ball_win_probability",
+                                            table_name = "bouncer_wp_from_cricsheet",
                                             exclude_short_overs = TRUE) {
 
   format <- match.arg(format)
@@ -196,7 +196,7 @@ build_cricsheet_win_probability <- function(format = c("t20", "odi"),
   proj_score_after = "DOUBLE", delta_ps = "DOUBLE")
 
 store_cricsheet_wp <- function(conn, data, format,
-                               table_name = "cricsheet_ball_win_probability") {
+                               table_name = "bouncer_wp_from_cricsheet") {
   db_format <- toupper(format)
   wanted <- names(data)
   extra <- setdiff(wanted, names(.cricsheet_wp_schema))

@@ -8,7 +8,7 @@
 }
 \arguments{
 \item{wp_source}{Character. \code{"bouncer"} for our model's number from
-\code{main.cricinfo_ball_win_probability} (built by
+\code{main.bouncer_wp_from_cricinfo} (built by
 \code{\link[=build_cricinfo_win_probability]{build_cricinfo_win_probability()}}), \code{"cricinfo"} for the scraped
 \code{cricinfo.balls.win_probability}.}
 }

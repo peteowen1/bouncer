@@ -13,6 +13,7 @@ get_full_expected_runs(probs)
 Numeric vector of expected runs per delivery.
 }
 \description{
-Converts the 7-class probability distribution into expected runs.
+Converts the \code{OUTCOME_CATEGORIES}-shaped probability distribution into
+expected runs.
 }
 \keyword{internal}

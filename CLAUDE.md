@@ -9,16 +9,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Verse-level docs (reviews, plans, decision log, work queue) live in `../CLAUDE.md`'s vault at `bouncerverse/` — see `../docs/HOME.md`.
 
-## Development Commands
-
-```r
-devtools::load_all()    # Load for development
-devtools::document()    # Generate docs (run after changing roxygen2 comments)
-devtools::check()       # Full package check
-devtools::test()        # Run all tests
-testthat::test_file("tests/testthat/test-elo-core.R")  # Single test file
-```
-
 ## Package Overview
 
 Cricket analytics R package with **ball-by-ball player ratings** and a **15-step prediction pipeline**:
@@ -79,12 +69,17 @@ Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glick
 >
 > **1. Source: `batting_wpa`/`bowling_wpa` now come from bouncer's own models.**
 > `build_cricinfo_win_probability()` scores every T20 and ODI delivery into
-> `main.cricinfo_ball_win_probability`; `player_game_data.R` joins it. The old
+> `main.bouncer_wp_from_cricinfo`; `player_game_data.R` joins it. The old
 > scraped `cricinfo.balls.win_probability` is still selectable via
 > `wp_source = "cricinfo"` for comparison. Ours won on evidence — Brier
 > **0.1354 vs 0.2208** over 20,326 ODI deliveries where both exist — and on
 > coverage, which went from **8.6% → 100%** (ODI) and **42.9% → 100%** (T20)
-> among rows where the player actually batted.
+> among rows where the player actually batted. **Caveat (calibration-check,
+> 2026-08-27): the 0.1354 figure is from a 92-match benchmark subsample the
+> team's own handover doc calls "favourable" — a genuine temporal holdout
+> scores worse, 0.1779.** Relative comparisons (ours vs. scraped) hold up on
+> both; only the absolute number needs the caveat attached when quoted. Full
+> detail: `../docs/2026-08-13-SESSION-HANDOVER.md` §8.
 >
 > **2. WPA contributes ~0.009% of the EPR that feeds BOUNCER.**
 > `calculate_epr()` computes `bat_value = batting_wpa + batting_era`, adding a
@@ -165,13 +160,6 @@ Covers ratings, models, data pipeline, and API surfaces — around 30 test files
 
 Throwaway scripts for debugging, CRAN prep, one-off checks. Everything in `debug/` is gitignored and excluded from the package tarball. Use this instead of creating temp files at the package root.
 
-```
-debug/
-├── run_test.R           # Quick throwaway test scripts
-├── run_check.R          # devtools::check() runner
-└── *.R                  # Any temporary/scratch work
-```
-
 ### data-raw/ - Analysis Scripts (NOT part of package)
 
 Not part of the package. Entry point is `run_full_pipeline.R`; `ARCHITECTURE.md` has the complete technical documentation. Organized by topic (`data-acquisition/`, `debug/`, `ratings/`, `models/`, `simulation/`, `release/`, `utils/`, `validation/`, `archive/`, `_deprecated/` for retired dual-ELO/Glicko) — run `ls -R data-raw/` for the current layout. Pipeline-step mapping for files where it isn't obvious from the path: `ratings/player/skill-indices/` = Step 3, `ratings/player/3way-elo/` = Step 5b, `models/in-match/` = Step 12, `ratings/player/stat-ratings/` = Steps 13-15.
@@ -214,15 +202,12 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
 
 ### R Package Rules
 - All exported functions need `@export` AND a roxygen2 title/description (bare `@export` without a title generates a NAMESPACE entry but no man page, which breaks pkgdown)
-- ~173 exports, ~70 R files; `_pkgdown.yml` must match NAMESPACE exactly
+- `_pkgdown.yml` must match NAMESPACE exactly
 
 ### Documentation (pkgdown)
 - Site: https://peteowen1.github.io/bouncer/ (deployed via GitHub Actions on push to `main`)
 - Logo: `man/figures/logo.png` (reproducible via `data-raw/logo/create_logo.R`)
-- Every NAMESPACE export must appear in `_pkgdown.yml` reference sections
-- After adding/removing exports, verify alignment: compare `export()` lines in NAMESPACE against `_pkgdown.yml` contents
-- Quick check: `grep '^export(' NAMESPACE | sed 's/export(//;s/)//' | sort > /tmp/ns.txt && grep '^ *- ' _pkgdown.yml | sed 's/^ *- //' | sort > /tmp/pkgdown.txt && diff /tmp/ns.txt /tmp/pkgdown.txt`
-- 6 vignettes in `vignettes/`: getting-started, player-analysis, match-analysis, predictions, simulation, database-schema
+- Every NAMESPACE export must appear in `_pkgdown.yml` reference sections — use the `check-pkgdown` skill/agent to verify alignment
 
 ### Rating Calculations
 - **MUST be processed in strict chronological order** - never parallelize

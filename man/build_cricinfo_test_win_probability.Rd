@@ -8,8 +8,8 @@ build_cricinfo_test_win_probability(
   conn = NULL,
   models_path = NULL,
   write = TRUE,
-  table_name = "cricinfo_ball_win_probability",
-  detail_table_name = "cricinfo_ball_test_wp_detail"
+  table_name = "bouncer_wp_from_cricinfo",
+  detail_table_name = "bouncer_wp_from_cricinfo_test_detail"
 )
 }
 \arguments{
@@ -34,7 +34,7 @@ Invisibly when \code{write = TRUE}.
 \description{
 Scores every Test delivery in \code{cricinfo.balls} with the decomposed v3
 models and writes P(team batting first wins) to
-\code{main.cricinfo_ball_win_probability} (format \code{TEST}), alongside a detail
+\code{main.bouncer_wp_from_cricinfo} (format \code{TEST}), alongside a detail
 table carrying the full three-way decomposition (win / draw / loss and
 P(result)) that the scalar column cannot hold.
 }

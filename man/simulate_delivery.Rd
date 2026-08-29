@@ -28,6 +28,10 @@ simulate_delivery(
 \item gender: "male" or "female"
 \item is_knockout: 0 or 1
 \item event_tier: 1, 2, or 3
+\item is_free_hit: 0/1 or TRUE/FALSE, whether THIS delivery is a free hit
+(a pending free hit from a prior no-ball that hasn't yet been resolved
+by a legal ball). Passed through to the model as a feature; defaults
+to 0/FALSE. \code{\link[=simulate_innings]{simulate_innings()}} tracks and supplies this.
 }}
 
 \item{player_skills}{List with batter and bowler skills:
@@ -52,10 +56,18 @@ simulate_delivery(
 \value{
 List with outcome details:
 \itemize{
-\item runs: runs scored (0-6, or fractional if mode = "expected")
+\item runs: runs scored, INCLUDING the no-ball penalty run if \code{is_illegal}
+and this was a no-ball (0-6+1, or fractional if mode = "expected")
 \item is_wicket: TRUE if wicket fell
-\item probs: 7-class probability vector
+\item probs: \code{OUTCOME_CATEGORIES}-shaped probability vector from the model
+(unrelated to the independent no-ball draw)
 \item exp_wicket: numeric wicket probability (expected mode only)
+\item is_illegal: TRUE if this delivery must be re-bowled (wide or no-ball)
+-- \code{\link[=simulate_innings]{simulate_innings()}} must not advance \code{balls}/\code{over} when this is
+TRUE
+\item sets_free_hit: TRUE only when \code{is_illegal} was caused by a no-ball
+(never a wide) -- the delivery that eventually resolves this over
+legally must be scored with \code{is_free_hit = TRUE}
 }
 }
 \description{

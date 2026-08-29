@@ -122,6 +122,8 @@ reference:
     - build_cricinfo_raa
     - build_cricinfo_test_win_probability
     - build_cricinfo_win_probability
+    - build_ball_leverage
+    - calculate_leverage_weighted_wpa
     - cricinfo_match_outcome
     - create_player_game_data
     - load_player_game_data

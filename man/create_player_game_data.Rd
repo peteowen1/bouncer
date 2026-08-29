@@ -23,7 +23,7 @@ create_player_game_data(
 
 \item{wp_source}{Character. Which win probability \code{batting_wpa} /
 \code{bowling_wpa} are differenced from. \code{"bouncer"} (default) uses our own
-models via \code{main.cricinfo_ball_win_probability}; \code{"cricinfo"} uses the
+models via \code{main.bouncer_wp_from_cricinfo}; \code{"cricinfo"} uses the
 scraped \code{cricinfo.balls.win_probability}. See the file header for the
 benchmark that settled the default, and D-P6 in \code{docs/DECISIONS.md}.}
 }

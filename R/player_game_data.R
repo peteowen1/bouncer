@@ -15,7 +15,7 @@
 # batting_wpa / bowling_wpa are built from delta_wp, a LEAD() window difference
 # over a win probability. WHICH win probability is the `wp_source` argument:
 #
-#   "bouncer"  (default) main.cricinfo_ball_win_probability -- our in-match
+#   "bouncer"  (default) main.bouncer_wp_from_cricinfo -- our in-match
 #              models, written by build_cricinfo_win_probability().
 #   "cricinfo"           cricinfo.balls.win_probability -- ESPNcricinfo's own
 #              forecaster, scraped by bouncerdata/scripts/cricinfo_scraper.py.
@@ -60,7 +60,7 @@
 #' @param gender Character. Filter by gender: "male", "female", or NULL for all.
 #' @param wp_source Character. Which win probability `batting_wpa` /
 #'   `bowling_wpa` are differenced from. `"bouncer"` (default) uses our own
-#'   models via `main.cricinfo_ball_win_probability`; `"cricinfo"` uses the
+#'   models via `main.bouncer_wp_from_cricinfo`; `"cricinfo"` uses the
 #'   scraped `cricinfo.balls.win_probability`. See the file header for the
 #'   benchmark that settled the default, and D-P6 in `docs/DECISIONS.md`.
 #'
@@ -137,7 +137,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 #' joining on it would duplicate those deliveries inside the `SUM()`s below.
 #'
 #' @param wp_source Character. `"bouncer"` for our model's number from
-#'   `main.cricinfo_ball_win_probability` (built by
+#'   `main.bouncer_wp_from_cricinfo` (built by
 #'   [build_cricinfo_win_probability()]), `"cricinfo"` for the scraped
 #'   `cricinfo.balls.win_probability`.
 #'
@@ -187,7 +187,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
       ) t1 ON t1.match_id = b.match_id"
 
   join <- switch(wp_source,
-    bouncer  = paste("LEFT JOIN main.cricinfo_ball_win_probability w ON w.id = b.id",
+    bouncer  = paste("LEFT JOIN main.bouncer_wp_from_cricinfo w ON w.id = b.id",
                      team_join, sep = "\n      "),
     cricinfo = team_join
   )

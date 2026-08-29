@@ -225,7 +225,7 @@ load_test_in_match_models <- function(models_path, allow_release = TRUE) {
 #' after it was written. D-P6 (`docs/DECISIONS.md`) resolved in favour of
 #' wiring this model family in: [build_cricinfo_win_probability()] calls
 #' [load_in_match_models()] directly and scores every Cricinfo T20/ODI
-#' delivery into `main.cricinfo_ball_win_probability`, which
+#' delivery into `main.bouncer_wp_from_cricinfo`, which
 #' `player_game_data.R` joins (`wp_source = "bouncer"`, the default) to
 #' produce `batting_wpa`/`bowling_wpa` — the inputs to `calculate_impact()`'s
 #' `raa + kappa*wpa` composite, which feeds
@@ -233,7 +233,7 @@ load_test_in_match_models <- function(models_path, allow_release = TRUE) {
 #' `cricinfo.balls.win_probability` column is still selectable via
 #' `wp_source = "cricinfo"` for comparison only (see `bouncer/CLAUDE.md`'s WPA
 #' section for the coverage/Brier comparison). The similarly-named
-#' [build_cricsheet_win_probability()] (`main.cricsheet_ball_win_probability`)
+#' [build_cricsheet_win_probability()] (`main.bouncer_wp_from_cricsheet`)
 #' is a separate validation/comparison artifact over the deeper Cricsheet
 #' source — not what `player_game_data.R` reads. Improving THIS model family
 #' (innings1/stage2) now does flow through to the ratings.
