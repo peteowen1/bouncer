@@ -33,6 +33,13 @@ MORE balls than T20 to reach the same reliability, not fewer, because an ODI
 innings is a smaller share of a career and per-ball noise is larger relative
 to the between-player spread.
 
+T20 batter lowered 500 -> 400 on 2026-08-29: re-measured reliability on the
+current (larger) corpus is 0.413 at 500 and 0.412 at 400 -- the curve has
+flattened since #57 as the corpus grew, so 400 buys essentially the same
+reliability (1254 vs 1024 qualifying players) rather than trading it away.
+T20 bowler and the other five buckets were not re-measured and are
+unchanged; do not assume the same headroom exists there without checking.
+
 The floor decides only whether a player is LISTED. The shrinkage prior
 already stops an unreliable one topping a board.
 }

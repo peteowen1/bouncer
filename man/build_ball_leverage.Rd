@@ -46,3 +46,15 @@ Reuses \code{\link[=build_cricinfo_win_probability]{build_cricinfo_win_probabili
 (momentum, venue stats, target derivation, gap handling) via
 \code{return_pre_states = TRUE} rather than a second, drifting copy of it.
 }
+\section{Inherits the agnostic model's unstamped-feature gap (#79)}{
+
+\code{\link[=predict_agnostic_outcome]{predict_agnostic_outcome()}}'s column-alignment check can only genuinely
+verify order when the model carries a stamped feature-name attribute, and
+no agnostic model currently does -- so a real drift between this
+function's \code{feat} frame and what the model trained on would degrade to a
+once-per-session warning, not an abort, and P(outcome | state) -- and
+therefore leverage -- would be silently wrong rather than missing. Not
+introduced by this function; #79 tracks stamping the agnostic models,
+which would close this for every caller including this one.
+}
+

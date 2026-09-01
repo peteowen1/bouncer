@@ -170,6 +170,102 @@ canonicalise_venues <- function(dt, map) {
 }
 
 
+#' Flatten Multi-Hop Chains and Cycles in venue_aliases
+#'
+#' `venue_aliases` must maintain the invariant that no `canonical_venue` is
+#' ever also an `alias` key -- a single-hop lookup (this table's own normal
+#' read pattern, `match(venue, alias)`) silently stops at an intermediate
+#' name otherwise. This bit twice (2026-08-29 commit d6c80c1, and again
+#' 2026-09-01 reconciling a large batch of new rows): adding a row whose
+#' canonical target is itself an existing alias key creates a chain or, if
+#' the existing row points back the other way, a real cycle.
+#'
+#' Ground truth, not an arbitrary tie-break: every node visited while
+#' resolving a chain is checked against how many rows it actually has in
+#' `cricsheet.matches` right now, and the one with the most real rows wins.
+#' A phantom string (0 rows) never wins against a populated one, and a
+#' 2-cycle is resolved the same way rather than by insertion order.
+#'
+#' @param conn DBI connection with write access; opened and closed if NULL.
+#' @param dry_run Logical. TRUE (the default) reports what would change and
+#'   writes nothing.
+#' @return data.table of the rows that would be, or were, repointed, invisibly.
+#' @export
+flatten_venue_alias_table <- function(conn = NULL, dry_run = TRUE) {
+  own <- is.null(conn)
+  if (own) {
+    conn <- get_db_connection(read_only = dry_run)
+    on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  }
+  if (!table_exists(conn, "venue_aliases")) return(invisible(data.table::data.table()))
+
+  va <- data.table::as.data.table(DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases"))
+  if (!nrow(va)) return(invisible(va))
+
+  all_strings <- unique(c(va$alias, va$canonical_venue))
+  counts_df <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf(
+    "SELECT venue, COUNT(*) AS n FROM cricsheet.matches WHERE venue IN (%s) GROUP BY 1",
+    paste(sprintf("'%s'", gsub("'", "''", all_strings)), collapse = ","))))
+  row_count <- stats::setNames(rep(0L, length(all_strings)), all_strings)
+  if (nrow(counts_df)) row_count[counts_df$venue] <- counts_df$n
+
+  # Only re-litigate a row's target if it is ACTUALLY part of a chain --
+  # i.e. its current canonical_venue is itself a known alias key. A plain,
+  # non-chained mapping is left exactly as-is regardless of relative row
+  # counts: re-deriving "the right direction" from corpus volume for every
+  # row (not just chained ones) can flip a perfectly correct, deliberately-
+  # chosen mapping when both sides happen to have similar volume. Caught by
+  # a test before this shipped: a 1-hop alias/canonical pair with equal
+  # counts on both sides was getting reversed for no reason.
+  resolve_by_ground_truth <- function(v, map, counts, max_hops = 20L) {
+    visited <- v
+    cur <- v
+    for (i in seq_len(max_hops)) {
+      hit <- map[alias == cur, canonical_venue]
+      if (!length(hit) || hit[1] %in% visited) break
+      cur <- hit[1]
+      visited <- c(visited, cur)
+    }
+    n <- counts[visited]
+    n[is.na(n)] <- 0L
+    visited[which.max(n)]
+  }
+  is_chained <- va$canonical_venue %in% va$alias
+  va[, final := canonical_venue]
+  if (any(is_chained)) {
+    va[is_chained, final := vapply(alias, resolve_by_ground_truth, character(1),
+                                   map = va, counts = row_count)]
+  }
+  changed <- va[final != canonical_venue]
+
+  final_map <- stats::setNames(va$final, va$alias)
+  still_bad <- va[final %in% alias & final != alias & final_map[final] != final]
+  if (nrow(still_bad)) {
+    cli::cli_abort("{nrow(still_bad)} row{?s} still chain after ground-truth resolution -- investigate before writing.")
+  }
+
+  if (!dry_run && nrow(changed)) {
+    for (i in seq_len(nrow(changed))) {
+      DBI::dbExecute(conn, "UPDATE venue_aliases SET canonical_venue = ? WHERE alias = ?",
+                     params = list(changed$final[i], changed$alias[i]))
+    }
+    self_final <- va[final == alias, alias]
+    if (length(self_final)) {
+      for (s in self_final) DBI::dbExecute(conn, "DELETE FROM venue_aliases WHERE alias = ?", params = list(s))
+    }
+    va2 <- data.table::as.data.table(DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases"))
+    still_bad2 <- va2[canonical_venue %in% alias & canonical_venue != alias]
+    if (nrow(still_bad2)) {
+      cli::cli_abort("{nrow(still_bad2)} chain{?s} remain after flattening -- did not apply cleanly.")
+    }
+    cli::cli_alert_success("Flattened {nrow(changed)} row{?s} by ground truth; 0 chains remain ({nrow(va2)} rows).")
+  } else if (nrow(changed)) {
+    cli::cli_alert_info("{nrow(changed)} row{?s} would be repointed to their ground-truth target (dry run).")
+  }
+  invisible(changed[, .(alias, canonical_venue, final)])
+}
+
+
 #' Store Derived Aliases in the Existing venue_aliases Table
 #'
 #' There is already a `venue_aliases` table and a resolver
@@ -259,6 +355,16 @@ store_venue_aliases <- function(map, conn = NULL, dry_run = TRUE) {
     DBI::dbExecute(conn,
       "INSERT INTO venue_aliases (alias, canonical_venue) SELECT alias, canonical_venue FROM va_staging")
     cli::cli_alert_success("Inserted {nrow(new)} alias{?es}.")
+  }
+
+  # The gap that let a real chain/cycle bug happen twice (2026-08-29,
+  # 2026-09-01): this function checks whether an ALIAS it's inserting
+  # already exists with a different target, but never checked whether the
+  # new CANONICAL is itself an existing alias key. Flatten unconditionally
+  # after every write, not just when new rows were added -- fix_curated
+  # above can also repoint an existing row onto a target that chains.
+  if (nrow(new) || nrow(fix_curated)) {
+    flatten_venue_alias_table(conn = conn, dry_run = FALSE)
   }
   new[]
 }

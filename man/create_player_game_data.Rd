@@ -9,6 +9,7 @@ create_player_game_data(
   conn = NULL,
   match_ids = NULL,
   gender = NULL,
+  source = c("cricsheet", "cricinfo"),
   wp_source = c("bouncer", "cricinfo")
 )
 }
@@ -21,11 +22,31 @@ create_player_game_data(
 
 \item{gender}{Character. Filter by gender: "male", "female", or NULL for all.}
 
-\item{wp_source}{Character. Which win probability \code{batting_wpa} /
-\code{bowling_wpa} are differenced from. \code{"bouncer"} (default) uses our own
-models via \code{main.bouncer_wp_from_cricinfo}; \code{"cricinfo"} uses the
-scraped \code{cricinfo.balls.win_probability}. See the file header for the
-benchmark that settled the default, and D-P6 in \code{docs/DECISIONS.md}.}
+\item{source}{Character. Which ball-by-ball source this is built from.
+\code{"cricsheet"} (default since 2026-08-29, bouncerverse#84) reads
+\code{cricsheet.deliveries}/\code{cricsheet.matches} plus their own
+\code{main.cricsheet_ball_raa}/\code{main.bouncer_wp_from_cricsheet} tables --
+cricsheet is the primary ball-by-ball source everywhere else in this
+package (steps 1-12), and unlike cricinfo it has not gone stale
+(cricinfo scraping stalled 2026-02-20, cricsheet is current). No Hawkeye
+fields (wagon zone, pitch line/length, shot type/control) exist in
+cricsheet -- those columns are still produced, always NA/0-coverage, so
+downstream consumers (\code{stat_rating_data.R}) don't break on a missing
+column, but carry no signal under this source. \code{"cricinfo"} is the
+original path (kept, not removed) -- richer per-ball metadata (Hawkeye)
+where cricinfo actually has coverage, \code{wp_source} selects between our own
+model and the scraped forecaster within it. See D-P6 in
+\code{docs/DECISIONS.md} for why "bouncer" beat "cricinfo" as a WP source in
+the first place, and bouncerverse#84 for why cricsheet now beats
+cricinfo as the BASE table.}
+
+\item{wp_source}{Character. \code{source = "cricinfo"} only: which win
+probability \code{batting_wpa}/\code{bowling_wpa} are differenced from. \code{"bouncer"}
+(default) uses our own models via \code{main.bouncer_wp_from_cricinfo};
+\code{"cricinfo"} uses the scraped \code{cricinfo.balls.win_probability}. Ignored
+when \code{source = "cricsheet"} -- that path always uses our own model via
+\code{main.bouncer_wp_from_cricsheet} (cricsheet carries no scraped-forecaster
+equivalent to compare against).}
 }
 \value{
 data.table with one row per player per match. Players who both
@@ -33,7 +54,10 @@ bat and bowl get a single row with both batting and bowling columns.
 Key columns: match_id, player_id, player_name, team, match_date, role,
 batting_runs, batting_wpa, batting_era, batting_raa, bowling_wickets,
 bowling_wpa, bowling_era, bowling_raa, total_wpa, total_era, total_raa,
-plus Hawkeye features.
+plus Hawkeye features (cricinfo source only; under cricsheet these come
+back 0, not NA -- \code{.merge_batting_bowling()}'s zero-fill isn't
+role-gated for non-value_cols columns, so check \verb{*_hawkeye_balls == 0}
+for genuine no-coverage, not the percentage columns themselves).
 }
 \description{
 Aggregates Cricinfo delivery data into one row per player per match,
