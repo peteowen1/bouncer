@@ -14,6 +14,7 @@ fake_match <- function(with_registry = TRUE) {
       match_type = "T20", gender = "male", dates = list("2026-05-01"),
       teams = list("Team A", "Team B"),
       players = list("Team A" = list("A Batter"), "Team B" = list("B Bowler")),
+      player_of_match = list("A Batter"),
       registry = if (with_registry) list(people = people) else NULL
     ),
     innings = list(list(team = "Team A", overs = list(list(over = 0, deliveries = list(
@@ -55,6 +56,24 @@ test_that("a real cached 2026 match resolves entirely to registry ids", {
   res <- expect_no_warning(parse_all_data(j, parse_match_info(j, "1512764")))
   expect_equal(res$registry_fallback, 0)
   expect_true(all(grepl("^[0-9a-f]{8}$", unique(res$deliveries$batter_id))))
+})
+
+test_that("player_of_match_id resolves through the registry, same as delivery ids (#75)", {
+  info <- parse_match_info(fake_match(TRUE), "m4")
+  expect_equal(info$player_of_match_id, "aaaa1111")
+})
+
+test_that("player_of_match_id falls back to the name when there is no registry (#75)", {
+  info <- parse_match_info(fake_match(FALSE), "m5")
+  expect_equal(info$player_of_match_id, "A Batter")
+})
+
+test_that("a real cached match resolves player_of_match_id to a registry id, not a name (#75)", {
+  f <- file.path("C:/dev/bouncerverse/bouncerdata/json_files", "1512764.json")
+  skip_if_not(file.exists(f), "cricsheet json cache not available")
+  j <- jsonlite::fromJSON(f, simplifyVector = FALSE)
+  info <- parse_match_info(j, "1512764")
+  expect_true(grepl("^[0-9a-f]{8}$", info$player_of_match_id))
 })
 
 test_that("the PUBLIC entry point forwards the registry counters", {
