@@ -95,6 +95,34 @@ venue_avg_raw <- DBI::dbGetQuery(conn, "
 ")
 setDT(venue_avg_raw)
 venue_avg_raw[, match_date := as.Date(match_date)]
+
+# Canonicalise venue names BEFORE any venue-keyed feature is built
+# (bouncerverse#73): the same ground appears under several raw cricsheet
+# names (suffix creep, renames, spelling variants), so venue_avg/
+# venue_result_rate below were each computed on a fraction of the ground's
+# real history -- understating n_prior and over-shrinking toward the prior.
+# Same pattern as 02_baseline_projected_score.R's wiring (d6c80c1). Single-
+# hop lookup is safe here: venue_aliases was flattened to have no chains
+# (bouncer 9ac7b00).
+venue_alias_map <- if (table_exists(conn, "venue_aliases")) {
+  DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases")
+} else {
+  data.frame(alias = character(), canonical_venue = character())
+}
+if (nrow(venue_alias_map)) {
+  alias_lookup <- stats::setNames(venue_alias_map$canonical_venue, venue_alias_map$alias)
+  canonicalise_venue_col <- function(v) {
+    hit <- match(v, names(alias_lookup))
+    v[!is.na(hit)] <- alias_lookup[hit[!is.na(hit)]]
+    v
+  }
+  n_before <- length(unique(venue_avg_raw$venue))
+  venue_avg_raw[, venue := canonicalise_venue_col(venue)]
+  n_after <- length(unique(venue_avg_raw$venue))
+  if (n_after < n_before) {
+    cli::cli_alert_info("Canonicalised venue names: {n_before} -> {n_after} distinct venues.")
+  }
+}
 venue_avgs <- time_causal_venue_mean(venue_avg_raw, "inn1_total", prior_weight = 5)
 venue_avgs <- venue_avgs[, .(match_id, venue_avg = venue_mean)]
 
@@ -119,6 +147,7 @@ setDT(venue_results)
 venue_results[, `:=`(decided = 1L,
                      is_result = as.integer(outcome_type != "draw"),
                      match_date = as.Date(match_date))]
+if (nrow(venue_alias_map)) venue_results[, venue := canonicalise_venue_col(venue)]
 venue_results <- time_causal_venue_result_rate(venue_results, prior_weight = 10)
 prior_rate <- attr(venue_results, "prior_rate")
 cli::cli_alert_info(paste0(
