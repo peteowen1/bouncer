@@ -135,6 +135,9 @@ fit_test_overs_model <- function(conn, match_type = c("Test", "MDM"),
   }
 
   model <- stats::lm(.test_overs_formula(), data = tr)
+  if (anyNA(stats::coef(model))) {
+    cli::cli_abort("Overs model for {match_type} has NA coefficients (rank-deficient) -- the wkt x spline interaction is likely too sparse at high wicket states; simplify the formula before shipping.")
+  }
 
   list(
     model = model, match_type = match_type, window_years = window_years,

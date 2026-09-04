@@ -43,13 +43,13 @@ for (mt in c("Test", "MDM")) {
   # run_rate/lead/match_balls_before in the fitting data, innings 1.
   d <- .build_test_overs_features(conn, mt)
   as_at <- fit$as_at
-  tr <- d[md <= as_at & md > fit$cut_date]
+  tr <- d[md <= as_at & md > fit$cut_date & innings == 1L]
   ref <- data.frame(
     balls_before = stats::median(tr$balls_before),
     run_rate = stats::median(tr$run_rate),
     lead = 0,
     inn = factor(1, levels = 1:4),
-    match_balls_before = stats::median(tr$balls_before)
+    match_balls_before = stats::median(tr$match_balls_before)
   )
   ref <- ref[rep(1, 10), ]
   ref$wkt <- factor(0:9, levels = 0:9)
