@@ -135,6 +135,7 @@ reference:
     - build_venue_id_map
     - canonicalise_venues
     - store_venue_aliases
+    - flatten_venue_alias_table
     - calculate_player_rating_v2
     - player_career_context
     - derive_shrinkage_prior

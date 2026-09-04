@@ -95,6 +95,47 @@ venue_avg_raw <- DBI::dbGetQuery(conn, "
 ")
 setDT(venue_avg_raw)
 venue_avg_raw[, match_date := as.Date(match_date)]
+
+# Canonicalise venue names BEFORE any venue-keyed feature is built
+# (bouncerverse#73): the same ground appears under several raw cricsheet
+# names (suffix creep, renames, spelling variants), so venue_avg/
+# venue_result_rate below were each computed on a fraction of the ground's
+# real history -- understating n_prior and over-shrinking toward the prior.
+# Same pattern as 02_baseline_projected_score.R's wiring (d6c80c1). Single-
+# hop lookup relies on venue_aliases having no chains -- store_venue_aliases()
+# auto-flattens on every write (bouncer 37b56f0) so this should always hold,
+# but that's a write-side guarantee this read-side script has no way to see
+# broken. Verify it at runtime (review, 2026-09-04) rather than trust the
+# comment: a stale chain here would silently understate n_prior again,
+# exactly the bug bouncerverse#73 exists to fix.
+if (table_exists(conn, "venue_aliases")) {
+  pending_chains <- flatten_venue_alias_table(conn, dry_run = TRUE)
+  if (nrow(pending_chains)) {
+    cli::cli_abort(c(
+      "venue_aliases has {nrow(pending_chains)} unflattened chain{?s} -- the single-hop lookup below would be wrong.",
+      "i" = "Run flatten_venue_aliases.R --commit, then re-run this script."
+    ))
+  }
+}
+venue_alias_map <- if (table_exists(conn, "venue_aliases")) {
+  DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases")
+} else {
+  data.frame(alias = character(), canonical_venue = character())
+}
+if (nrow(venue_alias_map)) {
+  alias_lookup <- stats::setNames(venue_alias_map$canonical_venue, venue_alias_map$alias)
+  canonicalise_venue_col <- function(v) {
+    hit <- match(v, names(alias_lookup))
+    v[!is.na(hit)] <- alias_lookup[hit[!is.na(hit)]]
+    v
+  }
+  n_before <- length(unique(venue_avg_raw$venue))
+  venue_avg_raw[, venue := canonicalise_venue_col(venue)]
+  n_after <- length(unique(venue_avg_raw$venue))
+  if (n_after < n_before) {
+    cli::cli_alert_info("Canonicalised venue names: {n_before} -> {n_after} distinct venues.")
+  }
+}
 venue_avgs <- time_causal_venue_mean(venue_avg_raw, "inn1_total", prior_weight = 5)
 venue_avgs <- venue_avgs[, .(match_id, venue_avg = venue_mean)]
 
@@ -119,6 +160,7 @@ setDT(venue_results)
 venue_results[, `:=`(decided = 1L,
                      is_result = as.integer(outcome_type != "draw"),
                      match_date = as.Date(match_date))]
+if (nrow(venue_alias_map)) venue_results[, venue := canonicalise_venue_col(venue)]
 venue_results <- time_causal_venue_result_rate(venue_results, prior_weight = 10)
 prior_rate <- attr(venue_results, "prior_rate")
 cli::cli_alert_info(paste0(

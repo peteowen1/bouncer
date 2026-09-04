@@ -94,3 +94,82 @@ test_that("a table without a venue column is refused", {
                                    data.table::data.table(venue = "a", canonical_venue = "b")),
                "venue")
 })
+
+# ---- flatten_venue_alias_table(): the chain/cycle bug that bit twice ------
+#
+# 2026-08-29 (d6c80c1) and again 2026-09-01: a row whose canonical_venue is
+# itself an existing alias key breaks any single-hop lookup. Minimal in-
+# memory fixtures -- cricsheet.matches for the ground-truth row counts,
+# venue_aliases for the table under test.
+
+.venue_fixture_conn <- function(matches, aliases) {
+  conn <- DBI::dbConnect(duckdb::duckdb(), ":memory:")
+  DBI::dbExecute(conn, "CREATE SCHEMA cricsheet")
+  DBI::dbWriteTable(conn, DBI::Id(schema = "cricsheet", table = "matches"), matches)
+  DBI::dbWriteTable(conn, "venue_aliases", aliases)
+  conn
+}
+
+test_that("a plain chain (A -> B -> C, no cycle) resolves to the real venue", {
+  # B is a phantom (0 rows) sitting between a real alias and a real target --
+  # the exact shape that split "Seddon Park, Hamilton" the first time this
+  # function was written.
+  m <- data.frame(venue = c("C", "C", "C"))
+  va <- data.frame(alias = c("A", "B"), canonical_venue = c("B", "C"))
+  conn <- .venue_fixture_conn(m, va)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  changed <- flatten_venue_alias_table(conn = conn, dry_run = FALSE)
+  expect_equal(changed$final[changed$alias == "A"], "C")
+
+  out <- DBI::dbGetQuery(conn, "SELECT * FROM venue_aliases ORDER BY alias")
+  expect_false(any(out$canonical_venue %in% out$alias))
+})
+
+test_that("a real 2-cycle (A -> B, B -> A) resolves by which side has real corpus rows", {
+  m <- data.frame(venue = c("B", "B"))  # only B has real rows; A has none
+  va <- data.frame(alias = c("A", "B"), canonical_venue = c("B", "A"))
+  conn <- .venue_fixture_conn(m, va)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  flatten_venue_alias_table(conn = conn, dry_run = FALSE)
+
+  out <- DBI::dbGetQuery(conn, "SELECT * FROM venue_aliases")
+  # A must now point at B (the real one); B must not survive as an alias of A.
+  expect_equal(out$canonical_venue[out$alias == "A"], "B")
+  expect_false("B" %in% out$alias)
+})
+
+test_that("store_venue_aliases() auto-flattens after writing -- the actual regression", {
+  # This IS the 2026-09-01 bug reproduced directly: an existing row says
+  # "OldName -> Canonical"; the new map being stored says
+  # "Canonical -> LongerName" (a longer, more-qualified string winning the
+  # tie-break) -- store_venue_aliases() must not leave that as a live chain.
+  m <- data.frame(venue = c("LongerName", "LongerName", "LongerName"))
+  va <- data.frame(alias = "OldName", canonical_venue = "Canonical")
+  conn <- .venue_fixture_conn(m, va)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  new_map <- data.table::data.table(venue = "Canonical", canonical_venue = "LongerName")
+  suppressWarnings(store_venue_aliases(new_map, conn = conn, dry_run = FALSE))
+
+  out <- DBI::dbGetQuery(conn, "SELECT * FROM venue_aliases")
+  expect_false(any(out$canonical_venue %in% out$alias))
+  # OldName must end up at the real, populated final target, not stuck at
+  # the now-dead intermediate "Canonical".
+  expect_equal(out$canonical_venue[out$alias == "OldName"], "LongerName")
+})
+
+test_that("a chain with real evidence on BOTH sides leaves the table untouched", {
+  # The common case: an alias and its target are both real, populated venue
+  # strings and there is no chain at all -- nothing should move.
+  m <- data.frame(venue = c("A", "B"))
+  va <- data.frame(alias = "A", canonical_venue = "B")
+  conn <- .venue_fixture_conn(m, va)
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
+
+  changed <- flatten_venue_alias_table(conn = conn, dry_run = FALSE)
+  expect_equal(nrow(changed), 0L)
+  out <- DBI::dbGetQuery(conn, "SELECT * FROM venue_aliases")
+  expect_equal(out$canonical_venue, "B")
+})
