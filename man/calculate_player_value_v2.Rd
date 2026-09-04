@@ -17,7 +17,8 @@ calculate_player_value_v2(
   iterations = 20L,
   min_balls = 1000L,
   min_calibrated = 0,
-  id_map = NULL
+  id_map = NULL,
+  match_type_filter = NULL
 )
 }
 \arguments{
@@ -46,6 +47,8 @@ omit a player than show a number you cannot calibrate.}
 \item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Player
 careers split across a bare-name id and a hash id are merged first (#43),
 which affects 2,845 players and 4\% of appearances.}
+
+\item{match_type_filter}{As in \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}}.}
 }
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{total_value},
