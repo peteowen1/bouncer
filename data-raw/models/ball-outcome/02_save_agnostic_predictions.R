@@ -116,6 +116,24 @@ for (format in FORMATS_TO_PROCESS) {
   # below by match_id.
   ctx <- compute_context_features(conn, type_list)
 
+  # Coverage check BEFORE any write (review, 2026-09-04): the delivery-level
+  # check that used to be the only guard here ran AFTER the batch loop had
+  # already appended every batch to table_name -- a collapsed join would
+  # leave the contaminated table sitting in the DB with only a terminal
+  # abort as the signal, since cli_abort() does not roll back prior inserts.
+  # Check match-level coverage against ctx here, before DROP/CREATE/INSERT
+  # touch table_name at all, so a broken join aborts with the old table (or
+  # nothing) still in place rather than a half-written new one.
+  match_universe <- DBI::dbGetQuery(conn, sprintf(
+    "SELECT DISTINCT match_id FROM cricsheet.deliveries WHERE %s", format_filter_bare
+  ))$match_id
+  n_ctx_missing_matches <- sum(!match_universe %in% ctx$match_id)
+  pct_ctx_missing_matches <- 100 * n_ctx_missing_matches / length(match_universe)
+  cli::cli_alert_info("Context features (pre-write check): {n_ctx_missing_matches}/{length(match_universe)} matches ({round(pct_ctx_missing_matches, 2)}%) will fall back to the format default.")
+  if (pct_ctx_missing_matches > 5) {
+    cli::cli_abort("Context feature coverage collapsed to {round(pct_ctx_missing_matches, 2)}% of matches (expected ~0.5%) -- compute_context_features() join is likely broken. Aborting before writing any predictions.")
+  }
+
   # Create/recreate output table ----
   table_name <- sprintf("agnostic_predictions_%s", format)
   cli::cli_h3("Creating table: {table_name}")
@@ -330,11 +348,12 @@ for (format in FORMATS_TO_PROCESS) {
 
   cli::cli_alert_success("Saved {format(processed, big.mark = ',')} predictions to {table_name}")
 
-  # Coverage check (review, 2026-08-29): a silently-collapsed join here would
-  # recreate the exact bug this whole fix exists to close -- every affected
-  # row quietly becomes the flat constant default with success lines
-  # printing throughout, and this table feeds ELO optimization directly.
-  # Known baseline is ~0.5% (matches with no event_name).
+  # Delivery-level coverage check (review, 2026-08-29). The match-level check
+  # above the batch loop now catches a collapsed join before any write
+  # happens; this one is a second line of defense at row granularity, run
+  # after the fact -- it can no longer be the only thing standing between a
+  # broken join and a contaminated table, but it stays as a finer-grained
+  # confirmation. Known baseline is ~0.5% (matches with no event_name).
   pct_ctx_missing <- 100 * ctx_missing / processed
   cli::cli_alert_info("Context features: {ctx_missing} rows ({round(pct_ctx_missing, 2)}%) fell back to the format default.")
   if (pct_ctx_missing > 5) {
