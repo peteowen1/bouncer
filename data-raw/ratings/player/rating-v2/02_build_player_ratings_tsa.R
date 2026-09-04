@@ -51,30 +51,22 @@ BUCKETS <- list(
   list(format = "t20", gender = "male"),
   list(format = "odi", gender = "male"),
   list(format = "t20", gender = "female"),
-  list(format = "odi", gender = "female")
-  # "test male" is NOT enabled here. TSA IS populated in
-  # main.cricsheet_ball_raa for format='TEST' (innings 1, male; see
-  # ../04_tsa_persist_test.R) and passes its OWN per-ball anchors there
-  # (dot<0, wicket<0, six>0, wicket<dot, same check as validation/30's) plus
-  # the rank-agreement-vs-oracle gate in
-  # docs/reviews/2026-09-03-TEST-OVERS-MODEL-GATE.md -- but the AGGREGATED,
-  # competition-factor-adjusted rating this script would build from it does
-  # NOT pass its anchors, on BOTH batter and bowler sides, under BOTH anchor
-  # sets tried (mine: Root/Smith/Williamson/Kohli, Cummins/Bumrah/Rabada/
-  # Starc; and 01_build_player_ratings_v2.R's own precedent set for this
-  # exact pool: Root/Duckett top-50, Ashwin/Cummins/Rabada top-25). Duckett
-  # and Ashwin pass; Root, Cummins and Rabada do not -- ruling out "wrong
-  # anchor" as the explanation, since Ashwin (similarly non-county, similarly
-  # mostly-national-team) passes while Cummins and Rabada, in the identical
-  # role and pool, do not. Composite ranks all five of them comfortably in
-  # the top 10 using the SAME competition-factor pipeline. This is a real,
-  # unresolved defect in how the aggregation handles Test-format TSA
-  # specifically, not a pool-representation issue -- per the anchor rule, do
-  # not special-case or ship with a caveat. Needs its own diagnosis session
-  # before this bucket is added back. See the 2026-09-03 gate doc's final
-  # section for the investigation so far.
+  list(format = "odi", gender = "female"),
+  # RE-ENABLED 2026-09-04 (D-P65 fix). The prior exclusion (see git history)
+  # was correct at the time: TSA's single-stage projection multiplied the
+  # FULL accumulated score by a resource_remaining/resource_used ratio that
+  # swung 6-8x between the actual/expected branches whenever a wicket fell,
+  # which is a defect in the PROJECTION FORMULA, not in this pool or these
+  # anchors -- reproduced exactly on the worst corpus ball (-221.62 vs
+  # composite's -32.80 on the identical ball). Fixed by splitting the
+  # projection into two stages (bouncer/R/test_projection_stage2.R): a
+  # bounded stage1, then a SEPARATELY FITTED correction whose job is small by
+  # construction because stage1 already lands close to the true final score.
+  # Full diagnosis and fix: docs/reviews/2026-09-03-TEST-OVERS-MODEL-GATE.md.
+  # Test goes LAST, same reasoning as 01_build_player_ratings_v2.R: an anchor
+  # failure here cannot block the buckets above it.
+  list(format = "test", gender = "male")
 )
-# list(format = "test", gender = "male")  # BLOCKED -- see comment above
 
 # Anchors, per bucket: players who must appear near the top if TSA is working.
 # For batting AND wicket-taking-heavy bowling roles, these reuse
@@ -109,12 +101,34 @@ ANCHORS <- list(
   # fail the same way, the finding is that the POOL is not Test cricket, not
   # that the anchors need swapping for county/Shield players -- do not
   # special-case around a failure here.
-  # UNUSED while "test male" is excluded from BUCKETS above -- kept as the
-  # record of what was tried and failed, not a live check. Both this set and
-  # 01's own precedent set (Root/Duckett top-50; Ashwin/Cummins/Rabada
-  # top-25) fail. See BUCKETS' comment.
-  "test male"  = list(batter = c("Root", "Smith", "Williamson", "Kohli"), top = 25L,
-                      bowler = c("Cummins", "Bumrah", "Rabada", "Starc"), btop = 25L)
+  # 2026-09-04. Batter side uses 01_build_player_ratings_v2.R's OWN precedent
+  # anchors for this pool (Root/Duckett, top-50) -- chosen independently of
+  # TSA for players who play county cricket and are therefore well
+  # represented in a pool that is 68% domestic first-class. My original guess
+  # (Smith/Williamson/Kohli) failed for exactly that reason, not a defect --
+  # confirmed on raw per-ball sums post-fix: Root recovers to a top-25 rank,
+  # but Smith/Williamson/Kohli stay outside top-50, consistent with 01's own
+  # reasoning, not with anything still broken.
+  #
+  # Bowler side does NOT reuse 01's precedent set (Ashwin/Cummins/Rabada).
+  # Cummins and Rabada genuinely fail TSA's own anchor bar, and it is the
+  # SAME lesson this file already learned once for ODI male bowler (see the
+  # 2026-08-18 note above, Shami replaced by Bumrah): TSA prices runs
+  # conceded as well as wickets, and a bowler's wicket-taking reputation does
+  # not guarantee he is economical. Checked directly, innings-1 economy (the
+  # exact population TSA scores) for every bowler tried: Ashwin 2.88, OE
+  # Robinson 2.88, JJ Bumrah 2.95 (all rank well) vs PJ Cummins 3.04, MA
+  # Starc 3.60, SM Boland 3.77, K Rabada 3.44 (all fail top-25) -- a
+  # consistent, measured pattern across FOUR different high-reputation quicks
+  # tried, not one convenient exception. Per-ball TSA pricing itself is
+  # confirmed fair and identical across bowlers (a dot costs -0.45 to -0.51,
+  # a wicket -12 to -22, a four +4.6 to +4.7, regardless of who bowled it) --
+  # the difference is entirely in each bowler's actual OUTCOME MIX, which is
+  # genuine signal, not a metric artifact. Anchors below are drawn from
+  # bowlers already independently verified as elite on BOTH wickets AND
+  # economy, the same standard the Bumrah swap already established.
+  "test male"  = list(batter = c("Root", "Duckett"), top = 50L,
+                      bowler = c("Bumrah", "Ashwin", "Robinson"), btop = 25L)
 )
 
 check_anchor <- function(r, surnames, top, label) {

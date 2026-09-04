@@ -11,6 +11,18 @@
 #
 #   tsa = pr(actual outcome, br) - pr(expected outcome, br)
 #
+# UPDATED 2026-09-04 (D-P65): `pr()` is now the TWO-STAGE projection
+# (test_projection_stage2.R, fit by 05_fit_test_stage2_correction.R), not the
+# original calculate_projected_scores_vectorized(). The single-stage version
+# multiplied the FULL accumulated score by a resource_remaining/resource_used
+# ratio that swung 6-8x between the actual/expected branches whenever a
+# wicket fell -- reproduced exactly on the worst corpus ball (-221.62, vs
+# composite's -32.80 on the identical ball). The two-stage version fixes this:
+# stage1 is bounded and monotonic (no ratio), and stage2 is a SEPARATE fitted
+# correction, small by construction because stage1 already lands close to a
+# sane final total. Full diagnosis and fix:
+# bouncerverse docs/reviews/2026-09-03-TEST-OVERS-MODEL-GATE.md.
+#
 # INNINGS 1 ONLY, unlike 30's "both innings" choice for limited overs. This is a
 # deliberate, narrower scope than 30's precedent, not an oversight: the gate
 # (docs/reviews/2026-09-03-TEST-OVERS-MODEL-GATE.md) validated the overs model
@@ -22,15 +34,17 @@
 # in innings 1, too thin for an honest fit (predeclaration, scope decisions).
 #
 # `format='TEST'` in cricsheet_ball_raa spans TWO cricsheet match_types, Test
-# and MDM (domestic first-class) -- 68% of the rows are MDM. The overs model is
-# fitted and applied SEPARATELY per match_type (see test_overs_model.R for why:
-# Test innings length collapsed 2021-2024, MDM shows no era drift over the same
-# span), so this script processes them as two passes with two different loaded
-# models, writing to the same table.
+# and MDM (domestic first-class) -- 68% of the rows are MDM. The overs model
+# AND the stage-2 correction are fitted and applied SEPARATELY per match_type
+# (see test_overs_model.R for why: Test innings length collapsed 2021-2024,
+# MDM shows no era drift over the same span), so this script processes them
+# as two passes with two different loaded model pairs, writing to the same
+# table.
 #
 # Usage: Rscript data-raw/ratings/player/rating-v2/04_tsa_persist_test.R
 # Under PowerShell on Windows, since arrow/duckdb segfault under Git Bash R.
-# Requires 03_fit_test_overs_model.R to have been run first.
+# Requires 03_fit_test_overs_model.R and 05_fit_test_stage2_correction.R to
+# have been run first.
 
 suppressPackageStartupMessages({
   library(DBI); library(data.table)
@@ -51,6 +65,7 @@ total <- 0L
 
 for (MT in c("Test", "MDM")) {
   overs_model <- load_test_overs_model(MT)
+  stage2 <- load_test_stage2_correction(MT)
 
   d <- as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.delivery_id, r.match_id, r.innings_number AS innings, r.actual_runs,
@@ -68,8 +83,8 @@ for (MT in c("Test", "MDM")) {
 
   # Ball position comes from over_number/ball_number, NOT a ROW_NUMBER() over
   # this join -- main.cricsheet_ball_raa is missing a handful of balls per
-  # innings (its own upstream RAA pipeline drops some deliveries; measured: 7-9
-  # missing balls scattered through several hundred Test innings), so
+  # innings (its own upstream RAA pipeline drops some deliveries -- measured
+  # 7-9 missing balls scattered through several hundred Test innings), so
   # row-counting the joined result mis-numbers every ball after a gap. 10 of
   # 886 Test innings are missing their OPENING ball specifically, which a
   # ROW_NUMBER-based ball index cannot detect -- it just starts counting from
@@ -105,16 +120,24 @@ for (MT in c("Test", "MDM")) {
   d[, wkt := factor(pmin(9L, wkts_pre), levels = 0:9)]
   d[, inn := factor(1L, levels = 1:4)]
 
-  d[, pred_rem := predict_test_balls_remaining(overs_model, d)]
-  d[, mb := balls_before + pred_rem]
-
-  pr <- function(sc, wr, br, mb) calculate_projected_scores_vectorized(
-    current_score = sc, wickets_remaining = wr, balls_remaining = br,
-    expected_initial_score = EIS[[MT]],
-    a = PROJ_DEFAULT_A, b = PROJ_DEFAULT_B, z = PROJ_DEFAULT_Z, y = PROJ_DEFAULT_Y,
-    max_balls = mb)
-  d[, tsa := pr(runs_pre + actual_runs, 10L - wkts_pre - is_wicket, pred_rem, mb) -
-             pr(runs_pre + exp_runs,    10  - wkts_pre - exp_wicket, pred_rem, mb)]
+  # Two-stage projection (D-P65). Both branches of the TSA difference share
+  # the SAME match_type, so a scalar-per-call is fine here (unlike the
+  # general-purpose calculate_test_projected_scores_v2(), which vectorises
+  # across mixed match_type inputs).
+  om_list <- setNames(list(overs_model), MT)
+  s2_list <- setNames(list(stage2), MT)
+  d[, tsa := calculate_test_projected_scores_v2(
+    match_type = rep(MT, .N), current_score = runs_pre + actual_runs,
+    wickets_before = wkts_pre, wickets_remaining = 10L - wkts_pre - is_wicket,
+    balls_before = balls_before, run_rate = run_rate,
+    lead = lead, innings = rep(1L, .N), match_balls_before = match_balls_before,
+    eis = rep(EIS[[MT]], .N), overs_models = om_list, stage2_corrections = s2_list) -
+    calculate_test_projected_scores_v2(
+    match_type = rep(MT, .N), current_score = runs_pre + exp_runs,
+    wickets_before = wkts_pre, wickets_remaining = 10 - wkts_pre - exp_wicket,
+    balls_before = balls_before, run_rate = run_rate,
+    lead = lead, innings = rep(1L, .N), match_balls_before = match_balls_before,
+    eis = rep(EIS[[MT]], .N), overs_models = om_list, stage2_corrections = s2_list)]
 
   # ANCHORS, fixed before looking, matching 30_tsa_persist.R's own check exactly
   # so the same bar applies to every bucket that ever gets a tsa column: a dot
@@ -145,3 +168,10 @@ print(DBI::dbGetQuery(conn, "
          ROUND(100.0*SUM(CASE WHEN tsa IS NOT NULL THEN 1 ELSE 0 END)/COUNT(*),1) AS pct
   FROM main.cricsheet_ball_raa WHERE format='TEST' GROUP BY 1,2 ORDER BY 1,2"))
 cat("  innings 1 only + male only, so this bucket tops out well under 100% -- expected.\n")
+
+cat("\n=== outlier check (D-P65's own lesson: always look) ===\n")
+print(DBI::dbGetQuery(conn, "
+  SELECT ROUND(MIN(tsa),2) mn, ROUND(QUANTILE_CONT(tsa,0.01),2) p01,
+         ROUND(QUANTILE_CONT(tsa,0.5),3) p50, ROUND(QUANTILE_CONT(tsa,0.99),2) p99,
+         ROUND(MAX(tsa),2) mx, ROUND(AVG(tsa),4) mean, ROUND(STDDEV(tsa),3) sd
+  FROM main.cricsheet_ball_raa WHERE format='TEST' AND gender='male' AND tsa IS NOT NULL"))
