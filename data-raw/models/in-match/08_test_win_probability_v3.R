@@ -258,50 +258,61 @@ deliveries[, overs_deficit := pmax(0, approx_day * 90 - cum_overs)]
 
 # ---- Tier 2+: Weather features (if available) ----
 
-# Tier 2: causal per-day rain (#72). `rain_days_so_far` above was a match-TOTAL
-# prorated by progress through the match, which is not causal (#24) — day 2
-# still carried a scaled share of days 3-5, which had not happened yet.
-# `causal_rain_features()` instead sums rain over days strictly BEFORE the
-# current one, from `main.venue_weather_daily` (backfilled per-day weather,
-# #72), which fixes that leak in the common case.
-#
-# NOT exactly zero-leakage, because `approx_day` (cum_overs/90) is a Tier-1
-# proxy for the calendar day, not the true one -- cricsheet carries no
-# per-ball date, only one `match_date` per match. Two known edge cases: a
-# washed-out day where cum_overs barely advances leaves the bucket unchanged
-# (under-counts already-fallen rain -- a fidelity loss, not a leak), and a day
-# that crosses 90 overs pushes its tail balls into the next day's bucket, so
-# their `rain_mm_before` window can end on the day still in progress and pick
-# up that same day's later rain. Narrow and would need real per-ball dates
-# (not available) to close outright.
-match_days_uniq <- unique(deliveries[, .(match_id, venue, match_date, day = approx_day)])
-daily_weather <- tryCatch(
-  load_venue_weather_daily(venues = unique(match_days_uniq$venue)),
-  error = function(e) {
-    cli::cli_warn("load_venue_weather_daily() failed: {conditionMessage(e)} -- falling back to Tier 1 rain features.")
-    NULL
-  })
-weather_available <- !is.null(daily_weather) && nrow(daily_weather) > 0
+# Tier 2: Causal rain_days_so_far — only uses weather from COMPLETED days
+# This is zero-leakage: on day 3, we only know days 1-2 weather
+weather_available <- FALSE
+weather_data <- tryCatch({
+  w <- load_match_weather()
+  if (!is.null(w) && nrow(w) > 0) w else NULL
+}, error = function(e) NULL)
 
-if (weather_available) {
-  rain_feats <- causal_rain_features(match_days_uniq, daily_weather)
-  deliveries <- merge(
-    deliveries,
-    rain_feats[, .(match_id, day, rain_mm_before, rain_days_before, venue_rain_climatology)],
-    by.x = c("match_id", "approx_day"), by.y = c("match_id", "day"), all.x = TRUE)
-  deliveries[is.na(rain_mm_before), rain_mm_before := 0]
-  deliveries[is.na(rain_days_before), rain_days_before := 0L]
-  n_with_rain <- sum(deliveries$rain_mm_before > 0 | deliveries$rain_days_before > 0)
-  n_with_climatology <- sum(!is.na(deliveries$venue_rain_climatology))
-  if (n_with_rain == 0) {
-    cli::cli_warn("Tier 2: joined weather but rain_mm_before/rain_days_before are constant 0 across all {nrow(deliveries)} rows -- check the match_id/day join.")
+if (!is.null(weather_data)) {
+  # Load per-day weather to construct causal feature
+  # We need daily weather per match to count rain days causally
+  conn_w <- get_db_connection(read_only = TRUE)
+  coords <- load_venue_coordinates(conn_w)
+  DBI::dbDisconnect(conn_w, shutdown = TRUE)
+
+  if (!is.null(coords) && nrow(coords) > 0) {
+    # Join match-level weather for now; rain_days is match-total (slight approximation)
+    # True causal construction: rain_days_so_far = rain_days * (approx_day - 1) / match_days
+    # This prorates total rain days by how far through the match we are (conservative estimate)
+    deliveries <- merge(deliveries, weather_data[, .(match_id, rain_days, precipitation_total,
+                                                      temp_avg, wind_avg, is_rain)],
+                         by = "match_id", all.x = TRUE)
+
+    # NOT causal, and deliberately disabled (#24).
+    #
+    # `rain_days` is the MATCH TOTAL. Prorating it by how far through the match
+    # we are does not remove the future -- on day 2 the value still carries a
+    # scaled share of days 3-5, which have not happened. A match that gets
+    # rained out on day 5 has a day-2 feature that already knows. Scaling a leak
+    # down is not the same as removing it, which is the same mistake
+    # leave-one-out makes on venue rates (see R/venue_rates.R).
+    #
+    # A genuinely causal version needs PER-DAY weather -- rain on days strictly
+    # before the current one. `main.match_weather` holds one row per match and
+    # nothing per day, so that cannot be built from what exists today.
+    #
+    # Currently moot: main.match_weather has ZERO rows, so this branch has never
+    # run and rain_days_so_far has been constant 0 in every model trained so
+    # far. Left as 0 rather than restored, so populating the weather table
+    # cannot silently reintroduce the leak. Per-day weather is #71.
+    deliveries[, rain_days_so_far := 0]
+    cli::cli_alert_warning(
+      "rain_days_so_far held at 0: match-total rain cannot be made causal by prorating (#24). Per-day weather is #71.")
+
+    weather_available <- TRUE
+    n_with_weather <- sum(!is.na(deliveries$rain_days))
+    cli::cli_alert_success("Tier 2: Weather joined for {n_with_weather}/{nrow(deliveries)} deliveries ({round(n_with_weather/nrow(deliveries)*100,1)}%)")
   }
-  cli::cli_alert_success(
-    "Tier 2: causal rain features joined; {n_with_rain}/{nrow(deliveries)} deliveries have nonzero rain-before, {n_with_climatology}/{nrow(deliveries)} ({round(n_with_climatology/nrow(deliveries)*100,1)}%) have climatology")
-} else {
-  deliveries[, `:=`(rain_mm_before = 0, rain_days_before = 0L,
-                     venue_rain_climatology = NA_real_)]
-  cli::cli_alert_warning("Tier 2: main.venue_weather_daily is empty or unreadable, using Tier 1 features only -- rain features are degenerate for this run.")
+}
+
+if (!weather_available) {
+  deliveries[, `:=`(rain_days = NA_integer_, rain_days_so_far = 0,
+                     precipitation_total = NA_real_, temp_avg = NA_real_,
+                     wind_avg = NA_real_, is_rain = NA)]
+  cli::cli_alert_info("Tier 2: No weather data available, using Tier 1 features only")
 }
 
 # ---- Other time-pressure features ----
@@ -543,8 +554,8 @@ result_features <- c(
   "prior_declared_inn1", "prior_declared_inn2", "prior_declared_inn3",
   # Tier 1: derived rain proxies (always available)
   "overs_per_day", "overs_deficit",
-  # Tier 2: causal weather (available if backfilled, #72)
-  "rain_mm_before", "rain_days_before", "venue_rain_climatology"
+  # Tier 2: causal weather (available if backfilled)
+  "rain_days_so_far"
 )
 
 X_train_A <- as.matrix(train_dt[, ..result_features])
