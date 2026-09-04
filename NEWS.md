@@ -1,4 +1,72 @@
-# bouncer 0.7.5
+# bouncer 0.7.6
+
+## Test/first-class TSA: a two-stage, lambda-free rating lens for the long format (D-P65)
+
+TSA (the lambda-free rating metric, priced off a projected-final-score curve)
+now covers Test and first-class (MDM) cricket, alongside the existing
+limited-overs version. Test innings have no fixed ball allocation, so the
+projection needed its own expected-overs model (`fit_test_overs_model()`,
+separate 5-year/8-year recency windows for Test/MDM) plus a small, separately
+fitted correction stage rather than a DLS-style multiplicative resource
+formula -- a single-stage multiplicative fit produces wildly divergent
+actual-vs-expected projections whenever a wicket falls early in a long
+innings (reproduced on the corpus's worst ball: -221.62 vs the composite
+metric's -32.80 on the same delivery). Both batter and bowler Test buckets
+pass their predeclared anchor checks (Root/Duckett top-tier batting; Bumrah/
+Ashwin/Robinson top-tier bowling, chosen over Cummins/Rabada/Starc/Boland
+after an independent economy-rate check confirmed those misses are real,
+not a metric defect).
+
+## Leverage-weighted WPA, and a whole-table-drop bug fixed in the WP store
+
+`build_ball_leverage()`/`calculate_leverage_weighted_wpa()` add a
+leverage-weighted variant of win-probability-added. Along the way,
+`store_cricinfo_win_probability()` had the same defect bouncerverse#45
+already fixed on the cricsheet side: a column-shape mismatch dropped the
+*entire* 901,996-row table rather than just the format being rebuilt, so
+any Test/MDM rebuild could silently wipe T20/ODI WP for every match. Fixed
+to migrate schema and delete/insert per-format inside one transaction. The
+three "our model" WP tables (fed into the player ratings) are also renamed
+to disambiguate them from ESPNcricinfo's own scraped forecast.
+
+## `player_game_data.R` rebuilt onto Cricsheet as primary (#84)
+
+`create_player_game_data()` now defaults to Cricsheet rather than the
+Cricinfo Hawkeye scrape, which stalled 2026-02-20. Cricsheet is both broader
+(22K+ vs ~3.8K matches) and current through 2026-08 in every format. A
+follow-up: within the window Cricinfo still covers, Cricsheet is missing
+~383 completed 2025-2026 male Test/ODI matches Cricinfo has -- not yet
+investigated further.
+
+## Venue-name canonicalization wired into the WP baseline and par-score model (#73)
+
+68 aliased venue names canonicalized in the source tables; the earlier
+alias table's chain/cycle bug (`store_venue_aliases()` not auto-flattening
+on every write) is fixed and covered by tests, with a runtime guard added
+where a script's canonicalization depends on the table staying chain-free.
+
+## Multi-level shrinkage for the T20 par-score baseline (closes #83)
+
+`time_causal_hierarchical_mean()` chains empirical-Bayes shrinkage
+venue -> competition -> root, replacing a baseline that was a near-constant
+for 82-89% of the cross-competition training corpus.
+
+## IPL 2026 calibration gap fixed; T20 batter exposure floor lowered 500 -> 400 balls (#84/#85)
+
+Decayed causal priors added to the shrinkage hierarchy; the ball-outcome
+prediction pipeline's context-feature join now has a coverage check that
+runs before any row is written, not after (a collapsed join used to leave a
+half-contaminated table with only a terminal abort as the signal).
+
+## TSA becomes a published rating alongside RVAA (D-P51)
+
+## Player-of-match/orphan-name registry cleanup (#75)
+
+`player_of_match_id` now resolves through the same registry fallback as
+every other player-id column; ~15K bare-name rows backfilled, and the
+orphan-name delete script's reference scope was widened to cover
+`player_out_id`/`fielder1_id`/`fielder2_id`/`review_batter`/
+`replacement_in`/`replacement_out`, not just batter/bowler/non-striker.
 
 ## Ball-outcome models trained on wides, no-balls and free hits (#81/D-P50)
 
