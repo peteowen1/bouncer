@@ -150,9 +150,20 @@ parse_match_info <- function(json_data, match_id) {
     if (length(reserve_umpires) >= 1) reserve_umpire <- reserve_umpires[[1]]
   }
 
-  # Extract player of match
+  # Extract player of match. `pom` is a NAME from cricsheet's JSON -- resolve
+  # it through the same registry lookup extract_players() uses for every
+  # other player reference (bouncerverse#75: this column had never been
+  # wired to the registry at all, unlike the delivery columns #74 fixed, so
+  # it stored a name under an "_id" column name since the ingestion began).
   pom <- info$player_of_match
-  player_of_match_id <- if (length(pom) > 0) pom[[1]] else NA_character_
+  pom_name <- if (length(pom) > 0) pom[[1]] else NA_character_
+  people_registry <- info$registry$people
+  player_of_match_id <- if (!is.na(pom_name) && !is.null(people_registry) &&
+                             pom_name %in% names(people_registry)) {
+    people_registry[[pom_name]]
+  } else {
+    pom_name  # Fallback to name, same convention as extract_players().
+  }
 
   # Extract event info
   event_name <- NA_character_
