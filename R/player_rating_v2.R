@@ -753,12 +753,19 @@ fit_two_way_effects <- function(balls, prior_balls = 60, iterations = 20L) {
 #' innings is a smaller share of a career and per-ball noise is larger relative
 #' to the between-player spread.
 #'
+#' T20 batter lowered 500 -> 400 on 2026-08-29: re-measured reliability on the
+#' current (larger) corpus is 0.413 at 500 and 0.412 at 400 -- the curve has
+#' flattened since #57 as the corpus grew, so 400 buys essentially the same
+#' reliability (1254 vs 1024 qualifying players) rather than trading it away.
+#' T20 bowler and the other five buckets were not re-measured and are
+#' unchanged; do not assume the same headroom exists there without checking.
+#'
 #' The floor decides only whether a player is LISTED. The shrinkage prior
 #' already stops an unreliable one topping a board.
 #'
 #' @keywords internal
 EXPOSURE_FLOOR <- list(
-  t20  = c(batter =  500L, bowler =  500L),
+  t20  = c(batter =  400L, bowler =  500L),
   odi  = c(batter = 1500L, bowler = 2000L),
   test = c(batter = 1000L, bowler = 1800L)
 )

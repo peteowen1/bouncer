@@ -229,3 +229,134 @@ time_causal_hierarchical_mean <- function(matches, value_col, levels, weights,
   data.table::setattr(out, "overall_mean", overall_mean)
   out[]
 }
+
+
+#' Decayed causal prior n/v for one grouping level
+#'
+#' The recursive step [time_causal_hierarchical_mean_decayed()] needs at each
+#' level: given one row per (group, date) with that date's own total `.has`/
+#' `.v` (same-day siblings already pooled), compute the EXPONENTIALLY DECAYED
+#' sum of every STRICTLY EARLIER date in the same group, weighted by
+#' `exp(-days_since/half_life)`.
+#'
+#' Computed as a single forward pass per group (dates already sorted
+#' ascending): carry `T`, the decayed cumulative total AS OF AND INCLUDING the
+#' current date, forward as `T_i = daily_i + exp(-gap/half_life) * T_{i-1}`.
+#' The PRIOR value at date i (excluding date i itself) is then
+#' `exp(-gap/half_life) * T_{i-1}` -- one date's lag on the same recursion,
+#' not a second computation. `half_life = Inf` degenerates to the undecayed
+#' flat sum (`exp(-gap/Inf) == 1` for every finite gap), so this is a proper
+#' superset of the undecayed behaviour, not a parallel implementation of it.
+#'
+#' @param daily_n,daily_v Numeric vectors, one per (group, date) row, already
+#'   sorted by date ascending WITHIN the group this is called on.
+#' @param days Numeric vector of that row's `match_date` as a day count
+#'   (e.g. `as.numeric(match_date)`), same order as `daily_n`/`daily_v`.
+#' @param half_life Numeric, in days. `Inf` = no decay.
+#' @return list(n_prior, v_prior), same length and order as the inputs.
+#' @keywords internal
+.decayed_causal_prior <- function(daily_n, daily_v, days, half_life) {
+  n <- length(daily_n)
+  n_prior <- numeric(n)
+  v_prior <- numeric(n)
+  if (n == 0L) return(list(n_prior = n_prior, v_prior = v_prior))
+
+  T_n <- 0; T_v <- 0  # decayed cumulative total as of (and including) the PREVIOUS date
+  prev_day <- NA_real_
+  for (i in seq_len(n)) {
+    if (i == 1L) {
+      n_prior[i] <- 0
+      v_prior[i] <- 0
+    } else {
+      gap <- days[i] - prev_day
+      decay <- if (is.infinite(half_life)) 1 else exp(-gap * log(2) / half_life)
+      n_prior[i] <- decay * T_n
+      v_prior[i] <- decay * T_v
+      T_n <- decay * T_n
+      T_v <- decay * T_v
+    }
+    T_n <- T_n + daily_n[i]
+    T_v <- T_v + daily_v[i]
+    prev_day <- days[i]
+  }
+  list(n_prior = n_prior, v_prior = v_prior)
+}
+
+
+#' Mean of a per-match value, shrunk through a chain of nested causal levels,
+#' with exponential recency decay
+#'
+#' The decayed sibling of [time_causal_hierarchical_mean()]. That function's
+#' causal running mean at every level weighs a match from 15 years ago
+#' identically to one from last week -- correct for a level with a genuinely
+#' stable rate, wrong for one that is actually drifting (bouncerverse#84/#85:
+#' IPL's league-wide scoring rate rose from 1.34 to 1.56 runs/ball between
+#' 2022 and 2026 while the flat causal mean stayed pinned near 1.25, a
+#' calibration gap 40x the whole-corpus average). `half_life` lets each level
+#' forget slowly-obsoleting history rather than average across all of it
+#' uniformly -- matching hganjoo's T20 Metrics primer's own league/year/ground
+#' nested-shrinkage design (a year LEVEL in a hierarchy) with a continuous
+#' decay instead of discrete year buckets, which avoids a hard reset to the
+#' coarse prior at the boundary of every new season.
+#'
+#' @inheritParams time_causal_hierarchical_mean
+#' @param half_life Named numeric vector, in days, one per entry of `levels`
+#'   (same names as `weights`) PLUS an entry named `"root"` for the root
+#'   level. `Inf` for a level means "no decay" (behaves exactly like
+#'   [time_causal_hierarchical_mean()] at that level) -- so a hierarchy can
+#'   decay some levels and not others.
+#'
+#' @return Same shape as [time_causal_hierarchical_mean()].
+#' @keywords internal
+time_causal_hierarchical_mean_decayed <- function(matches, value_col, levels, weights,
+                                                   half_life,
+                                                   root_prior_weight = 30,
+                                                   root_prior_value = NULL) {
+  m <- data.table::as.data.table(matches)
+  need <- c("match_id", "match_date", value_col, levels)
+  miss <- setdiff(need, names(m))
+  if (length(miss)) cli::cli_abort("{.arg matches} is missing {.field {miss}}.")
+  if (!setequal(names(weights), levels)) {
+    cli::cli_abort("{.arg weights} must be named exactly by {.arg levels}.")
+  }
+  if (!setequal(names(half_life), c(levels, "root"))) {
+    cli::cli_abort("{.arg half_life} must be named exactly by {.arg levels} plus \"root\".")
+  }
+
+  m[, .v := as.numeric(get(value_col))]
+  m[, .has := as.integer(!is.na(.v))]
+  m[is.na(.v), .v := 0]
+  if (is.null(root_prior_value)) {
+    if (sum(m$.has) == 0L) cli::cli_abort("No usable values to estimate a prior from.")
+    root_prior_value <- sum(m$.v) / sum(m$.has)
+  }
+  overall_mean <- root_prior_value
+  m[, .day := as.numeric(match_date)]
+
+  decayed_prior_by <- function(m, group_cols, hl) {
+    daily <- m[, .(n = sum(.has), v = sum(.v)), by = c(group_cols, ".day")]
+    data.table::setorderv(daily, c(group_cols, ".day"))
+    daily[, c("n_prior", "v_prior") := .decayed_causal_prior(n, v, .day, hl), by = c(group_cols)]
+    m[daily, on = c(group_cols, ".day"), `:=`(.n_prior = i.n_prior, .v_prior = i.v_prior)]
+    invisible(NULL)
+  }
+
+  data.table::setorder(m, match_date, match_id)
+  decayed_prior_by(m, character(0), half_life[["root"]])
+  m[, parent_mean := (.v_prior + root_prior_weight * overall_mean) /
+      (.n_prior + root_prior_weight)]
+  m[, c(".n_prior", ".v_prior") := NULL]
+
+  for (lvl in rev(levels)) {
+    w <- weights[[lvl]]
+    data.table::setorderv(m, c(lvl, "match_date", "match_id"))
+    decayed_prior_by(m, lvl, half_life[[lvl]])
+    m[, level_mean := (.v_prior + w * parent_mean) / (.n_prior + w)]
+    m[, parent_mean := level_mean]
+    m[, c(".n_prior", ".v_prior", "level_mean") := NULL]
+  }
+
+  out <- m[, .(match_id, hier_mean = parent_mean)]
+  data.table::setattr(out, "overall_mean", overall_mean)
+  out[]
+}

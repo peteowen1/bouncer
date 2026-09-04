@@ -263,6 +263,128 @@ test_that("the root level cannot see a same-day sibling at a different venue/com
   expect_equal(hier_of(r_hi, "b"), 300)
 })
 
+# ---- time_causal_hierarchical_mean_decayed(): recency-weighted sibling ----
+#
+# bouncerverse#84/#85: the flat causal mean weighs a match from 15 years ago
+# identically to last week's, wrong for a level that's actually drifting (IPL
+# scoring rose 1.34 -> 1.56 runs/ball 2022-2026 while the flat mean stayed
+# near 1.25). half_life lets a level forget slowly rather than average
+# uniformly across all its history.
+
+test_that(".decayed_causal_prior with half_life=Inf reproduces an undecayed cumulative prior exactly", {
+  # 4 dates, 10 days apart, one match each. Undecayed prior at date i is just
+  # the running total through date i-1.
+  daily_n <- c(1, 1, 1, 1)
+  daily_v <- c(100, 200, 300, 400)
+  days <- c(0, 10, 20, 30)
+  r <- .decayed_causal_prior(daily_n, daily_v, days, half_life = Inf)
+  expect_equal(r$n_prior, c(0, 1, 2, 3))
+  expect_equal(r$v_prior, c(0, 100, 300, 600))
+})
+
+test_that(".decayed_causal_prior halves the prior after exactly one half-life", {
+  # One match at day 0 (value 100), query the prior at day 10 with
+  # half_life=10 -- decay factor exp(-10*ln(2)/10) = exp(-ln 2) = 0.5 exactly.
+  r <- .decayed_causal_prior(daily_n = c(1, 0), daily_v = c(100, 0),
+                             days = c(0, 10), half_life = 10)
+  expect_equal(r$n_prior[2], 0.5, tolerance = 1e-10)
+  expect_equal(r$v_prior[2], 50, tolerance = 1e-10)
+})
+
+test_that(".decayed_causal_prior compounds decay correctly across 3+ dates", {
+  # Day 0: n=1,v=100. Day 10 (one half-life later): prior should be exactly
+  # the day-0 value decayed by 0.5 -- n_prior=0.5, v_prior=50. Day 20 (another
+  # half-life on): prior = 0.5 * (day-10's OWN total (n=1,v=200) + day-10's
+  # decayed-in prior (0.5, 50)) = 0.5 * (1.5, 250) = (0.75, 125).
+  r <- .decayed_causal_prior(daily_n = c(1, 1, 0), daily_v = c(100, 200, 0),
+                             days = c(0, 10, 20), half_life = 10)
+  expect_equal(r$n_prior, c(0, 0.5, 0.75), tolerance = 1e-10)
+  expect_equal(r$v_prior, c(0, 50, 125), tolerance = 1e-10)
+})
+
+test_that("time_causal_hierarchical_mean_decayed with every half_life=Inf matches the undecayed function exactly", {
+  set.seed(42)
+  n <- 40
+  m <- mk(
+    match_id = paste0("m", seq_len(n)),
+    venue = sample(c("V1", "V2", "V3"), n, replace = TRUE),
+    competition = sample(c("C1", "C2"), n, replace = TRUE),
+    match_date = as.character(as.Date("2020-01-01") + sort(sample(0:2000, n))),
+    inn1 = round(rnorm(n, 150, 20))
+  )
+  flat <- time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                        weights = c(venue = 5, competition = 20),
+                                        root_prior_weight = 30)
+  decayed <- time_causal_hierarchical_mean_decayed(
+    m, "inn1", levels = c("venue", "competition"),
+    weights = c(venue = 5, competition = 20),
+    half_life = c(venue = Inf, competition = Inf, root = Inf),
+    root_prior_weight = 30)
+  expect_equal(decayed$hier_mean, flat$hier_mean, tolerance = 1e-9)
+})
+
+test_that("time_causal_hierarchical_mean_decayed's root level still excludes same-day siblings", {
+  # Same regression shape as the flat function's own same-day test above --
+  # verifies the decayed root's group-by-date aggregation didn't reintroduce
+  # that leak while being rewritten for decay.
+  same_day <- function(a_value) {
+    mk(match_id = c("a", "b"), venue = c("VA", "VB"), competition = c("CA", "CB"),
+       match_date = c("2020-01-01", "2020-01-01"), inn1 = c(a_value, NA))
+  }
+  hl <- c(venue = Inf, competition = Inf, root = 365)
+  r_lo <- time_causal_hierarchical_mean_decayed(same_day(100), "inn1",
+                                                levels = c("venue", "competition"),
+                                                weights = c(venue = 5, competition = 20),
+                                                half_life = hl,
+                                                root_prior_weight = 30, root_prior_value = 300)
+  r_hi <- time_causal_hierarchical_mean_decayed(same_day(100000), "inn1",
+                                                levels = c("venue", "competition"),
+                                                weights = c(venue = 5, competition = 20),
+                                                half_life = hl,
+                                                root_prior_weight = 30, root_prior_value = 300)
+  expect_equal(hier_of(r_lo, "b"), 300)
+  expect_equal(hier_of(r_hi, "b"), 300)
+})
+
+test_that("a recent surge pulls a decayed level's estimate up faster than the undecayed one", {
+  # The whole point of this function: 8 years of a stable level (100), then a
+  # sharp step up to 160 for the last 6 matches -- a decayed level (short
+  # half-life) should track the new level far more closely than the flat mean.
+  old_dates <- as.character(as.Date("2015-01-01") + seq(0, 365 * 7, by = 200))
+  new_dates <- as.character(as.Date("2025-01-01") + seq(0, 150, by = 30))
+  m <- mk(
+    match_id = paste0("m", seq_along(c(old_dates, new_dates))),
+    venue = "V1", competition = "C1",
+    match_date = c(old_dates, new_dates),
+    inn1 = c(rep(100, length(old_dates)), rep(160, length(new_dates)))
+  )
+  flat <- time_causal_hierarchical_mean(m, "inn1", levels = c("venue", "competition"),
+                                        weights = c(venue = 5, competition = 20),
+                                        root_prior_weight = 30, root_prior_value = 100)
+  decayed <- time_causal_hierarchical_mean_decayed(
+    m, "inn1", levels = c("venue", "competition"),
+    weights = c(venue = 5, competition = 20),
+    half_life = c(venue = Inf, competition = 180, root = 365),
+    root_prior_weight = 30, root_prior_value = 100)
+  last_id <- tail(m$match_id, 1)
+  expect_gt(hier_of(decayed, last_id), hier_of(flat, last_id))
+  # And the decayed estimate should be materially closer to the new level
+  # (160) than the flat one is.
+  expect_lt(160 - hier_of(decayed, last_id), 160 - hier_of(flat, last_id))
+})
+
+test_that("half_life must be named exactly by levels plus root", {
+  m <- mk(match_id = "a", venue = "A", competition = "X",
+          match_date = "2020-01-01", inn1 = 300)
+  expect_error(
+    time_causal_hierarchical_mean_decayed(m, "inn1", levels = c("venue", "competition"),
+                                          weights = c(venue = 5, competition = 20),
+                                          half_life = c(venue = 365, competition = 365)),
+    "half_life"
+  )
+})
+
+
 test_that("weights must be named exactly by levels", {
   m <- mk(match_id = "a", venue = "A", competition = "X",
           match_date = "2020-01-01", inn1 = 300)

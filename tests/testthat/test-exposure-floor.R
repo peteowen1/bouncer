@@ -5,6 +5,11 @@
 # (Test bowler) — the latter barely distinguishable from noise. These floors
 # equalise reliability at about 0.40 so a name on any leaderboard means roughly
 # the same thing (bouncerverse#57).
+#
+# T20 batter lowered to 400 on 2026-08-29: re-measured on the current corpus,
+# reliability is flat between 400 and 500 balls (0.412 vs 0.413) — the curve
+# has moved since #57 as the corpus grew, so this isn't trading reliability
+# away, it's recovering headroom the original number didn't know it had.
 
 test_that("every format and role has a floor", {
   for (fmt in c("t20", "odi", "test")) {
@@ -39,7 +44,7 @@ test_that("bowlers need more balls than batters where they are noisier", {
 })
 
 test_that("the floors are the measured values, not round numbers someone liked", {
-  expect_equal(default_exposure_floor("t20", "batter"), 500L)
+  expect_equal(default_exposure_floor("t20", "batter"), 400L)
   expect_equal(default_exposure_floor("odi", "batter"), 1500L)
   expect_equal(default_exposure_floor("odi", "bowler"), 2000L)
   expect_equal(default_exposure_floor("test", "batter"), 1000L)
