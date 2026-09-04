@@ -1,3 +1,14 @@
+# bouncer 0.7.8
+
+## Publish-script bucket-count assertions were stale, fixed
+
+`upload_player_ratings_v2.R`'s `uniqueN(...) == 8L`/`== 4L` guards had not
+been updated since the "test male" bucket was added 2026-08-18/19 (should
+have been 10/5), and the `test_intl` bucket above adds two more. Fixed to
+the verified live total (12 rating bucket-roles, 6 value buckets), and
+added the anchor re-checks this script was missing for both "test" and
+"test_intl".
+
 # bouncer 0.7.7
 
 ## A Test-international-only rating bucket, alongside the blended one (#40)

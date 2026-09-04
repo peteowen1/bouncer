@@ -4,8 +4,8 @@
 # parquets, not from DuckDB.
 #
 # Two tables, two files:
-#   player_rating_v2.parquet   per-role ratings, 8 buckets
-#   player_value_v2.parquet    combined batting+bowling value, 4 buckets
+#   player_rating_v2.parquet   per-role ratings, 6 buckets x 2 roles = 12 rows
+#   player_value_v2.parquet    combined batting+bowling value, 6 buckets
 #
 # VALIDATES BEFORE UPLOADING. Publishing is outward-facing and a release is
 # what everything downstream trusts, so the checks are assertions and not
@@ -66,8 +66,16 @@ check(all(ratings[, .(ok = min(rank) == 1L & max(rank) == .N), by = .(format, ge
       "rank is 1..N within every rating bucket")
 check(all(values[, .(ok = min(rank) == 1L & max(rank) == .N), by = .(format, gender)]$ok),
       "rank is 1..N within every value bucket")
-check(uniqueN(ratings[, .(format, gender, role)]) == 8L, "all 8 rating buckets present")
-check(uniqueN(values[, .(format, gender)]) == 4L, "all 4 value buckets present")
+# 12/6, not 8/4: this assertion was already stale before today, apparently
+# unnoticed since the "test male" bucket was added 2026-08-18/19 (t20 male/
+# female + odi male/female = 8/4 was correct only before that). bouncerverse
+# #40 item 1 (test_intl, alongside the existing blended test bucket rather
+# than replacing it) adds 2 more rating bucket-roles and 1 more value bucket
+# on top of that, landing on the actual current total: t20 m/f + odi m/f +
+# test male + test_intl male = 6 bucket x 2 roles = 12 rating rows, 6 value
+# buckets. Verified against the live DB before writing this, not assumed.
+check(uniqueN(ratings[, .(format, gender, role)]) == 12L, "all 12 rating buckets present")
+check(uniqueN(values[, .(format, gender)]) == 6L, "all 6 value buckets present")
 check(all(values$total_value == round(values$bat_value + values$bowl_value, 10) |
           abs(values$total_value - (values$bat_value + values$bowl_value)) < 1e-8),
       "total_value equals bat_value + bowl_value")
@@ -89,6 +97,11 @@ anchor("t20", "male",   "bowler", "Bumrah", 15L)
 anchor("odi", "male",   "batter", "Kohli", 25L)
 anchor("t20", "female", "bowler", "Ecclestone", 15L)
 anchor("odi", "female", "batter", "Mandhana", 15L)
+# "test" (blended) had no re-check here at all -- same drift as the stale
+# 8L/4L bucket count above, dating to the same 2026-08-18/19 addition.
+anchor("test", "male", "batter", "Root", 50L)
+anchor("test_intl", "male", "batter", "Root", 20L)
+anchor("test_intl", "male", "bowler", "Bumrah", 15L)
 
 cli::cli_h2("Contents")
 print(ratings[, .(players = .N, as_at = max(as_at)), by = .(format, gender, role)][
