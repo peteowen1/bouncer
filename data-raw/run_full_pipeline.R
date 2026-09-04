@@ -798,10 +798,10 @@ if (should_run(12)) {
 }
 
 
-# Step 13: Build Player Game Data (Cricinfo-based) ----
+# Step 13: Build Player Game Data (Cricsheet-based) ----
 
 if (should_run(13)) {
-  cli::cli_h1("Step 13: Build Player Game Data (Cricinfo)")
+  cli::cli_h1("Step 13: Build Player Game Data (Cricsheet)")
   step_start <- Sys.time()
 
   tryCatch({
@@ -809,7 +809,7 @@ if (should_run(13)) {
 
     for (fmt in FORMATS) {
       cli::cli_h2("Building player game data for {toupper(fmt)}")
-      pgd <- create_player_game_data(fmt, conn = conn)
+      pgd <- create_player_game_data(fmt, conn = conn, source = "cricsheet")
       if (nrow(pgd) > 0) {
         store_player_game_data(conn, pgd, fmt)
       }
