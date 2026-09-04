@@ -17,6 +17,18 @@ Ashwin/Robinson top-tier bowling, chosen over Cummins/Rabada/Starc/Boland
 after an independent economy-rate check confirmed those misses are real,
 not a metric defect).
 
+## Leverage-weighted WPA, and a whole-table-drop bug fixed in the WP store
+
+`build_ball_leverage()`/`calculate_leverage_weighted_wpa()` add a
+leverage-weighted variant of win-probability-added. Along the way,
+`store_cricinfo_win_probability()` had the same defect bouncerverse#45
+already fixed on the cricsheet side: a column-shape mismatch dropped the
+*entire* 901,996-row table rather than just the format being rebuilt, so
+any Test/MDM rebuild could silently wipe T20/ODI WP for every match. Fixed
+to migrate schema and delete/insert per-format inside one transaction. The
+three "our model" WP tables (fed into the player ratings) are also renamed
+to disambiguate them from ESPNcricinfo's own scraped forecast.
+
 ## `player_game_data.R` rebuilt onto Cricsheet as primary (#84)
 
 `create_player_game_data()` now defaults to Cricsheet rather than the
