@@ -18,6 +18,7 @@ calculate_player_rating_v2(
   factors = NULL,
   min_balls = NULL,
   id_map = NULL,
+  match_type_filter = NULL,
   metric = c("composite", "runs", "wickets", "team_score")
 )
 }
@@ -63,6 +64,16 @@ matches against 33.9 T20 batter matches (#57).}
 \item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}; NULL builds it. Player
 careers split across a bare-name id and a hash id are merged first (#43),
 which affects 2,845 players and 4\% of appearances.}
+
+\item{match_type_filter}{Character vector of lowercase \verb{cricsheet.matches .match_type} values, or NULL (default) for no restriction. Restricts the
+population WITHOUT changing which competition-factor table applies:
+\code{.competition_sql("test")} already resolves every \code{match_type = 'test'}
+row to the single comp \code{"Test"}, which is always the reference (factor
+1.0, unadjusted) by construction -- so \code{match_type_filter = "test"}
+simply drops the domestic first-class rows a bucket would otherwise blend
+in, without needing its own competition-factor fit (bouncerverse#40 item
+1: a Test bucket built on \code{format = "test"} alone is 68\% domestic
+first-class, and Tom Abell outranks Steve Smith).}
 }
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},

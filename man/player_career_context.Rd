@@ -9,7 +9,8 @@ player_career_context(
   format = "t20",
   gender = "male",
   role = c("batter", "bowler"),
-  id_map = NULL
+  id_map = NULL,
+  match_type_filter = NULL
 )
 }
 \arguments{
@@ -19,6 +20,14 @@ player_career_context(
 
 \item{id_map}{Output of \code{\link[=build_player_id_map]{build_player_id_map()}}, so a split career is not
 counted as two players.}
+
+\item{match_type_filter}{As in \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}}. Restricts
+which cricsheet \code{match_type}s count toward \code{main_comp}/\code{average} too --
+without this, a Test-international-only rating (bouncerverse#40 item 1)
+still showed a player's BLENDED first-class main_comp/average (domestic
+competition, domestic-inflated average) beside a genuinely Test-only
+rating, which defeats the point of restricting the rating in the first
+place.}
 }
 \value{
 data.table of \code{player_id}, \code{main_comp}, \code{main_comp_share}, \code{average}.

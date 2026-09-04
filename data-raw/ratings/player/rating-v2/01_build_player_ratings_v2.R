@@ -51,7 +51,27 @@ BUCKETS <- list(
   # Test FEMALE is deliberately absent: 46,652 balls across 24 matches and 178
   # batters. Too thin to rate, and a bucket that thin would produce a leaderboard
   # that looks authoritative and is not.
-  list(format = "test", gender = "male")
+  list(format = "test", gender = "male"),
+  # bouncerverse#40 item 1: the blended bucket above is exactly what its own
+  # comment says it is -- a first-class rating normalised onto a Test
+  # reference, not an international leaderboard. Live check, 2026-09-04: only
+  # 6 of its top 20 carry main_comp = "Test"; Tom Abell (County Championship,
+  # 24.67) outranks Steve Smith (Test, 24.19). This is NOT a mis-fit --
+  # unconditional averages confirm County Championship (30.99) and Test
+  # (30.90) sit almost exactly together in this corpus, so the bridge
+  # discount is doing its job correctly and the blended scale is just the
+  # wrong question for a page the nav calls "Test cricket".
+  #
+  # match_type_filter = "test" restricts the population to genuine
+  # international Test deliveries only, dropping MDM (domestic first-class)
+  # entirely. No separate competition-factor fit is needed: .competition_sql
+  # ("test") already resolves every match_type='test' row to the single comp
+  # "Test", which is always the reference (factor 1.0) by construction, so
+  # the SAME `factors` object fit below on the blended population applies
+  # unchanged -- see calculate_player_rating_v2()'s match_type_filter doc.
+  # store_as gives this its own bucket key so it does not overwrite the
+  # blended "test male" rows above; both stay queryable.
+  list(format = "test", gender = "male", match_type_filter = "test", store_as = "test_intl")
 )
 
 # Anchors, per bucket: players who must appear near the top if the pipeline is
@@ -94,7 +114,33 @@ ANCHORS <- list(
   # below Broad and Lyon is CORRECT. The replacements below are genuine domain
   # certainties rather than convenient names.
   "test male"  = list(batter = c("Root", "Duckett"),             top = 50L,
-                      bowler = c("Ashwin", "Cummins", "Rabada"), btop = 25L)
+                      bowler = c("Ashwin", "Cummins", "Rabada"), btop = 25L),
+  # test_intl: match_type='test' only, no domestic first-class. Pool measured
+  # BEFORE fitting (2026-09-04): 1,049 batters / 783 bowlers with any Test
+  # balls at all, before the exposure floor thins that further -- an order of
+  # magnitude smaller than the blended pool's 3,293/2,555. Thresholds scaled
+  # down from the blended bucket's top=50/btop=25 (roughly 1.5%/1% of its
+  # pool) to top=20/btop=15 (roughly 2%/1.9% of this one), loosened slightly
+  # rather than held to the exact same fraction since the exposure floor cuts
+  # harder on a genuinely smaller pool.
+  #
+  # Batting anchor was changed once, on 2026-09-04, and the reason is recorded
+  # for the same reason the Leach swap above is: Kohli was the first pick,
+  # chosen for fame rather than verified current form, and failed at rank 51.
+  # Checked independently (raw batting average, no rating math) before
+  # concluding anything: Kohli's Test average over the last 3 years is 26.38
+  # (12 matches) against 49.58 before that -- a genuine, well-documented
+  # decline, not a computation bug, and this rating is explicitly decayed
+  # toward "who would you want next match" (D-P17), not career reputation.
+  # Checked two replacement candidates the SAME way, before either appeared
+  # on a leaderboard: Williamson (54.89 career vs 49.68 last 3 years -- barely
+  # moved) and Smith (58.62 vs 43.73 -- declined but still clearly elite by
+  # any absolute standard). Williamson is the cleaner pick and replaces Kohli.
+  # Bumrah and Cummins anchor bowling, both undisputed current Test-elite
+  # quicks with no comparable form question. All four are distinctive
+  # surnames with no realistic substring collision.
+  "test_intl male" = list(batter = c("Root", "Williamson"),      top = 20L,
+                          bowler = c("Bumrah", "Cummins"),       btop = 15L)
 )
 
 check_anchor <- function(r, surnames, top, label) {
@@ -127,10 +173,15 @@ cli::cli_h1("Canonical player ids")
 idmap <- build_player_id_map(conn)
 
 for (b in BUCKETS) {
-  key <- paste(b$format, b$gender)
-  cli::cli_h1("{toupper(b$format)} {b$gender}")
+  # store_as lets a bucket persist under a different key than the one it
+  # reads RAA/competition-factors from (bouncerverse#40 item 1: test_intl
+  # reuses the "test" RAA source and factor fit, restricted at query time via
+  # match_type_filter, but must not overwrite the blended "test" bucket rows).
+  store_as <- if (is.null(b$store_as)) b$format else b$store_as
+  key <- paste(store_as, b$gender)
+  cli::cli_h1("{toupper(store_as)} {b$gender}")
   if (!nrow(have[format == toupper(b$format) & gender == b$gender])) {
-    cli::cli_alert_warning("No RAA for {key}; skipping. Run build_cricsheet_raa first.")
+    cli::cli_alert_warning("No RAA for {paste(b$format, b$gender)}; skipping. Run build_cricsheet_raa first.")
     next
   }
 
@@ -142,16 +193,18 @@ for (b in BUCKETS) {
     # competition OFFSET is fitted per role inside the call, because it has
     # to be estimated on that role's own opponent-adjusted value.
     r <- calculate_player_rating_v2(b$format, b$gender, role = role, conn = conn,
-                                    factors = factors, id_map = idmap)
+                                    factors = factors, id_map = idmap,
+                                    match_type_filter = b$match_type_filter)
     check_anchor(r, if (role == "batter") a$batter else a$bowler,
                  if (role == "batter") a$top else a$btop,
                  sprintf("%s %s", key, role))
-    store_player_rating_v2(conn, r, b$format, b$gender, role)
+    store_player_rating_v2(conn, r, store_as, b$gender, role)
   }
 
   v <- calculate_player_value_v2(b$format, b$gender, conn = conn,
-                                 factors = factors, id_map = idmap)
-  store_player_value_v2(conn, v, b$format, b$gender)
+                                 factors = factors, id_map = idmap,
+                                 match_type_filter = b$match_type_filter)
+  store_player_value_v2(conn, v, store_as, b$gender)
 }
 
 cli::cli_h1("Stored")

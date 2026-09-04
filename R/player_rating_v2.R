@@ -48,6 +48,22 @@
   )
 }
 
+# The " AND LOWER(m.match_type) IN (...)" clause a `match_type_filter`
+# argument appends, or "" for NULL (no restriction -- every existing bucket's
+# behavior). Extracted to its own function (review, bouncerverse#40 item 1)
+# rather than left inline in three call sites: this is the one piece of new
+# SQL construction shared by calculate_player_rating_v2() and
+# calculate_player_value_v2(), so it is also the one place a future edit
+# could silently change the NULL default for every existing t20/odi/blended-
+# test bucket, which is exactly the failure this change must not risk.
+# Directly unit-testable without a DB connection -- see test-rating-v2-match-
+# type-filter.R.
+.match_type_filter_sql <- function(match_type_filter) {
+  if (is.null(match_type_filter)) return("")
+  sprintf(" AND LOWER(m.match_type) IN (%s)",
+          paste(sprintf("'%s'", tolower(match_type_filter)), collapse = ", "))
+}
+
 # The SQL expression that identifies a "competition" for a bucket.
 #
 # For T20 and ODI, raw `event_name` IS the competition -- the IPL and the BBL
@@ -831,6 +847,16 @@ default_exposure_floor <- function(format, role) {
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
 #'   careers split across a bare-name id and a hash id are merged first (#43),
 #'   which affects 2,845 players and 4% of appearances.
+#' @param match_type_filter Character vector of lowercase `cricsheet.matches
+#'   .match_type` values, or NULL (default) for no restriction. Restricts the
+#'   population WITHOUT changing which competition-factor table applies:
+#'   `.competition_sql("test")` already resolves every `match_type = 'test'`
+#'   row to the single comp `"Test"`, which is always the reference (factor
+#'   1.0, unadjusted) by construction -- so `match_type_filter = "test"`
+#'   simply drops the domestic first-class rows a bucket would otherwise blend
+#'   in, without needing its own competition-factor fit (bouncerverse#40 item
+#'   1: a Test bucket built on `format = "test"` alone is 68% domestic
+#'   first-class, and Tom Abell outranks Steve Smith).
 #'
 #' @return data.table of `rank`, `player_id`, `player_name`, `rating`,
 #'   `average`, `main_comp`, `matches`, `balls`, `effective_matches`,
@@ -856,6 +882,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        factors = NULL,
                                        min_balls = NULL,
                                        id_map = NULL,
+                                       match_type_filter = NULL,
                                        metric = c("composite", "runs", "wickets",
                                                   "team_score")) {
   metric <- match.arg(metric)
@@ -945,13 +972,14 @@ calculate_player_rating_v2 <- function(format = "t20",
   # and Test has no fixed ball allocation at all. Those rows are NULL and must
   # be excluded rather than treated as zero contribution.
   metric_filter <- if (metric == "team_score") " AND r.tsa IS NOT NULL" else ""
+  mt_filter <- .match_type_filter_sql(match_type_filter)
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, %s AS raa,
            %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'%s",
-    metric_col, .competition_sql(format), toupper(format), gender, metric_filter)))
+    WHERE r.format = '%s' AND r.gender = '%s'%s%s",
+    metric_col, .competition_sql(format), toupper(format), gender, metric_filter, mt_filter)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
@@ -1143,7 +1171,8 @@ calculate_player_rating_v2 <- function(format = "t20",
 
   # Where he did it, and what the traditional number says. Carried alongside
   # every rating so the two can be eyeballed together without a second query.
-  ctx <- player_career_context(conn, format, gender, role, id_map = id_map)
+  ctx <- player_career_context(conn, format, gender, role, id_map = id_map,
+                               match_type_filter = match_type_filter)
   r <- merge(r, ctx, by = "player_id", all.x = TRUE)
 
   data.table::setorder(r, -rating)
@@ -1203,6 +1232,8 @@ calculate_player_rating_v2 <- function(format = "t20",
 #'   are merged. Raise this above 0 only for a display where you would rather
 #'   omit a player than show a number you cannot calibrate.
 #'
+#' @param match_type_filter As in [calculate_player_rating_v2()].
+#'
 #' @return data.table of `rank`, `player_id`, `player_name`, `total_value`,
 #'   `bat_value`, `bowl_value`, `matches`, `bat_balls`, `bowl_balls` and
 #'   `calibrated`, ordered best first.
@@ -1219,7 +1250,8 @@ calculate_player_value_v2 <- function(format = "t20",
                                       iterations = 20L,
                                       min_balls = 1000L,
                                       min_calibrated = 0,
-                                      id_map = NULL) {
+                                      id_map = NULL,
+                                      match_type_filter = NULL) {
 
   own <- is.null(conn)
   if (own) {
@@ -1233,13 +1265,14 @@ calculate_player_value_v2 <- function(format = "t20",
   # namely every Test series plus the sponsor-named county seasons, all of which
   # then default to reference difficulty and undo the whole adjustment. The
   # coverage warning below is what caught it -- do not silence it.
+  mt_filter <- .match_type_filter_sql(match_type_filter)
   b <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT r.match_id, r.match_date, r.batter_id, r.bowler_id, r.raa,
            %s AS comp
     FROM main.cricsheet_ball_raa r
     JOIN cricsheet.matches m ON m.match_id = r.match_id
-    WHERE r.format = '%s' AND r.gender = '%s'",
-    .competition_sql(format), toupper(format), gender)))
+    WHERE r.format = '%s' AND r.gender = '%s'%s",
+    .competition_sql(format), toupper(format), gender, mt_filter)))
   if (is.null(id_map)) id_map <- build_player_id_map(conn)
   canonicalise_player_ids(b, id_map)
   if (!nrow(b)) {
@@ -1394,12 +1427,21 @@ calculate_player_value_v2 <- function(format = "t20",
 #' @param format,gender,role Bucket.
 #' @param id_map Output of [build_player_id_map()], so a split career is not
 #'   counted as two players.
+#' @param match_type_filter As in [calculate_player_rating_v2()]. Restricts
+#'   which cricsheet `match_type`s count toward `main_comp`/`average` too --
+#'   without this, a Test-international-only rating (bouncerverse#40 item 1)
+#'   still showed a player's BLENDED first-class main_comp/average (domestic
+#'   competition, domestic-inflated average) beside a genuinely Test-only
+#'   rating, which defeats the point of restricting the rating in the first
+#'   place.
 #' @return data.table of `player_id`, `main_comp`, `main_comp_share`, `average`.
 #' @export
 player_career_context <- function(conn, format = "t20", gender = "male",
-                                  role = c("batter", "bowler"), id_map = NULL) {
+                                  role = c("batter", "bowler"), id_map = NULL,
+                                  match_type_filter = NULL) {
   role <- match.arg(role)
-  types <- .rating_match_types(format)
+  types <- if (is.null(match_type_filter)) .rating_match_types(format) else
+    paste(sprintf("'%s'", tolower(match_type_filter)), collapse = ",")
   who <- if (role == "batter") "batter_id" else "bowler_id"
 
   # Bowler-credited dismissals only; a run out is nobody's wicket.

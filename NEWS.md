@@ -1,3 +1,19 @@
+# bouncer 0.7.7
+
+## A Test-international-only rating bucket, alongside the blended one (#40)
+
+`main.player_rating_v2`'s "test male" bucket blends genuine international
+Test cricket with domestic first-class (County Championship, Sheffield
+Shield, Plunket Shield) onto one Test-referenced scale -- not a calibration
+bug (county/Test averages sit almost exactly together in this corpus), but
+the wrong question for a page the nav calls "Test cricket": only 6 of the
+top 20 batters carried `main_comp = "Test"`, and Tom Abell outranked Steve
+Smith. A new `test_intl` bucket restricts to genuine `match_type = 'test'`
+deliveries only, persisting alongside the existing blended bucket rather
+than replacing it. `calculate_player_rating_v2()`, `calculate_player_value_v2()`
+and `player_career_context()` gain an additive `match_type_filter`
+parameter (default NULL, byte-identical to prior behavior) to support it.
+
 # bouncer 0.7.6
 
 ## Test/first-class TSA: a two-stage, lambda-free rating lens for the long format (D-P65)
