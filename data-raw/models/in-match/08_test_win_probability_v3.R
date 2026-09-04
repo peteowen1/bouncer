@@ -102,8 +102,21 @@ venue_avg_raw[, match_date := as.Date(match_date)]
 # venue_result_rate below were each computed on a fraction of the ground's
 # real history -- understating n_prior and over-shrinking toward the prior.
 # Same pattern as 02_baseline_projected_score.R's wiring (d6c80c1). Single-
-# hop lookup is safe here: venue_aliases was flattened to have no chains
-# (bouncer 9ac7b00).
+# hop lookup relies on venue_aliases having no chains -- store_venue_aliases()
+# auto-flattens on every write (bouncer 37b56f0) so this should always hold,
+# but that's a write-side guarantee this read-side script has no way to see
+# broken. Verify it at runtime (review, 2026-09-04) rather than trust the
+# comment: a stale chain here would silently understate n_prior again,
+# exactly the bug bouncerverse#73 exists to fix.
+if (table_exists(conn, "venue_aliases")) {
+  pending_chains <- flatten_venue_alias_table(conn, dry_run = TRUE)
+  if (nrow(pending_chains)) {
+    cli::cli_abort(c(
+      "venue_aliases has {nrow(pending_chains)} unflattened chain{?s} -- the single-hop lookup below would be wrong.",
+      "i" = "Run flatten_venue_aliases.R --commit, then re-run this script."
+    ))
+  }
+}
 venue_alias_map <- if (table_exists(conn, "venue_aliases")) {
   DBI::dbGetQuery(conn, "SELECT alias, canonical_venue FROM venue_aliases")
 } else {
