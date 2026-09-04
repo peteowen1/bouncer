@@ -58,33 +58,90 @@
 #' @param conn DBI connection to DuckDB. If NULL, opens a read-only connection.
 #' @param match_ids Character vector. Specific match IDs to process (NULL = all).
 #' @param gender Character. Filter by gender: "male", "female", or NULL for all.
-#' @param wp_source Character. Which win probability `batting_wpa` /
-#'   `bowling_wpa` are differenced from. `"bouncer"` (default) uses our own
-#'   models via `main.bouncer_wp_from_cricinfo`; `"cricinfo"` uses the
-#'   scraped `cricinfo.balls.win_probability`. See the file header for the
-#'   benchmark that settled the default, and D-P6 in `docs/DECISIONS.md`.
+#' @param source Character. Which ball-by-ball source this is built from.
+#'   `"cricsheet"` (default since 2026-08-29, bouncerverse#84) reads
+#'   `cricsheet.deliveries`/`cricsheet.matches` plus their own
+#'   `main.cricsheet_ball_raa`/`main.bouncer_wp_from_cricsheet` tables --
+#'   cricsheet is the primary ball-by-ball source everywhere else in this
+#'   package (steps 1-12), and unlike cricinfo it has not gone stale
+#'   (cricinfo scraping stalled 2026-02-20, cricsheet is current). No Hawkeye
+#'   fields (wagon zone, pitch line/length, shot type/control) exist in
+#'   cricsheet -- those columns are still produced, always NA/0-coverage, so
+#'   downstream consumers (`stat_rating_data.R`) don't break on a missing
+#'   column, but carry no signal under this source. `"cricinfo"` is the
+#'   original path (kept, not removed) -- richer per-ball metadata (Hawkeye)
+#'   where cricinfo actually has coverage, `wp_source` selects between our own
+#'   model and the scraped forecaster within it. See D-P6 in
+#'   `docs/DECISIONS.md` for why "bouncer" beat "cricinfo" as a WP source in
+#'   the first place, and bouncerverse#84 for why cricsheet now beats
+#'   cricinfo as the BASE table.
+#' @param wp_source Character. `source = "cricinfo"` only: which win
+#'   probability `batting_wpa`/`bowling_wpa` are differenced from. `"bouncer"`
+#'   (default) uses our own models via `main.bouncer_wp_from_cricinfo`;
+#'   `"cricinfo"` uses the scraped `cricinfo.balls.win_probability`. Ignored
+#'   when `source = "cricsheet"` -- that path always uses our own model via
+#'   `main.bouncer_wp_from_cricsheet` (cricsheet carries no scraped-forecaster
+#'   equivalent to compare against).
 #'
 #' @return data.table with one row per player per match. Players who both
 #'   bat and bowl get a single row with both batting and bowling columns.
 #'   Key columns: match_id, player_id, player_name, team, match_date, role,
 #'   batting_runs, batting_wpa, batting_era, batting_raa, bowling_wickets,
 #'   bowling_wpa, bowling_era, bowling_raa, total_wpa, total_era, total_raa,
-#'   plus Hawkeye features.
+#'   plus Hawkeye features (cricinfo source only; under cricsheet these come
+#'   back 0, not NA -- `.merge_batting_bowling()`'s zero-fill isn't
+#'   role-gated for non-value_cols columns, so check `*_hawkeye_balls == 0`
+#'   for genuine no-coverage, not the percentage columns themselves).
 #'
 #' @export
 create_player_game_data <- function(format = c("t20", "odi", "test"),
                                     conn = NULL,
                                     match_ids = NULL,
                                     gender = NULL,
+                                    source = c("cricsheet", "cricinfo"),
                                     wp_source = c("bouncer", "cricinfo")) {
 
   format <- match.arg(format)
+  source <- match.arg(source)
   wp_source <- match.arg(wp_source)
   own_conn <- is.null(conn)
   if (own_conn) {
     conn <- get_db_connection(read_only = TRUE)
     on.exit(DBI::dbDisconnect(conn, shutdown = TRUE))
   }
+
+  if (source == "cricsheet") {
+    # build_cricsheet_win_probability() is limited-overs only (T20/ODI) --
+    # main.bouncer_wp_from_cricsheet has zero Test rows. .wp_raa_sql_cricsheet()
+    # only checks the TABLE exists, not per-format coverage, so a Test call
+    # joins on it anyway and silently gets NA WPA/ERA for every row. Caught by
+    # review (2026-08-29) -- same failure mode the cricinfo branch below
+    # already guards against explicitly; mirrored here rather than assumed
+    # obvious a second time.
+    if (format == "test") {
+      cli::cli_warn(c(
+        "Test win probability is not produced by {.fn build_cricsheet_win_probability}.",
+        "!" = "{.field batting_wpa}/{.field bowling_wpa}/{.field batting_era}/{.field bowling_era} will be NA for every Test match.",
+        "i" = "{.field batting_raa}/{.field bowling_raa} are unaffected -- main.cricsheet_ball_raa covers Test."
+      ))
+    }
+
+    cli::cli_alert_info("Building player game data for {toupper(format)} (source: cricsheet)...")
+
+    batting <- .aggregate_batting_game_data_cricsheet(conn, format, match_ids, gender)
+    cli::cli_alert_success("Batting: {nrow(batting)} player-match rows")
+
+    bowling <- .aggregate_bowling_game_data_cricsheet(conn, format, match_ids, gender)
+    cli::cli_alert_success("Bowling: {nrow(bowling)} player-match rows")
+
+    pgd <- .merge_batting_bowling(batting, bowling)
+    cli::cli_alert_success("Combined: {nrow(pgd)} player-match rows ({sum(pgd$role == 'all_rounder')} all-rounders)")
+
+    pgd <- .join_player_names_cricsheet(pgd, conn)
+    return(pgd)
+  }
+
+  # --- source == "cricinfo" (original path) ---
 
   # Our WP is limited-overs only. Falling back silently would hand Test a
   # column of NA that looks like thin coverage rather than an unsupported path.
@@ -97,7 +154,7 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
   }
 
   cli::cli_alert_info(
-    "Building player game data for {toupper(format)} (WPA source: {.val {wp_source}})..."
+    "Building player game data for {toupper(format)} (source: cricinfo, WPA source: {.val {wp_source}})..."
   )
 
 
@@ -517,6 +574,350 @@ create_player_game_data <- function(format = c("t20", "odi", "test"),
 
   result <- DBI::dbGetQuery(conn, query)
   data.table::as.data.table(result)
+}
+
+
+# ============================================================================
+# CRICSHEET-SOURCED AGGREGATION (bouncerverse#84, 2026-08-29)
+# ============================================================================
+#
+# Parallel to the cricinfo-based aggregation above, reading
+# cricsheet.deliveries/cricsheet.matches instead. No wp_source switch here --
+# cricsheet carries no scraped-forecaster equivalent to compare against, so
+# this always uses our own model via main.bouncer_wp_from_cricsheet. No
+# Hawkeye columns either (wagon zone, pitch line/length, shot type/control
+# don't exist in cricsheet) -- those output columns are still produced,
+# always NA/0-coverage, so downstream consumers don't break on a missing
+# column, they just see zero Hawkeye signal, same failure mode the cricinfo
+# path already has for any match it hasn't scraped.
+#
+# Aliased `b`/`m` (deliveries/matches) to match the cricinfo path exactly, so
+# .build_match_filter()/.build_gender_filter() are reusable unmodified --
+# both reference b.match_id/m.gender, which exist under those names in
+# cricsheet too.
+
+#' Format filter for cricsheet's match_type vocabulary
+#' @keywords internal
+.cricsheet_format_sql <- function(column, format) {
+  types <- switch(tolower(format),
+    t20  = c("t20", "it20"),
+    odi  = c("odi", "odm"),
+    test = c("test", "mdm"),
+    cli::cli_abort("Unknown format {.val {format}}")
+  )
+  sprintf("LOWER(%s) IN (%s)", column, paste(sprintf("'%s'", types), collapse = ", "))
+}
+
+
+#' WP/RAA join fragments for the cricsheet-sourced tables
+#'
+#' Degrades to a NULL column (not a broken join) when either table is absent
+#' -- same contract as [.raa_sql()] for the cricinfo path.
+#'
+#' @keywords internal
+.wp_raa_sql_cricsheet <- function(conn) {
+  has_table <- function(t) nrow(DBI::dbGetQuery(conn, sprintf("
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'main' AND table_name = '%s'", t))) > 0
+
+  has_wp <- has_table("bouncer_wp_from_cricsheet")
+  has_raa <- has_table("cricsheet_ball_raa")
+
+  # Batting-team sign, cricsheet-native: cricsheet.deliveries carries the
+  # batting TEAM NAME directly on every ball, so this needs no id lookup the
+  # way the cricinfo path's team_sign does -- +1 when this ball's batting
+  # team is the team that batted in innings 1, -1 otherwise, falling back to
+  # innings parity if a match somehow has no innings-1 deliveries at all
+  # (mirrors the cricinfo path's same defensive fallback).
+  #
+  # team1_batting MUST resolve from innings = 1 ONLY, not "IN (1, 3)" --
+  # caught by review (2026-08-29). On a Test follow-on, innings 3 is batted
+  # by the SAME team as innings 2 (the team that bowled first), not the
+  # innings-1 team; pulling both into one MAX() picks whichever team name
+  # sorts higher, an arbitrary wrong reference the whole match's team_sign
+  # then compares against. The cricinfo path avoids this by resolving t1 from
+  # innings_number = 1 only (see .wp_source_sql()) and flips innings 3
+  # correctly as a result -- this mirrors that, not the "IN (1,3)" shortcut
+  # that looked equivalent but silently isn't on a follow-on or Super Over.
+  team_sign <- "CASE
+      WHEN t1.team1_batting IS NOT NULL THEN
+        CASE WHEN b.batting_team = t1.team1_batting THEN 1 ELSE -1 END
+      WHEN b.innings IN (1, 3) THEN 1
+      ELSE -1
+    END"
+  team_join <- "LEFT JOIN (
+        SELECT match_id, MAX(CASE WHEN innings = 1 THEN batting_team END) AS team1_batting
+        FROM cricsheet.deliveries GROUP BY match_id
+      ) t1 ON t1.match_id = b.match_id"
+
+  list(
+    wp_col    = if (has_wp) "w.win_prob_after" else "CAST(NULL AS DOUBLE)",
+    ps_col    = if (has_wp) "w.proj_score_after" else "CAST(NULL AS DOUBLE)",
+    # delta_wp is stored batting-perspective (P(innings-1 team wins)), same
+    # convention as the cricinfo "bouncer" source -- flip needs the same
+    # team_sign multiply. delta_ps needs no flip (always the striking team's
+    # own projected score).
+    delta     = if (has_wp) sprintf("(%s) * w.delta_wp", team_sign) else "CAST(NULL AS DOUBLE)",
+    ps_delta  = if (has_wp) "w.delta_ps" else "CAST(NULL AS DOUBLE)",
+    wp_join   = if (has_wp) paste("LEFT JOIN main.bouncer_wp_from_cricsheet w ON w.delivery_id = b.delivery_id",
+                                  team_join, sep = "\n      ") else team_join,
+    raa_col   = if (has_raa) "r.raa" else "CAST(NULL AS DOUBLE)",
+    raa_join  = if (has_raa) "LEFT JOIN main.cricsheet_ball_raa r ON r.delivery_id = b.delivery_id" else ""
+  )
+}
+
+
+#' Aggregate Batting Stats Per Player Per Match (cricsheet source)
+#' @inheritParams .aggregate_batting_game_data
+#' @keywords internal
+.aggregate_batting_game_data_cricsheet <- function(conn, format, match_ids = NULL, gender = NULL) {
+
+  format_filter <- .cricsheet_format_sql("m.match_type", format)
+  match_filter <- .build_match_filter(match_ids)
+  gender_filter <- .build_gender_filter(gender)
+  wr <- .wp_raa_sql_cricsheet(conn)
+
+  query <- sprintf("
+    WITH deliveries_with_delta AS (
+      SELECT
+        b.match_id,
+        b.batter_id AS player_id,
+        b.innings AS innings_number,
+        b.over AS over_number,
+        b.ball AS ball_number,
+        b.runs_batter AS batsman_runs,
+        b.runs_total AS total_runs,
+        b.is_four,
+        b.is_six,
+        b.is_wicket,
+        b.wicket_kind AS dismissal_type,
+        b.wides,
+        b.noballs,
+        %s AS win_probability,
+        %s AS predicted_score,
+        %s AS delta_wp,
+        %s AS delta_ps,
+        %s AS raa,
+        b.match_date,
+        b.batting_team AS team_name_fallback
+
+      FROM cricsheet.deliveries b
+      JOIN cricsheet.matches m ON b.match_id = m.match_id
+      %s
+      %s
+      WHERE %s
+        AND b.batter_id IS NOT NULL
+        AND (b.wides IS NULL OR b.wides = 0)
+        %s
+        %s
+    )
+    SELECT
+      match_id,
+      player_id,
+      MIN(match_date) AS match_date,
+
+      COUNT(*) AS batting_balls_faced,
+      SUM(batsman_runs) AS batting_runs,
+      SUM(CASE WHEN is_four THEN 1 ELSE 0 END) AS batting_fours,
+      SUM(CASE WHEN is_six THEN 1 ELSE 0 END) AS batting_sixes,
+      SUM(CASE WHEN is_four OR is_six THEN 1 ELSE 0 END) AS batting_boundaries,
+      SUM(CASE WHEN batsman_runs = 0 AND NOT is_wicket THEN 1 ELSE 0 END) AS batting_dot_balls,
+      SUM(CASE WHEN is_wicket AND dismissal_type NOT IN ('retired hurt', 'retired not out', 'retired out')
+          THEN 1 ELSE 0 END) AS batting_dismissed,
+      ROUND(SUM(batsman_runs) * 100.0 / NULLIF(COUNT(*), 0), 2) AS batting_strike_rate,
+
+      SUM(delta_wp) AS batting_wpa,
+      MAX(ABS(COALESCE(delta_wp, 0))) AS batting_max_wpa,
+      AVG(CASE WHEN delta_wp > 0 THEN 1.0 WHEN delta_wp < 0 THEN 0.0 ELSE NULL END) AS batting_positive_wpa_pct,
+
+      SUM(delta_ps) AS batting_era,
+
+      SUM(raa) AS batting_raa,
+      SUM(CASE WHEN raa IS NOT NULL THEN 1 ELSE 0 END) AS batting_raa_balls,
+
+      -- No Hawkeye data in cricsheet -- always NA/0, matching the cricinfo
+      -- path's column shape so downstream consumers don't break.
+      CAST(NULL AS DOUBLE) AS batting_pct_controlled,
+      CAST(NULL AS DOUBLE) AS batting_pct_attacking,
+      CAST(NULL AS DOUBLE) AS batting_pct_leg_side,
+      0 AS batting_hawkeye_balls
+
+    FROM deliveries_with_delta
+    GROUP BY match_id, player_id
+    ORDER BY match_id, batting_runs DESC
+  ", wr$wp_col, wr$ps_col, wr$delta, wr$ps_delta, wr$raa_col, wr$wp_join, wr$raa_join,
+     format_filter, match_filter, gender_filter)
+
+  result <- DBI::dbGetQuery(conn, query)
+  data.table::as.data.table(result)
+}
+
+
+#' Aggregate Bowling Stats Per Player Per Match (cricsheet source)
+#' @inheritParams .aggregate_batting_game_data
+#' @keywords internal
+.aggregate_bowling_game_data_cricsheet <- function(conn, format, match_ids = NULL, gender = NULL) {
+
+  format_filter <- .cricsheet_format_sql("m.match_type", format)
+  match_filter <- .build_match_filter(match_ids)
+  gender_filter <- .build_gender_filter(gender)
+  wr <- .wp_raa_sql_cricsheet(conn)
+
+  # Non-bowler-credited dismissals: same set as the cricinfo path, plus two
+  # cricsheet-only kinds ('handled the ball', 'hit the ball twice') that
+  # never appeared in cricinfo's data but follow the identical principle --
+  # neither is a bowler-created dismissal.
+  query <- sprintf("
+    WITH deliveries_with_delta AS (
+      SELECT
+        b.match_id,
+        b.bowler_id AS player_id,
+        b.innings AS innings_number,
+        b.over AS over_number,
+        b.ball AS ball_number,
+        b.runs_batter AS batsman_runs,
+        b.runs_total AS total_runs,
+        b.is_four,
+        b.is_six,
+        b.is_wicket,
+        b.wicket_kind AS dismissal_type,
+        b.wides,
+        b.noballs,
+        b.byes,
+        b.legbyes,
+        %s AS win_probability,
+        %s AS predicted_score,
+        %s AS delta_wp,
+        %s AS delta_ps,
+        %s AS raa,
+        b.match_date
+
+      FROM cricsheet.deliveries b
+      JOIN cricsheet.matches m ON b.match_id = m.match_id
+      %s
+      %s
+      WHERE %s
+        AND b.bowler_id IS NOT NULL
+        %s
+        %s
+    )
+    SELECT
+      match_id,
+      player_id,
+      MIN(match_date) AS match_date,
+
+      SUM(CASE WHEN wides IS NULL OR wides = 0 THEN 1 ELSE 0 END) AS bowling_balls_bowled,
+      COUNT(*) AS bowling_total_deliveries,
+      SUM(total_runs) AS bowling_runs_conceded,
+      -- Allowlist, not a denylist -- caught by review (2026-08-29). A NOT IN
+      -- denylist credits the bowler for any dismissal_type it doesn't
+      -- already know about (e.g. cricsheet's timed out, present in neither
+      -- the original denylist here nor the cricinfo path's, and NOT a
+      -- bowler-created dismissal); BOWLER_WICKET_KINDS is the single,
+      -- already-reviewed source of truth for what genuinely credits a
+      -- bowler (constants.R, written to close bouncerverse#45's drift --
+      -- the same list typed out separately in five places).
+      SUM(CASE WHEN is_wicket AND LOWER(dismissal_type) IN (%s)
+          THEN 1 ELSE 0 END) AS bowling_wickets,
+      SUM(CASE WHEN is_four THEN 1 ELSE 0 END) AS bowling_fours_conceded,
+      SUM(CASE WHEN is_six THEN 1 ELSE 0 END) AS bowling_sixes_conceded,
+      SUM(CASE WHEN is_four OR is_six THEN 1 ELSE 0 END) AS bowling_boundaries_conceded,
+      SUM(CASE WHEN total_runs = 0 AND (wides IS NULL OR wides = 0) THEN 1 ELSE 0 END) AS bowling_dot_balls,
+      SUM(COALESCE(wides, 0)) AS bowling_wides,
+      SUM(COALESCE(noballs, 0)) AS bowling_noballs,
+      ROUND(SUM(total_runs) * 6.0 / NULLIF(
+        SUM(CASE WHEN wides IS NULL OR wides = 0 THEN 1 ELSE 0 END), 0), 2) AS bowling_economy,
+
+      -SUM(delta_wp) AS bowling_wpa,
+      MAX(ABS(COALESCE(delta_wp, 0))) AS bowling_max_wpa,
+
+      -SUM(delta_ps) AS bowling_era,
+
+      -SUM(raa) AS bowling_raa,
+      SUM(CASE WHEN raa IS NOT NULL THEN 1 ELSE 0 END) AS bowling_raa_balls,
+
+      CAST(NULL AS DOUBLE) AS bowling_pct_good_length,
+      CAST(NULL AS DOUBLE) AS bowling_pct_on_stump,
+      CAST(NULL AS DOUBLE) AS bowling_pct_beat_bat,
+      0 AS bowling_hawkeye_balls
+
+    FROM deliveries_with_delta
+    GROUP BY match_id, player_id
+    ORDER BY match_id, bowling_wickets DESC
+  ", wr$wp_col, wr$ps_col, wr$delta, wr$ps_delta, wr$raa_col, wr$wp_join, wr$raa_join,
+     format_filter, match_filter, gender_filter, bowler_wicket_kinds_sql())
+
+  result <- DBI::dbGetQuery(conn, query)
+  data.table::as.data.table(result)
+}
+
+
+#' Join Player Names and Team (cricsheet source)
+#'
+#' Direct joins, not title-string parsing: cricsheet carries real names in
+#' `cricsheet.players` and real team names on every delivery, unlike
+#' cricinfo's "Bowler to Batter" title field that [.join_player_names()] has
+#' to parse.
+#'
+#' @param pgd data.table with player_id and match_id columns.
+#' @param conn DBI connection.
+#' @return pgd with added player_name and team columns.
+#' @keywords internal
+.join_player_names_cricsheet <- function(pgd, conn) {
+
+  if (!"player_name" %in% names(pgd)) pgd[, player_name := NA_character_]
+  if (!"team" %in% names(pgd)) pgd[, team := NA_character_]
+
+  name_lookup <- tryCatch(
+    data.table::as.data.table(DBI::dbGetQuery(conn,
+      "SELECT player_id, player_name FROM cricsheet.players")),
+    error = function(e) {
+      cli::cli_alert_warning("Could not read cricsheet.players: {e$message}")
+      NULL
+    }
+  )
+  if (!is.null(name_lookup) && nrow(name_lookup) > 0) {
+    pgd[name_lookup, on = "player_id", player_name := i.player_name]
+  }
+
+  # A player's team per match: batting_team when batting, bowling_team when
+  # bowling -- both are already on every delivery, no id-lookup needed.
+  team_info <- tryCatch({
+    data.table::as.data.table(DBI::dbGetQuery(conn, "
+      SELECT DISTINCT match_id, batter_id AS player_id, batting_team AS team
+      FROM cricsheet.deliveries WHERE batter_id IS NOT NULL
+      UNION
+      SELECT DISTINCT match_id, bowler_id AS player_id, bowling_team AS team
+      FROM cricsheet.deliveries WHERE bowler_id IS NOT NULL
+    "))
+  }, error = function(e) {
+    cli::cli_warn("Could not assign teams: {e$message}")
+    NULL
+  })
+
+  if (!is.null(team_info) && nrow(team_info) > 0) {
+    team_info <- team_info[!duplicated(team_info, by = c("match_id", "player_id"))]
+    pgd[team_info, on = c("match_id", "player_id"), team := i.team]
+  }
+
+  n_named <- sum(!is.na(pgd$player_name))
+  n_teamed <- sum(!is.na(pgd$team))
+  name_pct <- 100 * n_named / max(1L, nrow(pgd))
+  cli::cli_alert_info("Names: {n_named}/{nrow(pgd)} ({round(name_pct, 1)}%), Teams: {n_teamed}/{nrow(pgd)}")
+
+  # A coverage floor, not just an info line -- caught by review (2026-08-29).
+  # cricsheet.players missing a player_id is a silently-degrading join, the
+  # same class of regression bouncerverse#84 exists to catch one level up
+  # (a data source going stale without anyone noticing), and an info-level
+  # line reads identically at 93% and at 30%.
+  if (name_pct < 90) {
+    cli::cli_warn(c(
+      "Only {round(name_pct, 1)}% of player-match rows resolved a player_name.",
+      "i" = "cricsheet.players may be missing recent player_ids -- check coverage before trusting names/leaderboards built on this."
+    ))
+  }
+
+  pgd
 }
 
 

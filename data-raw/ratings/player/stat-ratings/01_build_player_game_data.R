@@ -1,6 +1,6 @@
 # Step 12: Build Player Game Data ----
 #
-# Aggregates Cricinfo ball-by-ball data into one row per player per match.
+# Aggregates Cricsheet ball-by-ball data into one row per player per match.
 # This is the foundation for all value metrics.
 
 library(cli)
@@ -15,7 +15,7 @@ FORMATS <- c("t20", "odi", "test")
 for (fmt in FORMATS) {
   cli::cli_h2("Building player game data for {toupper(fmt)}")
 
-  pgd <- create_player_game_data(fmt, conn = conn)
+  pgd <- create_player_game_data(fmt, conn = conn, source = "cricsheet")
 
   if (nrow(pgd) > 0) {
     store_player_game_data(conn, pgd, fmt)

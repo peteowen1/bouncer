@@ -36,7 +36,12 @@ anchor_pool <- function(format) {
     skip_if(n == 0, sprintf("main.%s is empty -- run its builder", tb))
   }
 
-  pgd <- create_player_game_data(format, conn = conn)
+  # source = "cricinfo" explicitly: these anchor player_ids live in
+  # cricinfo.balls.batsman_player_id's space (see the file header) --
+  # create_player_game_data()'s default became "cricsheet" 2026-08-29
+  # (bouncerverse#84), whose player_id space is entirely different, and this
+  # legacy calculate_impact() engine was built/calibrated against cricinfo.
+  pgd <- create_player_game_data(format, conn = conn, source = "cricinfo")
   imp <- calculate_impact(format, player_game_data = pgd)
   nm <- unique(pgd[!is.na(player_name), c("player_id", "player_name")])
   imp <- merge(imp, nm, by = "player_id", all.x = TRUE)
