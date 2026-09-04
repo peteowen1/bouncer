@@ -32,7 +32,13 @@ before <- dbGetQuery(conn, "SELECT COUNT(*) AS n FROM cricsheet.players")$n
 target <- dbGetQuery(conn, "
   WITH ref_deliv AS (SELECT DISTINCT batter_id AS pid FROM cricsheet.deliveries
                       UNION SELECT DISTINCT bowler_id FROM cricsheet.deliveries
-                      UNION SELECT DISTINCT non_striker_id FROM cricsheet.deliveries),
+                      UNION SELECT DISTINCT non_striker_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT player_out_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT fielder1_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT fielder2_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT review_batter FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT replacement_in FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT replacement_out FROM cricsheet.deliveries),
        ref_pom AS (SELECT DISTINCT player_of_match_id AS pid FROM cricsheet.matches WHERE player_of_match_id IS NOT NULL)
   SELECT player_id FROM cricsheet.players p
   WHERE p.player_id NOT IN (SELECT pid FROM ref_deliv)
@@ -54,7 +60,13 @@ stopifnot(after == before - length(target))
 remaining_orphans <- dbGetQuery(conn, "
   WITH ref_deliv AS (SELECT DISTINCT batter_id AS pid FROM cricsheet.deliveries
                       UNION SELECT DISTINCT bowler_id FROM cricsheet.deliveries
-                      UNION SELECT DISTINCT non_striker_id FROM cricsheet.deliveries),
+                      UNION SELECT DISTINCT non_striker_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT player_out_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT fielder1_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT fielder2_id FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT review_batter FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT replacement_in FROM cricsheet.deliveries
+                      UNION SELECT DISTINCT replacement_out FROM cricsheet.deliveries),
        ref_pom AS (SELECT DISTINCT player_of_match_id AS pid FROM cricsheet.matches WHERE player_of_match_id IS NOT NULL)
   SELECT COUNT(*) AS n,
     SUM(CASE WHEN regexp_matches(player_id,'^[0-9a-f]{8}$') THEN 0 ELSE 1 END) AS still_bare_name
