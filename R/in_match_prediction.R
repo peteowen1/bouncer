@@ -123,12 +123,21 @@ load_in_match_models <- function(format = "t20",
   # heuristic for the first innings -- for every format, including any format
   # that had the model trained and sitting on disk. Optional by design: a
   # format without one still gets the heuristic rather than an error.
+  #
+  # Release-then-local-fallback added 2026-08-29 (bouncerverse#83 follow-up),
+  # matching stage1/stage2's .load_inmatch_results() pattern -- this model had
+  # NO release path at all: local-disk-only, no bouncermodels asset, so any
+  # consumer without this exact machine's bouncerdata/models (e.g. a GHA run
+  # against the installed bouncermodels package) silently lost innings-1 WP to
+  # the logistic heuristic. It is not merely a visualisation model: since
+  # D-P6 (2026-08-13), build_cricsheet_win_probability() uses it directly to
+  # score the WPA that feeds calculate_impact() -- see the docstring above.
   innings1_file <- file.path(models_path,
                              paste0(format, "_innings1_results.rds"))
+  innings1_results <- .load_inmatch_results(paste0(format, "_innings1_results"), innings1_file, allow_release)
   innings1_model <- NULL
   innings1_features <- NULL
-  if (file.exists(innings1_file)) {
-    innings1_results <- readRDS(innings1_file)
+  if (!is.null(innings1_results)) {
     innings1_model <- innings1_results$model
     innings1_features <- innings1_results$feature_cols
   }
@@ -211,23 +220,26 @@ load_test_in_match_models <- function(models_path, allow_release = TRUE) {
 #' three-way probabilities (team1 win, draw, team2 win) via a decomposed
 #' two-model pipeline.
 #'
-#' @section This model does NOT feed the player ratings:
-#' Easy to assume otherwise, so stated plainly. As of 2026-08-12 the only
-#' production caller of this function is [plot_win_probability()] — it draws a
-#' chart. It is **not** an input to [calculate_epr()], [calculate_bouncer()],
-#' or anything else in the ratings chain.
+#' @section This model DOES feed the player ratings (superseded 2026-08-13):
+#' This docstring said the opposite until 2026-08-29 — stale from the day
+#' after it was written. D-P6 (`docs/DECISIONS.md`) resolved in favour of
+#' wiring this model family in: [build_cricinfo_win_probability()] calls
+#' [load_in_match_models()] directly and scores every Cricinfo T20/ODI
+#' delivery into `main.bouncer_wp_from_cricinfo`, which
+#' `player_game_data.R` joins (`wp_source = "bouncer"`, the default) to
+#' produce `batting_wpa`/`bowling_wpa` — the inputs to `calculate_impact()`'s
+#' `raa + kappa*wpa` composite, which feeds
+#' [calculate_epr()]/[calculate_bouncer()]. The older scraped
+#' `cricinfo.balls.win_probability` column is still selectable via
+#' `wp_source = "cricinfo"` for comparison only (see `bouncer/CLAUDE.md`'s WPA
+#' section for the coverage/Brier comparison). The similarly-named
+#' [build_cricsheet_win_probability()] (`main.bouncer_wp_from_cricsheet`)
+#' is a separate validation/comparison artifact over the deeper Cricsheet
+#' source — not what `player_game_data.R` reads. Improving THIS model family
+#' (innings1/stage2) now does flow through to the ratings.
 #'
-#' The WPA that reaches the career ratings comes from
-#' `cricinfo.balls.win_probability`, a column **scraped from ESPNcricinfo's own
-#' forecaster** and differenced in `player_game_data.R`. That scraped column is
-#' 0% populated for Tests and 7.7% for ODIs (see `?calculate_epr`).
-#'
-#' So this package trains an in-match win-probability model, and then rates
-#' players using somebody else's. Whether to wire this model into
-#' `player_game_data.R` is open — `docs/DECISIONS.md` D-P6. Until that is
-#' decided, do not describe BOUNCER ratings as being built on bouncer's own
-#' win probability, and do not assume improving these models improves the
-#' ratings: today it does not.
+#' `plot_win_probability()` (this function called directly) is a separate,
+#' unrelated caller used only for live-match charts.
 #'
 #' @param current_score Integer. Current team score.
 #' @param wickets Integer. Wickets fallen (0-10).

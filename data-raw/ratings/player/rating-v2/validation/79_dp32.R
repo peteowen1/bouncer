@@ -12,7 +12,7 @@ for (fmt in c("T20","ODI")) {
   d <- as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT w.delta_ps AS tsa, r.is_wicket, r.actual_runs, r.over_number,
            r.innings_number, dl.wickets_fallen - CAST(dl.is_wicket AS INT) AS wpre
-    FROM main.cricsheet_ball_win_probability w
+    FROM main.bouncer_wp_from_cricsheet w
     JOIN main.cricsheet_ball_raa r ON r.delivery_id = w.delivery_id
     JOIN cricsheet.deliveries dl ON dl.delivery_id = w.delivery_id
     WHERE r.format='%s' AND r.gender='male' AND w.delta_ps IS NOT NULL

@@ -7,15 +7,23 @@
 calculate_expected_runs(probs)
 }
 \arguments{
-\item{probs}{Matrix or data frame with 7 columns representing probabilities
-for (wicket, 0, 1, 2, 3, 4, 6). Column order must match this exactly.}
+\item{probs}{Matrix or data frame with \code{length(OUTCOME_CATEGORIES)} or
+\code{length(OUTCOME_CATEGORIES) - 1} columns, in \code{OUTCOME_CATEGORIES} order.}
 }
 \value{
 Numeric vector of expected runs per delivery.
-Formula: E(runs) = sum(prob_i * runs_i) where runs = c(0, 0, 1, 2, 3, 4, 6)
+Formula: E(runs) = sum(prob_i * runs_i), \code{runs_i} = \code{OUTCOME_RUN_VALUES}.
 }
 \description{
-Converts a 7-category probability distribution into expected runs per delivery.
-Categories: wicket, 0, 1, 2, 3, 4, 6 runs.
+Converts a probability distribution into expected runs per delivery.
+Accepts a PREFIX of \code{OUTCOME_CATEGORIES} (see \code{R/constants.R}) one
+category short of the full count, not just the exact full length -- the
+agnostic and full models can be at different category counts mid-rollout
+(#81/D-P50: the agnostic model gained "wide" as an 8th category at stage
+3, the full model stays at 7 until its own stage-5 retrain), since new
+categories are always appended at the end, never inserted. Bounded to
+\code{length(OUTCOME_CATEGORIES) - 1} rather than any smaller width, so a
+genuinely malformed input (e.g. 2 columns) still errors instead of
+silently computing a meaningless partial expectation.
 }
 \keyword{internal}

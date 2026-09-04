@@ -55,9 +55,14 @@ List with innings summary:
 \itemize{
 \item total_runs: final score
 \item wickets_lost: wickets that fell
-\item balls_faced: total balls faced
+\item balls_faced: total LEGAL balls faced (excludes wides and no-ball
+retries; a no-ball still counts toward the batter's own faced count,
+matching \code{player_game_data.R}'s convention, but not toward \code{balls}/
+over progression -- #81/D-P50 stage 6)
 \item overs_faced: overs used (decimal format)
-\item ball_by_ball: data frame of each delivery
+\item ball_by_ball: data.table of every delivery, including illegal retries
+(\code{is_illegal} column; \code{over}/\code{ball} repeat across a retry of the same
+slot, since it doesn't advance)
 \item result: "completed", "all_out", or "target_reached"
 }
 }

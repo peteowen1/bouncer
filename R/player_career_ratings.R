@@ -166,7 +166,7 @@ calculate_impact <- function(format = c("t20", "odi", "test"),
 
   # Coverage EVERY run. A missing component means the match contributes
   # nothing (correct), but a SHORTFALL means an upstream table is stale --
-  # main.cricinfo_ball_raa or main.cricinfo_ball_win_probability needs
+  # main.cricinfo_ball_raa or main.bouncer_wp_from_cricinfo needs
   # rebuilding -- and without this warning the rating still looks complete.
   ok_pct <- 100 * sum(!is.na(dt$bat_value) | !is.na(dt$bowl_value)) / max(1L, nrow(dt))
   if (ok_pct < 99) {
@@ -174,7 +174,7 @@ calculate_impact <- function(format = c("t20", "odi", "test"),
     lvl(c(
       "Impact: a usable value exists for {round(ok_pct, 1)}% of {nrow(dt)} player-match rows ({toupper(format)}).",
       "!" = "The rest have RAA or WPA missing -- absent, not zero.",
-      "i" = "Rebuild main.cricinfo_ball_raa / main.cricinfo_ball_win_probability if this is unexpected."
+      "i" = "Rebuild main.cricinfo_ball_raa / main.bouncer_wp_from_cricinfo if this is unexpected."
     ))
   }
 

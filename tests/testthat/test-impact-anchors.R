@@ -28,7 +28,7 @@ anchor_pool <- function(format) {
   skip_if(is.null(conn), "database not available")
   on.exit(try(DBI::dbDisconnect(conn, shutdown = TRUE), silent = TRUE), add = TRUE)
 
-  for (tb in c("cricinfo_ball_win_probability", "cricinfo_ball_raa")) {
+  for (tb in c("bouncer_wp_from_cricinfo", "cricinfo_ball_raa")) {
     n <- tryCatch(
       DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM main.%s", tb))$n,
       error = function(e) 0

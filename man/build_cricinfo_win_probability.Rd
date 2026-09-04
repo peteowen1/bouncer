@@ -9,7 +9,8 @@ build_cricinfo_win_probability(
   conn = NULL,
   models_path = NULL,
   write = TRUE,
-  table_name = "cricinfo_ball_win_probability"
+  table_name = "bouncer_wp_from_cricinfo",
+  return_pre_states = FALSE
 )
 }
 \arguments{
@@ -28,6 +29,17 @@ models are not in the user data directory.}
 \item{write}{Logical. Write the table, or just return the scored frame.}
 
 \item{table_name}{Character. Target table in the \code{main} schema.}
+
+\item{return_pre_states}{Logical. When TRUE, attaches the already-built
+pre-delivery state frame (and the loaded models) as attributes on the
+returned data.table -- \code{attr(x, "pre_states")}, \code{attr(x, "models")},
+\code{attr(x, "scoreable")}, \code{attr(x, "mom_cols")}, \code{attr(x, "balls_out")}
+(the full internal \code{balls} table, pre-state columns included). Lets a
+caller (e.g. \code{\link[=build_ball_leverage]{build_ball_leverage()}}) reuse this function's pre-state
+construction -- momentum, venue stats, target derivation, gap handling --
+instead of a second, drifting copy of ~150 lines of state-building logic.
+Default FALSE: zero effect on the return value or on \code{write}'s output for
+every existing caller.}
 }
 \value{
 data.table with \code{id}, \code{match_id}, \code{innings_number}, \code{over_number},
@@ -37,7 +49,7 @@ data.table with \code{id}, \code{match_id}, \code{innings_number}, \code{over_nu
 \description{
 Scores every delivery of a limited-overs format from \code{cricinfo.balls} with
 bouncer's own in-match models and writes the result to
-\code{main.cricinfo_ball_win_probability}.
+\code{main.bouncer_wp_from_cricinfo}.
 }
 \section{Why the join key is \code{id}}{
 

@@ -13,7 +13,7 @@ test_that("batting WPA correlates positively with runs in BOTH innings", {
   on.exit(try(DBI::dbDisconnect(conn, shutdown = TRUE), silent = TRUE), add = TRUE)
 
   has_wp <- tryCatch(
-    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM main.cricinfo_ball_win_probability")$n,
+    DBI::dbGetQuery(conn, "SELECT COUNT(*) AS n FROM main.bouncer_wp_from_cricinfo")$n,
     error = function(e) 0
   )
   skip_if(has_wp == 0, "win probability table not built")

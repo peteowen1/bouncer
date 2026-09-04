@@ -2,21 +2,25 @@
 % Please edit documentation in R/full_model_frame.R
 \name{ball_outcome_class}
 \alias{ball_outcome_class}
-\title{The 7-Class Ball Outcome Used by the Outcome Models}
+\title{The Ball Outcome Class Used by the Outcome Models}
 \usage{
-ball_outcome_class(runs_batter, is_wicket)
+ball_outcome_class(runs_batter, is_wicket, wides = 0L)
 }
 \arguments{
 \item{runs_batter}{Integer vector. Runs off the bat.}
 
 \item{is_wicket}{Logical or integer vector.}
+
+\item{wides}{Integer vector, or \code{NULL}/\code{0} (recycled) if unavailable.
+Positive/non-missing means the delivery was called wide.}
 }
 \value{
 Integer vector of class labels, \code{NA} where undefined.
 }
 \description{
-Wicket, dot, 1, 2, 3, 4, 6 as classes 0-6. Anything else (5s, 7s, and any
-row missing its inputs) is \code{NA} and is dropped by the trainer.
+Wicket, dot, 1, 2, 3, 4, 6, wide as classes 0-7 (\code{OUTCOME_CATEGORIES}
+order, \code{R/constants.R}). Anything else (5s, 7s, and any row missing its
+inputs) is \code{NA} and is dropped by the trainer.
 }
 \details{
 Declared once because it was inline in \verb{02_train_full_model.R}'s mutate,
@@ -24,5 +28,14 @@ and any comparison against those models has to reproduce the label exactly.
 A checker that rebuilds the mapping by hand is one edit away from scoring
 against a different target and reporting the difference as a model result
 (bouncerverse#65).
+
+Wicket is checked first (a wicket on a wide -- stumped/run-out/hit-wicket
+only -- still categorizes as wicket, not wide), then wide, then run count
+-- matching \verb{01_train_agnostic_model.R}'s \code{case_when()} priority exactly
+(#81/D-P50 stage 5). Before this, \code{wides} was not passed in at all: a wide
+delivery (\code{runs_batter} always 0, since a batter cannot play a genuine
+shot at a ball called wide) fell through to the \code{runs_batter == 0} branch
+and was silently trained as a dot ball -- the population mismatch
+documented in the plan's §(d).
 }
 \keyword{internal}

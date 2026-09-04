@@ -29,7 +29,7 @@
 #'
 #' Scores every Test delivery in `cricinfo.balls` with the decomposed v3
 #' models and writes P(team batting first wins) to
-#' `main.cricinfo_ball_win_probability` (format `TEST`), alongside a detail
+#' `main.bouncer_wp_from_cricinfo` (format `TEST`), alongside a detail
 #' table carrying the full three-way decomposition (win / draw / loss and
 #' P(result)) that the scalar column cannot hold.
 #'
@@ -50,8 +50,8 @@
 build_cricinfo_test_win_probability <- function(conn = NULL,
                                                 models_path = NULL,
                                                 write = TRUE,
-                                                table_name = "cricinfo_ball_win_probability",
-                                                detail_table_name = "cricinfo_ball_test_wp_detail") {
+                                                table_name = "bouncer_wp_from_cricinfo",
+                                                detail_table_name = "bouncer_wp_from_cricinfo_test_detail") {
 
   own_conn <- is.null(conn)
   if (own_conn) {

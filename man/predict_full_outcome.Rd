@@ -15,13 +15,13 @@ Must include all context, player, team, and venue skill features.}
 \item{format}{Character. Format type: "t20", "odi", or "test"}
 }
 \value{
-Matrix with 7 columns representing probabilities for each outcome:
-col1=P(wicket), col2=P(0 runs), col3=P(1 run), col4=P(2 runs),
-col5=P(3 runs), col6=P(4 runs), col7=P(6 runs)
+Matrix with one column per \code{OUTCOME_CATEGORIES} entry, in that
+order.
 }
 \description{
 Generates outcome probability predictions using the full model with all features.
-Returns a matrix of 7-class probabilities (wicket, 0, 1, 2, 3, 4, 6 runs).
+Returns a matrix of \code{OUTCOME_CATEGORIES}-shaped probabilities (wicket, 0,
+1, 2, 3, 4, 6, wide -- see \code{R/constants.R}).
 }
 \section{Feature order safety (bouncerverse#76)}{
 

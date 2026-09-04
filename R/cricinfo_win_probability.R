@@ -11,11 +11,22 @@
 # so the aggregation can join to it instead.
 
 
+# One source of truth for the table shape (mirrors .cricsheet_wp_schema in
+# cricsheet_win_probability.R). See store_cricinfo_win_probability()'s own
+# comment for why this table's writer no longer drops it on a shape mismatch.
+.cricinfo_wp_schema <- c(
+  id = "VARCHAR", match_id = "VARCHAR", innings_number = "INTEGER",
+  over_number = "DOUBLE", ball_number = "INTEGER", format = "VARCHAR",
+  win_prob_before = "DOUBLE", win_prob_after = "DOUBLE", delta_wp = "DOUBLE",
+  proj_score_before = "DOUBLE", proj_score_after = "DOUBLE", delta_ps = "DOUBLE"
+)
+
+
 #' Build Bouncer Win Probability for Every Cricinfo Delivery
 #'
 #' Scores every delivery of a limited-overs format from `cricinfo.balls` with
 #' bouncer's own in-match models and writes the result to
-#' `main.cricinfo_ball_win_probability`.
+#' `main.bouncer_wp_from_cricinfo`.
 #'
 #' @section Why the join key is `id`:
 #' `(match_id, innings_number, over_number, ball_number)` is **not** unique in
@@ -51,6 +62,16 @@
 #'   models are not in the user data directory.
 #' @param write Logical. Write the table, or just return the scored frame.
 #' @param table_name Character. Target table in the `main` schema.
+#' @param return_pre_states Logical. When TRUE, attaches the already-built
+#'   pre-delivery state frame (and the loaded models) as attributes on the
+#'   returned data.table -- `attr(x, "pre_states")`, `attr(x, "models")`,
+#'   `attr(x, "scoreable")`, `attr(x, "mom_cols")`, `attr(x, "balls_out")`
+#'   (the full internal `balls` table, pre-state columns included). Lets a
+#'   caller (e.g. [build_ball_leverage()]) reuse this function's pre-state
+#'   construction -- momentum, venue stats, target derivation, gap handling --
+#'   instead of a second, drifting copy of ~150 lines of state-building logic.
+#'   Default FALSE: zero effect on the return value or on `write`'s output for
+#'   every existing caller.
 #'
 #' @return data.table with `id`, `match_id`, `innings_number`, `over_number`,
 #'   `ball_number`, `format` and `win_probability` (P(batting-first team wins),
@@ -61,7 +82,8 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
                                            conn = NULL,
                                            models_path = NULL,
                                            write = TRUE,
-                                           table_name = "cricinfo_ball_win_probability") {
+                                           table_name = "bouncer_wp_from_cricinfo",
+                                           return_pre_states = FALSE) {
 
   format <- match.arg(format)
   db_format <- toupper(format)
@@ -340,6 +362,14 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
     delta_ps
   )]
 
+  if (return_pre_states) {
+    data.table::setattr(out, "pre_states", pre_states)
+    data.table::setattr(out, "models", models)
+    data.table::setattr(out, "scoreable", scoreable)
+    data.table::setattr(out, "mom_cols", mom_cols)
+    data.table::setattr(out, "balls_out", balls)
+  }
+
   if (!write) return(out[])
 
   store_cricinfo_win_probability(conn, out, format = format, table_name = table_name)
@@ -362,62 +392,47 @@ build_cricinfo_win_probability <- function(format = c("t20", "odi"),
 #'
 #' @keywords internal
 store_cricinfo_win_probability <- function(conn, data, format,
-                                           table_name = "cricinfo_ball_win_probability") {
+                                           table_name = "bouncer_wp_from_cricinfo") {
 
   db_format <- toupper(format)
+  wanted <- names(.cricinfo_wp_schema)
 
-  # Recreate rather than CREATE IF NOT EXISTS when the shape is stale: an
-  # earlier build of this table carried a single `win_probability` column, and
-  # inserting the before/after/delta triple into it would fail on column count
-  # with nothing explaining why.
-  existing <- DBI::dbGetQuery(conn, sprintf("
-    SELECT column_name FROM information_schema.columns
-    WHERE table_schema = 'main' AND table_name = '%s'", table_name))$column_name
-
-  wanted <- c("id", "match_id", "innings_number", "over_number", "ball_number",
-              "format", "win_prob_before", "win_prob_after", "delta_wp",
-              "proj_score_before", "proj_score_after", "delta_ps")
-
-  if (length(existing) > 0 && !setequal(existing, wanted)) {
-    cli::cli_alert_warning(
-      "{.field main.{table_name}} has an outdated shape ({length(existing)} column{?s}); recreating it."
-    )
-    DBI::dbExecute(conn, sprintf("DROP TABLE main.%s", table_name))
+  data <- as.data.frame(data)
+  extra <- setdiff(names(data), wanted)
+  if (length(extra)) {
+    cli::cli_abort(c(
+      "{.arg data} carries {length(extra)} column{?s} the table has no home for: {.field {extra}}.",
+      "i" = "Add them to {.code .cricinfo_wp_schema} deliberately, so the migration can create them."
+    ))
   }
+  data <- data[, wanted]
 
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE IF NOT EXISTS main.%s (
-      id              VARCHAR,
-      match_id        VARCHAR,
-      innings_number  INTEGER,
-      over_number     DOUBLE,
-      ball_number     INTEGER,
-      format          VARCHAR,
-      win_prob_before DOUBLE,
-      win_prob_after  DOUBLE,
-      delta_wp        DOUBLE,
-      proj_score_before DOUBLE,
-      proj_score_after  DOUBLE,
-      delta_ps          DOUBLE
-    )", table_name))
-
-  duckdb::duckdb_register(conn, "cwp_staging", as.data.frame(data))
+  duckdb::duckdb_register(conn, "cwp_staging", data)
   on.exit(duckdb::duckdb_unregister(conn, "cwp_staging"), add = TRUE)
-
-  removed <- DBI::dbExecute(conn, sprintf(
-    "DELETE FROM main.%s WHERE format = '%s'", table_name, db_format
-  ))
-
   col_list <- paste(wanted, collapse = ", ")
 
-  n <- DBI::dbExecute(conn, sprintf(
-    "INSERT INTO main.%s (%s) SELECT %s FROM cwp_staging",
-    table_name, col_list, col_list
-  ))
+  # Per-format replacement on a table that holds every format, migrated in
+  # place (never dropped) on a shape change, DELETE+INSERT sharing one
+  # transaction -- fixes bouncerverse#45's whole-table-drop defect, already
+  # found and fixed on this table's cricsheet-sourced twin
+  # (store_cricsheet_wp()) but not previously ported here. See
+  # .migrate_schema()'s docstring (player_rating_v2_storage.R) for the full
+  # story: dropping this table on any shape mismatch destroyed every OTHER
+  # format's rows, not just the one being rebuilt, and this table feeds the
+  # WPA that reaches the player ratings (D-P6).
+  n <- .in_transaction(conn, function() {
+    DBI::dbExecute(conn, sprintf(
+      "CREATE TABLE IF NOT EXISTS main.%s (\n%s\n    )",
+      table_name, .schema_ddl(.cricinfo_wp_schema)))
+    .migrate_schema(conn, table_name, .cricinfo_wp_schema)
+    DBI::dbExecute(conn, sprintf("DELETE FROM main.%s WHERE format = '%s'",
+                                 table_name, db_format))
+    DBI::dbExecute(conn, sprintf(
+      "INSERT INTO main.%s (%s) SELECT %s FROM cwp_staging",
+      table_name, col_list, col_list))
+  })
 
-  cli::cli_alert_success(
-    "Stored {n} {db_format} rows in {.field main.{table_name}}{if (removed > 0) paste0(' (replaced ', removed, ')') else ''}."
-  )
+  cli::cli_alert_success("Stored {n} {db_format} rows in {.field main.{table_name}}.")
   invisible(n)
 }
 

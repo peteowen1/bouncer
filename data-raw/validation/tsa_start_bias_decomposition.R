@@ -14,7 +14,7 @@ d <- as.data.table(DBI::dbGetQuery(conn, "
          MIN(w.proj_score_before) FILTER (WHERE w.over_number=0 AND w.ball_number=1) AS proj_start,
          MAX(w.proj_score_after)  AS proj_end,
          COUNT(*) AS balls
-  FROM main.cricsheet_ball_win_probability w
+  FROM main.bouncer_wp_from_cricsheet w
   WHERE w.innings_number = 1
   GROUP BY 1,2,3"))
 tot <- as.data.table(DBI::dbGetQuery(conn, "

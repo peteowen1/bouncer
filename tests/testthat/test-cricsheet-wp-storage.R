@@ -30,7 +30,7 @@ wp_conn <- function(env = parent.frame()) {
 
 counts <- function(conn) {
   d <- DBI::dbGetQuery(conn, "SELECT format, COUNT(*) AS n
-    FROM main.cricsheet_ball_win_probability GROUP BY 1 ORDER BY 1")
+    FROM main.bouncer_wp_from_cricsheet GROUP BY 1 ORDER BY 1")
   stats::setNames(d$n, d$format)
 }
 
@@ -51,7 +51,7 @@ test_that("REGRESSION: a schema change migrates rather than dropping every forma
   suppressMessages(store_cricsheet_wp(conn, wp_rows("T20", 7), "t20"))
 
   # Stand in for "someone added a column since this table was written".
-  DBI::dbExecute(conn, "ALTER TABLE main.cricsheet_ball_win_probability DROP COLUMN delta_ps")
+  DBI::dbExecute(conn, "ALTER TABLE main.bouncer_wp_from_cricsheet DROP COLUMN delta_ps")
   suppressMessages(store_cricsheet_wp(conn, wp_rows("ODI", 2, 300), "odi"))
 
   got <- counts(conn)
@@ -59,7 +59,7 @@ test_that("REGRESSION: a schema change migrates rather than dropping every forma
   expect_equal(unname(got[["T20"]]), 7)
   expect_equal(unname(got[["ODI"]]), 2)
   expect_true("delta_ps" %in% DBI::dbListFields(
-    conn, DBI::Id(schema = "main", table = "cricsheet_ball_win_probability")))
+    conn, DBI::Id(schema = "main", table = "bouncer_wp_from_cricsheet")))
 })
 
 test_that("a column the table has no home for is named, not silently dropped", {

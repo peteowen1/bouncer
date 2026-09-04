@@ -7,8 +7,8 @@
 calculate_expected_wicket_prob(probs)
 }
 \arguments{
-\item{probs}{Matrix or data frame with 7 columns representing probabilities.
-First column must be P(wicket).}
+\item{probs}{Matrix or data frame of outcome probabilities. First column
+must be P(wicket) (column count isn't otherwise checked here).}
 }
 \value{
 Numeric vector of wicket probabilities.

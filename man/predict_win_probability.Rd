@@ -75,24 +75,27 @@ match state. Uses scoreboard-friendly inputs. For Test matches, returns
 three-way probabilities (team1 win, draw, team2 win) via a decomposed
 two-model pipeline.
 }
-\section{This model does NOT feed the player ratings}{
+\section{This model DOES feed the player ratings (superseded 2026-08-13)}{
 
-Easy to assume otherwise, so stated plainly. As of 2026-08-12 the only
-production caller of this function is \code{\link[=plot_win_probability]{plot_win_probability()}} — it draws a
-chart. It is \strong{not} an input to \code{\link[=calculate_epr]{calculate_epr()}}, \code{\link[=calculate_bouncer]{calculate_bouncer()}},
-or anything else in the ratings chain.
+This docstring said the opposite until 2026-08-29 — stale from the day
+after it was written. D-P6 (\code{docs/DECISIONS.md}) resolved in favour of
+wiring this model family in: \code{\link[=build_cricinfo_win_probability]{build_cricinfo_win_probability()}} calls
+\code{\link[=load_in_match_models]{load_in_match_models()}} directly and scores every Cricinfo T20/ODI
+delivery into \code{main.bouncer_wp_from_cricinfo}, which
+\code{player_game_data.R} joins (\code{wp_source = "bouncer"}, the default) to
+produce \code{batting_wpa}/\code{bowling_wpa} — the inputs to \code{calculate_impact()}'s
+\code{raa + kappa*wpa} composite, which feeds
+\code{\link[=calculate_epr]{calculate_epr()}}/\code{\link[=calculate_bouncer]{calculate_bouncer()}}. The older scraped
+\code{cricinfo.balls.win_probability} column is still selectable via
+\code{wp_source = "cricinfo"} for comparison only (see \code{bouncer/CLAUDE.md}'s WPA
+section for the coverage/Brier comparison). The similarly-named
+\code{\link[=build_cricsheet_win_probability]{build_cricsheet_win_probability()}} (\code{main.bouncer_wp_from_cricsheet})
+is a separate validation/comparison artifact over the deeper Cricsheet
+source — not what \code{player_game_data.R} reads. Improving THIS model family
+(innings1/stage2) now does flow through to the ratings.
 
-The WPA that reaches the career ratings comes from
-\code{cricinfo.balls.win_probability}, a column \strong{scraped from ESPNcricinfo's own
-forecaster} and differenced in \code{player_game_data.R}. That scraped column is
-0\% populated for Tests and 7.7\% for ODIs (see \code{?calculate_epr}).
-
-So this package trains an in-match win-probability model, and then rates
-players using somebody else's. Whether to wire this model into
-\code{player_game_data.R} is open — \code{docs/DECISIONS.md} D-P6. Until that is
-decided, do not describe BOUNCER ratings as being built on bouncer's own
-win probability, and do not assume improving these models improves the
-ratings: today it does not.
+\code{plot_win_probability()} (this function called directly) is a separate,
+unrelated caller used only for live-match charts.
 }
 
 \examples{

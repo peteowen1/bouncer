@@ -9,7 +9,7 @@ build_cricsheet_win_probability(
   conn = NULL,
   models = NULL,
   write = TRUE,
-  table_name = "cricsheet_ball_win_probability",
+  table_name = "bouncer_wp_from_cricsheet",
   exclude_short_overs = TRUE
 )
 }
@@ -34,5 +34,5 @@ projected-score triple. Invisibly when \code{write = TRUE}.
 }
 \description{
 Scores every Cricsheet limited-overs delivery with the in-match models and
-writes \code{main.cricsheet_ball_win_probability}.
+writes \code{main.bouncer_wp_from_cricsheet}.
 }

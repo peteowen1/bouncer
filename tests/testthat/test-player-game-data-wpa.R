@@ -101,7 +101,7 @@ test_that("the win probability source is chosen in one place and both options ar
 
   # Ours must join the WP table; both must join the innings-team lookup the
   # perspective flip needs (bouncerverse#25).
-  expect_match(ours$join, "cricinfo_ball_win_probability")
+  expect_match(ours$join, "bouncer_wp_from_cricinfo")
   expect_match(ours$join, "ON w\\.id = b\\.id")
   for (j in list(ours$join, theirs$join)) {
     expect_match(j, "FROM cricinfo\\.innings GROUP BY match_id, innings_number")

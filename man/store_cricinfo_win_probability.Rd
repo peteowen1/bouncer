@@ -8,7 +8,7 @@ store_cricinfo_win_probability(
   conn,
   data,
   format,
-  table_name = "cricinfo_ball_win_probability"
+  table_name = "bouncer_wp_from_cricinfo"
 )
 }
 \arguments{
