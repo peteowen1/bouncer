@@ -9,15 +9,15 @@ calculate_over_ball(over, ball)
 \arguments{
 \item{over}{Integer vector. Completed overs before this delivery (0-based).}
 
-\item{ball}{Integer vector. Delivery number within the over, 1-based,
-counting extras.}
+\item{ball}{Integer vector. LEGAL delivery number within the over,
+1-based, NOT counting wides/no-balls (max 6).}
 }
 \value{
 Numeric vector of the same length as the recycled inputs.
 
-Worked values: over 10 ball 3 gives \code{10.3}; over 0 ball 1 gives \code{0.1}; over 5
-ball 12 gives \code{6.2} -- see "Known defect" above for why that last one
-collides with over 6 ball 2.
+Worked values: over 10 ball 3 gives \code{10.3}; over 0 ball 1 gives \code{0.1}; an
+over with a wide before its 5th legal ball still gives \code{over + 0.5} for
+that 5th ball, not \code{over + 0.6} or higher.
 }
 \description{
 The single definition of \code{over_ball}, the within-innings position feature
@@ -39,19 +39,29 @@ had never seen. One definition, called from every site, is what prevents
 that recurring.
 }
 
-\section{Known defect (do not silently "fix")}{
+\section{D-P5, fixed 2026-09-04 (do not reintroduce)}{
 
-\code{ball} counts every delivery in the over, extras included, so it reaches 19
-in the stored data (233,975 deliveries have \code{ball > 6}). With a \verb{/ 10}
-denominator, an over needing 10 or more deliveries spills into the next
-over's numeric range: over 5 ball 12 gives \code{6.2}, indistinguishable from
-over 6 ball 2. \code{floor(over_ball)} is therefore the wrong over for those rows.
+\code{ball} -- the stored \code{cricsheet.deliveries.ball} column, and the raw
+delivery-within-over position this function used to be called with --
+counts every delivery in the over, extras included, so it reaches 19 in
+the stored data (233,975 deliveries have \code{ball > 6}). With a \verb{/ 10}
+denominator, an over needing 10 or more deliveries spilled into the next
+over's numeric range: over 5 ball 12 gave \code{6.2}, indistinguishable from
+over 6 ball 2 (2,637 stored deliveries collided this way).
 
-This function deliberately reproduces that behaviour. Changing the
-convention would make the feature disagree with \code{cricsheet.deliveries} and
-with every trained model, reintroducing exactly the train/serve skew it was
-written to remove. Correcting it requires a coordinated parser change, a
-full re-parse, and a retrain — see \code{docs/NEXT-STEPS.md}.
+This function's contract changed to fix it: \code{ball} must now be the LEGAL
+ball count within the over (1-6, cricket broadcast notation), not the raw
+delivery position. A wide or no-ball does not advance it -- it repeats
+the count from before it, so \code{over_ball} never exceeds \code{over + 0.6}. The
+parser (\code{cricsheet_parser.R}) tracks this as \code{legal_ball_num}, reset each
+over, incrementing only on a legal delivery. \code{cricsheet.deliveries.ball}
+itself stays the raw, extras-inclusive count unchanged -- other code (the
+free-hit derivation) relies on that specifically to reconstruct true
+bowling order via \verb{ORDER BY (match_id, innings, over, ball)}. Do not pass
+the raw \code{ball} column to this function; every ball-outcome model (agnostic
+\itemize{
+\item full, t20/odi/test) was retrained on the corrected feature.
+}
 }
 
 \keyword{internal}

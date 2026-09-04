@@ -13,13 +13,18 @@ test_that("calculate_over_ball is vectorised and recycles", {
   expect_length(calculate_over_ball(integer(0), integer(0)), 0)
 })
 
-test_that("calculate_over_ball spills past a full over when extras push ball above 9", {
-  # Documented defect, deliberately preserved: 233,975 stored deliveries have
-  # ball > 6 and 2,637 have ball >= 10, where the value collides with the next
-  # over. Pinned so that "fixing" it is a conscious decision with a retrain,
-  # not an accident.
-  expect_equal(calculate_over_ball(5, 12), 6.2)
-  expect_equal(calculate_over_ball(6, 2), 6.2)
+test_that("calculate_over_ball's contract is now the LEGAL ball count (D-P5, fixed 2026-09-04)", {
+  # calculate_over_ball() itself still does the same arithmetic (over + ball/10)
+  # -- what changed is what callers must pass. Previously the parser passed
+  # the raw delivery-within-over position (extras included, up to 19), which
+  # spilled into the next over's numeric range for 2,637 stored deliveries
+  # (over 5 ball 12 == over 6 ball 2 == 6.2). Now every caller passes the
+  # LEGAL ball count (max 6), so the collision is structurally impossible --
+  # see test-parser.R's "a wide inside an over doesn't advance over_ball"
+  # for the parser-level guarantee. This test only pins that a legal count
+  # can never itself exceed the over boundary.
+  expect_equal(calculate_over_ball(5, 6), 5.6)
+  expect_lt(calculate_over_ball(5, 6), 6.0)
 })
 
 test_that("every over_ball reconstruction site agrees with the helper", {

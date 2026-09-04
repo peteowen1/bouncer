@@ -102,6 +102,52 @@ test_that("parse_cricsheet_json returns expected structure", {
   file.remove(temp_file)
 })
 
+test_that("a wide inside an over doesn't advance over_ball, but does advance the raw ball count (D-P5)", {
+  # Over 3: legal, legal, WIDE, legal, legal, legal, legal (7 raw deliveries,
+  # 6 legal). Real cricket over.ball notation: the wide repeats the count
+  # from before it rather than advancing -- "3.2" stays "3.2" until the next
+  # LEGAL ball makes it "3.3". The raw `ball` column (extras included, used
+  # elsewhere for bowling-order sorting) must still count all 7.
+  legal_delivery <- function(runs) {
+    list(batter = "Batter1", bowler = "Bowler1",
+         runs = list(batter = runs, extras = 0, total = runs))
+  }
+  wide_delivery <- function() {
+    list(batter = "Batter1", bowler = "Bowler1",
+         runs = list(batter = 0, extras = 1, total = 1),
+         extras = list(wides = 1))
+  }
+  test_json <- list(
+    meta = list(data_version = "1.1.0"),
+    info = list(
+      teams = c("TeamA", "TeamB"), match_type = "T20", dates = c("2024-01-01"),
+      venue = "Stadium", gender = "male",
+      players = list(TeamA = c("Batter1"), TeamB = c("Bowler1"))
+    ),
+    innings = list(list(
+      team = "TeamA",
+      overs = list(list(
+        over = 3,
+        deliveries = list(
+          legal_delivery(1), legal_delivery(0), wide_delivery(),
+          legal_delivery(4), legal_delivery(0), legal_delivery(0), legal_delivery(6)
+        )
+      ))
+    ))
+  )
+
+  temp_file <- tempfile(fileext = ".json")
+  jsonlite::write_json(test_json, temp_file, auto_unbox = TRUE)
+  result <- parse_cricsheet_json(temp_file)
+  file.remove(temp_file)
+
+  d <- result$deliveries
+  expect_equal(d$ball, 1:7)
+  expect_equal(d$over_ball, c(3.1, 3.2, 3.2, 3.3, 3.4, 3.5, 3.6))
+  # Never spills into over 4's numeric range.
+  expect_true(all(d$over_ball < 4.0))
+})
+
 test_that("parse_cricsheet_json handles wickets correctly", {
   test_json <- list(
     meta = list(data_version = "1.1.0"),

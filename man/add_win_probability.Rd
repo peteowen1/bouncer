@@ -15,7 +15,12 @@ add_win_probability(
 \arguments{
 \item{deliveries}{data.frame with delivery data. Must include:
 match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
-May span multiple matches; chase targets are resolved per \code{match_id}.}
+May span multiple matches; chase targets are resolved per \code{match_id}.
+Should also include \code{over_ball}, \code{wides}, \code{noballs} (all present on
+\code{cricsheet.deliveries}, this function's only real source) -- without
+them, the innings-position feature falls back to recomputing from the
+raw \code{ball} column, which is imprecise for any over containing a wide
+or no-ball (D-P5).}
 
 \item{format}{Character. Match format.}
 

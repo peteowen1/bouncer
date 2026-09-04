@@ -243,28 +243,36 @@ get_max_overs <- function(format) {
 #' had never seen. One definition, called from every site, is what prevents
 #' that recurring.
 #'
-#' @section Known defect (do not silently "fix"):
-#' `ball` counts every delivery in the over, extras included, so it reaches 19
-#' in the stored data (233,975 deliveries have `ball > 6`). With a `/ 10`
-#' denominator, an over needing 10 or more deliveries spills into the next
-#' over's numeric range: over 5 ball 12 gives `6.2`, indistinguishable from
-#' over 6 ball 2. `floor(over_ball)` is therefore the wrong over for those rows.
+#' @section D-P5, fixed 2026-09-04 (do not reintroduce):
+#' `ball` -- the stored `cricsheet.deliveries.ball` column, and the raw
+#' delivery-within-over position this function used to be called with --
+#' counts every delivery in the over, extras included, so it reaches 19 in
+#' the stored data (233,975 deliveries have `ball > 6`). With a `/ 10`
+#' denominator, an over needing 10 or more deliveries spilled into the next
+#' over's numeric range: over 5 ball 12 gave `6.2`, indistinguishable from
+#' over 6 ball 2 (2,637 stored deliveries collided this way).
 #'
-#' This function deliberately reproduces that behaviour. Changing the
-#' convention would make the feature disagree with `cricsheet.deliveries` and
-#' with every trained model, reintroducing exactly the train/serve skew it was
-#' written to remove. Correcting it requires a coordinated parser change, a
-#' full re-parse, and a retrain — see `docs/NEXT-STEPS.md`.
+#' This function's contract changed to fix it: `ball` must now be the LEGAL
+#' ball count within the over (1-6, cricket broadcast notation), not the raw
+#' delivery position. A wide or no-ball does not advance it -- it repeats
+#' the count from before it, so `over_ball` never exceeds `over + 0.6`. The
+#' parser (`cricsheet_parser.R`) tracks this as `legal_ball_num`, reset each
+#' over, incrementing only on a legal delivery. `cricsheet.deliveries.ball`
+#' itself stays the raw, extras-inclusive count unchanged -- other code (the
+#' free-hit derivation) relies on that specifically to reconstruct true
+#' bowling order via `ORDER BY (match_id, innings, over, ball)`. Do not pass
+#' the raw `ball` column to this function; every ball-outcome model (agnostic
+#' + full, t20/odi/test) was retrained on the corrected feature.
 #'
 #' @param over Integer vector. Completed overs before this delivery (0-based).
-#' @param ball Integer vector. Delivery number within the over, 1-based,
-#'   counting extras.
+#' @param ball Integer vector. LEGAL delivery number within the over,
+#'   1-based, NOT counting wides/no-balls (max 6).
 #'
 #' @return Numeric vector of the same length as the recycled inputs.
 #'
-#' Worked values: over 10 ball 3 gives `10.3`; over 0 ball 1 gives `0.1`; over 5
-#' ball 12 gives `6.2` -- see "Known defect" above for why that last one
-#' collides with over 6 ball 2.
+#' Worked values: over 10 ball 3 gives `10.3`; over 0 ball 1 gives `0.1`; an
+#' over with a wide before its 5th legal ball still gives `over + 0.5` for
+#' that 5th ball, not `over + 0.6` or higher.
 #'
 #' @keywords internal
 calculate_over_ball <- function(over, ball) {
