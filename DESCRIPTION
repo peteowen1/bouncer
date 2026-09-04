@@ -35,7 +35,8 @@ Imports:
     data.table,
     Matrix,
     digest,
-    gh
+    gh,
+    splines
 Suggests:
     arrow,
     bouncermodels,
