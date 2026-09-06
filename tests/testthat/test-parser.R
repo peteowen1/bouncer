@@ -295,3 +295,57 @@ test_that("delivery_id format is correct", {
 
   file.remove(temp_file)
 })
+
+test_that("over_ball never escapes its own over even when raw ball passes 10 (D-P5 regression)", {
+  # THE case that motivated D-P5. Under the old convention over_ball was
+  # `over + ball/10` on the RAW extras-inclusive count, so an over needing 11
+  # deliveries produced 5 + 11/10 = 6.1 -- a value belonging to over SIX.
+  # That is the collision the fix exists to remove (2,941 stored deliveries
+  # measured colliding), and it needs 4+ extras in one over to reproduce.
+  # The single-wide test above never drives the raw count past 7.
+  legal_delivery <- function(runs) {
+    list(batter = "Batter1", bowler = "Bowler1",
+         runs = list(batter = runs, extras = 0, total = runs))
+  }
+  wide_delivery <- function() {
+    list(batter = "Batter1", bowler = "Bowler1",
+         runs = list(batter = 0, extras = 1, total = 1),
+         extras = list(wides = 1))
+  }
+  test_json <- list(
+    meta = list(data_version = "1.1.0"),
+    info = list(
+      teams = c("TeamA", "TeamB"), match_type = "T20", dates = c("2024-01-01"),
+      venue = "Stadium", gender = "male",
+      players = list(TeamA = c("Batter1"), TeamB = c("Bowler1"))
+    ),
+    innings = list(list(
+      team = "TeamA",
+      overs = list(list(
+        over = 5,
+        # 6 legal + 5 wides = 11 raw deliveries.
+        deliveries = list(
+          legal_delivery(1), wide_delivery(), legal_delivery(0), wide_delivery(),
+          legal_delivery(4), wide_delivery(), legal_delivery(0), wide_delivery(),
+          legal_delivery(2), wide_delivery(), legal_delivery(6)
+        )
+      ))
+    ))
+  )
+
+  temp_file <- tempfile(fileext = ".json")
+  jsonlite::write_json(test_json, temp_file, auto_unbox = TRUE)
+  result <- parse_cricsheet_json(temp_file)
+  file.remove(temp_file)
+
+  d <- result$deliveries
+  expect_equal(d$ball, 1:11)
+  # The old convention would have put the 11th delivery at 6.1.
+  expect_true(all(d$over_ball < 6.0))
+  # Containment, which is what the fix actually guarantees -- NOT uniqueness:
+  # an illegal delivery deliberately repeats the count from before it.
+  expect_true(all(d$over_ball >= 5.0 & d$over_ball <= 5.6))
+  expect_true(all(diff(d$over_ball) >= 0))
+  expect_equal(d$over_ball,
+               c(5.1, 5.1, 5.2, 5.2, 5.3, 5.3, 5.4, 5.4, 5.5, 5.5, 5.6))
+})

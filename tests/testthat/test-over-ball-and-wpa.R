@@ -266,3 +266,58 @@ test_that("a vector target is rejected rather than silently recycled", {
     "single value"
   )
 })
+
+test_that("add_win_probability prefers over_ball and freezes the clock on illegal deliveries (D-P5)", {
+  # The two branches this commit ADDED had no executed coverage: the only
+  # fixture in this file carries no over_ball/wides/noballs columns, so
+  # is.null(row$over_ball) was always TRUE and this_is_illegal always FALSE --
+  # every assertion ran the pre-D-P5 fallback. And the tests that call
+  # add_win_probability() all gate on skip_without_models(), which skips in
+  # CI. Mocking predict_win_probability lets the real branch logic run with
+  # no models and no skip, and captures the clock values it is handed.
+  captured <- list()
+  local_mocked_bindings(
+    predict_win_probability = function(current_score, wickets, overs, innings,
+                                       target = NULL, format = "t20",
+                                       venue_stats = NULL, match_state = NULL,
+                                       skill_adjustments = NULL, models = NULL,
+                                       recent_balls = NULL) {
+      captured[[length(captured) + 1L]] <<- overs
+      list(win_prob = 0.5)
+    }
+  )
+
+  # Over 3: legal, WIDE, legal. Note row 2's over_ball (3.1) deliberately
+  # DISAGREES with calculate_over_ball(over = 3, ball = 2) = 3.2, so if the
+  # raw-ball fallback ran instead of the over_ball column, the captured value
+  # would be 3.2 and this test fails.
+  d <- data.frame(
+    match_id = "m1", innings = 1L,
+    over = c(3L, 3L, 3L), ball = c(1L, 2L, 3L),
+    over_ball = c(3.1, 3.1, 3.2),
+    wides = c(0L, 1L, 0L), noballs = c(0L, 0L, 0L),
+    runs_total = c(1, 1, 4),
+    total_runs = c(1, 2, 6),
+    wickets_fallen = 0L, is_wicket = FALSE
+  )
+
+  res <- add_win_probability(d, format = "t20", models = list(stub = TRUE))
+  expect_equal(nrow(res), 3L)
+
+  # Captured in call order: before, after, before, after, before, after.
+  expect_length(captured, 6L)
+  befores <- unlist(captured[c(1, 3, 5)])
+  afters  <- unlist(captured[c(2, 4, 6)])
+
+  # over_ball is used verbatim, never recomputed from the raw ball count.
+  expect_equal(afters, c(3.1, 3.1, 3.2), tolerance = 1e-8)
+
+  # A legal delivery's before-state is one LEGAL ball earlier.
+  expect_equal(befores[1], 3.0, tolerance = 1e-8)
+  expect_equal(befores[3], 3.1, tolerance = 1e-8)
+
+  # The wide does NOT advance the clock: its before-state equals its
+  # after-state. Subtracting 0.1 here would be wrong for exactly the
+  # deliveries this fix exists to handle.
+  expect_equal(befores[2], afters[2], tolerance = 1e-8)
+})

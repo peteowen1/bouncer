@@ -59,9 +59,7 @@ itself stays the raw, extras-inclusive count unchanged -- other code (the
 free-hit derivation) relies on that specifically to reconstruct true
 bowling order via \verb{ORDER BY (match_id, innings, over, ball)}. Do not pass
 the raw \code{ball} column to this function; every ball-outcome model (agnostic
-\itemize{
-\item full, t20/odi/test) was retrained on the corrected feature.
-}
+and full, across t20/odi/test) was retrained on the corrected feature.
 }
 
 \keyword{internal}

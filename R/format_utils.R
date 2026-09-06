@@ -262,7 +262,7 @@ get_max_overs <- function(format) {
 #' free-hit derivation) relies on that specifically to reconstruct true
 #' bowling order via `ORDER BY (match_id, innings, over, ball)`. Do not pass
 #' the raw `ball` column to this function; every ball-outcome model (agnostic
-#' + full, t20/odi/test) was retrained on the corrected feature.
+#' and full, across t20/odi/test) was retrained on the corrected feature.
 #'
 #' @param over Integer vector. Completed overs before this delivery (0-based).
 #' @param ball Integer vector. LEGAL delivery number within the over,
