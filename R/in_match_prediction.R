@@ -1378,6 +1378,11 @@ resolve_targets_by_match <- function(deliveries, target = NULL) {
 #' @param deliveries data.frame with delivery data. Must include:
 #'   match_id, innings, over, ball, total_runs (cumulative), wickets_fallen.
 #'   May span multiple matches; chase targets are resolved per `match_id`.
+#'   Should also include `over_ball`, `wides`, `noballs` (all present on
+#'   `cricsheet.deliveries`, this function's only real source) -- without
+#'   them, the innings-position feature falls back to recomputing from the
+#'   raw `ball` column, which is imprecise for any over containing a wide
+#'   or no-ball (D-P5).
 #' @param format Character. Match format.
 #' @param target Integer. 2nd innings target, applied to every match in
 #'   `deliveries`. Leave NULL (the default) to derive a separate target for
@@ -1447,8 +1452,16 @@ add_win_probability <- function(deliveries,
     match_target <- unname(target_by_match[as.character(row$match_id)])
     if (length(match_target) != 1L || is.na(match_target)) match_target <- NULL
 
-    # State AFTER this delivery, in cricket notation.
-    overs <- calculate_over_ball(row$over, row$ball)
+    # State AFTER this delivery, in cricket notation. Prefer the stored,
+    # already-correct column (D-P5) over recomputing from raw `ball`:
+    # calculate_over_ball()'s contract requires the LEGAL ball count, and
+    # `row$ball` is the raw, extras-inclusive position -- passing it directly
+    # reintroduces the exact over-boundary collision D-P5 fixed, for any
+    # over containing a wide/no-ball. Falls back to the (pre-D-P5, still
+    # imprecise) raw recompute only if the caller's frame genuinely lacks
+    # over_ball.
+    overs <- if (!is.null(row$over_ball)) row$over_ball else
+      calculate_over_ball(row$over, row$ball)
 
     # State BEFORE this delivery, derived from THIS row's own columns --
     # total_runs and wickets_fallen are POST-delivery cumulatives, so
@@ -1465,9 +1478,22 @@ add_win_probability <- function(deliveries,
     score_before <- max(0, (row$total_runs %||% 0) - runs_this_ball)
     wickets_before <- max(0, (row$wickets_fallen %||% 0) -
                             as.integer(isTRUE(row$is_wicket)))
-    # One ball earlier on the clock; ball 1 rolls back to the whole over
-    # (cricsheet over is 0-indexed, so that IS the innings clock pre-ball).
-    overs_before <- calculate_over_ball(row$over, max(0L, row$ball - 1L))
+    # One LEGAL ball earlier on the clock (D-P5). A wide/no-ball doesn't
+    # advance the over -- its own before-state equals its after-state, both
+    # the legal count from before it, so subtracting 0.1 would be wrong for
+    # exactly the deliveries this fix exists to handle correctly. A legal
+    # delivery's before-state is its own over_ball minus one legal ball
+    # (0.1), which never crosses an over boundary since a legal ball's
+    # fractional part is always >= 0.1. Falls back to the raw-ball recompute,
+    # same limitation as `overs` above, only when over_ball is unavailable.
+    this_is_illegal <- isTRUE((row$wides %||% 0) > 0) || isTRUE((row$noballs %||% 0) > 0)
+    overs_before <- if (this_is_illegal) {
+      overs
+    } else if (!is.null(row$over_ball)) {
+      row$over_ball - 0.1
+    } else {
+      calculate_over_ball(row$over, max(0L, row$ball - 1L))
+    }
 
     # Win probability before
     wp_before <- tryCatch({

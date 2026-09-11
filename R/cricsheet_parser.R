@@ -402,6 +402,17 @@ parse_all_data <- function(json_data, match_info) {
       for (over_data in overs) {
         over_num <- over_data$over %||% 0L
         deliveries <- over_data$deliveries
+        # D-P5: `ball` (below, del_ball) is cricsheet's raw delivery-within-
+        # over position and legitimately counts illegal deliveries -- other
+        # code (the free-hit derivation) relies on that to reconstruct true
+        # bowling order via ORDER BY (match_id, innings, over, ball). But
+        # over_ball, the innings-position MODEL FEATURE, must NOT count them:
+        # a wide/no-ball doesn't advance the over, so "5.2" stays "5.2" until
+        # the next LEGAL ball. legal_ball_num tracks that separately, reset
+        # per over, incrementing only on a legal delivery -- an illegal
+        # delivery repeats the count from before it, exactly matching
+        # broadcast over.ball notation and keeping over_ball in [over, over+0.6].
+        legal_ball_num <- 0L
 
         if (!is.null(deliveries)) {
           for (ball_num in seq_along(deliveries)) {
@@ -423,6 +434,10 @@ parse_all_data <- function(json_data, match_info) {
             byes <- as.integer(extras$byes %||% 0L)
             legbyes <- as.integer(extras$legbyes %||% 0L)
             penalty <- as.integer(extras$penalty %||% 0L)
+
+            # D-P5: only a wide or no-ball is illegal (doesn't count toward
+            # the over) -- byes/leg-byes/penalty are legal deliveries.
+            if (wides == 0L && noballs == 0L) legal_ball_num <- legal_ball_num + 1L
 
             # Extract wicket
             wickets <- delivery$wickets
@@ -504,7 +519,7 @@ parse_all_data <- function(json_data, match_info) {
             del_innings[delivery_idx] <- innings_num
             del_over[delivery_idx] <- over_num
             del_ball[delivery_idx] <- ball_num
-            del_over_ball[delivery_idx] <- calculate_over_ball(over_num, ball_num)
+            del_over_ball[delivery_idx] <- calculate_over_ball(over_num, legal_ball_num)
             del_batter_id[delivery_idx] <- get_player_id(delivery$batter)
             del_bowler_id[delivery_idx] <- get_player_id(delivery$bowler)
             del_non_striker_id[delivery_idx] <- get_player_id(delivery$non_striker)

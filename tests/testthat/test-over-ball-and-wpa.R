@@ -13,13 +13,18 @@ test_that("calculate_over_ball is vectorised and recycles", {
   expect_length(calculate_over_ball(integer(0), integer(0)), 0)
 })
 
-test_that("calculate_over_ball spills past a full over when extras push ball above 9", {
-  # Documented defect, deliberately preserved: 233,975 stored deliveries have
-  # ball > 6 and 2,637 have ball >= 10, where the value collides with the next
-  # over. Pinned so that "fixing" it is a conscious decision with a retrain,
-  # not an accident.
-  expect_equal(calculate_over_ball(5, 12), 6.2)
-  expect_equal(calculate_over_ball(6, 2), 6.2)
+test_that("calculate_over_ball's contract is now the LEGAL ball count (D-P5, fixed 2026-09-04)", {
+  # calculate_over_ball() itself still does the same arithmetic (over + ball/10)
+  # -- what changed is what callers must pass. Previously the parser passed
+  # the raw delivery-within-over position (extras included, up to 19), which
+  # spilled into the next over's numeric range for 2,637 stored deliveries
+  # (over 5 ball 12 == over 6 ball 2 == 6.2). Now every caller passes the
+  # LEGAL ball count (max 6), so the collision is structurally impossible --
+  # see test-parser.R's "a wide inside an over doesn't advance over_ball"
+  # for the parser-level guarantee. This test only pins that a legal count
+  # can never itself exceed the over boundary.
+  expect_equal(calculate_over_ball(5, 6), 5.6)
+  expect_lt(calculate_over_ball(5, 6), 6.0)
 })
 
 test_that("every over_ball reconstruction site agrees with the helper", {
@@ -260,4 +265,59 @@ test_that("a vector target is rejected rather than silently recycled", {
                         target = c(100, 200)),
     "single value"
   )
+})
+
+test_that("add_win_probability prefers over_ball and freezes the clock on illegal deliveries (D-P5)", {
+  # The two branches this commit ADDED had no executed coverage: the only
+  # fixture in this file carries no over_ball/wides/noballs columns, so
+  # is.null(row$over_ball) was always TRUE and this_is_illegal always FALSE --
+  # every assertion ran the pre-D-P5 fallback. And the tests that call
+  # add_win_probability() all gate on skip_without_models(), which skips in
+  # CI. Mocking predict_win_probability lets the real branch logic run with
+  # no models and no skip, and captures the clock values it is handed.
+  captured <- list()
+  local_mocked_bindings(
+    predict_win_probability = function(current_score, wickets, overs, innings,
+                                       target = NULL, format = "t20",
+                                       venue_stats = NULL, match_state = NULL,
+                                       skill_adjustments = NULL, models = NULL,
+                                       recent_balls = NULL) {
+      captured[[length(captured) + 1L]] <<- overs
+      list(win_prob = 0.5)
+    }
+  )
+
+  # Over 3: legal, WIDE, legal. Note row 2's over_ball (3.1) deliberately
+  # DISAGREES with calculate_over_ball(over = 3, ball = 2) = 3.2, so if the
+  # raw-ball fallback ran instead of the over_ball column, the captured value
+  # would be 3.2 and this test fails.
+  d <- data.frame(
+    match_id = "m1", innings = 1L,
+    over = c(3L, 3L, 3L), ball = c(1L, 2L, 3L),
+    over_ball = c(3.1, 3.1, 3.2),
+    wides = c(0L, 1L, 0L), noballs = c(0L, 0L, 0L),
+    runs_total = c(1, 1, 4),
+    total_runs = c(1, 2, 6),
+    wickets_fallen = 0L, is_wicket = FALSE
+  )
+
+  res <- add_win_probability(d, format = "t20", models = list(stub = TRUE))
+  expect_equal(nrow(res), 3L)
+
+  # Captured in call order: before, after, before, after, before, after.
+  expect_length(captured, 6L)
+  befores <- unlist(captured[c(1, 3, 5)])
+  afters  <- unlist(captured[c(2, 4, 6)])
+
+  # over_ball is used verbatim, never recomputed from the raw ball count.
+  expect_equal(afters, c(3.1, 3.1, 3.2), tolerance = 1e-8)
+
+  # A legal delivery's before-state is one LEGAL ball earlier.
+  expect_equal(befores[1], 3.0, tolerance = 1e-8)
+  expect_equal(befores[3], 3.1, tolerance = 1e-8)
+
+  # The wide does NOT advance the clock: its before-state equals its
+  # after-state. Subtracting 0.1 here would be wrong for exactly the
+  # deliveries this fix exists to handle.
+  expect_equal(befores[2], afters[2], tolerance = 1e-8)
 })
