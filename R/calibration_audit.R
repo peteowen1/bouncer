@@ -295,6 +295,10 @@ audit_low_information_state <- function(predicted, actual, state, min_n = 30,
   ), class = c("low_information_audit", "data.frame"))
 }
 
+#' Print method for low_information_audit objects
+#'
+#' @param x A `low_information_audit` object from [audit_low_information_state()].
+#' @param ... Additional arguments (unused)
 #' @export
 print.low_information_audit <- function(x, ...) {
   cli::cli_h1("Low-information-state check")
