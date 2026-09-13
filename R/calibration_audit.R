@@ -156,6 +156,11 @@ worst_calibration_buckets <- function(audit, n = 10, cut = NULL) {
   do.call(rbind, lapply(split(ordered, ordered$cut), utils::head, n))
 }
 
+#' Print method for calibration_audit objects
+#'
+#' @param x A `calibration_audit` data frame from [calibration_audit()].
+#' @param n Number of rows to print per cut (default 10). Use `Inf` for all.
+#' @param ... Additional arguments (unused)
 #' @export
 print.calibration_audit <- function(x, n = 10, ...) {
   cli::cli_h1("Calibration audit")
@@ -290,6 +295,10 @@ audit_low_information_state <- function(predicted, actual, state, min_n = 30,
   ), class = c("low_information_audit", "data.frame"))
 }
 
+#' Print method for low_information_audit objects
+#'
+#' @param x A `low_information_audit` object from [audit_low_information_state()].
+#' @param ... Additional arguments (unused)
 #' @export
 print.low_information_audit <- function(x, ...) {
   cli::cli_h1("Low-information-state check")
