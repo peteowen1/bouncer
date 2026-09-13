@@ -156,6 +156,11 @@ worst_calibration_buckets <- function(audit, n = 10, cut = NULL) {
   do.call(rbind, lapply(split(ordered, ordered$cut), utils::head, n))
 }
 
+#' Print method for calibration_audit objects
+#'
+#' @param x A `calibration_audit` data frame from [calibration_audit()].
+#' @param n Number of rows to print per cut (default 10). Use `Inf` for all.
+#' @param ... Additional arguments (unused)
 #' @export
 print.calibration_audit <- function(x, n = 10, ...) {
   cli::cli_h1("Calibration audit")
