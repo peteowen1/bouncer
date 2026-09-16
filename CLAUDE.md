@@ -150,11 +150,12 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 | **Utilities** | `format_utils.R`, `validation_helpers.R`, `pipeline_state.R`, `pipeline_benchmark.R`, `event_tiers.R`, `team_ids.R` | Helpers, validation, pipeline state, benchmarks |
 | **Weather** | `weather.R` | Weather data (Open-Meteo API, venue geocoding) |
 | **Tuning** | `xgb_tuning.R` | XGBoost hyperparameter tuning utilities |
+| **Vendored** | `versebus.R` | Canonical copy is `torpverse/torp/R/versebus.R`; `test-versebus-sync.R` pins this file's contents to it byte-for-byte — never edit locally, sync from torp instead |
 | **Visualization** | `visualization.R` | ggplot2-based plotting functions |
 
 ### tests/testthat/
 
-Covers ratings, models, data pipeline, and API surfaces — around 30 test files. Run `ls tests/testthat/` for the current list; run a single file with `testthat::test_file("tests/testthat/test-<name>.R")`.
+Covers ratings, models, data pipeline, and API surfaces — around 76 test files. Run `ls tests/testthat/` for the current list; run a single file with `testthat::test_file("tests/testthat/test-<name>.R")`.
 
 ### debug/ - Scratch Scripts (gitignored)
 
