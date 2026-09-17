@@ -55,12 +55,15 @@ Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glick
 > 0.0/0.8/0.8%" ceiling (#16) — that figure was itself measured while these same
 > ELO features were zero-filled, so it was a symptom of this bug, not a bound.
 >
-> **But the retrained full model is still DORMANT** (`docs/reference/MODEL-INVENTORY.md`,
-> checked 2026-08-22): `load_full_model()`/`predict_full_outcome()` are absent from
-> `NAMESPACE`, no pipeline step or workflow reaches them, and they are not
-> republished to the `ball-outcome` release. So 3-Way ELO now genuinely feeds a
-> full delivery-outcome model with real signal — a reversal of the total defect
-> above — but that model does not yet feed anything else in production.
+> **Update (checked 2026-09-17): no longer DORMANT by the criteria above.**
+> `load_full_model()`/`predict_full_outcome()` are now exported in `NAMESPACE`
+> and used from `R/simulation.R` and `R/player_attribution.R`; training is
+> wired into `data-raw/run_full_pipeline.R` as "Step 7: Full Model"
+> (`data-raw/models/ball-outcome/02_train_full_model.R`, commit `64e046e`,
+> ~2026-09-01, closing #79/D-P55). Re-verify against
+> `docs/reference/MODEL-INVENTORY.md` (last updated 2026-08-22, predates this)
+> and confirm whether it's republished to the `ball-outcome` release and
+> reaches live serving, not just training — that part wasn't re-checked here.
 
 > ### ⚠️ The WPA feeding the ratings is now OURS (D-P6, 2026-08-13) — but it barely matters
 >
