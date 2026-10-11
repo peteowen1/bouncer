@@ -804,6 +804,13 @@ utils::globalVariables(c(
 # Utility Functions
 # ============================================================================
 
+# ============================================================================
+# Player register, dates of birth and ageing (player_register.R, D-P69)
+# ============================================================================
+utils::globalVariables(c(
+  "dob", "dob_source", "player_dob", "n_dates", "key"
+))
+
 #' Check for Parallel Support
 #'
 #' Checks if the required packages for parallel file parsing are available.
