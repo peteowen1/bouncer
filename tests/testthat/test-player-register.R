@@ -21,3 +21,12 @@ test_that(".parse_cricinfo_dob loses only the malformed entry, not the batch", {
   x <- c("{'date': 1, 'month': 2, 'year': 1985}", "{'date': True, 'month': 'x", "{'date': 3, 'month': 4, 'year': 1990}")
   expect_equal(.parse_cricinfo_dob(x), as.Date(c("1985-02-01", NA, "1990-04-03")))
 })
+
+test_that(".parse_cricinfo_dob: an impossible date first in the vector loses only itself", {
+  x <- c("{'date': 30, 'month': 2, 'year': 1985}", "{'date': 3, 'month': 4, 'year': 1990}")
+  expect_equal(.parse_cricinfo_dob(x), as.Date(c(NA, "1990-04-03")))
+  expect_equal(.parse_cricinfo_dob(rev(x)), as.Date(c("1990-04-03", NA)))
+  expect_equal(.parse_cricinfo_dob(c("{'date': 3, 'month': 13, 'year': 1990}",
+                                     "{'date': 3, 'month': 4, 'year': 1990}")),
+               as.Date(c(NA, "1990-04-03")))
+})

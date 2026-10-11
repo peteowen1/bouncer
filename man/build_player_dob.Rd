@@ -19,6 +19,6 @@ The table, invisibly.
 Writes \code{main.player_dob} (\code{player_id}, \code{dob}, \code{dob_source}) from cricinfo
 scorecards joined through \code{cricsheet.people_register} (any of
 \code{key_cricinfo}, \code{key_cricinfo_2}, \code{key_cricinfo_3}), then the
-player_details file for anyone cricinfo lacks. Estimated ages are NOT stored
-here: \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}} derives them per bucket and marks them.
+player_details file for anyone cricinfo lacks. Players with no date here
+are not aged by \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}} (\code{dob_source} "none").
 }

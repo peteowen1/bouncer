@@ -1259,7 +1259,7 @@ calculate_player_rating_v2 <- function(format = "t20",
     # Coverage, not presence: an empty or mis-keyed date table would leave every
     # adjustment at 0 with a green build. Half the rated players dated is far
     # below every bucket on 2026-10-12 (lowest 0.79, Test internationals batters).
-    dated <- r[, mean(dob_source != "none")]
+    dated <- if (nrow(r)) r[, mean(dob_source != "none")] else 1
     if (dated < 0.5) {
       cli::cli_abort(c("Only {round(100 * dated)}% of rated {gender} {format} {role}s have a date of birth.",
                        "i" = "Check main.player_dob (build_player_dob) and the id join before publishing."))

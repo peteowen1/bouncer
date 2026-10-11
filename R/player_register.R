@@ -66,7 +66,10 @@ sync_people_register <- function(conn, path = NULL,
     if (!is.list(z) || is.null(z$year) || is.null(z$month) || is.null(z$date)) return(NA_character_)
     sprintf("%04d-%02d-%02d", as.integer(z$year), as.integer(z$month), as.integer(z$date))
   }
-  as.Date(vapply(x, one, "", USE.NAMES = FALSE), optional = TRUE)
+  # An explicit format: bare as.Date() picks ONE format from the first string
+  # and applies it to all, so one impossible date (30 February) first in the
+  # vector turned every date NA. With a format, each element stands alone.
+  as.Date(vapply(x, one, "", USE.NAMES = FALSE), format = "%Y-%m-%d")
 }
 
 #' Build the player date-of-birth table
@@ -74,8 +77,8 @@ sync_people_register <- function(conn, path = NULL,
 #' Writes `main.player_dob` (`player_id`, `dob`, `dob_source`) from cricinfo
 #' scorecards joined through `cricsheet.people_register` (any of
 #' `key_cricinfo`, `key_cricinfo_2`, `key_cricinfo_3`), then the
-#' player_details file for anyone cricinfo lacks. Estimated ages are NOT stored
-#' here: [calculate_player_rating_v2()] derives them per bucket and marks them.
+#' player_details file for anyone cricinfo lacks. Players with no date here
+#' are not aged by [calculate_player_rating_v2()] (`dob_source` "none").
 #'
 #' @param conn A read-write DuckDB connection.
 #' @param details_path Path to `bouncer_player_details.parquet`, or NULL to use
