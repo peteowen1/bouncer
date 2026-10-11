@@ -1229,7 +1229,8 @@ calculate_player_rating_v2 <- function(format = "t20",
       pm[, shift := .ageing_young(cv, age_last) - .ageing_young(cv, age)]
       pm[is.na(shift), shift := 0]
       cli::cli_alert_info(paste0(
-        "Ageing curve: peak {cv$peak}, measured to {cv$last}, extended past that (an assumption). ",
+        "Ageing curve: peak {cv$peak}, measured to {cv$last}, extended past that (an assumption); ",
+        "per match vs age 27: {paste(sprintf('%d: %+.2f', c(20L, 35L, 45L, 60L), .ageing_full(cv, c(20, 35, 45, 60))), collapse = ', ')}. ",
         "Dates of birth: {ages[dob_source != 'estimated', .N]} real, {ages[dob_source == 'estimated', .N]} estimated ",
         "(median debut age {round(debut_age, 1)})."))
     }

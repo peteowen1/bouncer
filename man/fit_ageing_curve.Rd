@@ -4,7 +4,13 @@
 \alias{fit_ageing_curve}
 \title{Fit a within-player ageing curve}
 \usage{
-fit_ageing_curve(pm, ages = 16:45, min_n = 200L, iters = 30L)
+fit_ageing_curve(
+  pm,
+  ages = 16:45,
+  min_n = 200L,
+  iters = 30L,
+  peak_window = c(22, 34)
+)
 }
 \arguments{
 \item{pm}{data.table with \code{player_id}, \code{v} (per-match value) and \code{age}
@@ -15,6 +21,12 @@ fit_ageing_curve(pm, ages = 16:45, min_n = 200L, iters = 30L)
 \item{min_n}{Matches an age needs to count as well measured.}
 
 \item{iters}{Alternating-means iterations.}
+
+\item{peak_window}{Ages the peak may be found in. Without it, thin, noisy
+young ages won the peak in four bowler buckets (age 17 or 21 on the
+2026-10-11 build), which switched the rising part off and bent the
+extension; and women's T20 batters peaked at their oldest measured age, so
+no decline was measured at all.}
 }
 \value{
 A list (\code{tab}, \code{peak}, \code{first}, \code{last}, \code{f_peak}, \code{f_last}, \code{b}), or

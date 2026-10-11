@@ -25,11 +25,17 @@
 #' @param ages Integer range of ages to bin into; ages outside are clamped.
 #' @param min_n Matches an age needs to count as well measured.
 #' @param iters Alternating-means iterations.
+#' @param peak_window Ages the peak may be found in. Without it, thin, noisy
+#'   young ages won the peak in four bowler buckets (age 17 or 21 on the
+#'   2026-10-11 build), which switched the rising part off and bent the
+#'   extension; and women's T20 batters peaked at their oldest measured age, so
+#'   no decline was measured at all.
 #' @return A list (`tab`, `peak`, `first`, `last`, `f_peak`, `f_last`, `b`), or
 #'   NULL when there is too little dated data (fewer than 2,000 matches, or
 #'   fewer than `min_n` at age 27).
 #' @export
-fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L) {
+fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L,
+                             peak_window = c(22, 34)) {
   d <- data.table::as.data.table(pm)[!is.na(age), .(player_id, v, age)]
   d[, ab := pmin(pmax(floor(age), min(ages)), max(ages))]
   if (nrow(d) < 2000L || d[ab == 27, .N] < min_n) return(NULL)
@@ -47,7 +53,9 @@ fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L) {
   }, numeric(1))]
   fa[, thin := n < min_n]
   ok <- fa[thin == FALSE]
-  peak <- ok[which.max(f_s), ab]
+  in_win <- ok[ab >= peak_window[1] & ab <= peak_window[2]]
+  if (!nrow(in_win)) return(NULL)
+  peak <- in_win[which.max(f_s), ab]
   last <- max(ok$ab)
   f_peak <- ok[ab == peak, f_s]
   post <- ok[ab > peak]
@@ -57,17 +65,37 @@ fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L) {
   # The extension must fall. If the measured ages give no decline at all (or
   # too few points), fall back to a gentle one rather than let it rise.
   if (!is.finite(b) || b >= 0) b <- -0.01 * (abs(f_peak - min(ok$f_s)) + 1)
+  # The rising part, forced non-decreasing up to the peak (weighted
+  # pool-adjacent-violators), so a noisy dip at 18-21 is never credited as
+  # improvement and the young-only curve can only rise.
+  rise <- fa[ab <= peak]
+  fa[ab <= peak, f_rise := .pava(rise$f_s, rise$n)]
+  fa[ab > peak, f_rise := f_peak]
   list(tab = fa, peak = peak, first = min(ok$ab), last = last,
        f_peak = f_peak, f_last = ok[ab == last, f_s], b = b)
 }
 
-# The rising part only: flat after the peak, so nobody declines.
+# Weighted pool-adjacent-violators: the closest non-decreasing sequence.
+.pava <- function(y, w) {
+  val <- y; wt <- w; len <- rep(1L, length(y)); k <- 0L
+  for (i in seq_along(y)) {
+    k <- k + 1L; val[k] <- y[i]; wt[k] <- w[i]; len[k] <- 1L
+    while (k > 1L && val[k - 1L] > val[k]) {
+      val[k - 1L] <- (val[k - 1L] * wt[k - 1L] + val[k] * wt[k]) / (wt[k - 1L] + wt[k])
+      wt[k - 1L] <- wt[k - 1L] + wt[k]; len[k - 1L] <- len[k - 1L] + len[k]; k <- k - 1L
+    }
+  }
+  rep(val[seq_len(k)], len[seq_len(k)])
+}
+
+# The rising part only: non-decreasing up to the peak, flat after it, so
+# nobody declines.
 .ageing_young <- function(cv, age) {
   out <- numeric(length(age))
   ok <- !is.na(age)
   if (is.null(cv) || !any(ok)) return(out)
-  a <- pmin(pmax(age[ok], cv$first), cv$peak)
-  out[ok] <- stats::approx(cv$tab$ab, cv$tab$f_s, xout = a, rule = 2)$y
+  a <- pmin(pmax(age[ok], min(cv$tab$ab)), cv$peak)
+  out[ok] <- stats::approx(cv$tab$ab, cv$tab$f_rise, xout = a, rule = 2)$y
   out
 }
 

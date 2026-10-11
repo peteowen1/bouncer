@@ -810,7 +810,7 @@ utils::globalVariables(c(
 utils::globalVariables(c(
   "dob", "dob_source", "player_dob", "n_dates", "key",
   "age", "ab", "f", "a", "n", "f_s", "thin", "players", "i.f", "shift",
-  "age_last", "age_at_last_match", "post_career_adjustment", "i.dob",
+  "age_last", "age_at_last_match", "post_career_adjustment", "i.dob", "f_rise",
   "i.dob_source", "i.first", "first"
 ))
 

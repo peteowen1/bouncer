@@ -43,3 +43,19 @@ test_that("ageing helpers return 0 without a curve or an age", {
 test_that("fit_ageing_curve refuses thin data rather than fitting noise", {
   expect_null(fit_ageing_curve(make_pm(n_players = 20L)))
 })
+
+test_that(".pava returns the closest non-decreasing sequence", {
+  expect_equal(.pava(c(1, 3, 2, 4), c(1, 1, 1, 1)), c(1, 2.5, 2.5, 4))
+  expect_equal(.pava(c(5, 1), c(1, 3)), c(2, 2))
+  expect_equal(.pava(1:4, rep(1, 4)), 1:4)
+})
+
+test_that("a noisy early peak cannot switch the rising part off", {
+  pm <- make_pm()
+  # spike the youngest ages so the raw curve's maximum sits at 17
+  pm[age < 18, v := v + 30]
+  cv <- fit_ageing_curve(pm)
+  expect_true(cv$peak >= 22 && cv$peak <= 34)
+  y <- .ageing_young(cv, seq(16, 40, by = 0.5))
+  expect_true(all(diff(y) >= -1e-12))
+})
