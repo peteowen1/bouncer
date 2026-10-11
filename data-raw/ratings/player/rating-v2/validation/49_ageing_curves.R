@@ -63,7 +63,7 @@ options(width = 200)
 for (bk in buckets) {
   cat("\n==========", bk$label, "==========\n")
   r <- suppressMessages(get("calculate_player_rating_v2", asNamespace("bouncer"))(
-    bk$format, "male", role = bk$role, conn = conn, match_type_filter = bk$mtf))
+    ageing = "none", bk$format, "male", role = bk$role, conn = conn, match_type_filter = bk$mtf))
   cap <- get(".cap", globalenv()); pm <- cap$pm
   pm[ppl, on = "player_id", dob := i.dob]
   pm[, age := as.numeric(match_date - dob) / 365.25]

@@ -162,6 +162,15 @@ check_anchor <- function(r, surnames, top, label) {
 conn <- get_db_connection(read_only = FALSE)
 on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
+# Ageing (D-P69) needs dates of birth. Refresh cricsheet's register and the
+# date table each run: both are seconds, and a stale register silently leaves
+# new players' ages estimated instead of known.
+sync_people_register(conn)
+build_player_dob(conn, details_path = {
+  p <- file.path(find_bouncerdata_dir(), "source", "bouncer_player_details.parquet")
+  if (file.exists(p)) p else NULL
+})
+
 have <- as.data.table(DBI::dbGetQuery(conn,
   "SELECT format, gender, COUNT(*) AS balls FROM main.cricsheet_ball_raa
    GROUP BY format, gender"))

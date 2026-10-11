@@ -12,6 +12,7 @@ calculate_player_rating_v2(
   as_at = NULL,
   decay_days = NULL,
   shrink_to = c("debut", "population"),
+  ageing = c("two_part", "none"),
   prior_matches = NULL,
   prior_balls = 60,
   iterations = 20L,
@@ -52,6 +53,16 @@ predicts newcomers' next match closer in all 12. The population mean
 over-predicted them in every bucket (T20 men's batters: +1.47 predicted,
 -0.93 actual).}
 
+\item{ageing}{\code{"two_part"} (default, D-P69) or \code{"none"}. Two-part moves
+every match along the rising part of the bucket's ageing curve (see
+\code{\link[=fit_ageing_curve]{fit_ageing_curve()}}) to the player's age at his last match, so young
+players are credited with improvement and nobody declines while still being
+picked; then adds the full decline from that age to his age at \code{as_at}, so
+a retired player keeps falling with age (\code{post_career_adjustment}). Needs
+\code{main.player_dob} (\code{\link[=build_player_dob]{build_player_dob()}}); undated players get an age
+estimated from their debut. \code{"none"} reproduces the ratings before
+2026-10-11 exactly.}
+
 \item{prior_matches}{Numeric shrinkage toward \code{shrink_to}, in
 matches. NULL derives it per bucket via \code{\link[=derive_shrinkage_prior]{derive_shrinkage_prior()}}, which
 is the default because the old hand-set 20 was a men's-T20 number reused
@@ -90,7 +101,10 @@ first-class, and Tom Abell outranks Steve Smith).}
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
 \code{average}, \code{main_comp}, \code{matches}, \code{balls}, \code{effective_matches},
-\code{last_match}, ordered best first. \code{average} and \code{main_comp} come from
+\code{last_match}, \code{age} and \code{age_at_last_match} (years), \code{post_career_adjustment}
+(already included in \code{rating}; 0 without ageing) and \code{dob_source}
+(\code{cricinfo}, \code{details} or \code{estimated}), ordered best first. The fitted
+curve is attached as the \code{"ageing_curve"} attribute (NULL without ageing). \code{average} and \code{main_comp} come from
 \code{\link[=player_career_context]{player_career_context()}} and are context beside the rating, never inputs
 to it. \code{matches} counts innings batted
 for a batter and matches played for a bowler — the two roles use different

@@ -93,7 +93,7 @@ for (bk in buckets) {
   res_file <- file.path(RES_DIR, paste0(gsub("[^a-z0-9]+", "_", bk$label), ".csv"))
   if (file.exists(res_file)) { cat(bk$label, "already scored, skipping\n"); next }
   r <- suppressMessages(get("calculate_player_rating_v2", asNamespace("bouncer"))(
-    bk$format, bk$gender, role = bk$role, conn = conn, match_type_filter = bk$mtf))
+    ageing = "none", bk$format, bk$gender, role = bk$role, conn = conn, match_type_filter = bk$mtf))
   cap <- get(".cap", globalenv()); pm <- cap$pm; tg <- cap$target
   pm[dobs, on = "player_id", `:=`(dob = i.dob, src = i.src)]
   pm[, first := min(match_date), by = player_id]

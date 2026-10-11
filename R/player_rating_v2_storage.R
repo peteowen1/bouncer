@@ -19,7 +19,8 @@
   player_id = "VARCHAR", player_name = "VARCHAR", rating = "DOUBLE",
   average = "DOUBLE", main_comp = "VARCHAR", matches = "INTEGER",
   balls = "INTEGER", effective_matches = "DOUBLE", last_match = "DATE",
-  as_at = "DATE")
+  as_at = "DATE", age = "DOUBLE", age_at_last_match = "DOUBLE",
+  post_career_adjustment = "DOUBLE", dob_source = "VARCHAR")
 
 .value_v2_schema <- c(
   format = "VARCHAR", gender = "VARCHAR", rank = "INTEGER",
@@ -144,6 +145,13 @@ store_player_rating_v2 <- function(conn, data, format, gender, role,
   if (!nrow(d)) cli::cli_abort("No rows to store for {format}/{gender}/{role}.")
   d[, `:=`(format = toupper(format), gender = gender, role = role,
            as_at = if (is.null(as_at)) max(d$last_match) else as.Date(as_at))]
+  # The ageing columns (D-P69) are new; a rating computed without them (an
+  # older caller, or ageing = "none" output saved before 2026-10-11) stores
+  # with them empty rather than failing.
+  for (col in c("age", "age_at_last_match", "post_career_adjustment")) {
+    if (!col %in% names(d)) data.table::set(d, j = col, value = NA_real_)
+  }
+  if (!"dob_source" %in% names(d)) d[, dob_source := NA_character_]
 
   ensure_table <- function() {
     DBI::dbExecute(conn, sprintf(

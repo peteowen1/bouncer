@@ -38,6 +38,10 @@ fake_rating <- function(n = 3, seed = 1) {
     balls = seq_len(n) * 100L,
     effective_matches = seq_len(n) * 9.5,
     last_match = as.Date("2026-08-01"),
+    age = seq_len(n) + 25,
+    age_at_last_match = seq_len(n) + 25,
+    post_career_adjustment = 0,
+    dob_source = "cricinfo",
     stringsAsFactors = FALSE
   )
 }

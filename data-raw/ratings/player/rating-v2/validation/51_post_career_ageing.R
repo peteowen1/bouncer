@@ -123,7 +123,7 @@ sp <- function(x, y) cor(x, y, method = "spearman")
 for (bk in buckets) {
   cat("\n==========", bk$label, "==========\n")
   r <- suppressMessages(get("calculate_player_rating_v2", asNamespace("bouncer"))(
-    bk$format, bk$gender, role = bk$role, conn = conn))
+    ageing = "none", bk$format, bk$gender, role = bk$role, conn = conn))
   cap <- get(".cap", globalenv()); pm <- cap$pm; tg <- cap$target; k <- cap$k; dec <- cap$decay; ref <- cap$ref
   pm[dobs, on = "player_id", dob := i.dob]
   pm[, age := as.numeric(match_date - dob) / 365.25][age < 14 | age > 50, age := NA]
