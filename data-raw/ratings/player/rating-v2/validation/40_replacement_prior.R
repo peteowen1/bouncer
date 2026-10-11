@@ -31,7 +31,7 @@ summ <- list()
 for (bk in buckets) {
   cat("\n==========", bk$label, "==========\n")
   t1 <- Sys.time()
-  r <- get("calculate_player_rating_v2", asNamespace("bouncer"))(bk$format, bk$gender, role = bk$role, conn = conn,
+  r <- get("calculate_player_rating_v2", asNamespace("bouncer"))(bk$format, bk$gender, role = bk$role, conn = conn, shrink_to = "population",
                                   match_type_filter = bk$mtf)
   cap <- get(".cap", globalenv()); pm <- cap$pm
   cat(sprintf("rating fn: %.1f min; %s player-matches, %d players, k=%.1f, decay=%d, as_at=%s\n",

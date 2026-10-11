@@ -11,6 +11,7 @@ calculate_player_rating_v2(
   conn = NULL,
   as_at = NULL,
   decay_days = NULL,
+  shrink_to = c("debut", "population"),
   prior_matches = NULL,
   prior_balls = 60,
   iterations = 20L,
@@ -40,7 +41,18 @@ sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
 0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
 Shorter decays are worse at every horizon for both roles.}
 
-\item{prior_matches}{Numeric shrinkage toward the population mean, in
+\item{shrink_to}{What a player with little evidence is pulled toward.
+\code{"debut"} (default) is the mean per-match value of every player's first
+10 matches up to \code{as_at}: what an unknown player actually produces.
+\code{"population"} is the bucket's mean over all matches, the pre-2026-10-11
+behaviour. Measured across all 12 published buckets (bouncerverse
+docs/reviews/2026-10-11-REPLACEMENT-PRIOR.md): debut level gains +2\% to
++11.5\% next-10 Spearman for batters, is neutral for bowlers, and
+predicts newcomers' next match closer in all 12. The population mean
+over-predicted them in every bucket (T20 men's batters: +1.47 predicted,
+-0.93 actual).}
+
+\item{prior_matches}{Numeric shrinkage toward \code{shrink_to}, in
 matches. NULL derives it per bucket via \code{\link[=derive_shrinkage_prior]{derive_shrinkage_prior()}}, which
 is the default because the old hand-set 20 was a men's-T20 number reused
 everywhere and is roughly half what that bucket actually wants.}
