@@ -1233,6 +1233,9 @@ calculate_player_rating_v2 <- function(format = "t20",
 #' @param format,gender,conn,as_at,factors,prior_balls,iterations As in
 #'   [calculate_player_rating_v2()].
 #' @param bat_prior,bowl_prior Quality shrinkage, in population-average matches.
+#'   Still toward the population rate: unlike [calculate_player_rating_v2()],
+#'   whose default moved to the debut level on 2026-10-11 (D-P68), this
+#'   per-ball value was not re-measured and was left alone.
 #' @param opp_prior Opportunity shrinkage. See the note above before raising it.
 #' @param min_balls Integer. Career balls, both roles combined.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player

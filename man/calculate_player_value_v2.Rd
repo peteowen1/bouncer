@@ -25,7 +25,10 @@ calculate_player_value_v2(
 \item{format, gender, conn, as_at, factors, prior_balls, iterations}{As in
 \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}}.}
 
-\item{bat_prior, bowl_prior}{Quality shrinkage, in population-average matches.}
+\item{bat_prior, bowl_prior}{Quality shrinkage, in population-average matches.
+Still toward the population rate: unlike \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}},
+whose default moved to the debut level on 2026-10-11 (D-P68), this
+per-ball value was not re-measured and was left alone.}
 
 \item{opp_prior}{Opportunity shrinkage. See the note above before raising it.}
 
