@@ -102,7 +102,7 @@ for (bk in buckets) {
   cat(sprintf("%s done (%.1f min; dob on %.0f%% of scored matches)\n", bk$label,
               as.numeric(difftime(Sys.time(), t0, units = "mins")), 100 * mean(!is.na(d$age))))
 }
-res <- rbindlist(lapply(list.files(RES_DIR, "\.csv$", full.names = TRUE), fread))
+res <- rbindlist(lapply(list.files(RES_DIR, "[.]csv$", full.names = TRUE), fread))
 num <- c("off10", "age10", "off1", "age1", "actual", "pred_off", "pred_age")
 res[, (num) := lapply(.SD, round, 4), .SDcols = num]
 res[, gain10_pct := round(100 * (age10 - off10) / abs(off10), 1)]
