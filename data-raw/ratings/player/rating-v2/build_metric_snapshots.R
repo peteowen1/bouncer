@@ -59,7 +59,10 @@ for (i in seq_len(nrow(todo))) {
   res <- tryCatch({
     r <- calculate_player_rating_v2(g$format, "male", g$role, conn = conn,
                                     as_at = as.Date(g$as_at), min_balls = MIN_BALLS,
-                                    metric = METRIC)
+                                    metric = METRIC,
+                                    # snapshots compare metrics; keep ageing
+                                    # (D-P69, validated on RAA only) out of it
+                                    ageing = "none")
     if (is.null(r) || !nrow(r)) stop("no players rated")
     keep <- data.frame(as_at = as.Date(g$as_at), format = g$format, role = g$role,
                        player_id = r$player_id, player_name = r$player_name,

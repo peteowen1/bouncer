@@ -57,16 +57,16 @@ sync_people_register <- function(conn, path = NULL,
 # "{'date': 27, 'month': 3, 'year': 2011}", sometimes with None/NULL parts.
 # A date missing its day, month or year is treated as unknown, not guessed.
 .parse_cricinfo_dob <- function(x) {
-  out <- rep(NA_character_, length(x))
-  ok <- !is.na(x) & nzchar(x)
-  if (!any(ok)) return(as.Date(out))
-  js <- jsonlite::parse_json(paste0("[", paste(
-    gsub("None|NULL", "null", gsub("'", '"', x[ok], fixed = TRUE)), collapse = ","), "]"))
-  out[ok] <- vapply(js, function(z) {
-    if (is.null(z$year) || is.null(z$month) || is.null(z$date)) return(NA_character_)
+  # One string at a time: a single malformed entry (a stray True or quote)
+  # must cost that player his date, not abort the whole table.
+  one <- function(s) {
+    if (is.na(s) || !nzchar(s)) return(NA_character_)
+    z <- tryCatch(jsonlite::parse_json(gsub("None|NULL", "null", gsub("'", '"', s, fixed = TRUE))),
+                  error = function(e) NULL)
+    if (!is.list(z) || is.null(z$year) || is.null(z$month) || is.null(z$date)) return(NA_character_)
     sprintf("%04d-%02d-%02d", as.integer(z$year), as.integer(z$month), as.integer(z$date))
-  }, "")
-  as.Date(out)
+  }
+  as.Date(vapply(x, one, "", USE.NAMES = FALSE), optional = TRUE)
 }
 
 #' Build the player date-of-birth table
@@ -92,19 +92,30 @@ build_player_dob <- function(conn, details_path = NULL) {
       UNION ALL SELECT identifier, key_cricinfo_2 FROM cricsheet.people_register
       UNION ALL SELECT identifier, key_cricinfo_3 FROM cricsheet.people_register
     ) WHERE key IS NOT NULL AND key <> ''"))
+  # Every distinct string per cricinfo id, not ANY_VALUE: a player's innings
+  # can carry an incomplete date in one row and the full one in another.
   ci <- data.table::as.data.table(DBI::dbGetQuery(conn, "
-    SELECT CAST(player_id AS VARCHAR) AS key, ANY_VALUE(player_dob) AS player_dob
-    FROM cricinfo.innings WHERE player_dob IS NOT NULL GROUP BY 1"))
+    SELECT DISTINCT CAST(player_id AS VARCHAR) AS key, player_dob
+    FROM cricinfo.innings WHERE player_dob IS NOT NULL"))
   ci[, dob := .parse_cricinfo_dob(player_dob)]
-  from_ci <- merge(keys, ci[!is.na(dob), .(key, dob)], by = "key")
+  ci <- unique(ci[!is.na(dob), .(key, dob)])
+  from_ci <- merge(keys, ci, by = "key")
   # Two cricinfo ids for one cricsheet player can disagree; keep it only if they
   # agree, rather than picking one silently.
   from_ci <- from_ci[, .(dob = dob[1], n_dates = data.table::uniqueN(dob)), by = player_id]
   conflicts <- from_ci[n_dates > 1L, .N]
   from_ci <- from_ci[n_dates == 1L, .(player_id, dob, dob_source = "cricinfo")]
 
+  # Coverage floor: 6,864 cricinfo dates on 2026-10-12. A parse or key
+  # regression would otherwise fall back to the details file with a green run.
+  if (nrow(from_ci) < 3000L) {
+    cli::cli_abort(c("Only {nrow(from_ci)} dates of birth came from cricinfo (6,864 on 2026-10-12).",
+                     "i" = "Check the player_dob format in cricinfo.innings and the key_cricinfo join before rebuilding."))
+  }
   out <- from_ci
-  if (!is.null(details_path)) {
+  if (is.null(details_path)) {
+    cli::cli_alert_warning("No player_details file; dates of birth come from cricinfo only.")
+  } else {
     if (!requireNamespace("arrow", quietly = TRUE)) cli::cli_abort("Reading {.arg details_path} needs the arrow package.")
     det <- data.table::as.data.table(arrow::read_parquet(details_path, col_select = c("player_id", "dob")))
     det <- unique(det[, dob := as.Date(dob)][!is.na(dob)], by = "player_id")

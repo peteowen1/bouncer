@@ -16,3 +16,8 @@ test_that(".parse_cricinfo_dob passes NA and empty strings through as NA", {
                as.Date(c(NA, NA, "1970-01-02")))
   expect_equal(.parse_cricinfo_dob(c(NA_character_, "")), as.Date(c(NA, NA)))
 })
+
+test_that(".parse_cricinfo_dob loses only the malformed entry, not the batch", {
+  x <- c("{'date': 1, 'month': 2, 'year': 1985}", "{'date': True, 'month': 'x", "{'date': 3, 'month': 4, 'year': 1990}")
+  expect_equal(.parse_cricinfo_dob(x), as.Date(c("1985-02-01", NA, "1990-04-03")))
+})

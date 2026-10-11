@@ -163,12 +163,23 @@ conn <- get_db_connection(read_only = FALSE)
 on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
 # Ageing (D-P69) needs dates of birth. Refresh cricsheet's register and the
-# date table each run: both are seconds, and a stale register silently leaves
-# new players' ages estimated instead of known.
-sync_people_register(conn)
-build_player_dob(conn, details_path = {
-  p <- file.path(find_bouncerdata_dir(), "source", "bouncer_player_details.parquet")
-  if (file.exists(p)) p else NULL
+# date table each run: both are seconds, and a stale register leaves new
+# players undated (not aged). A failed refresh (cricsheet down, a renamed
+# column) must not stop the ratings when a previous copy exists.
+refresh_dob <- function() {
+  sync_people_register(conn)
+  build_player_dob(conn, details_path = {
+    p <- file.path(find_bouncerdata_dir(), "source", "bouncer_player_details.parquet")
+    if (file.exists(p)) p else NULL
+  })
+}
+tryCatch(refresh_dob(), error = function(e) {
+  if (DBI::dbExistsTable(conn, DBI::Id(schema = "main", table = "player_dob"))) {
+    cli::cli_warn(c("Could not refresh dates of birth; using the stored main.player_dob.",
+                    "x" = conditionMessage(e)))
+  } else {
+    stop(e)
+  }
 })
 
 have <- as.data.table(DBI::dbGetQuery(conn,

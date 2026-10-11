@@ -64,7 +64,8 @@ fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L,
   } else NA_real_
   # The extension must fall. If the measured ages give no decline at all (or
   # too few points), fall back to a gentle one rather than let it rise.
-  if (!is.finite(b) || b >= 0) b <- -0.01 * (abs(f_peak - min(ok$f_s)) + 1)
+  b_fallback <- !is.finite(b) || b >= 0
+  if (b_fallback) b <- -0.01 * (abs(f_peak - min(ok$f_s)) + 1)
   # The rising part, forced non-decreasing up to the peak (weighted
   # pool-adjacent-violators), so a noisy dip at 18-21 is never credited as
   # improvement and the young-only curve can only rise.
@@ -72,7 +73,7 @@ fit_ageing_curve <- function(pm, ages = 16:45, min_n = 200L, iters = 30L,
   fa[ab <= peak, f_rise := .pava(rise$f_s, rise$n)]
   fa[ab > peak, f_rise := f_peak]
   list(tab = fa, peak = peak, first = min(ok$ab), last = last,
-       f_peak = f_peak, f_last = ok[ab == last, f_s], b = b)
+       f_peak = f_peak, f_last = ok[ab == last, f_s], b = b, b_fallback = b_fallback)
 }
 
 # Weighted pool-adjacent-violators: the closest non-decreasing sequence.

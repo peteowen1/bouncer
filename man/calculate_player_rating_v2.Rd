@@ -59,9 +59,10 @@ every match along the rising part of the bucket's ageing curve (see
 players are credited with improvement and nobody declines while still being
 picked; then adds the full decline from that age to his age at \code{as_at}, so
 a retired player keeps falling with age (\code{post_career_adjustment}). Needs
-\code{main.player_dob} (\code{\link[=build_player_dob]{build_player_dob()}}); undated players get an age
-estimated from their debut. \code{"none"} reproduces the ratings before
-2026-10-11 exactly.}
+\code{main.player_dob} (\code{\link[=build_player_dob]{build_player_dob()}}); players with no date of birth
+are not aged (an estimated age measurably hurt). Aborts if the curve cannot
+be fitted or under half the rated players are dated, rather than publish a
+bucket un-aged. \code{"none"} reproduces the ratings before 2026-10-11 exactly.}
 
 \item{prior_matches}{Numeric shrinkage toward \code{shrink_to}, in
 matches. NULL derives it per bucket via \code{\link[=derive_shrinkage_prior]{derive_shrinkage_prior()}}, which
@@ -103,7 +104,8 @@ data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
 \code{average}, \code{main_comp}, \code{matches}, \code{balls}, \code{effective_matches},
 \code{last_match}, \code{age} and \code{age_at_last_match} (years), \code{post_career_adjustment}
 (already included in \code{rating}; 0 without ageing) and \code{dob_source}
-(\code{cricinfo}, \code{details} or \code{estimated}), ordered best first. The fitted
+(\code{cricinfo}, \code{details}, or \code{none} when no date of birth is known, in which
+case the player is not aged), ordered best first. The fitted
 curve is attached as the \code{"ageing_curve"} attribute (NULL without ageing). \code{average} and \code{main_comp} come from
 \code{\link[=player_career_context]{player_career_context()}} and are context beside the rating, never inputs
 to it. \code{matches} counts innings batted

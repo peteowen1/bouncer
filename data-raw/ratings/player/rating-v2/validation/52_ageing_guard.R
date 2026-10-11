@@ -4,8 +4,8 @@
 # The after-career part cannot be scored here (retirees never play a next
 # match); this only checks it does not hurt the players who do.
 #
-# Same rules as production: real dates from main.player_dob, estimated from
-# the bucket's median debut age otherwise, curve fitted on real dates only.
+# Same rules as production: real dates from main.player_dob; players without
+# one are not aged; curve fitted on real dates only.
 # Leak control: curve fitted before CUT, scored from CUT. Each bucket is
 # saved as it finishes and skipped on a rerun. Read-only on bouncer.duckdb.
 t0 <- Sys.time()
@@ -39,15 +39,13 @@ for (bk in buckets) {
   cap <- get(".cap", globalenv()); pm <- cap$pm; tg <- cap$target; k <- cap$k; dec <- cap$decay
   pm[dobs, on = "player_id", dob := i.dob]
   pm[, real := !is.na(dob)]
-  pm[, first := min(match_date), by = player_id]
-  da <- unique(pm[real == TRUE, .(player_id, a0 = as.numeric(first - dob) / 365.25)])[a0 >= 14 & a0 <= 45, median(a0)]
-  pm[real == FALSE, dob := first - round(da * 365.25)]
-  pm[, age := as.numeric(match_date - dob) / 365.25][age < 10 | age > 60, age := NA]
+  # as shipped: no date of birth, no ageing (age NA -> shift 0, post 0)
+  pm[, age := as.numeric(match_date - dob) / 365.25]
   cv <- fit_ageing_curve(pm[real == TRUE & match_date < CUT])
   if (is.null(cv)) { cat(bk$label, ": no curve before", format(CUT), "\n"); next }
   setorder(pm, player_id, match_date, match_id)
-  # as shipped: estimated ages get no rising-part credit
-  pm[, `:=`(fy = fifelse(real, young(cv, age), 0), idx = seq_len(.N), gap = c(NA, diff(as.numeric(match_date)))), by = player_id]
+  # as shipped: players without a date of birth are not aged
+  pm[, `:=`(fy = young(cv, age), idx = seq_len(.N), gap = c(NA, diff(as.numeric(match_date)))), by = player_id]
   pm[, fwd10 := { cs <- cumsum(v); kk <- pmin(.N, idx + 9L); (cs[kk] - c(0, cs)[idx]) / (kk - idx + 1L) }, by = player_id]
   pm[, c("p_off", "p_two") := {
     po <- pt <- numeric(.N); s <- 0; ww <- 0; fs <- 0
@@ -55,14 +53,14 @@ for (bk in buckets) {
       if (i > 1L) { d <- exp(-gap[i] / dec); s <- (s + v[i - 1L]) * d; ww <- (ww + 1) * d; fs <- (fs + fy[i - 1L]) * d }
       po[i] <- (s + k * tg) / (ww + k)
       a_last <- if (i > 1L) age[i - 1L] else NA_real_
-      base <- (s + (if (is.na(a_last) || !real[i]) 0 else young(cv, a_last)) * ww - fs + k * tg) / (ww + k)
+      base <- (s + (if (is.na(a_last)) 0 else young(cv, a_last)) * ww - fs + k * tg) / (ww + k)
       pt[i] <- base + if (!is.na(a_last) && !is.na(age[i])) full(cv, age[i]) - full(cv, a_last) else 0
     }
     list(po, pt)
   }, by = player_id]
   g <- pm[idx >= 2L & match_date >= CUT]
   res <- rbind(g[, .(cut = "ALL", n = .N, off = sp(p_off, fwd10), two_part = sp(p_two, fwd10))],
-               g[real == FALSE, .(cut = "estimated age", n = .N, off = sp(p_off, fwd10), two_part = sp(p_two, fwd10))],
+               g[real == FALSE, .(cut = "no date of birth", n = .N, off = sp(p_off, fwd10), two_part = sp(p_two, fwd10))],
                g[!is.na(age) & age >= 34, .(cut = "34+", n = .N, off = sp(p_off, fwd10), two_part = sp(p_two, fwd10))],
                g[!is.na(age) & age < 24, .(cut = "under 24", n = .N, off = sp(p_off, fwd10), two_part = sp(p_two, fwd10))])
   res[, `:=`(bucket = bk$label, peak = cv$peak)]

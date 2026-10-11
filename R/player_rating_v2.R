@@ -844,9 +844,10 @@ default_exposure_floor <- function(format, role) {
 #'   players are credited with improvement and nobody declines while still being
 #'   picked; then adds the full decline from that age to his age at `as_at`, so
 #'   a retired player keeps falling with age (`post_career_adjustment`). Needs
-#'   `main.player_dob` ([build_player_dob()]); undated players get an age
-#'   estimated from their debut. `"none"` reproduces the ratings before
-#'   2026-10-11 exactly.
+#'   `main.player_dob` ([build_player_dob()]); players with no date of birth
+#'   are not aged (an estimated age measurably hurt). Aborts if the curve cannot
+#'   be fitted or under half the rated players are dated, rather than publish a
+#'   bucket un-aged. `"none"` reproduces the ratings before 2026-10-11 exactly.
 #' @param prior_matches Numeric shrinkage toward `shrink_to`, in
 #'   matches. NULL derives it per bucket via [derive_shrinkage_prior()], which
 #'   is the default because the old hand-set 20 was a men's-T20 number reused
@@ -881,7 +882,8 @@ default_exposure_floor <- function(format, role) {
 #'   `average`, `main_comp`, `matches`, `balls`, `effective_matches`,
 #'   `last_match`, `age` and `age_at_last_match` (years), `post_career_adjustment`
 #'   (already included in `rating`; 0 without ageing) and `dob_source`
-#'   (`cricinfo`, `details` or `estimated`), ordered best first. The fitted
+#'   (`cricinfo`, `details`, or `none` when no date of birth is known, in which
+#'   case the player is not aged), ordered best first. The fitted
 #'   curve is attached as the `"ageing_curve"` attribute (NULL without ageing). `average` and `main_comp` come from
 #'   [player_career_context()] and are context beside the rating, never inputs
 #'   to it. `matches` counts innings batted
@@ -1198,12 +1200,17 @@ calculate_player_rating_v2 <- function(format = "t20",
   #   post   the FULL decline from his age at his last match to his age at
   #          ref_date: ~0 while he plays, growing after he stops. Added outside
   #          the shrinkage, so a long-retired player keeps falling with age.
-  # No date of birth: one is estimated from his first match and the bucket's
-  # median debut age, so an undated young player is not left behind while
-  # dated peers improve. The curve itself is fitted on real dates only.
+  # No real date of birth: no ageing at all (dob_source "none"). Estimating
+  # one from the median debut age was tried and measurably hurt: undated
+  # players are mostly fringe and associate cricketers who debut older than
+  # the median, so the estimate makes them look younger. T20 men's batters,
+  # next-10 Spearman from 2018: 0.4910 with no ageing for them, 0.4885 when
+  # estimated ages got the after-career term, 0.4880 with both parts
+  # (validation/52, 2026-10-12). Undated retirees are still covered by the
+  # blog's 3-year hide rule.
   pm[, `:=`(shift = 0, age = NA_real_)]
   ages <- data.table::data.table(player_id = unique(pm$player_id), dob = as.Date(NA),
-                                 dob_source = NA_character_)
+                                 dob_source = "none")
   cv <- NULL
   if (ageing == "two_part") {
     if (!DBI::dbExistsTable(conn, DBI::Id(schema = "main", table = "player_dob"))) {
@@ -1213,35 +1220,29 @@ calculate_player_rating_v2 <- function(format = "t20",
     known <- data.table::as.data.table(DBI::dbGetQuery(conn,
       "SELECT player_id, dob, dob_source FROM main.player_dob"))
     ages[known, on = "player_id", `:=`(dob = as.Date(i.dob), dob_source = i.dob_source)]
-    first <- pm[, .(first = min(match_date)), by = player_id]
-    ages[first, on = "player_id", first := i.first]
-    debut_age <- ages[!is.na(dob), as.numeric(first - dob) / 365.25]
-    debut_age <- stats::median(debut_age[debut_age >= 14 & debut_age <= 45])
-    ages[is.na(dob), `:=`(dob = first - round(debut_age * 365.25), dob_source = "estimated")]
+    # A date of birth that makes him under 10 or over 60 at any of his matches
+    # is a registry error, not a player: drop it rather than age him on it.
+    span <- pm[, .(first = min(match_date), last = max(match_date)), by = player_id]
+    ages[span, on = "player_id", `:=`(first = i.first, last = i.last)]
+    typo <- ages[!is.na(dob) & (as.numeric(first - dob) / 365.25 < 10 |
+                                as.numeric(last - dob) / 365.25 > 60), player_id]
+    ages[player_id %in% typo, `:=`(dob = as.Date(NA), dob_source = "none")]
     pm[ages, on = "player_id", `:=`(dob = i.dob, dob_source = i.dob_source)]
     pm[, age := as.numeric(match_date - dob) / 365.25]
-    pm[age < 10 | age > 60, age := NA_real_]          # registry typos, not players
-    cv <- fit_ageing_curve(pm[dob_source != "estimated"])
+    cv <- fit_ageing_curve(pm[dob_source != "none"])
     if (is.null(cv)) {
-      cli::cli_warn("Too few dated matches to fit an ageing curve for {gender} {format} {role}s; rating without ageing.")
-    } else {
-      pm[, age_last := age[which.max(match_date)], by = player_id]
-      pm[, shift := .ageing_young(cv, age_last) - .ageing_young(cv, age)]
-      # An ESTIMATED age gets no rising-part credit. Undated players are mostly
-      # fringe and associate cricketers who debut older than the median, so the
-      # estimate makes them look younger than they are; crediting them with
-      # growth cost next-10 Spearman (T20 men's batters 0.4910 without it vs
-      # 0.4880 with it, ODI 0.3300 vs 0.3282; validation/52, 2026-10-12). They
-      # still get the after-career decline below, so a retired undated player
-      # still ages.
-      pm[dob_source == "estimated", shift := 0]
-      pm[is.na(shift), shift := 0]
-      cli::cli_alert_info(paste0(
-        "Ageing curve: peak {cv$peak}, measured to {cv$last}, extended past that (an assumption); ",
-        "per match vs age 27: {paste(sprintf('%d: %+.2f', c(20L, 35L, 45L, 60L), .ageing_full(cv, c(20, 35, 45, 60))), collapse = ', ')}. ",
-        "Dates of birth: {ages[dob_source != 'estimated', .N]} real, {ages[dob_source == 'estimated', .N]} estimated ",
-        "(median debut age {round(debut_age, 1)})."))
+      cli::cli_abort(c("Could not fit an ageing curve for {gender} {format} {role}s.",
+                       "x" = "{ages[dob_source != 'none', .N]} of {nrow(ages)} players have a date of birth.",
+                       "i" = "Publishing this bucket un-aged beside aged ones would mix two rating definitions; pass {.code ageing = \"none\"} deliberately if that is wanted."))
     }
+    pm[, age_last := age[which.max(match_date)], by = player_id]
+    pm[, shift := .ageing_young(cv, age_last) - .ageing_young(cv, age)]
+    pm[is.na(age) | is.na(age_last), shift := 0]
+    cli::cli_alert_info(paste0(
+      "Ageing curve: peak {cv$peak}, measured to {cv$last}, extended past that (an assumption",
+      if (isTRUE(cv$b_fallback)) "; NO measured decline, so the extension slope is a fallback, not fitted" else "",
+      "); per match vs age 27: {paste(sprintf('%d: %+.2f', c(20L, 35L, 45L, 60L), .ageing_full(cv, c(20, 35, 45, 60))), collapse = ', ')}. ",
+      "Dates of birth: {ages[dob_source != 'none', .N]} of {nrow(ages)} players ({length(typo)} dropped as impossible)."))
   }
 
   r <- pm[, .(rating = (sum((v + shift) * w) + prior_matches * target) / (sum(w) + prior_matches),
@@ -1251,9 +1252,19 @@ calculate_player_rating_v2 <- function(format = "t20",
               age_at_last_match = age[which.max(match_date)]), by = player_id][balls >= min_balls]
   r[ages, on = "player_id", `:=`(dob = i.dob, dob_source = i.dob_source)]
   r[, age := as.numeric(ref_date - dob) / 365.25]
-  r[, post_career_adjustment := if (is.null(cv)) 0 else
-      .ageing_full(cv, age) - .ageing_full(cv, age_at_last_match)]
-  r[is.na(post_career_adjustment), post_career_adjustment := 0]
+  r[, post_career_adjustment := 0]
+  if (!is.null(cv)) {
+    r[!is.na(age) & !is.na(age_at_last_match),
+      post_career_adjustment := .ageing_full(cv, age) - .ageing_full(cv, age_at_last_match)]
+    # Coverage, not presence: an empty or mis-keyed date table would leave every
+    # adjustment at 0 with a green build. Half the rated players dated is far
+    # below every bucket on 2026-10-12 (lowest 0.79, Test internationals batters).
+    dated <- r[, mean(dob_source != "none")]
+    if (dated < 0.5) {
+      cli::cli_abort(c("Only {round(100 * dated)}% of rated {gender} {format} {role}s have a date of birth.",
+                       "i" = "Check main.player_dob (build_player_dob) and the id join before publishing."))
+    }
+  }
   r[, rating := rating + post_career_adjustment]
 
   # ANY_VALUE, not a bare SELECT: a duplicated registry row would otherwise

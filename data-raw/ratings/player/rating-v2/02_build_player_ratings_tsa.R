@@ -176,7 +176,11 @@ for (b in BUCKETS) {
   for (role in c("batter", "bowler")) {
     r <- calculate_player_rating_v2(b$format, b$gender, role = role, conn = conn,
                                     factors = factors, id_map = idmap,
-                                    metric = "team_score")
+                                    metric = "team_score",
+                                    # D-P69's ageing was validated on the RAA
+                                    # rating only; TSA keeps the old behaviour
+                                    # until it is scored on this metric.
+                                    ageing = "none")
     check_anchor(r, if (role == "batter") a$batter else a$bowler,
                  if (role == "batter") a$top else a$btop,
                  sprintf("%s %s", key, role))
