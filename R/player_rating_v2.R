@@ -1227,6 +1227,14 @@ calculate_player_rating_v2 <- function(format = "t20",
     } else {
       pm[, age_last := age[which.max(match_date)], by = player_id]
       pm[, shift := .ageing_young(cv, age_last) - .ageing_young(cv, age)]
+      # An ESTIMATED age gets no rising-part credit. Undated players are mostly
+      # fringe and associate cricketers who debut older than the median, so the
+      # estimate makes them look younger than they are; crediting them with
+      # growth cost next-10 Spearman (T20 men's batters 0.4910 without it vs
+      # 0.4880 with it, ODI 0.3300 vs 0.3282; validation/52, 2026-10-12). They
+      # still get the after-career decline below, so a retired undated player
+      # still ages.
+      pm[dob_source == "estimated", shift := 0]
       pm[is.na(shift), shift := 0]
       cli::cli_alert_info(paste0(
         "Ageing curve: peak {cv$peak}, measured to {cv$last}, extended past that (an assumption); ",
