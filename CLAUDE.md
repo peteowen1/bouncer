@@ -2,12 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Git Workflow
+## Docs
 
-- Work on `dev` branch, not directly on `main`
-- PR from `dev` → `main` when features are tested and stable
-
-Verse-level docs (reviews, plans, decision log, work queue) live in `../CLAUDE.md`'s vault at `bouncerverse/` — see `../docs/HOME.md`.
+Git workflow (branch, PR-to-main) is in the global and parent CLAUDE.md, not restated here. Verse-level docs (reviews, plans, decision log, work queue) live in the parent's `bouncerverse/docs/` — start at `../docs/HOME.md`.
 
 ## Package Overview
 
@@ -28,93 +25,51 @@ Steps 12-15: IN-MATCH MODELS → PLAYER GAME DATA → STAT RATINGS → CAREER RA
 
 Stat ratings feed the BOUNCER composite value system (`bouncer_rating.R`). Glicko is deprecated and archived in `data-raw/_deprecated/`.
 
-> ### ⚠️ "3-Way ELO is the primary system feeding the delivery-level models" was false for every model ever trained until 2026-08-20/21
+> ### 3-Way ELO feeds the delivery-level models — but only since 2026-08-20/21
 >
-> **The defect (bouncerverse#63, #65):** two production readers — `02_train_full_model.R` and `calculate_roster_elo()` — built the ELO table name as
-> `paste0(format, "_3way_elo")`. The ratings actually live in gender-keyed tables
-> (`mens_t20_3way_elo`, `womens_odi_3way_elo`, ...); the unprefixed name resolves
-> to a **legacy** set where `t20_3way_elo` is empty and `odi_3way_elo` /
-> `test_3way_elo` hold stale women's-only rows. Both readers coalesce a join miss
-> to a neutral 1400, so **all three ELO features were the constant 1400 for
-> every row, in every format, in every full model ever trained** — while the
-> pipeline printed `0/N have ELO features` as a success line. `calculate_roster_elo()`
-> gave every player 1400, so any two rosters scored identically.
->
-> **Fixed** in `bouncer` `f800efa` (both readers now call `three_way_elo_table()`,
-> declared once) and `968125b` (rebuild writes to staging, promoted only above
-> 99% of expected rows — an interrupted rebuild used to leave a table empty,
-> which is how `t20_3way_elo` reached zero). Whether 3-Way ELO is worth keeping
-> at all past the ball-by-ball simulation is an open call, not a settled
-> "primary system" — see the "decide" verdict in `docs/reference/RATING-ARCHITECTURE.md`.
->
-> **Retrained on clean inputs (#65, `434c14c`):** 100% ELO feature coverage for
-> the first time (3,221,299/3,221,299 T20 rows, was 0%). Matched comparison
-> against the agnostic model, identical held-out rows, bootstrapped by match:
-> **T20 +1.80%, ODI +1.69%, Test +2.34%** logloss, 2000/2000 bootstrap draws
-> favouring the full model in each format. This retires the earlier "near-irreducible,
-> 0.0/0.8/0.8%" ceiling (#16) — that figure was itself measured while these same
-> ELO features were zero-filled, so it was a symptom of this bug, not a bound.
->
-> **But the retrained full model is still DORMANT** (`docs/reference/MODEL-INVENTORY.md`,
-> checked 2026-08-22): `load_full_model()`/`predict_full_outcome()` are absent from
-> `NAMESPACE`, no pipeline step or workflow reaches them, and they are not
-> republished to the `ball-outcome` release. So 3-Way ELO now genuinely feeds a
-> full delivery-outcome model with real signal — a reversal of the total defect
-> above — but that model does not yet feed anything else in production.
+> A table-name bug (two readers built `paste0(format, "_3way_elo")` instead of
+> using the gender-keyed name) meant every full model ever trained before that
+> date had all three ELO features frozen at the neutral 1400, and
+> `calculate_roster_elo()` scored any two rosters identically — while the
+> pipeline printed a success line. Fixed by declaring the table name once in
+> `three_way_elo_table()`; retrained on clean inputs, ELO coverage went to
+> 100% and gave a matched, bootstrapped **T20 +1.80%, ODI +1.69%, Test +2.34%**
+> logloss gain over the agnostic model (bouncerverse#63, #65). Whether 3-Way
+> ELO is worth keeping past the ball-by-ball simulation is still an open call,
+> not settled fact — see the "decide" verdict in
+> `../docs/reference/RATING-ARCHITECTURE.md`. As of 2026-09-17,
+> `load_full_model()`/`predict_full_outcome()` are exported and wired into
+> `run_full_pipeline.R`, but whether the retrained model reaches live serving
+> (not just training) hasn't been re-checked since — see
+> `../docs/reference/MODEL-INVENTORY.md`. Full incident and retrain numbers:
+> `../docs/reference/claude-md-detail.md`.
 
-> ### ⚠️ The WPA feeding the ratings is now OURS (D-P6, 2026-08-13) — but it barely matters
+> ### WPA feeding the ratings is real, but it barely moves anything
 >
-> Two corrections live here. The first replaced the WPA source. The second is
-> the one that changes what you should work on.
+> `batting_wpa`/`bowling_wpa` come from bouncer's own models
+> (`build_cricinfo_win_probability()` / `build_cricinfo_test_win_probability()`,
+> scoring every T20/ODI/Test delivery into `main.bouncer_wp_from_cricinfo`); the
+> old scraped Cricinfo win probability is still selectable via
+> `wp_source = "cricinfo"` for comparison. Ours wins on evidence (Brier and
+> coverage) — detail and the temporal-holdout caveat on the headline Brier
+> figure: `../docs/2026-08-13-SESSION-HANDOVER.md` §8.
 >
-> **1. Source: `batting_wpa`/`bowling_wpa` now come from bouncer's own models.**
-> `build_cricinfo_win_probability()` scores every T20 and ODI delivery into
-> `main.bouncer_wp_from_cricinfo`; `player_game_data.R` joins it. The old
-> scraped `cricinfo.balls.win_probability` is still selectable via
-> `wp_source = "cricinfo"` for comparison. Ours won on evidence — Brier
-> **0.1354 vs 0.2208** over 20,326 ODI deliveries where both exist — and on
-> coverage, which went from **8.6% → 100%** (ODI) and **42.9% → 100%** (T20)
-> among rows where the player actually batted. **Caveat (calibration-check,
-> 2026-08-27): the 0.1354 figure is from a 92-match benchmark subsample the
-> team's own handover doc calls "favourable" — a genuine temporal holdout
-> scores worse, 0.1779.** Relative comparisons (ours vs. scraped) hold up on
-> both; only the absolute number needs the caveat attached when quoted. Full
-> detail: `../docs/2026-08-13-SESSION-HANDOVER.md` §8.
+> **WPA contributes ~0.01% of the variance in the rating engine's inputs — do
+> not expect a WPA change to move a rating until this changes.** The engine is
+> `calculate_impact()` (per-match `raa + kappa*wpa`, kappa fitted: 150 T20, 272
+> ODI); `calculate_epr()` survives only as a deprecated alias. Do not "fix" the
+> imbalance by standardising the two components — tested, and it made the
+> anchor checks worse.
 >
-> **2. WPA contributes ~0.009% of the EPR that feeds BOUNCER.**
-> `calculate_epr()` computes `bat_value = batting_wpa + batting_era`, adding a
-> probability to a run count:
+> **Two correctness rules that must not regress:** (1) the WPA delta is
+> flipped to the batter's own team's perspective in `.wp_source_sql()` — never
+> difference either WP column directly without it (summing raw deltas docked
+> chasing batters for scoring). (2) `calculate_impact()`'s coverage warning
+> must not be silenced — matches with no win probability reach it as `NA`;
+> `.merge_batting_bowling()` used to launder those into zeros instead.
 >
-> | | WPA sd | ERA sd | corr(bat_value, ERA) | WPA share of variance |
-> |---|---|---|---|---|
-> | T20 | 0.126 | 13.05 | +0.99995 | 0.0094% |
-> | ODI | 0.133 | 25.88 | +0.99999 | 0.0026% |
->
-> **EPR is ERA.** Do not expect any WPA improvement to move a rating until this
-> is resolved. And do not "fix" it by standardising the two components — that was
-> tested and made the anchor checks worse (Root 14/98 → 98/98 in ODI), so ERA is
-> genuinely the stronger player-value signal and WPA is not simply mis-scaled.
->
-> **Test WPA exists since 2026-08-13** — `build_cricinfo_test_win_probability()`
-> scores all 355,962 Test deliveries (quality honestly weak until the #24
-> retrain; strong only in innings 4).
->
-> **The WPA delta is flipped to the batter's own team's perspective** (2026-08-13,
-> bouncerverse#25). Both stored win probabilities are single-perspective numbers,
-> and summing raw deltas docked chasing batters for scoring — corr(batting_wpa,
-> runs) was **−0.43 in innings 2**. The flip lives in `.wp_source_sql()`; do not
-> difference either WP column directly without it.
->
-> **SUPERSEDED BY D-P11 (2026-08-14):** the rating engine is now
-> `calculate_impact()` — per-match `raa + kappa*wpa` (kappa fitted: 150 T20,
-> 272 ODI) through the same decay/shrinkage/exposure aggregation.
-> `calculate_epr()` survives only as a deprecated alias. The history below
-> explains why the old engine died; the numbers describe THAT engine.
->
-> **`calculate_impact()`'s coverage warning is still load-bearing** — do not silence
-> it. Matches with no win probability still reach it as `NA`, and
-> `.merge_batting_bowling()` no longer launders those into zeros (it did, for
-> 13,668 of 15,012 ODI player-match rows, until 2026-08-13).
+> Full derivation, benchmark numbers (Brier, coverage %, variance shares) and
+> commit history: `../docs/reference/claude-md-detail.md`.
 
 **Key Formula (residual-based skill updates):**
 ```r
@@ -135,14 +90,15 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 |--------|-------|---------|
 | **Data** | `database_*.R`, `data_*.R`, `data_queries.R`, `cricsheet_*.R`, `manifest.R` | DB connections, queries, parsing, remote manifests |
 | **Scraping** | `fox_scraper.R`, `fox_data.R`, `cricsheet_download.R` | Data acquisition (Fox Sports, Cricsheet) |
-| **Cricinfo** | `cricinfo_data.R` | Cricinfo ingestion, loaders, fixtures |
-| **ELO/Skills** | `three_way_elo.R`, `elo_utils.R`, `team_elo.R`, `team_elo_optimization.R`, `team_correlation.R`, `*_skill_index.R`, `skill_indices.R`, `centrality.R`, `centrality_storage.R` | Rating systems |
+| **Cricinfo** | `cricinfo_data.R`, `cricinfo_win_probability.R`, `cricinfo_test_win_probability.R` | Cricinfo ingestion, loaders, fixtures, our own win-probability models |
+| **ELO/Skills** | `three_way_elo.R`, `three_way_elo_tables.R`, `elo_utils.R`, `elo_calibration.R`, `elo_calibration_compute.R`, `team_elo.R`, `team_elo_optimization.R`, `team_correlation.R`, `*_skill_index.R`, `skill_indices.R`, `centrality.R`, `centrality_storage.R` | Rating systems |
 | **Stat Ratings** | `stat_ratings.R`, `stat_rating_config.R`, `stat_rating_data.R` | Bayesian stat ratings (PSR, economy, SR, etc.) |
-| **BOUNCER Value** | `bouncer_rating.R`, `player_stat_value.R` | Composite player value (PSV/BatV/BowlV → EPR → BOUNCER) |
+| **BOUNCER Value** | `bouncer_rating.R`, `player_stat_value.R`, `raa.R`, `raa_cricsheet.R`, `leverage.R` | Composite player value (PSV/BatV/BowlV → EPR → BOUNCER); `calculate_impact()`'s `raa + kappa*wpa` engine and leverage-weighted WPA — see the WPA box above |
+| **Player Rating v2** | `player_rating_v2.R`, `player_rating_v2_storage.R`, `rating_validation.R` | Opponent/competition-adjusted rating tuned to predict the player's next match (D-P17); `rating_validation.R` is the forward-looking validation harness, not tied to any one rating |
 | **Player Data** | `player_game_data.R`, `player_game_data_storage.R`, `player_game_ratings.R`, `player_career_ratings.R`, `player_career_display.R` | Per-game/career rating storage and display |
 | **Home Advantage** | `home_advantage.R` | Home-team detection, venue-country mapping |
 | **Models** | `agnostic_model.R`, `model_predictions.R`, `score_projection*.R`, `in_match_prediction.R`, `match_predictions.R`, `pre_match_features.R`, `team_predictions.R` | XGBoost models, predictions |
-| **Model Validation** | `calibration_audit.R` | `calibration_audit()`/`worst_calibration_buckets()`/`audit_low_information_state()` — per-cut calibration audit and the low-information-state leak check; see `docs/reference/MODEL-VALIDATION-PROTOCOL.md` |
+| **Model Validation** | `calibration_audit.R` | `calibration_audit()`/`worst_calibration_buckets()`/`audit_low_information_state()` — per-cut calibration audit and the low-information-state leak check; see `../docs/reference/MODEL-VALIDATION-PROTOCOL.md` |
 | **Features** | `feature_engineering.R`, `expected_outcomes.R`, `margin_calculation.R`, `win_probability_added.R`, `match_outcomes.R`, `player_attribution.R`, `hawkeye_features.R` | Feature calculation, WPA, outcomes, Hawkeye |
 | **Simulation** | `simulation.R` | Ball-by-ball match simulation |
 | **User API** | `user_install.R`, `user_api.R`, `player_metrics.R`, `team_metrics.R` | Public-facing functions, stats |
@@ -150,11 +106,12 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 | **Utilities** | `format_utils.R`, `validation_helpers.R`, `pipeline_state.R`, `pipeline_benchmark.R`, `event_tiers.R`, `team_ids.R` | Helpers, validation, pipeline state, benchmarks |
 | **Weather** | `weather.R` | Weather data (Open-Meteo API, venue geocoding) |
 | **Tuning** | `xgb_tuning.R` | XGBoost hyperparameter tuning utilities |
+| **Vendored** | `versebus.R` | Canonical copy is `torpverse/torp/R/versebus.R`; `test-versebus-sync.R` pins this file's contents to it byte-for-byte — never edit locally, sync from torp instead |
 | **Visualization** | `visualization.R` | ggplot2-based plotting functions |
 
 ### tests/testthat/
 
-Covers ratings, models, data pipeline, and API surfaces — around 30 test files. Run `ls tests/testthat/` for the current list; run a single file with `testthat::test_file("tests/testthat/test-<name>.R")`.
+Covers ratings, models, data pipeline, and API surfaces — 75 test files. Run `ls tests/testthat/` for the current list; run a single file with `testthat::test_file("tests/testthat/test-<name>.R")`.
 
 ### debug/ - Scratch Scripts (gitignored)
 
@@ -258,7 +215,7 @@ See `data-raw/ARCHITECTURE.md` for complete technical documentation. See `DATA_D
 
 ## Predictions Automation
 
-Predictions run on GHA without the full 18GB DuckDB. The pattern follows pannaverse:
+Predictions run on GHA without the full DuckDB (~22GB and growing — see `../CLAUDE.md`). The pattern follows pannaverse:
 
 1. **Local**: Run heavy pipeline (steps 1-15) → `Rscript data-raw/release/upload_prediction_caches.R` uploads ~50MB of cached aggregates to `predictions-cache` release
 2. **GHA**: `predictions-pipeline.yml` downloads caches → loads into temp DuckDB → predicts upcoming fixtures → uploads to `predictions-latest` release

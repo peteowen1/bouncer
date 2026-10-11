@@ -828,7 +828,17 @@ default_exposure_floor <- function(format, role) {
 #'   sweeping decay against a fixed target gives 0.1027 / 0.1101 / 0.1121 /
 #'   0.1130 / 0.1130 / 0.1115 at 365 / 730 / 1095 / 1825 / 2555 / none.
 #'   Shorter decays are worse at every horizon for both roles.
-#' @param prior_matches Numeric shrinkage toward the population mean, in
+#' @param shrink_to What a player with little evidence is pulled toward.
+#'   `"debut"` (default) is the mean per-match value of every player's first
+#'   10 matches up to `as_at`: what an unknown player actually produces.
+#'   `"population"` is the bucket's mean over all matches, the pre-2026-10-11
+#'   behaviour. Measured across all 12 published buckets (bouncerverse
+#'   docs/reviews/2026-10-11-REPLACEMENT-PRIOR.md): debut level gains +2% to
+#'   +11.5% next-10 Spearman for batters, is neutral for bowlers, and
+#'   predicts newcomers' next match closer in all 12. The population mean
+#'   over-predicted them in every bucket (T20 men's batters: +1.47 predicted,
+#'   -0.93 actual).
+#' @param prior_matches Numeric shrinkage toward `shrink_to`, in
 #'   matches. NULL derives it per bucket via [derive_shrinkage_prior()], which
 #'   is the default because the old hand-set 20 was a men's-T20 number reused
 #'   everywhere and is roughly half what that bucket actually wants.
@@ -875,6 +885,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        conn = NULL,
                                        as_at = NULL,
                                        decay_days = NULL,
+                                       shrink_to = c("debut", "population"),
                                        prior_matches = NULL,
                                        prior_balls = 60,
                                        iterations = 20L,
@@ -886,6 +897,7 @@ calculate_player_rating_v2 <- function(format = "t20",
                                        metric = c("composite", "runs", "wickets",
                                                   "team_score")) {
   metric <- match.arg(metric)
+  shrink_to <- match.arg(shrink_to)
 
   # Validate BEFORE opening a connection or querying 2M rows: a bad argument
   # should fail in milliseconds, not after the expensive part. (A test for this
@@ -1144,6 +1156,13 @@ calculate_player_rating_v2 <- function(format = "t20",
   ref_date <- if (is.null(as_at)) max(pm$match_date) else as.Date(as_at)
   pm <- pm[match_date <= ref_date]
   pop <- pm[, mean(v)]
+  # The shrink target. Computed only from matches up to ref_date, so a rating
+  # as at a past date never sees later debuts.
+  target <- if (shrink_to == "debut") {
+    data.table::setorder(pm, player_id, match_date, match_id)
+    pm[pm[, .I[seq_len(min(.N, 10L))], by = player_id]$V1, mean(v)]
+  } else pop
+  stopifnot(is.finite(target))
   if (is.null(prior_matches)) {
     est <- derive_shrinkage_prior(pm)
     prior_matches <- est$k
@@ -1157,7 +1176,7 @@ calculate_player_rating_v2 <- function(format = "t20",
   }
   pm[, w := exp(-as.numeric(ref_date - match_date) / decay_days)]
 
-  r <- pm[, .(rating = (sum(v * w) + prior_matches * pop) / (sum(w) + prior_matches),
+  r <- pm[, .(rating = (sum(v * w) + prior_matches * target) / (sum(w) + prior_matches),
               matches = .N, balls = sum(balls),
               effective_matches = round(sum(w), 1),
               last_match = max(match_date)), by = player_id][balls >= min_balls]
@@ -1214,6 +1233,9 @@ calculate_player_rating_v2 <- function(format = "t20",
 #' @param format,gender,conn,as_at,factors,prior_balls,iterations As in
 #'   [calculate_player_rating_v2()].
 #' @param bat_prior,bowl_prior Quality shrinkage, in population-average matches.
+#'   Still toward the population rate: unlike [calculate_player_rating_v2()],
+#'   whose default moved to the debut level on 2026-10-11 (D-P68), this
+#'   per-ball value was not re-measured and was left alone.
 #' @param opp_prior Opportunity shrinkage. See the note above before raising it.
 #' @param min_balls Integer. Career balls, both roles combined.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player

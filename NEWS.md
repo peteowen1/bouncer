@@ -1,3 +1,15 @@
+# bouncer 0.7.10
+
+## Player rating v2 shrinks toward debut level, not the population mean (D-P68)
+
+`calculate_player_rating_v2()` gains `shrink_to = c("debut", "population")`.
+The default now pulls a player with little evidence toward the mean of every
+player's first 10 matches (up to `as_at`), which is what an unknown player
+actually produces. The population mean over-predicted newcomers in all 12
+buckets. Next-10 Spearman: +2% to +11.5% for batters, neutral for bowlers.
+`shrink_to = "population"` reproduces the old ratings.
+`calculate_player_value_v2()` is unchanged.
+
 # bouncer 0.7.8
 
 ## Publish-script bucket-count assertions were stale, fixed
