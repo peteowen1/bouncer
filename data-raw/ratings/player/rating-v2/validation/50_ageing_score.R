@@ -98,9 +98,9 @@ for (bk in buckets) {
     actual = mean(x$v), pred_off = mean(x$p_off), pred_age = mean(x$p_age))
   fwrite(rbind(one(d, "ALL"), rbindlist(lapply(c("under 24", "24-33", "34+", "no dob"),
     function(b) one(d[band == b], b)))), res_file)
-  rm(pm, d); gc(verbose = FALSE)
   cat(sprintf("%s done (%.1f min; dob on %.0f%% of scored matches)\n", bk$label,
               as.numeric(difftime(Sys.time(), t0, units = "mins")), 100 * mean(!is.na(d$age))))
+  rm(pm, d); gc(verbose = FALSE)
 }
 res <- rbindlist(lapply(list.files(RES_DIR, "[.]csv$", full.names = TRUE), fread))
 num <- c("off10", "age10", "off1", "age1", "actual", "pred_off", "pred_age")
