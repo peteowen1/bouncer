@@ -4,13 +4,16 @@
 \alias{build_player_dob}
 \title{Build the player date-of-birth table}
 \usage{
-build_player_dob(conn, details_path = NULL)
+build_player_dob(conn, details_path = NULL, wikidata_path = NULL)
 }
 \arguments{
 \item{conn}{A read-write DuckDB connection.}
 
-\item{details_path}{Path to \code{bouncer_player_details.parquet}, or NULL to use
-cricinfo alone.}
+\item{details_path}{Path to \code{bouncer_player_details.parquet}, or NULL to
+skip it.}
+
+\item{wikidata_path}{Path to the CSV written by \code{\link[=fetch_wikidata_dob]{fetch_wikidata_dob()}}, or
+NULL to skip it.}
 }
 \value{
 The table, invisibly.
@@ -18,7 +21,8 @@ The table, invisibly.
 \description{
 Writes \code{main.player_dob} (\code{player_id}, \code{dob}, \code{dob_source}) from cricinfo
 scorecards joined through \code{cricsheet.people_register} (any of
-\code{key_cricinfo}, \code{key_cricinfo_2}, \code{key_cricinfo_3}), then the
-player_details file for anyone cricinfo lacks. Players with no date here
-are not aged by \code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}} (\code{dob_source} "none").
+\code{key_cricinfo}, \code{key_cricinfo_2}, \code{key_cricinfo_3}), then Wikidata, then
+the player_details file, each filling only players the earlier sources
+lack. Players with no date here are not aged by
+\code{\link[=calculate_player_rating_v2]{calculate_player_rating_v2()}} (\code{dob_source} "none").
 }

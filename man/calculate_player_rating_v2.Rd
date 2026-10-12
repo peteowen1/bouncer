@@ -104,7 +104,7 @@ data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},
 \code{average}, \code{main_comp}, \code{matches}, \code{balls}, \code{effective_matches},
 \code{last_match}, \code{age} and \code{age_at_last_match} (years), \code{post_career_adjustment}
 (already included in \code{rating}; 0 without ageing) and \code{dob_source}
-(\code{cricinfo}, \code{details}, or \code{none} when no date of birth is known, in which
+(\code{cricinfo}, \code{wikidata}, \code{details}, or \code{none} when no date of birth is known, in which
 case the player is not aged), ordered best first. The fitted
 curve is attached as the \code{"ageing_curve"} attribute (NULL without ageing). \code{average} and \code{main_comp} come from
 \code{\link[=player_career_context]{player_career_context()}} and are context beside the rating, never inputs

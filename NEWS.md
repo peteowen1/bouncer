@@ -16,6 +16,16 @@ New matches load again: the loader inserts by column name, since
 on the column count. `parse_cricsheet_json()` now computes `is_free_hit`;
 `unified_margin` is left NULL for pipeline step 1b to fill.
 
+## Dates of birth from Wikidata
+
+`fetch_wikidata_dob()` writes every Wikidata date of birth keyed by
+ESPNcricinfo player id (29,296 on 2026-10-12), and `build_player_dob()` gains
+`wikidata_path`: Wikidata fills only players cricinfo scorecards lack
+(cricinfo covers the Hawkeye era, so Muralitharan, Swann and Graeme Smith had
+no date). 357 of the 405 undated rated players gain one. The rating holds
+Wikidata dates to a debut age of 14-42, since 150 of the 3,866 players both
+sources date differ by more than a month, mostly Wikidata's errors.
+
 # bouncer 0.8.0
 
 ## Player rating v2 ages players (D-P69)

@@ -168,10 +168,18 @@ on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 # column) must not stop the ratings when a previous copy exists.
 refresh_dob <- function() {
   sync_people_register(conn)
-  build_player_dob(conn, details_path = {
-    p <- file.path(find_bouncerdata_dir(), "source", "bouncer_player_details.parquet")
-    if (file.exists(p)) p else NULL
+  # A Wikidata outage keeps the last good file rather than losing its dates.
+  wd_path <- file.path(find_bouncerdata_dir(), "source", "wikidata_cricinfo_dob.csv")
+  tryCatch(fetch_wikidata_dob(wd_path), error = function(e) {
+    cli::cli_warn(c("Could not refresh Wikidata dates of birth; using the stored file if any.",
+                    "x" = conditionMessage(e)))
   })
+  build_player_dob(conn,
+    details_path = {
+      p <- file.path(find_bouncerdata_dir(), "source", "bouncer_player_details.parquet")
+      if (file.exists(p)) p else NULL
+    },
+    wikidata_path = if (file.exists(wd_path)) wd_path else NULL)
 }
 tryCatch(refresh_dob(), error = function(e) {
   if (DBI::dbExistsTable(conn, DBI::Id(schema = "main", table = "player_dob"))) {
