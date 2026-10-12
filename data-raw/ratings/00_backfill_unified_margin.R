@@ -1,16 +1,13 @@
-# Backfill Unified Margin for Historical Matches
+# Backfill Unified Margin
 #
-# This script calculates and stores the unified margin for all matches
-# in the database. Unified margin converts wickets-wins to runs-equivalent
-# using DLS-style resource projection, enabling consistent comparison
-# across all match outcomes.
-#
-# This only needs to be run once after the margin_calculation module is added.
-# New matches will have their margin calculated during data loading.
+# Stores a projected run margin for every match missing one (pipeline step
+# 1b). The rule lives in compute_projected_margins() (R/projected_margin.R,
+# D-P72): runs wins use the official runs margin; wickets wins add the runs
+# the chasing side would still have made, measured from real innings.
 #
 # Usage: Run this script after adding the unified_margin column to the database
 # RECOMPUTE=true recalculates every stored margin, not only missing ones
-# (needed once after the 2026-10-12 overs-notation fix).
+# (needed once after the 2026-10-13 switch to projected run margins).
 
 # 1. Setup ----
 
@@ -73,144 +70,41 @@ if (length(pmf_cols) > 0 && !"expected_margin" %in% pmf_cols) {
 }
 
 
-# 4. Load Match Data ----
+# 4. Load stored margins ----
 
 cli::cli_h2("Loading matches")
-
-query <- "
-  SELECT
-    m.match_id,
-    m.match_type,
-    m.outcome_type,
-    m.outcome_by_runs,
-    m.outcome_by_wickets,
-    m.overs_per_innings,
-    m.unified_margin,
-    -- Get innings totals
-    inn1.total_runs AS team1_score,
-    inn1.total_overs AS team1_overs,
-    inn2.total_runs AS team2_score,
-    inn2.total_overs AS team2_overs
-  FROM cricsheet.matches m
-  LEFT JOIN cricsheet.match_innings inn1
-    ON m.match_id = inn1.match_id AND inn1.innings = 1
-  LEFT JOIN cricsheet.match_innings inn2
-    ON m.match_id = inn2.match_id AND inn2.innings = 2
-  WHERE m.outcome_type IS NOT NULL
-  ORDER BY m.match_date
-"
-
-matches <- DBI::dbGetQuery(conn, query)
+matches <- data.table::as.data.table(DBI::dbGetQuery(conn,
+  "SELECT match_id, match_type, unified_margin FROM cricsheet.matches"))
 cli::cli_alert_success("Loaded {nrow(matches)} matches")
 
-# Check how many already have margin
 RECOMPUTE <- identical(tolower(Sys.getenv("RECOMPUTE", "false")), "true")
 if (RECOMPUTE) {
   cli::cli_alert_warning("RECOMPUTE=true: recalculating all {sum(!is.na(matches$unified_margin))} stored margins")
   matches$unified_margin <- NA_real_
 }
-n_existing <- sum(!is.na(matches$unified_margin))
-cli::cli_alert_info("{n_existing} matches already have unified_margin")
+cli::cli_alert_info("{sum(!is.na(matches$unified_margin))} matches already have unified_margin")
 
 
-# 5. Calculate Unified Margin ----
+# 5. Projected run margin (D-P72) ----
 
-cli::cli_h2("Calculating unified margins")
-
-# Define format mapping
-format_map <- c(
-  "T20" = "t20", "IT20" = "t20",
-  "ODI" = "odi", "ODM" = "odi",
-  "Test" = "test", "MDM" = "test"
-)
-
-matches <- matches %>%
-  mutate(
-    format = format_map[match_type],
-    # Determine win type
-    win_type = case_when(
-      !is.na(outcome_by_runs) & outcome_by_runs > 0 ~ "runs",
-      !is.na(outcome_by_wickets) & outcome_by_wickets > 0 ~ "wickets",
-      outcome_type %in% c("tie", "draw", "no result", "no_result") ~ outcome_type,
-      TRUE ~ "unknown"
-    ),
-    # Calculate overs remaining for wickets wins (cricket notation)
-    overs_remaining = case_when(
-      # Count in balls: overs are cricket notation (18.2 = 110 balls), so
-      # 20 - 18.2 is 1.4 overs, not 1.8. Subtracting the decimals was wrong
-      # for every wickets win with a part-over (6,659 of 9,883, 2026-10-12).
-      win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
-        balls_to_overs_cricket(pmax(0L, as.integer(overs_per_innings) * 6L - overs_to_balls(team2_overs))),
-      TRUE ~ 0
-    ),
-    # Use wickets from outcome (10 - wickets lost = wickets remaining)
-    wickets_remaining = ifelse(is.na(outcome_by_wickets), 0L, as.integer(outcome_by_wickets))
-  )
-
-# Calculate margin for each match (only those missing it)
-cli::cli_progress_bar("Calculating margins", total = nrow(matches))
-
-calculated_margins <- numeric(nrow(matches))
-
-for (i in seq_len(nrow(matches))) {
-  m <- matches[i, ]
-
-  # Skip if already has margin
-  if (!is.na(m$unified_margin)) {
-    calculated_margins[i] <- m$unified_margin
-    cli::cli_progress_update()
-    next
-  }
-
-  # Skip if missing data
-  if (is.na(m$team1_score) || is.na(m$team2_score) ||
-      is.na(m$format) || m$win_type == "unknown") {
-    calculated_margins[i] <- NA_real_
-    cli::cli_progress_update()
-    next
-  }
-
-  # Calculate margin
-  calculated_margins[i] <- calculate_unified_margin(
-    team1_score = m$team1_score,
-    team2_score = m$team2_score,
-    wickets_remaining = m$wickets_remaining,
-    overs_remaining = m$overs_remaining,
-    win_type = m$win_type,
-    format = m$format
-  )
-
-  cli::cli_progress_update()
-}
-
-cli::cli_progress_done()
-
-matches$calculated_margin <- calculated_margins
+cli::cli_h2("Calculating projected run margins")
+need <- matches$match_id[is.na(matches$unified_margin)]
+pm <- if (length(need)) compute_projected_margins(conn, match_ids = need) else
+  data.table::data.table(match_id = character(), unified_margin = numeric(), margin_method = character())
+matches <- merge(matches, pm[, .(match_id, calculated_margin = unified_margin, margin_method)],
+                 by = "match_id", all.x = TRUE)
+matches[!is.na(unified_margin), calculated_margin := unified_margin]
+stopifnot(nrow(matches) == length(unique(matches$match_id)))
 
 
 # 6. Summary Statistics ----
 
 cli::cli_h2("Summary")
-
-n_calculated <- sum(!is.na(matches$calculated_margin))
-n_runs_wins <- sum(matches$win_type == "runs", na.rm = TRUE)
-n_wickets_wins <- sum(matches$win_type == "wickets", na.rm = TRUE)
-n_draws <- sum(matches$win_type %in% c("tie", "draw"), na.rm = TRUE)
-
-cli::cli_alert_success("Calculated margin for {n_calculated} matches")
-cli::cli_alert_info("  - Runs wins: {n_runs_wins}")
-cli::cli_alert_info("  - Wickets wins: {n_wickets_wins}")
-cli::cli_alert_info("  - Ties/Draws: {n_draws}")
-
-# Distribution by format
-for (fmt in unique(matches$format[!is.na(matches$format)])) {
-  fmt_matches <- matches[matches$format == fmt & !is.na(matches$calculated_margin), ]
-  if (nrow(fmt_matches) > 0) {
-    mean_margin <- mean(abs(fmt_matches$calculated_margin))
-    median_margin <- median(abs(fmt_matches$calculated_margin))
-    cli::cli_alert_info("  {toupper(fmt)}: Mean={round(mean_margin, 1)}, Median={round(median_margin, 1)}")
-  }
-}
+cli::cli_alert_success("Calculated margin for {sum(!is.na(pm$unified_margin))} of {length(need)} matches")
+print(pm[, .N, by = margin_method][order(-N)])
+print(matches[!is.na(calculated_margin) & calculated_margin != 0,
+              .(n = .N, mean_abs = round(mean(abs(calculated_margin)), 1),
+                median_abs = round(stats::median(abs(calculated_margin)), 1)), by = match_type][order(-n)])
 
 
 # 7. Update Database ----
@@ -218,9 +112,10 @@ for (fmt in unique(matches$format[!is.na(matches$format)])) {
 cli::cli_h2("Updating database")
 
 # Filter to matches that need updating (have calculated margin but don't have stored margin)
-to_update <- matches %>%
-  filter(is.na(unified_margin) & !is.na(calculated_margin)) %>%
-  select(match_id, calculated_margin)
+# On RECOMPUTE every row is written, NA included: keeping an old-rule margin
+# where the new rule has none would mix two rules in one column.
+to_update <- as.data.frame(matches[if (RECOMPUTE) TRUE else is.na(unified_margin) & !is.na(calculated_margin),
+                                   .(match_id, calculated_margin)])
 
 if (nrow(to_update) > 0) {
   cli::cli_alert_info("Updating {nrow(to_update)} matches...")
