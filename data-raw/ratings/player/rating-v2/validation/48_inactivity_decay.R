@@ -38,7 +38,7 @@ sp <- function(x, y) cor(x, y, method = "spearman")
 out <- list(); ex <- list()
 
 for (bk in buckets) {
-  r <- suppressMessages(get("calculate_player_rating_v2", asNamespace("bouncer"))(bk$format, bk$gender, role = bk$role, conn = conn, match_type_filter = bk$mtf))
+  r <- suppressMessages(get("calculate_player_rating_v2", asNamespace("bouncer"))(ageing = "none", bk$format, bk$gender, role = bk$role, conn = conn, match_type_filter = bk$mtf))
   cap <- get(".cap", globalenv()); pm <- cap$pm; tg <- cap$target
   setorder(pm, player_id, match_date, match_id)
   pm[, idx := seq_len(.N), by = player_id]

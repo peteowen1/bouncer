@@ -138,6 +138,9 @@ reference:
     - flatten_venue_alias_table
     - calculate_player_rating_v2
     - player_career_context
+    - sync_people_register
+    - build_player_dob
+    - fit_ageing_curve
     - derive_shrinkage_prior
     - calculate_player_value_v2
     - store_player_rating_v2

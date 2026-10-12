@@ -1,3 +1,23 @@
+# bouncer 0.8.0
+
+## Player rating v2 ages players (D-P69)
+
+`calculate_player_rating_v2()` gains `ageing = c("two_part", "none")`. While a
+player is still being picked, each match moves along the rising part of a
+within-player ageing curve (`fit_ageing_curve()`) to his age at his last match.
+After his last match, the full decline to his age today is added
+(`post_career_adjustment`), extended past the oldest measured age as an
+assumed parabola. Players with no date of birth are not aged. `"none"`
+reproduces 0.7.10. New output and storage columns: `age`,
+`age_at_last_match`, `post_career_adjustment`, `dob_source`.
+
+## Dates of birth
+
+`sync_people_register()` stores cricsheet's player register
+(`cricsheet.people_register`). `build_player_dob()` builds `main.player_dob`
+from cricinfo scorecards and the player_details file, with a coverage floor
+and per-string parsing.
+
 # bouncer 0.7.10
 
 ## Player rating v2 shrinks toward debut level, not the population mean (D-P68)
