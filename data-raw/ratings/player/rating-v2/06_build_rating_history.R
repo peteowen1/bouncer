@@ -41,6 +41,19 @@ BUCKETS <- list(
 if ("--combine" %in% a) {
   files <- list.files(OUT, "[.]parquet$", full.names = TRUE)
   if (!length(files)) stop("No history files under ", OUT)
+  # Skips are expected only before a bucket's first month (too few dated
+  # players). A gap after it, or one role without the other, is lost output.
+  m <- regmatches(basename(files), regexec("^(.+)_(batter|bowler)_([0-9]{4}-[0-9]{2}-[0-9]{2})[.]parquet$",
+                                            basename(files)))
+  if (any(lengths(m) != 4L)) stop("Unexpected file name in ", OUT, ": ", basename(files)[lengths(m) != 4L][1])
+  fi <- data.table(bucket = vapply(m, `[`, "", 2L), role = vapply(m, `[`, "", 3L),
+                   as_at = as.Date(vapply(m, `[`, "", 4L), format = "%Y-%m-%d"))
+  last_month <- max(fi$as_at)
+  want <- fi[, .(as_at = seq(min(as_at), last_month, by = "month")), by = bucket]
+  want <- want[, .(role = c("batter", "bowler")), by = .(bucket, as_at)]
+  gaps <- want[!fi, on = .(bucket, role, as_at)]
+  if (nrow(gaps)) stop(nrow(gaps), " bucket-role-months missing after the bucket's first month, e.g. ",
+                       gaps$bucket[1], " ", gaps$role[1], " ", format(gaps$as_at[1]), "; rerun the grid")
   parts <- lapply(files, function(f) tryCatch(as.data.table(read_parquet(f)),
     error = function(e) stop("Unreadable history file ", f, " (delete it and rerun the grid): ",
                              conditionMessage(e))))
@@ -86,10 +99,12 @@ on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 idmap <- build_player_id_map(conn)
 
 # A month with too little data for a bucket (early women's ODI) fails with
-# one of these; anything else is a bug and stops the grid.
+# one of these; anything else is a bug and stops the grid. Not "have a date of
+# birth": that also matches the coverage guard for a broken player_dob join.
 THIN_DATA <- paste(c("No deliveries for", "deliveries on or before", "players clear the reference",
-                     "No reference competition appears", "Could not fit an ageing curve",
-                     "have a date of birth"), collapse = "|")
+                     "No reference competition appears", "Could not fit an ageing curve for"),
+                   collapse = "|")
+SKIPS_CSV <- file.path(OUT, "skips.csv")
 skips <- list()
 
 t_all <- Sys.time()
@@ -123,7 +138,9 @@ for (d in rev(seq_along(DATES))) {     # newest first: the most-used months land
       msg <- conditionMessage(e)
       if (!grepl(THIN_DATA, msg)) stop(sprintf("%s %s: %s", bucket, as_at, msg), call. = FALSE)
       message(sprintf("SKIP %s %s: %s", bucket, as_at, msg))
-      skips[[length(skips) + 1L]] <<- data.table(bucket = bucket, as_at = as_at, reason = msg)
+      skip <- data.table(bucket = bucket, as_at = as_at, reason = msg, at = Sys.time())
+      fwrite(skip, SKIPS_CSV, append = file.exists(SKIPS_CSV))
+      skips[[length(skips) + 1L]] <<- skip
       FALSE
     })
     if (ok) message(sprintf("%s %s done in %.0fs (%.1f min total)", bucket, as_at,
@@ -132,7 +149,10 @@ for (d in rev(seq_along(DATES))) {     # newest first: the most-used months land
   }
 }
 skips <- rbindlist(skips)
-if (nrow(skips)) fwrite(skips, file.path(OUT, "skips.csv"))
+# A bucket that skipped every date it tried is not thin data.
+done <- sub("_(batter|bowler)_[0-9-]+[.]parquet$", "", list.files(OUT, "[.]parquet$"))
+never <- setdiff(unique(skips$bucket), done)
+if (length(never)) stop("No date succeeded for ", toString(never), "; see ", SKIPS_CSV)
 message(sprintf("Finished %d dates in %.1f min; %d bucket-months skipped for thin data%s",
                 length(DATES), as.numeric(difftime(Sys.time(), t_all, units = "mins")), nrow(skips),
-                if (nrow(skips)) paste0(" (", file.path(OUT, "skips.csv"), ")") else ""))
+                if (nrow(skips)) paste0(" (", SKIPS_CSV, ")") else ""))
