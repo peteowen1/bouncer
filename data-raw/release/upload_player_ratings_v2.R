@@ -3,9 +3,11 @@
 # database: inthegame-blog and the predictions pipeline both read from release
 # parquets, not from DuckDB.
 #
-# Two tables, two files:
-#   player_rating_v2.parquet   per-role ratings, 6 buckets x 2 roles = 12 rows
-#   player_value_v2.parquet    combined batting+bowling value, 6 buckets
+# Three files:
+#   player_rating_v2.parquet       per-role ratings, 6 buckets x 2 roles = 12 rows
+#   player_value_v2.parquet        combined batting+bowling value, 6 buckets
+#   player_rating_history.parquet  monthly causal history (D-P70), built outside
+#                                  the DB by 06_build_rating_history.R
 #
 # VALIDATES BEFORE UPLOADING. Publishing is outward-facing and a release is
 # what everything downstream trusts, so the checks are assertions and not
@@ -16,9 +18,14 @@
 #   - anchor checks: a rating that silently degrades looks exactly like a
 #     rating that did not.
 #
-# Prerequisite: data-raw/ratings/player/rating-v2/01_build_player_ratings_v2.R
-# Usage (PowerShell; arrow segfaults under Git Bash R):
+# Prerequisites, in order (PowerShell; arrow segfaults under Git Bash R):
+#   Rscript data-raw/ratings/player/rating-v2/01_build_player_ratings_v2.R
+#   Rscript data-raw/ratings/player/rating-v2/06_build_rating_history.R   # new months only, ~2 min each
+#   Rscript data-raw/ratings/player/rating-v2/06_build_rating_history.R --combine
 #   Rscript data-raw/release/upload_player_ratings_v2.R
+# The history must reach the month of the live ratings or the upload stops, so
+# the two published tables never disagree about how current they are.
+# HISTORY=false skips the history (ratings and values only).
 
 suppressPackageStartupMessages({
   library(DBI); library(arrow); library(piggyback); library(cli)
@@ -29,6 +36,8 @@ suppressPackageStartupMessages({
 REPO <- "peteowen1/bouncerdata"
 TAG  <- "player-rating-v2"
 DRY  <- isTRUE(as.logical(Sys.getenv("DRY_RUN", "false")))
+WITH_HISTORY <- !identical(tolower(Sys.getenv("HISTORY", "true")), "false")
+HISTORY_PATH <- file.path(find_bouncerdata_dir(), "source", "player_rating_history.parquet")
 
 token <- Sys.getenv("GITHUB_PAT", "")
 if (!nzchar(token)) {
@@ -103,6 +112,26 @@ anchor("test", "male", "batter", "Root", 50L)
 anchor("test_intl", "male", "batter", "Root", 20L)
 anchor("test_intl", "male", "bowler", "Bumrah", 15L)
 
+if (WITH_HISTORY) {
+  if (!file.exists(HISTORY_PATH)) {
+    cli::cli_abort(c("No rating history at {HISTORY_PATH}.",
+                     "i" = "Run 06_build_rating_history.R then --combine, or set HISTORY=false."))
+  }
+  hist <- as.data.table(arrow::read_parquet(HISTORY_PATH,
+            col_select = c("bucket", "role", "as_at", "rank", "player_id", "rating")))
+  live_month <- as.Date(format(max(as.Date(ratings$as_at)), "%Y-%m-01"))
+  check(max(hist$as_at) >= live_month,
+        sprintf("history reaches the live ratings' month %s (last month %s; rerun 06 then --combine if not)",
+                live_month, max(hist$as_at)))
+  check(nrow(hist) == nrow(unique(hist, by = c("bucket", "role", "as_at", "player_id"))),
+        sprintf("no duplicate player-month in history (%s rows)", format(nrow(hist), big.mark = ",")))
+  check(!anyNA(hist$rating), "no NA ratings in history")
+  check(uniqueN(hist[, .(bucket, role)]) == 12L, "all 12 bucket-roles in history")
+  rk <- hist[!is.na(rank), .(ok = min(rank) == 1L & max(rank) == .N), by = .(bucket, role, as_at)]
+  check(nrow(rk) > 0 && all(rk$ok), "history rank is 1..N among current players in every bucket-month")
+  rm(hist)
+}
+
 cli::cli_h2("Contents")
 print(ratings[, .(players = .N, as_at = max(as_at)), by = .(format, gender, role)][
   order(format, gender, role)], row.names = FALSE)
@@ -142,7 +171,7 @@ if (!TAG %in% rel$tag_name) {
   cli::cli_abort("Release {TAG} still not visible after refresh; not uploading.")
 }
 
-for (f in c(f1, f2)) {
+for (f in c(f1, f2, if (WITH_HISTORY) HISTORY_PATH)) {
   piggyback::pb_upload(f, repo = REPO, tag = TAG, .token = token, overwrite = TRUE)
   cli::cli_alert_success("Uploaded {basename(f)}")
 }
