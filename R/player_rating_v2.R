@@ -1282,7 +1282,7 @@ calculate_player_rating_v2 <- function(format = "t20",
   # Where he did it, and what the traditional number says. Carried alongside
   # every rating so the two can be eyeballed together without a second query.
   ctx <- player_career_context(conn, format, gender, role, id_map = id_map,
-                               match_type_filter = match_type_filter)
+                               match_type_filter = match_type_filter, as_at = as_at)
   r <- merge(r, ctx, by = "player_id", all.x = TRUE)
 
   data.table::setorder(r, -rating)
@@ -1551,11 +1551,13 @@ calculate_player_value_v2 <- function(format = "t20",
 #'   competition, domestic-inflated average) beside a genuinely Test-only
 #'   rating, which defeats the point of restricting the rating in the first
 #'   place.
+#' @param as_at Date or NULL. Count only matches on or before this date, so a
+#'   historical rating carries the average and main competition of its day.
 #' @return data.table of `player_id`, `main_comp`, `main_comp_share`, `average`.
 #' @export
 player_career_context <- function(conn, format = "t20", gender = "male",
                                   role = c("batter", "bowler"), id_map = NULL,
-                                  match_type_filter = NULL) {
+                                  match_type_filter = NULL, as_at = NULL) {
   role <- match.arg(role)
   types <- if (is.null(match_type_filter)) .rating_match_types(format) else
     paste(sprintf("'%s'", tolower(match_type_filter)), collapse = ",")
@@ -1585,8 +1587,10 @@ player_career_context <- function(conn, format = "t20", gender = "male",
     FROM cricsheet.deliveries d
     JOIN cricsheet.matches m ON m.match_id = d.match_id
     WHERE LOWER(d.match_type) IN (%5$s) AND m.gender = '%6$s'
-      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%1$s IS NOT NULL
-    GROUP BY d.%1$s, %2$s", who, comp_sql, runs_expr, outs_expr, types, gender)))
+      AND COALESCE(m.balls_per_over, 6) = 6 AND d.%1$s IS NOT NULL %7$s
+    GROUP BY d.%1$s, %2$s", who, comp_sql, runs_expr, outs_expr, types, gender,
+    if (is.null(as_at)) "" else
+      sprintf("AND d.match_date <= DATE '%s'", format(as.Date(as_at))))))
   # Typed, not bare: the caller merges this by "player_id", and a zero-COLUMN
   # data.table fails that merge with an error naming the missing key rather
   # than the empty query behind it.
