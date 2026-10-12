@@ -120,9 +120,13 @@ if (WITH_HISTORY) {
   hist <- as.data.table(arrow::read_parquet(HISTORY_PATH,
             col_select = c("bucket", "role", "as_at", "rank", "player_id", "rating")))
   live_month <- as.Date(format(max(as.Date(ratings$as_at)), "%Y-%m-01"))
-  check(max(hist$as_at) >= live_month,
-        sprintf("history reaches the live ratings' month %s (last month %s; rerun 06 then --combine if not)",
-                live_month, max(hist$as_at)))
+  # Per bucket-role, not overall: one current bucket must not hide a stale one.
+  last <- hist[, .(last = max(as_at)), by = .(bucket, role)]
+  behind <- last[last < live_month]
+  check(nrow(behind) == 0L,
+        sprintf("every history bucket-role reaches the live ratings' month %s%s", live_month,
+                if (nrow(behind)) sprintf(" (%d behind, e.g. %s %s at %s; rerun 06 then --combine)",
+                                          nrow(behind), behind$bucket[1], behind$role[1], behind$last[1]) else ""))
   check(nrow(hist) == nrow(unique(hist, by = c("bucket", "role", "as_at", "player_id"))),
         sprintf("no duplicate player-month in history (%s rows)", format(nrow(hist), big.mark = ",")))
   check(!anyNA(hist$rating), "no NA ratings in history")
