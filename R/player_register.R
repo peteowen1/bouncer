@@ -199,7 +199,13 @@ fetch_wikidata_dob <- function(path, min_rows = 20000L) {
   if (nrow(wd) < min_rows) {
     cli::cli_abort("Only {nrow(wd)} dated cricinfo ids from Wikidata (29,295 on 2026-10-12); not overwriting {.path {path}}.")
   }
-  data.table::fwrite(wd, path)
+  # write then rename, so a crash mid-write cannot leave a truncated file
+  tmp <- paste0(path, ".tmp")
+  data.table::fwrite(wd, tmp)
+  if (!file.rename(tmp, path)) {
+    unlink(tmp)
+    cli::cli_abort("Could not replace {.path {path}}.")
+  }
   cli::cli_alert_success("Wrote {nrow(wd)} Wikidata dates of birth to {.path {path}}.")
   invisible(wd)
 }
