@@ -11,8 +11,6 @@
 # Usage: Run this script after adding the unified_margin column to the database
 # RECOMPUTE=true recalculates every stored margin, not only missing ones
 # (needed once after the 2026-10-12 overs-notation fix).
-# RECOMPUTE=true recalculates every stored margin, not only missing ones
-# (needed once after the 2026-10-12 overs-notation fix).
 
 # 1. Setup ----
 
@@ -108,11 +106,6 @@ cli::cli_alert_success("Loaded {nrow(matches)} matches")
 # Check how many already have margin
 RECOMPUTE <- identical(tolower(Sys.getenv("RECOMPUTE", "false")), "true")
 if (RECOMPUTE) {
-  cli::cli_alert_warning("RECOMPUTE=true: recalculating all {sum(!is.na(matches$unified_margin))} stored margins")
-  matches$stored_margin <- matches$unified_margin
-  matches$unified_margin <- NA_real_
-}
-if (identical(tolower(Sys.getenv("RECOMPUTE", "false")), "true")) {
   cli::cli_alert_warning("RECOMPUTE=true: recalculating all {sum(!is.na(matches$unified_margin))} stored margins")
   matches$unified_margin <- NA_real_
 }
