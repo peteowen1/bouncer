@@ -1,3 +1,13 @@
+# bouncer 0.8.2
+
+## Career context respects `as_at`
+
+`player_career_context()` takes `as_at`, and `calculate_player_rating_v2()`
+passes its own. A rating as at a past date used to carry the player's
+all-time `average` and `main_comp` beside a rating fitted only on matches up
+to that date; it now carries the figures of its day. The rating itself was
+already cut at `as_at` and does not change.
+
 # bouncer 0.8.1
 
 ## Ingest stops on parse failures

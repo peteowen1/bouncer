@@ -10,7 +10,8 @@ player_career_context(
   gender = "male",
   role = c("batter", "bowler"),
   id_map = NULL,
-  match_type_filter = NULL
+  match_type_filter = NULL,
+  as_at = NULL
 )
 }
 \arguments{
@@ -28,6 +29,9 @@ still showed a player's BLENDED first-class main_comp/average (domestic
 competition, domestic-inflated average) beside a genuinely Test-only
 rating, which defeats the point of restricting the rating in the first
 place.}
+
+\item{as_at}{Date or NULL. Count only matches on or before this date, so a
+historical rating carries the average and main competition of its day.}
 }
 \value{
 data.table of \code{player_id}, \code{main_comp}, \code{main_comp_share}, \code{average}.
