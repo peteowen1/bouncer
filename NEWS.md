@@ -1,3 +1,14 @@
+# bouncer (development version)
+
+## Ingest stops on parse failures
+
+`batch_load_matches()` now stops with an error when any new file fails to
+parse, after loading the files that did parse. It used to warn and return, so
+on 2026-10-12 a run where all 820 new cricsheet files failed (parallel workers
+were loading an installed 0.3.0) reported success. The parallel parser also
+checks that the installed package matches the loaded code and parses
+sequentially when it does not.
+
 # bouncer 0.8.0
 
 ## Player rating v2 ages players (D-P69)

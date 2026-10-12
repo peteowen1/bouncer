@@ -261,6 +261,24 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
  bouncer_installed <- requireNamespace("bouncer", quietly = TRUE) &&
    "parse_cricsheet_json" %in% getNamespaceExports("bouncer")
 
+ # Workers load the INSTALLED package, not the code in this session. Under
+ # devtools::load_all() those can differ: on 2026-10-12 an installed 0.3.0
+ # failed all 820 new files while the loaded 0.8.0 parsed them fine.
+ if (bouncer_installed) {
+   lib_dir <- tryCatch(find.package("bouncer", lib.loc = .libPaths(), quiet = TRUE),
+                       error = function(e) character(0))
+   lib_ver <- if (length(lib_dir)) {
+     tryCatch(read.dcf(file.path(lib_dir[1], "DESCRIPTION"), fields = "Version")[1, 1],
+              error = function(e) NA_character_)
+   } else NA_character_
+   if (!identical(unname(lib_ver), getNamespaceVersion("bouncer")[[1]])) {
+     cli::cli_alert_warning(paste0(
+       "Installed bouncer ({lib_ver %||% 'none'}) differs from the loaded code ",
+       "({getNamespaceVersion('bouncer')[[1]]}); parsing sequentially so the loaded parser is used."))
+     bouncer_installed <- FALSE
+   }
+ }
+
  if (!bouncer_installed) {
    # Development mode - fall back to sequential processing
    cli::cli_alert_warning("Package not installed - using sequential processing")
@@ -579,6 +597,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
    n_parsed <- parse_result$n_matches
    error_count <- parse_result$n_errors
+   parse_errors <- parse_result$errors
 
  } else {
    if (parallel && !has_parallel_support()) {
@@ -602,10 +621,12 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
    total_matches <- 0
    total_errors <- 0
 
+   all_errors <- list()
    for (i in seq_along(batches)) {
      result <- parse_batch_to_parquet(batches[[i]], temp_dir, i)
      total_matches <- total_matches + result$n_matches
      total_errors <- total_errors + result$n_errors
+     all_errors <- c(all_errors, result$errors)
      if (progress) cli::cli_progress_update()
    }
 
@@ -613,6 +634,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
    n_parsed <- total_matches
    error_count <- total_errors
+   parse_errors <- all_errors
  }
 
  timing$parse <- as.numeric(difftime(Sys.time(), t_parse_start, units = "secs"))
@@ -621,7 +643,19 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
    cli::cli_alert_warning("{error_count} files failed to parse")
  }
 
+ # A file that fails to parse is a match missing from the database. This used
+ # to be a warning, so a run where EVERY new file failed still returned
+ # normally. The good files still load (below); the run then stops.
+ abort_parse_errors <- function() {
+   shown <- utils::head(parse_errors, 3)
+   cli::cli_abort(c(
+     "{error_count} of {n_new} new file{?s} failed to parse, so {?that match is/those matches are} not in the database.",
+     stats::setNames(vapply(shown, function(e) paste0(basename(e$.file %||% "?"), ": ", e$.error %||% "?"), ""),
+                     rep("x", length(shown)))))
+ }
+
  if (n_parsed == 0) {
+   if (error_count > 0) abort_parse_errors()
    cli::cli_alert_warning("No valid matches to load")
    return(invisible(0))
  }
@@ -667,9 +701,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  if (n_skipped > 0) {
    cli::cli_alert_info("Skipped {n_skipped} already-loaded matches")
  }
- if (error_count > 0) {
-   cli::cli_alert_warning("{error_count} files failed to parse")
- }
+ if (error_count > 0) abort_parse_errors()
 
  invisible(new_loaded)
 }
