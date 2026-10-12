@@ -445,7 +445,10 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
    full_glob <- gsub("\\\\", "/", full_glob)  # Windows path fix
 
    if (is.null(col_list)) {
-     sql <- sprintf("INSERT INTO %s SELECT * FROM read_parquet('%s')", table_name, sql_quote_path(full_glob))
+     # BY NAME, not by position: the tables gained columns the parser does not
+     # write (unified_margin, filled by pipeline step 1b), and a positional
+     # insert then fails on the column count. Unwritten columns get NULL.
+     sql <- sprintf("INSERT INTO %s BY NAME SELECT * FROM read_parquet('%s')", table_name, sql_quote_path(full_glob))
    } else {
      sql <- sprintf("INSERT INTO %s (%s) SELECT %s FROM read_parquet('%s')",
                     table_name, col_list, col_list, sql_quote_path(full_glob))

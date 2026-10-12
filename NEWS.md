@@ -9,6 +9,12 @@ were loading an installed 0.3.0) reported success. The parallel parser also
 checks that the installed package matches the loaded code and parses
 sequentially when it does not.
 
+New matches load again: the loader inserts by column name, since
+`cricsheet.matches` gained `unified_margin` and `cricsheet.deliveries` gained
+`is_free_hit` after the parser was written, and the positional insert failed
+on the column count. `parse_cricsheet_json()` now computes `is_free_hit`;
+`unified_margin` is left NULL for pipeline step 1b to fill.
+
 # bouncer 0.8.0
 
 ## Player rating v2 ages players (D-P69)

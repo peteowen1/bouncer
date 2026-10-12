@@ -683,6 +683,10 @@ parse_all_data <- function(json_data, match_info) {
       "i" = "Match: {.val {match_info$match_id}}. Registry present: {!is.null(people_registry)}. See bouncerverse#74."))
   }
 
+  # cricsheet.deliveries gained is_free_hit after this parser was written
+  # (#81/D-P50); computed here so new matches arrive with it rather than NULL.
+  if (nrow(deliveries_df) > 0) deliveries_df$is_free_hit <- compute_is_free_hit(deliveries_df)
+
   list(
     innings = innings_df,
     deliveries = deliveries_df,
