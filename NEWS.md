@@ -1,3 +1,21 @@
+# bouncer (development version)
+
+## Ingest stops on parse failures
+
+`batch_load_matches()` now stops with an error when any new file fails to
+parse, after loading the files that did parse. It used to warn and return, so
+on 2026-10-12 a run where all 820 new cricsheet files failed (parallel workers
+were loading an installed 0.3.0) reported success. The parallel parser also
+checks that the installed package matches the loaded code and parses
+sequentially when it does not. A failed file now also stops
+`install_all_bouncer_data()` before its index rebuild; rerun after fixing.
+
+New matches load again: the loader inserts by column name, since
+`cricsheet.matches` gained `unified_margin` and `cricsheet.deliveries` gained
+`is_free_hit` after the parser was written, and the positional insert failed
+on the column count. `parse_cricsheet_json()` now computes `is_free_hit`;
+`unified_margin` is left NULL for pipeline step 1b to fill.
+
 # bouncer 0.8.0
 
 ## Player rating v2 ages players (D-P69)
