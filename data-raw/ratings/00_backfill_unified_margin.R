@@ -9,6 +9,8 @@
 # New matches will have their margin calculated during data loading.
 #
 # Usage: Run this script after adding the unified_margin column to the database
+# RECOMPUTE=true recalculates every stored margin, not only missing ones
+# (needed once after the 2026-10-12 overs-notation fix).
 
 # 1. Setup ----
 
@@ -102,6 +104,11 @@ matches <- DBI::dbGetQuery(conn, query)
 cli::cli_alert_success("Loaded {nrow(matches)} matches")
 
 # Check how many already have margin
+RECOMPUTE <- identical(tolower(Sys.getenv("RECOMPUTE", "false")), "true")
+if (RECOMPUTE) {
+  cli::cli_alert_warning("RECOMPUTE=true: recalculating all {sum(!is.na(matches$unified_margin))} stored margins")
+  matches$unified_margin <- NA_real_
+}
 n_existing <- sum(!is.na(matches$unified_margin))
 cli::cli_alert_info("{n_existing} matches already have unified_margin")
 
@@ -129,8 +136,11 @@ matches <- matches %>%
     ),
     # Calculate overs remaining for wickets wins (cricket notation)
     overs_remaining = case_when(
+      # Count in balls: overs are cricket notation (18.2 = 110 balls), so
+      # 20 - 18.2 is 1.4 overs, not 1.8. Subtracting the decimals was wrong
+      # for every wickets win with a part-over (6,659 of 9,883, 2026-10-12).
       win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
-        pmax(0, overs_per_innings - team2_overs),
+        balls_to_overs_cricket(pmax(0L, as.integer(overs_per_innings) * 6L - overs_to_balls(team2_overs))),
       TRUE ~ 0
     ),
     # Use wickets from outcome (10 - wickets lost = wickets remaining)
