@@ -76,16 +76,19 @@ sync_people_register <- function(conn, path = NULL,
 #'
 #' Writes `main.player_dob` (`player_id`, `dob`, `dob_source`) from cricinfo
 #' scorecards joined through `cricsheet.people_register` (any of
-#' `key_cricinfo`, `key_cricinfo_2`, `key_cricinfo_3`), then the
-#' player_details file for anyone cricinfo lacks. Players with no date here
-#' are not aged by [calculate_player_rating_v2()] (`dob_source` "none").
+#' `key_cricinfo`, `key_cricinfo_2`, `key_cricinfo_3`), then Wikidata, then
+#' the player_details file, each filling only players the earlier sources
+#' lack. Players with no date here are not aged by
+#' [calculate_player_rating_v2()] (`dob_source` "none").
 #'
 #' @param conn A read-write DuckDB connection.
-#' @param details_path Path to `bouncer_player_details.parquet`, or NULL to use
-#'   cricinfo alone.
+#' @param details_path Path to `bouncer_player_details.parquet`, or NULL to
+#'   skip it.
+#' @param wikidata_path Path to the CSV written by [fetch_wikidata_dob()], or
+#'   NULL to skip it.
 #' @return The table, invisibly.
 #' @export
-build_player_dob <- function(conn, details_path = NULL) {
+build_player_dob <- function(conn, details_path = NULL, wikidata_path = NULL) {
   if (!DBI::dbExistsTable(conn, DBI::Id(schema = "cricsheet", table = "people_register"))) {
     cli::cli_abort("cricsheet.people_register does not exist; run {.fn sync_people_register} first.")
   }
@@ -116,6 +119,24 @@ build_player_dob <- function(conn, details_path = NULL) {
                      "i" = "Check the player_dob format in cricinfo.innings and the key_cricinfo join before rebuilding."))
   }
   out <- from_ci
+  # Wikidata fills only the gaps. It is the noisier source: on the 3,866
+  # players both sources date, 94% agree exactly but 150 differ by more than
+  # a month, and the big gaps are mostly Wikidata's (a 1923 birth for a
+  # current player, 1970-01-01 placeholders). The rating applies a tighter
+  # debut-age check to these rows for the same reason.
+  if (!is.null(wikidata_path)) {
+    wd <- data.table::fread(wikidata_path, colClasses = "character")
+    if (!all(c("key", "dob") %in% names(wd))) {
+      cli::cli_abort("{.path {wikidata_path}} needs columns key and dob; rebuild it with {.fn fetch_wikidata_dob}.")
+    }
+    wd[, dob := as.Date(dob, format = "%Y-%m-%d")]
+    wd <- unique(wd[!is.na(dob) & dob != as.Date("1970-01-01"), .(key, dob)])
+    from_wd <- merge(keys, wd, by = "key")
+    from_wd <- from_wd[, .(dob = dob[1], n_dates = data.table::uniqueN(dob)), by = player_id]
+    from_wd <- from_wd[n_dates == 1L & !player_id %in% out$player_id,
+                       .(player_id, dob, dob_source = "wikidata")]
+    out <- rbind(out, from_wd)
+  }
   if (is.null(details_path)) {
     cli::cli_alert_warning("No player_details file; dates of birth come from cricinfo only.")
   } else {
@@ -140,7 +161,45 @@ build_player_dob <- function(conn, details_path = NULL) {
   } else data.frame(n = NA, dated = NA)
   cli::cli_alert_success(paste0(
     "Stored {nrow(out)} dates of birth in main.player_dob ",
-    "({sum(out$dob_source == 'cricinfo')} cricinfo, {sum(out$dob_source == 'details')} details); ",
+    "({sum(out$dob_source == 'cricinfo')} cricinfo, {sum(out$dob_source == 'wikidata')} wikidata, ",
+    "{sum(out$dob_source == 'details')} details); ",
     "{cov$dated} of {cov$n} rated players dated; dropped {conflicts} with conflicting cricinfo dates and {bad} impossible dates."))
   invisible(out)
+}
+
+#' Fetch dates of birth from Wikidata by ESPNcricinfo player id
+#'
+#' One SPARQL query for every Wikidata item with an ESPNcricinfo player id
+#' (property P2697) and a day-precision date of birth (P569). Cricinfo
+#' scorecards in the database only cover the Hawkeye era, so older players
+#' (Muralitharan, Swann, Graeme Smith) have no date without this. Ids with
+#' more than one recorded date are dropped rather than guessed.
+#'
+#' Written to a file so the rating build does not depend on Wikidata being up.
+#'
+#' @param path Where to write the CSV (`key`, `dob`).
+#' @param min_rows Refuse a result smaller than this; 29,295 ids on 2026-10-12.
+#' @return The table, invisibly.
+#' @export
+fetch_wikidata_dob <- function(path, min_rows = 20000L) {
+  query <- paste(
+    "SELECT ?ci ?dob WHERE { ?p wdt:P2697 ?ci . ?p p:P569/psv:P569 ?v .",
+    "?v wikibase:timeValue ?dob ; wikibase:timePrecision 11 . }")
+  resp <- httr2::request("https://query.wikidata.org/sparql") |>
+    httr2::req_url_query(query = query) |>
+    httr2::req_headers(Accept = "text/csv") |>
+    httr2::req_user_agent("bouncer R package (https://github.com/peteowen1/bouncer)") |>
+    httr2::req_timeout(120) |>
+    httr2::req_retry(max_tries = 3) |>
+    httr2::req_perform()
+  wd <- data.table::fread(text = httr2::resp_body_string(resp), colClasses = "character")
+  if (!all(c("ci", "dob") %in% names(wd))) cli::cli_abort("Unexpected Wikidata response: columns {names(wd)}.")
+  wd <- unique(wd[, .(key = ci, dob = substr(dob, 1, 10))])
+  wd <- wd[, if (.N == 1L) .SD, by = key]
+  if (nrow(wd) < min_rows) {
+    cli::cli_abort("Only {nrow(wd)} dated cricinfo ids from Wikidata (29,295 on 2026-10-12); not overwriting {.path {path}}.")
+  }
+  data.table::fwrite(wd, path)
+  cli::cli_alert_success("Wrote {nrow(wd)} Wikidata dates of birth to {.path {path}}.")
+  invisible(wd)
 }

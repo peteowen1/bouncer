@@ -882,7 +882,7 @@ default_exposure_floor <- function(format, role) {
 #'   `average`, `main_comp`, `matches`, `balls`, `effective_matches`,
 #'   `last_match`, `age` and `age_at_last_match` (years), `post_career_adjustment`
 #'   (already included in `rating`; 0 without ageing) and `dob_source`
-#'   (`cricinfo`, `details`, or `none` when no date of birth is known, in which
+#'   (`cricinfo`, `wikidata`, `details`, or `none` when no date of birth is known, in which
 #'   case the player is not aged), ordered best first. The fitted
 #'   curve is attached as the `"ageing_curve"` attribute (NULL without ageing). `average` and `main_comp` come from
 #'   [player_career_context()] and are context beside the rating, never inputs
@@ -1226,6 +1226,11 @@ calculate_player_rating_v2 <- function(format = "t20",
     ages[span, on = "player_id", `:=`(first = i.first, last = i.last)]
     typo <- ages[!is.na(dob) & (as.numeric(first - dob) / 365.25 < 10 |
                                 as.numeric(last - dob) / 365.25 > 60), player_id]
+    # Wikidata dates are noisier (see build_player_dob()), and its errors run
+    # to whole decades, so they must also give a debut age of 14-42 here.
+    wd_bad <- ages[dob_source == "wikidata" & (as.numeric(first - dob) / 365.25 < 14 |
+                                               as.numeric(first - dob) / 365.25 > 42), player_id]
+    typo <- union(typo, wd_bad)
     ages[player_id %in% typo, `:=`(dob = as.Date(NA), dob_source = "none")]
     pm[ages, on = "player_id", `:=`(dob = i.dob, dob_source = i.dob_source)]
     pm[, age := as.numeric(match_date - dob) / 365.25]
