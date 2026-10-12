@@ -387,8 +387,11 @@ for (current_format in formats_to_process) {
         ),
         # Calculate overs remaining for wickets wins (cricket notation)
         overs_remaining = case_when(
+          # Count in balls: overs are cricket notation (18.2 = 110 balls), so
+          # 20 - 18.2 is 1.4 overs, not 1.8. Subtracting the decimals was wrong
+          # for every wickets win with a part-over (6,659 of 9,883, 2026-10-12).
           win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
-            pmax(0, overs_per_innings - team2_overs),
+            balls_to_overs_cricket(pmax(0L, as.integer(overs_per_innings) * 6L - overs_to_balls(team2_overs))),
           TRUE ~ 0
         ),
         # Calculate unified margin (use stored if available, else calculate)
