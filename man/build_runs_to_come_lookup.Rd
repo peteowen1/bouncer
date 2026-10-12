@@ -13,7 +13,7 @@ build_runs_to_come_lookup(conn)
 List with \code{lo} (format, gender, balls_rem, in_hand, n, runs) from
 completed first innings of full-length T20/ODI matches, and \code{test}
 (gender, fourth, in_hand, n, runs) from all-out, undeclared Test and
-multi-day innings.
+multi-day innings; in_hand 10 is the whole innings from 0.
 }
 \description{
 Builds the lookup tables that \code{\link[=compute_projected_margins]{compute_projected_margins()}} uses to value a
