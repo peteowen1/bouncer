@@ -190,148 +190,9 @@ for (current_format in formats_to_process) {
   # Build format-specific home lookups
   format_home_lookups <- build_home_lookups(all_matches, current_format)
 
-  # Load player ELO HISTORY for date-aware roster calculation ----
-  # This loads one row per player per match (not per delivery) to enable
-
-  # looking up player ELOs as of any historical date (no data leakage)
-  cli::cli_h2("Loading player ELO history for roster calculation")
-
-  player_elo_table <- paste0(current_format, "_player_elo")
-  if (player_elo_table %in% DBI::dbListTables(conn)) {
-    cli::cli_alert_info("Loading player ELO history from {player_elo_table}...")
-
-    # Get one ELO per player per match (last delivery of each match)
-    # This gives us historical ELOs we can filter by date
-    player_elo_history_query <- sprintf("
-      WITH batter_per_match AS (
-        SELECT
-          batter_id as player_id,
-          match_id,
-          match_date,
-          (batter_run_elo_after + batter_wicket_elo_after) / 2.0 as elo,
-          ROW_NUMBER() OVER (PARTITION BY batter_id, match_id ORDER BY delivery_id DESC) as rn
-        FROM %s
-        WHERE batter_run_elo_after IS NOT NULL
-      ),
-      bowler_per_match AS (
-        SELECT
-          bowler_id as player_id,
-          match_id,
-          match_date,
-          (bowler_run_elo_after + bowler_wicket_elo_after) / 2.0 as elo,
-          ROW_NUMBER() OVER (PARTITION BY bowler_id, match_id ORDER BY delivery_id DESC) as rn
-        FROM %s
-        WHERE bowler_run_elo_after IS NOT NULL
-      )
-      SELECT player_id, match_date, elo, 'bat' as role FROM batter_per_match WHERE rn = 1
-      UNION ALL
-      SELECT player_id, match_date, elo, 'bowl' as role FROM bowler_per_match WHERE rn = 1
-    ", player_elo_table, player_elo_table)
-
-    player_elo_history <- data.table::as.data.table(DBI::dbGetQuery(conn, player_elo_history_query))
-    player_elo_history[, match_date := as.Date(match_date)]
-    data.table::setkey(player_elo_history, player_id, match_date)
-
-    # Split into batting and bowling histories
-    batter_elo_history <- player_elo_history[role == "bat", .(player_id, match_date, elo)]
-    bowler_elo_history <- player_elo_history[role == "bowl", .(player_id, match_date, elo)]
-    data.table::setkey(batter_elo_history, player_id, match_date)
-    data.table::setkey(bowler_elo_history, player_id, match_date)
-
-    n_batters <- length(unique(batter_elo_history$player_id))
-    n_bowlers <- length(unique(bowler_elo_history$player_id))
-    cli::cli_alert_success("Loaded ELO history: {nrow(batter_elo_history)} batter records ({n_batters} players), {nrow(bowler_elo_history)} bowler records ({n_bowlers} players)")
-
-    ROSTER_ELO_ENABLED <- TRUE
-  } else {
-    cli::cli_alert_warning("Player ELO table {player_elo_table} not found - roster ELO will use default")
-    batter_elo_history <- NULL
-    bowler_elo_history <- NULL
-    ROSTER_ELO_ENABLED <- FALSE
-  }
-
-  # Load player participation data for roster inference ----
-  if (ROSTER_ELO_ENABLED) {
-    cli::cli_alert_info("Loading player participation data...")
-    format_match_types <- FORMAT_GROUPS[[current_format]]
-    placeholders <- paste(rep("?", length(format_match_types)), collapse = ", ")
-
-    participation_query <- sprintf("
-      SELECT DISTINCT
-        match_id,
-        match_date,
-        batting_team,
-        bowling_team,
-        batter_id,
-        bowler_id
-      FROM cricsheet.deliveries
-      WHERE match_type IN (%s)
-    ", placeholders)
-
-    format_participation <- data.table::as.data.table(
-      DBI::dbGetQuery(conn, participation_query, params = as.list(format_match_types))
-    )
-    format_participation[, match_date := as.Date(match_date)]
-    cli::cli_alert_success("Loaded participation data: {nrow(format_participation)} records")
-  } else {
-    format_participation <- NULL
-  }
-
-  # Helper function to get player's ELO as of a specific date ----
-  get_player_elo_as_of <- function(player_ids, as_of_date, elo_history_dt) {
-    if (is.null(elo_history_dt) || length(player_ids) == 0) {
-      return(numeric(0))
-    }
-
-    # Filter to records before the date for these players
-    filtered <- elo_history_dt[player_id %in% player_ids & match_date < as_of_date]
-
-    if (nrow(filtered) == 0) {
-      return(numeric(0))
-    }
-
-    # Get most recent ELO per player
-    latest <- filtered[, .SD[which.max(match_date)], by = player_id]
-
-    return(latest$elo)
-  }
-
-  # Helper function to calculate roster ELO for a team (DATE-AWARE) ----
-  calc_roster_elo_for_team <- function(team_name, as_of_date, participation_dt,
-                                        bat_history_dt, bowl_history_dt, n_recent = 3) {
-    if (is.null(participation_dt) || is.null(bat_history_dt)) {
-      return(1500)  # Default
-    }
-
-    # Find recent matches for this team (before as_of_date)
-    team_matches <- participation_dt[
-      (batting_team == team_name | bowling_team == team_name) & match_date < as_of_date
-    ]
-
-    if (nrow(team_matches) == 0) {
-      return(1500)
-    }
-
-    # Get most recent n match dates
-    match_dates <- sort(unique(team_matches$match_date), decreasing = TRUE)
-    recent_dates <- head(match_dates, n_recent)
-    recent_matches <- team_matches[match_date %in% recent_dates]
-
-    # Get unique players from recent matches
-    batters <- unique(recent_matches[batting_team == team_name, batter_id])
-    bowlers <- unique(recent_matches[bowling_team == team_name, bowler_id])
-
-    # Look up ELOs AS OF the match date (no future data!)
-    bat_elos <- get_player_elo_as_of(batters, as_of_date, bat_history_dt)
-    bowl_elos <- get_player_elo_as_of(bowlers, as_of_date, bowl_history_dt)
-
-    # Aggregate (60% batting, 40% bowling)
-    avg_bat <- if (length(bat_elos) >= 3) mean(bat_elos) else 1500
-    avg_bowl <- if (length(bowl_elos) >= 3) mean(bowl_elos) else 1500
-
-    combined <- 0.6 * avg_bat + 0.4 * avg_bowl
-    return(combined)
-  }
+  # Roster ELO (player Elo of each side's recent XI) used to be computed here
+  # for every match and never read: removed 2026-10-12. Its two per-match scans
+  # of delivery-level participation made a full run take hours.
 
   for (category_name in names(CATEGORIES)) {
     cat_config <- CATEGORIES[[category_name]]
@@ -511,8 +372,6 @@ for (current_format in formats_to_process) {
 
   m_team1_id <- matches$team1_id
   m_team2_id <- matches$team2_id
-  m_team1 <- matches$team1  # Original team names for roster lookup
-  m_team2 <- matches$team2
   m_winner_id <- matches$outcome_winner_id
   m_match_id <- matches$match_id
   m_match_date <- matches$match_date
@@ -545,8 +404,6 @@ for (current_format in formats_to_process) {
 
     team1_id <- m_team1_id[i]
     team2_id <- m_team2_id[i]
-    team1_name <- m_team1[i]
-    team2_name <- m_team2[i]
     winner_id <- m_winner_id[i]
     match_id <- m_match_id[i]
     match_date <- m_match_date[i]
@@ -567,16 +424,6 @@ for (current_format in formats_to_process) {
       team_matches_played[team2_id] <- 0L
       team_tier_ema[team2_id] <- as.numeric(event_tier)
     }
-
-    # Calculate roster ELOs based on player ELOs AS OF this match date (no leakage)
-    team1_roster_elo <- calc_roster_elo_for_team(
-      team1_name, match_date, format_participation,
-      batter_elo_history, bowler_elo_history
-    )
-    team2_roster_elo <- calc_roster_elo_for_team(
-      team2_name, match_date, format_participation,
-      batter_elo_history, bowler_elo_history
-    )
 
     team1_elo_before <- team_result_elos[team1_id]
     team2_elo_before <- team_result_elos[team2_id]
