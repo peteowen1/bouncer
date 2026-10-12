@@ -1,4 +1,4 @@
-# bouncer (development version)
+# bouncer 0.8.1
 
 ## Ingest stops on parse failures
 
