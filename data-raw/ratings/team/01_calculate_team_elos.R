@@ -360,7 +360,8 @@ for (current_format in formats_to_process) {
 
   out_team_id <- character(n_records)
   out_match_id <- character(n_records)
-  out_match_date <- as.Date(rep(NA, n_records))
+  # numeric, not Date: `[<-.Date` copies the whole vector on every assignment
+  out_match_date_num <- rep(NA_real_, n_records)
   out_format <- character(n_records)
   out_gender <- character(n_records)
   out_team_type <- character(n_records)
@@ -375,6 +376,7 @@ for (current_format in formats_to_process) {
   m_winner_id <- matches$outcome_winner_id
   m_match_id <- matches$match_id
   m_match_date <- matches$match_date
+  stopifnot(inherits(m_match_date, "Date"))
   m_match_type <- matches$match_type
   m_event_name <- matches$event_name
   m_home_team <- matches$home_team
@@ -406,7 +408,7 @@ for (current_format in formats_to_process) {
     team2_id <- m_team2_id[i]
     winner_id <- m_winner_id[i]
     match_id <- m_match_id[i]
-    match_date <- m_match_date[i]
+    match_date_num <- as.numeric(m_match_date[i])
     match_type <- m_match_type[i]
     event_name <- m_event_name[i]
 
@@ -518,21 +520,25 @@ for (current_format in formats_to_process) {
       team_result_elos <- team_result_elos - drift
     }
 
-    # Store a row for EVERY team seen so far in this category
-    for (team_id in teams_seen) {
-      out_team_id[record_idx] <- team_id
-      out_match_id[record_idx] <- match_id
-      out_match_date[record_idx] <- match_date
-      out_format[record_idx] <- current_format
-      out_gender[record_idx] <- cat_config$gender
-      out_team_type[record_idx] <- cat_config$team_type
-      out_elo_before[record_idx] <- all_elo_before[team_id]
-      out_elo_after[record_idx] <- team_result_elos[team_id]
-      out_elo_diff[record_idx] <- team_result_elos[team_id] - all_elo_before[team_id]
-      out_played_in_match[record_idx] <- (team_id == team1_id || team_id == team2_id)
-      out_matches_played[record_idx] <- team_matches_played[team_id]
-      record_idx <- record_idx + 1L
-    }
+    # Store a row for EVERY team seen so far in this category. Written as one
+    # slice per match: a per-team scalar loop did a by-name lookup (a linear
+    # scan) per team per match and took hours on mens_club T20 (252 teams).
+    n_seen <- length(teams_seen)
+    idx <- record_idx:(record_idx + n_seen - 1L)
+    eb <- all_elo_before[teams_seen]
+    ea <- team_result_elos[teams_seen]
+    out_team_id[idx] <- teams_seen
+    out_match_id[idx] <- match_id
+    out_match_date_num[idx] <- match_date_num
+    out_format[idx] <- current_format
+    out_gender[idx] <- cat_config$gender
+    out_team_type[idx] <- cat_config$team_type
+    out_elo_before[idx] <- eb
+    out_elo_after[idx] <- ea
+    out_elo_diff[idx] <- ea - eb
+    out_played_in_match[idx] <- teams_seen == team1_id | teams_seen == team2_id
+    out_matches_played[idx] <- team_matches_played[teams_seen]
+    record_idx <- record_idx + n_seen
 
     if (i %% 1000 == 0) cli::cli_progress_update(set = i)
   }
@@ -548,7 +554,7 @@ for (current_format in formats_to_process) {
   elo_df <- data.frame(
     team_id = out_team_id[1:actual_records],
     match_id = out_match_id[1:actual_records],
-    match_date = out_match_date[1:actual_records],
+    match_date = as.Date(out_match_date_num[1:actual_records], origin = "1970-01-01"),
     format = out_format[1:actual_records],
     gender = out_gender[1:actual_records],
     team_type = out_team_type[1:actual_records],
