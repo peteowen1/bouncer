@@ -651,9 +651,12 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  # normally. The good files still load (below); the run then stops.
  abort_parse_errors <- function() {
    shown <- utils::head(parse_errors, 3)
+   # braces in a parser message would be read as cli glue and mask this error
+   esc <- function(x) gsub("}", "}}", gsub("{", "{{", x, fixed = TRUE), fixed = TRUE)
+   missing_txt <- if (error_count == 1L) "that match is" else "those matches are"
    cli::cli_abort(c(
-     "{error_count} of {n_new} new file{?s} failed to parse, so {?that match is/those matches are} not in the database.",
-     stats::setNames(vapply(shown, function(e) paste0(basename(e$.file %||% "?"), ": ", e$.error %||% "?"), ""),
+     "{n_new} new file{?s} loaded with {error_count} failed to parse; {missing_txt} not in the database.",
+     stats::setNames(vapply(shown, function(e) esc(paste0(basename(e$.file %||% "?"), ": ", e$.error %||% "?")), ""),
                      rep("x", length(shown)))))
  }
 
@@ -673,6 +676,9 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  conn <- get_db_connection(path = path, read_only = FALSE)
  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+ # The parser writes is_free_hit and the insert is BY NAME, so an older
+ # database without the column must gain it first.
+ ensure_free_hit_column(conn)
 
  tryCatch({
    DBI::dbBegin(conn)

@@ -7,7 +7,8 @@ parse, after loading the files that did parse. It used to warn and return, so
 on 2026-10-12 a run where all 820 new cricsheet files failed (parallel workers
 were loading an installed 0.3.0) reported success. The parallel parser also
 checks that the installed package matches the loaded code and parses
-sequentially when it does not.
+sequentially when it does not. A failed file now also stops
+`install_all_bouncer_data()` before its index rebuild; rerun after fixing.
 
 New matches load again: the loader inserts by column name, since
 `cricsheet.matches` gained `unified_margin` and `cricsheet.deliveries` gained
