@@ -261,6 +261,24 @@ parse_to_parquet_parallel <- function(file_paths, output_dir, n_workers = NULL,
  bouncer_installed <- requireNamespace("bouncer", quietly = TRUE) &&
    "parse_cricsheet_json" %in% getNamespaceExports("bouncer")
 
+ # Workers load the INSTALLED package, not the code in this session. Under
+ # devtools::load_all() those can differ: on 2026-10-12 an installed 0.3.0
+ # failed all 820 new files while the loaded 0.8.0 parsed them fine.
+ if (bouncer_installed) {
+   lib_dir <- tryCatch(find.package("bouncer", lib.loc = .libPaths(), quiet = TRUE),
+                       error = function(e) character(0))
+   lib_ver <- if (length(lib_dir)) {
+     tryCatch(read.dcf(file.path(lib_dir[1], "DESCRIPTION"), fields = "Version")[1, 1],
+              error = function(e) NA_character_)
+   } else NA_character_
+   if (!identical(unname(lib_ver), getNamespaceVersion("bouncer")[[1]])) {
+     cli::cli_alert_warning(paste0(
+       "Installed bouncer ({lib_ver %||% 'none'}) differs from the loaded code ",
+       "({getNamespaceVersion('bouncer')[[1]]}); parsing sequentially so the loaded parser is used."))
+     bouncer_installed <- FALSE
+   }
+ }
+
  if (!bouncer_installed) {
    # Development mode - fall back to sequential processing
    cli::cli_alert_warning("Package not installed - using sequential processing")
@@ -427,7 +445,10 @@ load_parquet_to_duckdb <- function(parquet_dir, conn) {
    full_glob <- gsub("\\\\", "/", full_glob)  # Windows path fix
 
    if (is.null(col_list)) {
-     sql <- sprintf("INSERT INTO %s SELECT * FROM read_parquet('%s')", table_name, sql_quote_path(full_glob))
+     # BY NAME, not by position: the tables gained columns the parser does not
+     # write (unified_margin, filled by pipeline step 1b), and a positional
+     # insert then fails on the column count. Unwritten columns get NULL.
+     sql <- sprintf("INSERT INTO %s BY NAME SELECT * FROM read_parquet('%s')", table_name, sql_quote_path(full_glob))
    } else {
      sql <- sprintf("INSERT INTO %s (%s) SELECT %s FROM read_parquet('%s')",
                     table_name, col_list, col_list, sql_quote_path(full_glob))
@@ -579,6 +600,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
    n_parsed <- parse_result$n_matches
    error_count <- parse_result$n_errors
+   parse_errors <- parse_result$errors
 
  } else {
    if (parallel && !has_parallel_support()) {
@@ -602,10 +624,12 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
    total_matches <- 0
    total_errors <- 0
 
+   all_errors <- list()
    for (i in seq_along(batches)) {
      result <- parse_batch_to_parquet(batches[[i]], temp_dir, i)
      total_matches <- total_matches + result$n_matches
      total_errors <- total_errors + result$n_errors
+     all_errors <- c(all_errors, result$errors)
      if (progress) cli::cli_progress_update()
    }
 
@@ -613,6 +637,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
    n_parsed <- total_matches
    error_count <- total_errors
+   parse_errors <- all_errors
  }
 
  timing$parse <- as.numeric(difftime(Sys.time(), t_parse_start, units = "secs"))
@@ -621,7 +646,22 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
    cli::cli_alert_warning("{error_count} files failed to parse")
  }
 
+ # A file that fails to parse is a match missing from the database. This used
+ # to be a warning, so a run where EVERY new file failed still returned
+ # normally. The good files still load (below); the run then stops.
+ abort_parse_errors <- function() {
+   shown <- utils::head(parse_errors, 3)
+   # braces in a parser message would be read as cli glue and mask this error
+   esc <- function(x) gsub("}", "}}", gsub("{", "{{", x, fixed = TRUE), fixed = TRUE)
+   missing_txt <- if (error_count == 1L) "that match is" else "those matches are"
+   cli::cli_abort(c(
+     "{n_new} new file{?s} loaded with {error_count} failed to parse; {missing_txt} not in the database.",
+     stats::setNames(vapply(shown, function(e) esc(paste0(basename(e$.file %||% "?"), ": ", e$.error %||% "?")), ""),
+                     rep("x", length(shown)))))
+ }
+
  if (n_parsed == 0) {
+   if (error_count > 0) abort_parse_errors()
    cli::cli_alert_warning("No valid matches to load")
    return(invisible(0))
  }
@@ -636,6 +676,9 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
 
  conn <- get_db_connection(path = path, read_only = FALSE)
  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+ # The parser writes is_free_hit and the insert is BY NAME, so an older
+ # database without the column must gain it first.
+ ensure_free_hit_column(conn)
 
  tryCatch({
    DBI::dbBegin(conn)
@@ -667,9 +710,7 @@ batch_load_matches <- function(file_paths, path = NULL, batch_size = 100, progre
  if (n_skipped > 0) {
    cli::cli_alert_info("Skipped {n_skipped} already-loaded matches")
  }
- if (error_count > 0) {
-   cli::cli_alert_warning("{error_count} files failed to parse")
- }
+ if (error_count > 0) abort_parse_errors()
 
  invisible(new_loaded)
 }
