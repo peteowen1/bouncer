@@ -25,6 +25,12 @@ test_that("limited-overs runs to come falls back from exact cell to thinner ones
   expect_equal(r$source[4], "no_balls_left")
 })
 
+test_that("unknown balls left gives NA, not a rolled value", {
+  r <- .lo_runs_to_come(fake_lookup(), "t20", "male", NA_integer_, 5L, min_n = 30L)
+  expect_true(is.na(r$runs))
+  expect_equal(r$source, "no_balls_info")
+})
+
 test_that("Test runs to come prefers the 4th-innings value for the gender", {
   lk <- fake_lookup()
   expect_equal(.test_runs_to_come(lk, "male", 3L, min_n = 30L), 42)

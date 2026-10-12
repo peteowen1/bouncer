@@ -90,8 +90,11 @@ build_runs_to_come_lookup <- function(conn) {
   out <- data.table::fcoalesce(exact$runs, pool$runs, near$runs, any_n$runs)
   src <- ifelse(!is.na(exact$runs), "exact", ifelse(!is.na(pool$runs), "pooled",
                 ifelse(!is.na(near$runs), "nearest", "nearest_thin")))
-  out[balls_rem <= 0] <- 0
-  src[balls_rem <= 0] <- "no_balls_left"
+  done <- !is.na(balls_rem) & balls_rem <= 0
+  out[done] <- 0
+  src[done] <- "no_balls_left"
+  out[is.na(balls_rem)] <- NA_real_   # the nearest-roll would otherwise invent a value
+  src[is.na(balls_rem)] <- "no_balls_info"
   list(runs = out, source = src)
 }
 
