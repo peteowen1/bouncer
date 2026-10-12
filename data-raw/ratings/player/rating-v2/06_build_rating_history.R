@@ -4,10 +4,17 @@
 # ageing curve included. So a chart shows what the rating would have said at
 # the time, not today's fit replayed backwards.
 #
+# Two inputs are NOT cut at the date: the per-ball run values come from
+# main.cricsheet_ball_raa, scored by the agnostic model trained on all years,
+# and the player id map is built from all appearances. Both are small next to
+# the refit, but the history is causal in its fit, not in every input.
+#
 # One parquet per (bucket, role, date) under OUT, skipped when present, so a
 # stopped run resumes. `--combine` unions them into player_rating_history.parquet
 # with `days_since_last_match`, which lets a chart stop at a player's last game
-# and a "current best" list drop players who have stopped.
+# and a "current best" list drop players who have stopped. It drops the
+# career-context columns (average, main_comp): the grid built before
+# player_career_context() took `as_at` carried all-time values there.
 #
 # Usage (PowerShell; arrow segfaults under Git Bash R). Launch detached:
 #   Rscript 06_build_rating_history.R --sizing             # time one date
@@ -34,16 +41,40 @@ BUCKETS <- list(
 if ("--combine" %in% a) {
   files <- list.files(OUT, "[.]parquet$", full.names = TRUE)
   if (!length(files)) stop("No history files under ", OUT)
-  h <- rbindlist(lapply(files, function(f) as.data.table(read_parquet(f))), fill = TRUE)
+  parts <- lapply(files, function(f) tryCatch(as.data.table(read_parquet(f)),
+    error = function(e) stop("Unreadable history file ", f, " (delete it and rerun the grid): ",
+                             conditionMessage(e))))
+  cols <- names(parts[[1]])
+  drift <- files[!vapply(parts, function(p) identical(names(p), cols), logical(1))]
+  if (length(drift)) stop(length(drift), " files have different columns from ", basename(files[1]),
+                          ", e.g. ", basename(drift[1]))
+  h <- rbindlist(parts)
+  rm(parts)
+  ctx <- intersect(c("main_comp", "main_comp_share", "average"), names(h))
+  if (length(ctx)) {
+    h[, (ctx) := NULL]
+    message("Dropped career-context columns (not cut at as_at in older files): ", toString(ctx))
+  }
   dup <- h[, .N, by = .(bucket, role, as_at, player_id)][N > 1L, .N]
   if (dup) stop(dup, " duplicated player-month rows")
   h[, days_since_last_match := as.integer(as_at - as.Date(last_match))]
-  stopifnot(all(h$days_since_last_match >= 0L))
-  setorder(h, bucket, role, as_at, rank)
+  stopifnot(nrow(h) > 0L, !anyNA(h$days_since_last_match), all(h$days_since_last_match >= 0L))
+  # `rank` counts everyone ever rated, so a retired player's rank drifts as
+  # others age past him (Broad: 25th -> 15th in the year after he retired, on
+  # a flat rating). Rank the history the way the ratings page does
+  # (build_blog_data.R, Pete 2026-10-11): only players with effective_matches
+  # >= 1 who played within 3 years of that month. Others get NA.
+  RETIRED_AFTER_YEARS <- 3
+  setnames(h, "rank", "rank_all")
+  h[, current := effective_matches >= 1 & days_since_last_match <= RETIRED_AFTER_YEARS * 365.25]
+  h[current == TRUE, rank := frank(-rating, ties.method = "first"), by = .(bucket, role, as_at)]
+  h[, current := NULL]
+  setcolorder(h, c("bucket", "role", "as_at", "rank", "rank_all"))
+  setorder(h, bucket, role, as_at, rank, rank_all)
   path <- file.path(dirname(OUT), "player_rating_history.parquet")
   write_parquet(h, path)
   print(h[, .(dates = uniqueN(as_at), first = min(as_at), last = max(as_at), rows = .N,
-              players = uniqueN(player_id)), by = .(bucket, role)])
+              ranked_current = sum(!is.na(rank)), players = uniqueN(player_id)), by = .(bucket, role)])
   cat(sprintf("Wrote %s rows to %s\n", format(nrow(h), big.mark = ","), normalizePath(path)))
   quit(save = "no")
 }
@@ -53,6 +84,13 @@ if ("--sizing" %in% a) DATES <- TO
 conn <- get_db_connection(read_only = TRUE)
 on.exit(dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 idmap <- build_player_id_map(conn)
+
+# A month with too little data for a bucket (early women's ODI) fails with
+# one of these; anything else is a bug and stops the grid.
+THIN_DATA <- paste(c("No deliveries for", "deliveries on or before", "players clear the reference",
+                     "No reference competition appears", "Could not fit an ageing curve",
+                     "have a date of birth"), collapse = "|")
+skips <- list()
 
 t_all <- Sys.time()
 for (d in rev(seq_along(DATES))) {     # newest first: the most-used months land first
@@ -64,8 +102,6 @@ for (d in rev(seq_along(DATES))) {     # newest first: the most-used months land
                       c("batter", "bowler"))
     if (all(file.exists(paths))) next
     t0 <- Sys.time()
-    # A bucket with too little data before this date (early women's ODI) fails
-    # here; record the gap and move on rather than stop the grid.
     ok <- tryCatch({
       factors <- suppressMessages(fit_competition_factors(conn, b$format, b$gender,
                                                           id_map = idmap, as_at = as_at))
@@ -76,14 +112,27 @@ for (d in rev(seq_along(DATES))) {     # newest first: the most-used months land
                match_type_filter = b$match_type_filter))
         r <- as.data.table(r)
         r[, `:=`(bucket = bucket, role = role, as_at = as_at)]
-        write_parquet(r, paths[[role]])
+        # Write then rename, so a run killed mid-write leaves no truncated file
+        # that the resume check would skip forever.
+        tmp <- paste0(paths[[role]], ".tmp")
+        write_parquet(r, tmp)
+        if (!file.rename(tmp, paths[[role]])) stop("Could not rename ", tmp)
       }
       TRUE
-    }, error = function(e) { message(sprintf("SKIP %s %s: %s", bucket, as_at, conditionMessage(e))); FALSE })
+    }, error = function(e) {
+      msg <- conditionMessage(e)
+      if (!grepl(THIN_DATA, msg)) stop(sprintf("%s %s: %s", bucket, as_at, msg), call. = FALSE)
+      message(sprintf("SKIP %s %s: %s", bucket, as_at, msg))
+      skips[[length(skips) + 1L]] <<- data.table(bucket = bucket, as_at = as_at, reason = msg)
+      FALSE
+    })
     if (ok) message(sprintf("%s %s done in %.0fs (%.1f min total)", bucket, as_at,
                             as.numeric(difftime(Sys.time(), t0, units = "secs")),
                             as.numeric(difftime(Sys.time(), t_all, units = "mins"))))
   }
 }
-message(sprintf("Finished %d dates in %.1f min", length(DATES),
-                as.numeric(difftime(Sys.time(), t_all, units = "mins"))))
+skips <- rbindlist(skips)
+if (nrow(skips)) fwrite(skips, file.path(OUT, "skips.csv"))
+message(sprintf("Finished %d dates in %.1f min; %d bucket-months skipped for thin data%s",
+                length(DATES), as.numeric(difftime(Sys.time(), t_all, units = "mins")), nrow(skips),
+                if (nrow(skips)) paste0(" (", file.path(OUT, "skips.csv"), ")") else ""))
