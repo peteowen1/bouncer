@@ -10,7 +10,8 @@ predict_match_outcome(
   conn,
   model_version = "v1.0",
   model_type = "xgboost",
-  margin_model = NULL
+  margin_model = NULL,
+  home_lookups = NULL
 )
 }
 \arguments{
@@ -31,6 +32,9 @@ trained with \code{predicted_margin} - the output of a separate margin
 regression model - as an extra feature. Pass \code{margin_model} so that
 feature is reproduced at prediction time; without it, \code{model} is
 fed one feature short of what it was trained on.}
+
+\item{home_lookups}{List from \code{\link[=build_home_lookups]{build_home_lookups()}}, or NULL. Pass it when
+predicting many matches: NULL rebuilds it for every call (about 10 s each).}
 }
 \value{
 List with prediction details
