@@ -290,7 +290,7 @@ get_all_team_skill_state <- function(format = "t20", conn) {
   # Tables built before 2026-10-13 key teams by bare name. Carrying that state
   # into an incremental run would start every composite-id team from scratch
   # while the old name-keyed rows sat beside them.
-  legacy <- !grepl("_(male|female)_[a-z0-9]+_(international|club)$", team_skills$team_id)
+  legacy <- !is_composite_team_id(team_skills$team_id)
   if (any(legacy)) {
     cli::cli_abort(c(
       "{table_name} keys {sum(legacy)} team(s) by name, not composite id (e.g. {.val {team_skills$team_id[legacy][1]}}).",
@@ -336,6 +336,17 @@ get_all_team_skill_state <- function(format = "t20", conn) {
     n_batting_teams = n_batting_teams,
     n_bowling_teams = n_bowling_teams
   )
+}
+
+
+#' Does a Team Id Look Like a Composite Id?
+#'
+#' @param x Character vector.
+#' @return Logical vector: TRUE for ids shaped like [make_team_id()] output
+#'   (`name_gender_format_teamtype`).
+#' @keywords internal
+is_composite_team_id <- function(x) {
+  grepl("_(male|female)_[a-z0-9]+_(international|club)$", x)
 }
 
 

@@ -122,6 +122,16 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
         FROM %s)
       SELECT * FROM latest WHERE rn = 1", team_skill_table)))
     team_skill_dt[, match_date := as.Date(match_date)]
+    # Since 2026-10-13 features look teams up by composite id. A table (or
+    # prediction cache) still keyed by name would match nothing and give every
+    # team a neutral 0 with no error, so refuse it.
+    legacy <- !is_composite_team_id(team_skill_dt$batting_team_id)
+    if (any(legacy)) {
+      cli::cli_abort(c(
+        "{team_skill_table} keys {sum(legacy)} row(s) by team name (e.g. {.val {team_skill_dt$batting_team_id[legacy][1]}}), not composite id.",
+        "i" = "Rebuild it with FORCE_FULL in 02_calculate_team_skill_indices.R, then refresh the prediction cache."
+      ))
+    }
     data.table::setkey(team_skill_dt, batting_team_id, match_date)
   } else {
     team_skill_dt <- data.table::data.table(batting_team_id = character())

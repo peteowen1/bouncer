@@ -64,3 +64,28 @@ test_that("get_all_team_skill_state refuses a name-keyed table", {
   st <- suppressMessages(get_all_team_skill_state("t20", con))
   expect_equal(st$batting_runs_skill[["india_male_t20_international"]], 0.1)
 })
+
+test_that("load_pre_match_inputs refuses a name-keyed team skill table", {
+  skip_if_not_installed("duckdb")
+  con <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(con, "CREATE SCHEMA cricsheet")
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.matches AS SELECT '1' AS match_id, DATE '2026-01-01' AS match_date,
+    'T20' AS match_type, 'male' AS gender, 'international' AS team_type, NULL::VARCHAR AS event_name,
+    'V' AS venue, 'India' AS team1, 'West Indies' AS team2, 'India' AS outcome_winner,
+    NULL::VARCHAR AS toss_winner, NULL::VARCHAR AS toss_decision, NULL::INTEGER AS event_match_number,
+    NULL::VARCHAR AS event_group")
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.match_innings AS SELECT '1' AS match_id, 1 AS innings, 180 AS total_runs, 'India' AS batting_team")
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.deliveries AS SELECT '1' AS match_id, DATE '2026-01-01' AS match_date,
+    'T20' AS match_type, 'India' AS batting_team, 'West Indies' AS bowling_team, 'p1' AS batter_id, 'p2' AS bowler_id")
+  DBI::dbExecute(con, "CREATE TABLE team_elo AS SELECT 'india_male_t20_international' AS team_id, '1' AS match_id,
+    DATE '2026-01-01' AS match_date, 1600.0 AS elo_result")
+  DBI::dbExecute(con, "CREATE TABLE t20_team_skill AS SELECT 'd1' AS delivery_id, DATE '2026-01-01' AS match_date,
+    'India' AS batting_team_id, 'West Indies' AS bowling_team_id, 0.1 AS batting_team_runs_skill,
+    0.0 AS batting_team_wicket_skill, 0.1 AS bowling_team_runs_skill, 0.0 AS bowling_team_wicket_skill")
+  expect_error(suppressMessages(load_pre_match_inputs(con, "t20")), "by team name")
+
+  DBI::dbExecute(con, "UPDATE t20_team_skill SET batting_team_id = 'india_male_t20_international'")
+  inp <- suppressMessages(load_pre_match_inputs(con, "t20"))
+  expect_equal(inp$team_skill_dt$batting_team_id, "india_male_t20_international")
+})
