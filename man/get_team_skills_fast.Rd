@@ -10,7 +10,8 @@ get_team_skills_fast(
   player_participation_dt,
   batter_skills,
   bowler_skills,
-  n_recent = 3
+  n_recent = 3,
+  gender = NULL
 )
 }
 \arguments{
@@ -25,11 +26,21 @@ get_team_skills_fast(
 \item{bowler_skills}{data.table. Pre-loaded bowler skill indices}
 
 \item{n_recent}{Integer. Number of recent matches to infer roster (default 3)}
+
+\item{gender}{Character or NULL. Men's and women's sides share names
+("Australia"), so the roster is taken from this gender's matches when
+\code{player_participation_dt} has a \code{gender} column.}
 }
 \value{
 List with batting and bowling skill aggregates
 }
 \description{
 Fast calculation of team skill aggregates from pre-loaded data.
+}
+\details{
+Skills are taken AS OF \code{as_of_date}: each player's latest skill row
+dated before it, when the skill tables carry a \code{skill_date} history. Before
+2026-10-13 each player's latest skill in the whole database was used, which
+leaked results after the match into training features.
 }
 \keyword{internal}
