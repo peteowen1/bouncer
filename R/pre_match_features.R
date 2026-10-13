@@ -56,14 +56,15 @@ match_info <- DBI::dbGetQuery(conn, "
                                    home_lookups$venue_country)
   is_neutral_venue <- (home_result == 0L)
 
-  # Get Team 1 ELOs
-  team1_elo_result <- get_team_elo(team1, match_date, "result", conn)
+  # Get Team 1 ELOs. team_elo is keyed by the composite id, not the name:
+  # passing the name matched nothing and gave every team the default.
+  team1_elo_result <- get_team_elo(team1_id, match_date, "result", conn)
   team1_roster <- calculate_team_roster_elo(team1, match_date, conn,
                                              match_type = match_type,
                                              event_name = event_name)
 
   # Get Team 2 ELOs
-  team2_elo_result <- get_team_elo(team2, match_date, "result", conn)
+  team2_elo_result <- get_team_elo(team2_id, match_date, "result", conn)
   team2_roster <- calculate_team_roster_elo(team2, match_date, conn,
                                              match_type = match_type,
                                              event_name = event_name)

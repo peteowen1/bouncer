@@ -7,7 +7,8 @@
 get_team_elo(team_id, as_of_date, elo_type = "result", conn)
 }
 \arguments{
-\item{team_id}{Character. Team identifier/name}
+\item{team_id}{Character. Composite team id from \code{\link[=make_team_id]{make_team_id()}}
+(e.g. "india_male_t20_international"); a plain team name matches nothing.}
 
 \item{as_of_date}{Date. Date to get ELO for (uses most recent before this date)}
 
@@ -24,6 +25,6 @@ Retrieves a team's ELO rating as of a specific date.
 \examples{
 \dontrun{
 conn <- get_db_connection()
-elo <- get_team_elo("Mumbai Indians", as.Date("2024-04-01"), "result", conn)
+elo <- get_team_elo("mumbai_indians_male_t20_club", as.Date("2024-04-01"), "result", conn)
 }
 }

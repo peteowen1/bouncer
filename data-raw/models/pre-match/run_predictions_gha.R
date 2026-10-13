@@ -75,6 +75,8 @@ for (fmt in FORMATS) {
   download_cache(paste0(fmt, "_bowler_elo_latest.parquet"))
   download_cache(paste0(fmt, "_prediction_model.ubj"))
   download_cache(paste0(fmt, "_margin_model.ubj"))
+  download_cache(paste0(fmt, "_team_skill_latest.parquet"))
+  download_cache(paste0(fmt, "_venue_skill_latest.parquet"))
   download_cache(paste0(fmt, "_prediction_features.rds"))
 }
 
@@ -246,12 +248,25 @@ for (fmt in FORMATS) {
   }
 }
 
+# Team and venue per-delivery skills (latest per team / venue), read by
+# calc_match_features(). load_pre_match_inputs(strict = TRUE) aborts if absent.
+for (fmt in FORMATS) {
+  for (kind in c("team", "venue")) {
+    path <- file.path(cache_dir, paste0(fmt, "_", kind, "_skill_latest.parquet"))
+    if (file.exists(path)) {
+      dbExecute(conn, sprintf("CREATE TABLE main.%s_%s_skill AS SELECT * FROM read_parquet('%s')",
+                              fmt, kind, gsub("\\\\", "/", path)))
+      cli_alert_success("Loaded {fmt} {kind} skills")
+    }
+  }
+}
+
 # Load recent lineups into deliveries table (for XI inference)
 lineups_path <- file.path(cache_dir, "recent_lineups.parquet")
 if (file.exists(lineups_path)) {
   dbExecute(conn, sprintf(
     "CREATE TABLE cricsheet.deliveries AS
-     SELECT match_id, match_date, team AS batting_team, team AS bowling_team,
+     SELECT match_id, match_date, match_type, team AS batting_team, team AS bowling_team,
             player_id AS batter_id, player_id AS bowler_id
      FROM read_parquet('%s')",
     gsub("\\\\", "/", lineups_path)
@@ -287,71 +302,71 @@ all_matches <- dbGetQuery(conn,
   "SELECT team1, team2, venue, team_type, gender, match_type FROM cricsheet.matches")
 home_lookups <- build_home_lookups(all_matches)
 
+# Features come from calc_match_features(), the builder the models were
+# trained on (via load_pre_match_inputs() / build_fixture_features()). The old
+# single-match path, calculate_pre_match_features(), had drifted from it and
+# gave every fixture the same default features (2026-10-13).
+upcoming$fmt <- vapply(seq_len(nrow(upcoming)), function(i)
+  normalize_format(upcoming$match_type[i] %||% upcoming$format[i] %||% "t20"), character(1))
+upcoming$match_date <- as.Date(substr(as.character(upcoming$start_date), 1, 10))
+
 predictions <- list()
-
-for (i in seq_len(nrow(upcoming))) {
-  fixture <- upcoming[i, ]
-  fmt <- normalize_format(fixture$match_type %||% fixture$format %||% "t20")
-
-  # Load model for this format
+for (fmt in intersect(FORMATS, unique(upcoming$fmt))) {
+  fx <- upcoming[upcoming$fmt == fmt, , drop = FALSE]
   model_path <- file.path(cache_dir, paste0(fmt, "_prediction_model.ubj"))
   if (!file.exists(model_path)) {
-    cli_alert_warning("No model for format {fmt}, using ELO-based prediction")
-    model <- NULL
-    margin_model <- NULL
-  } else {
-    model <- xgb.load(model_path)
-    # Win-probability model is two-stage - it needs predicted_margin (from
-    # the margin model) as a feature; see predict_match_outcome()'s
-    # margin_model arg.
-    margin_model_path <- file.path(cache_dir, paste0(fmt, "_margin_model.ubj"))
-    margin_model <- if (file.exists(margin_model_path)) xgb.load(margin_model_path) else NULL
+    cli_alert_warning("No {fmt} model in the cache - skipping {nrow(fx)} fixture{?s}")
+    next
   }
+  model <- xgb.load(model_path)
+  margin_model_path <- file.path(cache_dir, paste0(fmt, "_margin_model.ubj"))
+  if (!file.exists(margin_model_path)) {
+    cli_abort("No {fmt} margin model in the cache. The win-probability model takes predicted_margin as an input, so predicting without it gives wrong numbers. Re-run upload_prediction_caches.R.")
+  }
+  margin_model <- xgb.load(margin_model_path)
 
-  # Try to calculate features and predict
-  tryCatch({
-    match_id <- fixture$match_id %||% fixture$id %||% paste0("upcoming_", i)
+  inputs <- load_pre_match_inputs(conn, fmt, strict = TRUE)
+  fixtures <- data.frame(
+    match_id = as.character(fx$match_id), match_date = fx$match_date, match_type = fmt,
+    team1 = fx$team1, team2 = fx$team2, gender = fx$gender,
+    venue = fx$venue %||% NA_character_, event_name = fx$series_name %||% NA_character_,
+    stringsAsFactors = FALSE)
+  feats <- build_fixture_features(fixtures, inputs, home_lookups)
+  probs <- predict_fixture_probs(feats, model, margin_model)
 
-    # Check if match exists in DB (for feature calculation)
-    exists_in_db <- dbGetQuery(conn, sprintf(
-      "SELECT COUNT(*) as n FROM cricsheet.matches WHERE match_id = %s",
-      dbQuoteLiteral(conn, as.character(match_id))
-    ))$n > 0
-
-    if (!exists_in_db) {
-      # Insert fixture into matches table for feature calculation
-      dbExecute(conn, sprintf(
-        "INSERT INTO cricsheet.matches (match_id, match_date, match_type, venue, team1, team2,
-         team_type, gender, event_name)
-         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        dbQuoteLiteral(conn, as.character(match_id)),
-        dbQuoteLiteral(conn, as.character(fixture$match_date %||% fixture$date %||% Sys.Date())),
-        dbQuoteLiteral(conn, fixture$match_type %||% fixture$format %||% "T20"),
-        dbQuoteLiteral(conn, fixture$venue %||% "Unknown"),
-        dbQuoteLiteral(conn, fixture$team1 %||% fixture$home_team %||% "TBD"),
-        dbQuoteLiteral(conn, fixture$team2 %||% fixture$away_team %||% "TBD"),
-        dbQuoteLiteral(conn, fixture$team_type %||% "international"),
-        dbQuoteLiteral(conn, fixture$gender %||% "male"),
-        dbQuoteLiteral(conn, fixture$event_name %||% fixture$series %||% NA_character_)
-      ))
-    }
-
-    pred <- predict_match_outcome(
-      match_id = as.character(match_id),
-      model = model,
-      conn = conn,
-      model_type = if (!is.null(model)) "xgboost" else "elo",
-      margin_model = margin_model
-    )
-
-    if (!is.null(pred)) {
-      predictions[[length(predictions) + 1]] <- as.data.frame(pred, stringsAsFactors = FALSE)
-      cli_alert_success("{pred$team1} vs {pred$team2}: {pred$predicted_winner} ({round(pred$confidence * 100, 1)}%)")
-    }
-  }, error = function(e) {
-    cli_alert_warning("Failed to predict fixture {i}: {e$message}")
-  })
+  out <- data.frame(
+    prediction_id = paste0(probs$match_id, "_v1.0"), match_id = probs$match_id,
+    format = fmt, model_version = "v1.0", model_type = "xgboost", prediction_date = Sys.time(),
+    team1 = fixtures$team1, team2 = fixtures$team2, team_type = feats$team_type_resolved,
+    team1_win_prob = probs$team1_win_prob, draw_prob = probs$draw_prob,
+    team2_win_prob = probs$team2_win_prob, stringsAsFactors = FALSE)
+  out$predicted_winner <- ifelse(out$team1_win_prob >= out$team2_win_prob, out$team1, out$team2)
+  out$confidence <- pmax(out$team1_win_prob, out$team2_win_prob)
+  out$actual_winner <- NA_character_
+  out$prediction_correct <- NA
+  out$team1_elo_found <- feats$team1_elo_found
+  out$team2_elo_found <- feats$team2_elo_found
+  out$team1_in_history <- feats$team1_in_history
+  out$team2_in_history <- feats$team2_in_history
+  predictions[[fmt]] <- out
+  cli_alert_success(paste0(
+    "{toupper(fmt)}: {nrow(out)} fixture{?s}, team1 win prob ",
+    "{round(min(out$team1_win_prob), 3)}-{round(max(out$team1_win_prob), 3)}, ",
+    "{length(unique(round(out$team1_win_prob, 4)))} distinct"))
 }
+
+# Fail loudly rather than publish predictions built on default features
+# (2026-10-13: every fixture defaulted for months while the run stayed green).
+skipped <- upcoming[!upcoming$fmt %in% FORMATS, , drop = FALSE]
+if (nrow(skipped) > 0) {
+  cli_alert_warning("{nrow(skipped)} fixture{?s} in formats with no model skipped: {paste(unique(skipped$fmt), collapse = ', ')}")
+}
+pred_all <- do.call(rbind, predictions)
+n_expected <- sum(upcoming$fmt %in% FORMATS)
+if (is.null(pred_all) || nrow(pred_all) != n_expected) {
+  cli_abort("Predicted {NROW(pred_all)} of {n_expected} fixtures in supported formats")
+}
+check_fixture_coverage(pred_all)
 
 # Cleanup DB (on.exit handles disconnect, just remove temp file)
 if (file.exists(db_path)) file.remove(db_path)
@@ -360,7 +375,7 @@ if (file.exists(db_path)) file.remove(db_path)
 cli_h2("Exporting predictions")
 
 if (length(predictions) > 0) {
-  pred_df <- do.call(rbind, predictions)
+  pred_df <- pred_all
 
   output_dir <- Sys.getenv("OUTPUT_DIR", file.path(tempdir(), "predictions_output"))
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)

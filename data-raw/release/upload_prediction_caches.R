@@ -169,6 +169,33 @@ for (fmt in FORMATS) {
   ", elo_table), file.path(cache_dir, paste0(fmt, "_bowler_elo_latest.parquet")))
 }
 
+# 5b. Team and venue per-delivery skills (latest per team / venue) ----
+# calc_match_features() reads these; without them the live job's team and
+# venue skill features fall back to neutral defaults that training never saw.
+cli_h2("Exporting team and venue skills (latest per team / venue)")
+
+for (fmt in FORMATS) {
+  team_skill_table <- paste0(fmt, "_team_skill")
+  venue_skill_table <- paste0(fmt, "_venue_skill")
+  export_query_to_parquet(conn, sprintf("
+    WITH latest AS (
+      SELECT batting_team_id, bowling_team_id, match_date, delivery_id,
+             batting_team_runs_skill, batting_team_wicket_skill,
+             bowling_team_runs_skill, bowling_team_wicket_skill,
+             ROW_NUMBER() OVER (PARTITION BY batting_team_id ORDER BY match_date DESC, delivery_id DESC) AS rn
+      FROM main.%s)
+    SELECT * EXCLUDE (rn) FROM latest WHERE rn = 1
+  ", team_skill_table), file.path(cache_dir, paste0(fmt, "_team_skill_latest.parquet")))
+  export_query_to_parquet(conn, sprintf("
+    WITH latest AS (
+      SELECT venue, match_date, delivery_id,
+             venue_run_rate, venue_wicket_rate, venue_boundary_rate, venue_dot_rate,
+             ROW_NUMBER() OVER (PARTITION BY venue ORDER BY match_date DESC, delivery_id DESC) AS rn
+      FROM main.%s)
+    SELECT * EXCLUDE (rn) FROM latest WHERE rn = 1
+  ", venue_skill_table), file.path(cache_dir, paste0(fmt, "_venue_skill_latest.parquet")))
+}
+
 # 6. Prediction models ----
 cli_h2("Copying prediction models")
 
@@ -182,6 +209,13 @@ for (fmt in FORMATS) {
   } else {
     cli_alert_warning("Model not found: {basename(model_file)}")
   }
+
+  # The win-probability models are two-stage: they take predicted_margin from
+  # the margin model as a feature, so the live job cannot predict without it.
+  margin_file <- file.path(models_dir, paste0(fmt, "_margin_model.ubj"))
+  if (!file.exists(margin_file)) cli_abort("Margin model not found: {margin_file}")
+  file.copy(margin_file, file.path(cache_dir, basename(margin_file)), overwrite = TRUE)
+  cli_alert_success("Copied {basename(margin_file)}")
 
   features_file <- file.path(models_dir, paste0(fmt, "_prediction_features.rds"))
   if (file.exists(features_file)) {
@@ -221,13 +255,18 @@ cli_h2("Uploading to GitHub release")
 cache_files <- list.files(cache_dir, full.names = TRUE)
 cli_alert_info("Uploading {length(cache_files)} files to {REPO} tag '{TAG}'")
 
+failed_uploads <- character(0)
 for (f in cache_files) {
   tryCatch({
     pb_upload(f, repo = REPO, tag = TAG, overwrite = TRUE)
     cli_alert_success("Uploaded {basename(f)}")
   }, error = function(e) {
     cli_alert_danger("Failed to upload {basename(f)}: {e$message}")
+    failed_uploads <<- c(failed_uploads, basename(f))
   })
+}
+if (length(failed_uploads) > 0) {
+  cli_abort("{length(failed_uploads)} of {length(cache_files)} cache files failed to upload: {paste(failed_uploads, collapse = ', ')}")
 }
 
 # Summary ----

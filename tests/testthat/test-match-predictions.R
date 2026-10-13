@@ -102,7 +102,7 @@ test_that("predict_match_outcome falls back cleanly and builds the full canonica
 
   local_mocked_bindings(
     get_pre_match_features = function(...) data.frame(),
-    calculate_pre_match_features = function(match_id, conn) slow_path_row,
+    calculate_pre_match_features = function(match_id, conn, home_lookups = NULL) slow_path_row,
     .package = "bouncer"
   )
 
@@ -120,7 +120,7 @@ test_that("predict_match_outcome (xgboost) feeds the full two-stage feature set,
 
   local_mocked_bindings(
     get_pre_match_features = function(...) data.frame(),
-    calculate_pre_match_features = function(match_id, conn) slow_path_row,
+    calculate_pre_match_features = function(match_id, conn, home_lookups = NULL) slow_path_row,
     get_margin_prediction = function(features, margin_model) 7.5,
     .package = "bouncer"
   )
@@ -143,7 +143,7 @@ test_that("predict_match_outcome (xgboost) falls back to base columns only (no p
 
   local_mocked_bindings(
     get_pre_match_features = function(...) data.frame(),
-    calculate_pre_match_features = function(match_id, conn) slow_path_row,
+    calculate_pre_match_features = function(match_id, conn, home_lookups = NULL) slow_path_row,
     .package = "bouncer"
   )
 
