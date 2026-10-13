@@ -55,6 +55,7 @@ match_info <- DBI::dbGetQuery(conn, "
                                    team_type, home_lookups$club_home,
                                    home_lookups$venue_country)
   is_neutral_venue <- (home_result == 0L)
+  home_side <- as.integer(home_result)
 
   # Get Team 1 ELOs. team_elo is keyed by the composite id, not the name:
   # passing the name matched nothing and gave every team the default.
@@ -154,6 +155,7 @@ match_info <- DBI::dbGetQuery(conn, "
     # Match context
     is_knockout = is_knockout,
     is_neutral_venue = is_neutral_venue,
+    home_side = home_side,
 
     # Toss features
     team1_won_toss = team1_won_toss,
@@ -440,6 +442,11 @@ prepare_prediction_features <- function(df) {
                   "team1_team_wicket_skill", "team2_team_wicket_skill",
                   "venue_run_rate_skill", "venue_wicket_rate_skill",
                   "venue_boundary_rate", "venue_dot_rate")
+  # Feature rows built before 2026-10-13 have no home_side; reproduce the old
+  # (either-side-at-home) value for them so old feature files score as before.
+  if (!"home_side" %in% names(df)) {
+    df$home_side <- as.integer(!dplyr::coalesce(as.logical(df$is_neutral_venue), TRUE))
+  }
   for (col in setdiff(skill_cols, names(df))) {
     df[[col]] <- NA_real_
   }
@@ -513,9 +520,12 @@ prepare_prediction_features <- function(df) {
 
       # Match context
       is_knockout = as.integer(dplyr::coalesce(is_knockout, FALSE)),
-      # Home advantage (team1 is usually the home team in Cricsheet)
-      # is_neutral_venue comes from venue-country matching
-      team1_is_home = as.integer(!dplyr::coalesce(is_neutral_venue, TRUE)),
+      # Home side: +1 team1 at home, -1 team2 at home, 0 neutral/unknown.
+      # Until 2026-10-13 this was !is_neutral_venue, i.e. 1 when EITHER side
+      # was at home, so the model could not learn home advantage (team1 won
+      # 49.8% of "home" training matches). Kept under the old column name so
+      # models trained before and after accept the same inputs.
+      team1_is_home = as.integer(dplyr::coalesce(home_side, 0L)),
 
       # Interaction features
       # Strong team with good form = momentum
@@ -1099,6 +1109,7 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
                                      home_lookups$venue_country)
     is_neutral <- (home_result == 0L)
   } else {
+    home_result <- 0L
     is_neutral <- FALSE
   }
 
@@ -1150,6 +1161,7 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
 
     is_knockout = is_knockout,
     is_neutral_venue = is_neutral,
+    home_side = as.integer(home_result),
     team1_won_toss = team1_won_toss,
     toss_elect_bat = toss_elect_bat,
     created_at = Sys.time(),
