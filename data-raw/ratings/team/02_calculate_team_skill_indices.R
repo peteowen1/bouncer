@@ -262,6 +262,14 @@ if (!is.null(MATCH_LIMIT)) {
 
 setDT(deliveries)
 
+# Key every team by its composite id (india_female_t20_international), the
+# same id team Elo uses. Keyed by name, men's and women's "India" (and BBL and
+# WBBL "Perth Scorchers") shared ONE running skill, updated by both sides'
+# deliveries as they interleaved: 63% of T20 and 70% of ODI rows (2026-10-13).
+# It also left get_team_skill() lookups by composite id (the simulator)
+# finding nothing.
+deliveries <- key_team_skill_deliveries(deliveries, current_format, conn)
+
 # Filter out already processed deliveries in incremental mode
 if (mode == "incremental" && !is.null(last_processed)) {
   existing_ids <- DBI::dbGetQuery(conn, sprintf("

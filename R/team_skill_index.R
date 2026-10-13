@@ -287,6 +287,17 @@ get_all_team_skill_state <- function(format = "t20", conn) {
     return(NULL)
   }
 
+  # Tables built before 2026-10-13 key teams by bare name. Carrying that state
+  # into an incremental run would start every composite-id team from scratch
+  # while the old name-keyed rows sat beside them.
+  legacy <- !is_composite_team_id(team_skills$team_id)
+  if (any(legacy)) {
+    cli::cli_abort(c(
+      "{table_name} keys {sum(legacy)} team(s) by name, not composite id (e.g. {.val {team_skills$team_id[legacy][1]}}).",
+      "i" = "Rebuild it: set FORCE_FULL <- TRUE before sourcing 02_calculate_team_skill_indices.R."
+    ))
+  }
+
   # Create environments for fast lookup
   batting_runs_skill <- new.env(hash = TRUE)
   batting_wicket_skill <- new.env(hash = TRUE)
@@ -325,6 +336,61 @@ get_all_team_skill_state <- function(format = "t20", conn) {
     n_batting_teams = n_batting_teams,
     n_bowling_teams = n_bowling_teams
   )
+}
+
+
+#' Does a Team Id Look Like a Composite Id?
+#'
+#' @param x Character vector.
+#' @return Logical vector: TRUE for ids shaped like [make_team_id()] output
+#'   (`name_gender_format_teamtype`).
+#' @keywords internal
+is_composite_team_id <- function(x) {
+  grepl("_(male|female)_[a-z0-9]+_(international|club)$", x)
+}
+
+
+#' Key Team-Skill Deliveries by Composite Team Id
+#'
+#' Replaces `batting_team` and `bowling_team` names with composite team ids
+#' ([make_team_id()]: name, gender, format, team type), so a men's and a
+#' women's side of the same name keep separate running skills.
+#'
+#' @param deliveries data.table with `match_id`, `gender`, `batting_team`,
+#'   `bowling_team`.
+#' @param format Character. "t20", "odi" or "test".
+#' @param conn DBI connection, used to read each match's `team_type` from
+#'   `cricsheet.matches`. Ignored when `team_types` is given.
+#' @param team_types Optional data.frame of `match_id`, `team_type`.
+#' @return `deliveries` with both team columns holding composite ids.
+#' @keywords internal
+key_team_skill_deliveries <- function(deliveries, format, conn = NULL, team_types = NULL) {
+  deliveries <- data.table::as.data.table(deliveries)
+  if (nrow(deliveries) == 0L) return(deliveries)
+  if (is.null(team_types)) {
+    team_types <- DBI::dbGetQuery(conn,
+      "SELECT DISTINCT match_id, team_type FROM cricsheet.matches")
+  }
+  team_types <- data.table::as.data.table(team_types)[, .(match_id = as.character(match_id), team_type)]
+  team_types <- unique(team_types)
+  if (anyDuplicated(team_types$match_id)) {
+    cli::cli_abort("cricsheet.matches gives {sum(duplicated(team_types$match_id))} match(es) more than one team_type.")
+  }
+  deliveries[, match_id := as.character(match_id)]
+  deliveries[team_types, team_type := i.team_type, on = "match_id"]
+  bad <- is.na(deliveries$team_type) | is.na(deliveries$gender)
+  if (any(bad)) {
+    cli::cli_abort("{sum(bad)} deliveries have no team_type or gender (first match {deliveries$match_id[bad][1]}); cannot build team ids.")
+  }
+  # make_team_id_vec() is an mapply; run it once per distinct team, not per ball.
+  ids <- unique(data.table::rbindlist(list(
+    deliveries[, .(team = batting_team, gender, team_type)],
+    deliveries[, .(team = bowling_team, gender, team_type)])))
+  ids[, team_id := make_team_id_vec(team, gender, format, team_type)]
+  deliveries[ids, batting_team := i.team_id, on = .(batting_team = team, gender, team_type)]
+  deliveries[ids, bowling_team := i.team_id, on = .(bowling_team = team, gender, team_type)]
+  deliveries[, team_type := NULL]
+  deliveries[]
 }
 
 

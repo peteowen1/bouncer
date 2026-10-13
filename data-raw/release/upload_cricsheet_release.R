@@ -53,7 +53,18 @@ GENDERS <- c("male", "female")
 # =============================================================================
 
 #' Export a table to parquet with zstd compression
-export_parquet <- function(data, filepath) {
+#' Refuses to write a table whose key repeats: this script overwrites the
+#' `cricsheet` release, and a duplicated local table (2026-08, D-P76) would
+#' publish every repeat -- and a repeated match multiplies its deliveries
+#' through the partition join below.
+export_parquet <- function(data, filepath, key = NULL) {
+  if (!is.null(key)) {
+    n_dup <- sum(duplicated(data[key]))
+    if (n_dup > 0) {
+      stop(sprintf("%s: %d row(s) repeat key (%s); dedupe the local table before publishing.",
+                   basename(filepath), n_dup, paste(key, collapse = ", ")))
+    }
+  }
   arrow::write_parquet(data, filepath, compression = "zstd")
   cli::cli_alert_success("Exported {.file {basename(filepath)}} ({format(nrow(data), big.mark=',')} rows)")
 }
@@ -173,7 +184,7 @@ cli::cli_h2("Exporting core tables")
 
 matches <- dbGetQuery(conn, "SELECT * FROM cricsheet.matches")
 matches_file <- file.path(temp_dir, "matches.parquet")
-export_parquet(matches, matches_file)
+export_parquet(matches, matches_file, key = "match_id")
 exported_files <- c(exported_files, matches_file)
 rm(matches)
 gc()
@@ -184,7 +195,7 @@ gc()
 
 players <- dbGetQuery(conn, "SELECT * FROM cricsheet.players")
 players_file <- file.path(temp_dir, "players.parquet")
-export_parquet(players, players_file)
+export_parquet(players, players_file, key = "player_id")
 exported_files <- c(exported_files, players_file)
 rm(players)
 gc()
@@ -195,7 +206,7 @@ gc()
 
 match_innings <- dbGetQuery(conn, "SELECT * FROM cricsheet.match_innings")
 match_innings_file <- file.path(temp_dir, "match_innings.parquet")
-export_parquet(match_innings, match_innings_file)
+export_parquet(match_innings, match_innings_file, key = c("match_id", "innings"))
 exported_files <- c(exported_files, match_innings_file)
 rm(match_innings)
 gc()
@@ -206,7 +217,7 @@ gc()
 
 innings_powerplays <- dbGetQuery(conn, "SELECT * FROM cricsheet.innings_powerplays")
 powerplays_file <- file.path(temp_dir, "innings_powerplays.parquet")
-export_parquet(innings_powerplays, powerplays_file)
+export_parquet(innings_powerplays, powerplays_file, key = "powerplay_id")
 exported_files <- c(exported_files, powerplays_file)
 rm(innings_powerplays)
 gc()
@@ -242,7 +253,7 @@ for (match_type in MATCH_TYPES) {
     # Export partition
     filename <- sprintf("deliveries_%s_%s.parquet", match_type, gender)
     filepath <- file.path(temp_dir, filename)
-    export_parquet(deliveries, filepath)
+    export_parquet(deliveries, filepath, key = "delivery_id")
     exported_files <- c(exported_files, filepath)
 
     partition_count <- partition_count + 1

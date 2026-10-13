@@ -1,3 +1,16 @@
+# bouncer 0.8.7
+
+## Team skill is keyed by team id, so men's and women's sides no longer share one
+
+Team skill indices were keyed by team name, so the men's and women's India (and every other shared
+name) ran one skill between them: 63% of T20 rows, 70% of ODI, 17% of Test. They are now keyed by the
+composite id team Elo uses (`key_team_skill_deliveries()`), and pre-match features look them up by that
+id. Loading a skill table or prediction cache still keyed by name now aborts with a FORCE_FULL message
+instead of quietly returning zeros. Held-out log-loss is unchanged overall and better for women's
+internationals.
+
+`upload_cricsheet_release.R` refuses to publish a parquet whose keys repeat.
+
 # bouncer 0.8.6
 
 ## Pre-match model knows which side is at home
