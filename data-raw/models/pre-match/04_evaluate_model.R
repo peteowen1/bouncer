@@ -202,7 +202,8 @@ dtest <- xgb.DMatrix(data = X_test)
 raw_preds <- predict(model, dtest)
 
 if (is_multiclass) {
-  pred_probs_matrix <- matrix(raw_preds, ncol = 3, byrow = TRUE)
+  # xgboost >= 2 returns an n x 3 matrix already (see 03_train_prediction_model.R)
+  pred_probs_matrix <- if (is.matrix(raw_preds)) raw_preds else matrix(raw_preds, ncol = 3, byrow = TRUE)
   colnames(pred_probs_matrix) <- c("team1_win", "draw", "team2_win")
   pred_class <- max.col(pred_probs_matrix) - 1
   pred_probs <- pred_probs_matrix[, "team1_win"]  # For compatibility
