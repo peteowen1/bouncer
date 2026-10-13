@@ -156,15 +156,17 @@ if (file.exists(cricinfo_innings_path)) {
 cricsheet_matches_path <- file.path(cache_dir, "cricsheet", "matches.parquet")
 cached_matches_path <- file.path(cache_dir, "matches.parquet")
 
+# DISTINCT ON: the cricsheet release's matches.parquet held 1,219 matches
+# repeated up to 86 times (2026-10-13), which inflated form and h2h.
 if (file.exists(cricsheet_matches_path)) {
   dbExecute(conn, sprintf(
-    "CREATE TABLE cricsheet.matches AS SELECT * FROM read_parquet('%s')",
+    "CREATE TABLE cricsheet.matches AS SELECT DISTINCT ON (match_id) * FROM read_parquet('%s')",
     gsub("\\\\", "/", cricsheet_matches_path)
   ))
   cli_alert_success("Loaded cricsheet matches (secondary, historical)")
 } else if (file.exists(cached_matches_path)) {
   dbExecute(conn, sprintf(
-    "CREATE TABLE cricsheet.matches AS SELECT * FROM read_parquet('%s')",
+    "CREATE TABLE cricsheet.matches AS SELECT DISTINCT ON (match_id) * FROM read_parquet('%s')",
     gsub("\\\\", "/", cached_matches_path)
   ))
   cli_alert_success("Loaded matches from prediction cache")

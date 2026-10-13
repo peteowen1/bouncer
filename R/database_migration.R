@@ -221,7 +221,9 @@ add_skill_columns_to_features <- function(conn = NULL, path = NULL) {
     "team2_bat_survival_avg DOUBLE",
     "team2_bowl_economy_avg DOUBLE",
     "team2_bowl_economy_top5 DOUBLE",
-    "team2_bowl_strike_avg DOUBLE"
+    "team2_bowl_strike_avg DOUBLE",
+    # +1 team1 at home, -1 team2 at home, 0 neutral (2026-10-13)
+    "home_side INTEGER"
   )
 
   columns_added <- 0

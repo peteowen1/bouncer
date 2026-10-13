@@ -159,3 +159,16 @@ test_that("predict_match_outcome (xgboost) falls back to base columns only (no p
   expect_false("predicted_margin" %in% captured$cols)
   expect_type(result, "list")
 })
+
+test_that("team1_is_home says which side is at home, not just that the venue is not neutral", {
+  base <- make_slow_path_features()
+  rows <- do.call(rbind, lapply(c(1L, -1L, 0L), function(h) { r <- base; r$home_side <- h; r$is_neutral_venue <- h == 0L; r }))
+  expect_equal(prepare_prediction_features(rows)$team1_is_home, c(1L, -1L, 0L))
+
+  # Feature rows from before home_side existed keep their old meaning
+  legacy <- base; legacy$home_side <- NULL; legacy$is_neutral_venue <- FALSE
+  expect_equal(prepare_prediction_features(legacy)$team1_is_home, 1L)
+  # ...including rows stored before the migration added the column (NA there)
+  stored <- base; stored$home_side <- NA_integer_; stored$is_neutral_venue <- FALSE
+  expect_equal(prepare_prediction_features(stored)$team1_is_home, 1L)
+})

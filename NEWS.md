@@ -1,3 +1,13 @@
+# bouncer 0.8.6
+
+## Pre-match model knows which side is at home
+
+`team1_is_home` was 1 whenever either side was at home, so the model could not
+learn home advantage. Features now record `home_side` (+1 team1, -1 team2,
+0 neutral), carried in `team1_is_home`. The live prediction job also drops
+repeated match rows from the cricsheet release (1,219 matches repeated up to
+86 times), which had inflated form and head-to-head.
+
 # bouncer 0.8.5
 
 ## Pre-match features no longer use results from after the match
