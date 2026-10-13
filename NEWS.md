@@ -1,3 +1,18 @@
+# bouncer 0.8.4
+
+## Live match predictions use the training feature builder
+
+Live predictions were near-constant: the single-match feature path looked team
+Elo up by name (every team got 1500) and left skills, form and h2h empty, and
+the prediction cache had no margin models. `run_predictions_gha.R` now builds
+fixture features with `calc_match_features()`, the builder the models were
+trained on, via `load_pre_match_inputs()` and `build_fixture_features()`.
+`predict_fixture_probs()` returns a separate draw probability for Tests.
+The job aborts on missing inputs or when known teams have no rating
+(`check_fixture_coverage()`), and `upload_prediction_caches.R` now exports
+margin models and team/venue skills. `get_team_elo()` takes the composite team
+id.
+
 # bouncer 0.8.3
 
 ## Projected run margin for every decided match (D-P72)
