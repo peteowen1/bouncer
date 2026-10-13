@@ -75,6 +75,8 @@ for (fmt in FORMATS) {
   download_cache(paste0(fmt, "_bowler_elo_latest.parquet"))
   download_cache(paste0(fmt, "_prediction_model.ubj"))
   download_cache(paste0(fmt, "_margin_model.ubj"))
+  download_cache(paste0(fmt, "_team_skill_latest.parquet"))
+  download_cache(paste0(fmt, "_venue_skill_latest.parquet"))
   download_cache(paste0(fmt, "_prediction_features.rds"))
 }
 
@@ -246,6 +248,19 @@ for (fmt in FORMATS) {
   }
 }
 
+# Team and venue per-delivery skills (latest per team / venue), read by
+# calc_match_features(). load_pre_match_inputs(strict = TRUE) aborts if absent.
+for (fmt in FORMATS) {
+  for (kind in c("team", "venue")) {
+    path <- file.path(cache_dir, paste0(fmt, "_", kind, "_skill_latest.parquet"))
+    if (file.exists(path)) {
+      dbExecute(conn, sprintf("CREATE TABLE main.%s_%s_skill AS SELECT * FROM read_parquet('%s')",
+                              fmt, kind, gsub("\\\\", "/", path)))
+      cli_alert_success("Loaded {fmt} {kind} skills")
+    }
+  }
+}
+
 # Load recent lineups into deliveries table (for XI inference)
 lineups_path <- file.path(cache_dir, "recent_lineups.parquet")
 if (file.exists(lineups_path)) {
@@ -305,12 +320,15 @@ for (fmt in intersect(FORMATS, unique(upcoming$fmt))) {
   }
   model <- xgb.load(model_path)
   margin_model_path <- file.path(cache_dir, paste0(fmt, "_margin_model.ubj"))
-  margin_model <- if (file.exists(margin_model_path)) xgb.load(margin_model_path) else NULL
+  if (!file.exists(margin_model_path)) {
+    cli_abort("No {fmt} margin model in the cache. The win-probability model takes predicted_margin as an input, so predicting without it gives wrong numbers. Re-run upload_prediction_caches.R.")
+  }
+  margin_model <- xgb.load(margin_model_path)
 
-  inputs <- load_pre_match_inputs(conn, fmt)
+  inputs <- load_pre_match_inputs(conn, fmt, strict = TRUE)
   fixtures <- data.frame(
     match_id = as.character(fx$match_id), match_date = fx$match_date, match_type = fmt,
-    team1 = fx$team1, team2 = fx$team2, gender = fx$gender %||% "male",
+    team1 = fx$team1, team2 = fx$team2, gender = fx$gender,
     venue = fx$venue %||% NA_character_, event_name = fx$series_name %||% NA_character_,
     stringsAsFactors = FALSE)
   feats <- build_fixture_features(fixtures, inputs, home_lookups)
@@ -326,6 +344,10 @@ for (fmt in intersect(FORMATS, unique(upcoming$fmt))) {
   out$confidence <- pmax(out$team1_win_prob, out$team2_win_prob)
   out$actual_winner <- NA_character_
   out$prediction_correct <- NA
+  out$team1_elo_found <- feats$team1_elo_found
+  out$team2_elo_found <- feats$team2_elo_found
+  out$team1_in_history <- feats$team1_in_history
+  out$team2_in_history <- feats$team2_in_history
   predictions[[fmt]] <- out
   cli_alert_success(paste0(
     "{toupper(fmt)}: {nrow(out)} fixture{?s}, team1 win prob ",
@@ -333,14 +355,18 @@ for (fmt in intersect(FORMATS, unique(upcoming$fmt))) {
     "{length(unique(round(out$team1_win_prob, 4)))} distinct"))
 }
 
-# Fail loudly rather than publish flat predictions: a format with many fixtures
-# but almost no spread means the features came back empty (2026-10-13).
-for (out in predictions) {
-  n_distinct <- length(unique(round(out$team1_win_prob, 4)))
-  if (nrow(out) >= 10 && n_distinct < 5) {
-    cli_abort("{toupper(out$format[1])}: {nrow(out)} fixtures but only {n_distinct} distinct win probabilities - features are probably empty; not publishing.")
-  }
+# Fail loudly rather than publish predictions built on default features
+# (2026-10-13: every fixture defaulted for months while the run stayed green).
+skipped <- upcoming[!upcoming$fmt %in% FORMATS, , drop = FALSE]
+if (nrow(skipped) > 0) {
+  cli_alert_warning("{nrow(skipped)} fixture{?s} in formats with no model skipped: {paste(unique(skipped$fmt), collapse = ', ')}")
 }
+pred_all <- do.call(rbind, predictions)
+n_expected <- sum(upcoming$fmt %in% FORMATS)
+if (is.null(pred_all) || nrow(pred_all) != n_expected) {
+  cli_abort("Predicted {NROW(pred_all)} of {n_expected} fixtures in supported formats")
+}
+check_fixture_coverage(pred_all)
 
 # Cleanup DB (on.exit handles disconnect, just remove temp file)
 if (file.exists(db_path)) file.remove(db_path)
@@ -349,7 +375,7 @@ if (file.exists(db_path)) file.remove(db_path)
 cli_h2("Exporting predictions")
 
 if (length(predictions) > 0) {
-  pred_df <- do.call(rbind, predictions)
+  pred_df <- pred_all
 
   output_dir <- Sys.getenv("OUTPUT_DIR", file.path(tempdir(), "predictions_output"))
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)

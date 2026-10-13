@@ -21,13 +21,16 @@ utils::globalVariables(c("..keep", "batter_rn", "bowler_rn", "team_id", "team_ty
 #'
 #' @param conn DBI connection.
 #' @param format Character. "t20", "odi" or "test".
+#' @param strict Logical. TRUE aborts when any input is missing or empty
+#'   instead of falling back to defaults. The live prediction job uses TRUE:
+#'   defaults hidden behind a green run are how its features went flat.
 #'
 #' @return List with `matches_dt` (format matches with composite team ids),
 #'   `team_elo_dt`, `participation_dt`, `venue_stats_dt`, `team_skill_dt`,
 #'   `venue_skill_dt`, `batter_skills`, `bowler_skills`, and `missing`
 #'   (character vector of inputs that were not available).
 #' @keywords internal
-load_pre_match_inputs <- function(conn, format) {
+load_pre_match_inputs <- function(conn, format, strict = FALSE) {
   format_types <- switch(format,
     t20 = c("T20", "IT20"), odi = c("ODI", "ODM"), test = c("Test", "MDM"),
     cli::cli_abort("Unknown format {.val {format}}"))
@@ -37,13 +40,16 @@ load_pre_match_inputs <- function(conn, format) {
 
   # Matches (training: 02 script section 4/5)
   matches_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT match_id, match_date, match_type, gender, team_type, season, event_name, venue,
+    SELECT match_id, match_date, match_type, gender, team_type, event_name, venue,
            team1, team2, outcome_winner, toss_winner, toss_decision,
            event_match_number, event_group
     FROM cricsheet.matches
     WHERE LOWER(match_type) IN (%s) AND gender IS NOT NULL
     ORDER BY match_date, match_id", types_sql)))
   matches_dt[, match_date := as.Date(match_date)]
+  # season is not read by calc_match_features(); the prediction cache's
+  # fallback matches file does not have it.
+  matches_dt[, season := NA_character_]
   matches_dt[, `:=`(
     format = format,
     team1_id = make_team_id_vec(team1, gender, format, team_type),
@@ -82,7 +88,9 @@ load_pre_match_inputs <- function(conn, format) {
 
   # Team and venue per-delivery skills (latest row per team / venue)
   team_skill_table <- paste0(format, "_team_skill")
-  if (team_skill_table %in% tables) {
+  has_rows <- function(tbl) tbl %in% tables &&
+    DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", tbl))$n > 0
+  if (has_rows(team_skill_table)) {
     team_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
       WITH latest AS (
         SELECT batting_team_id, bowling_team_id, match_date,
@@ -97,7 +105,7 @@ load_pre_match_inputs <- function(conn, format) {
     missing <- c(missing, team_skill_table)
   }
   venue_skill_table <- paste0(format, "_venue_skill")
-  if (venue_skill_table %in% tables) {
+  if (has_rows(venue_skill_table)) {
     venue_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
       WITH latest AS (
         SELECT venue, match_date, venue_run_rate, venue_wicket_rate, venue_boundary_rate, venue_dot_rate,
@@ -112,7 +120,7 @@ load_pre_match_inputs <- function(conn, format) {
 
   # Player skills (latest per batter / bowler)
   skill_table <- paste0(format, "_player_skill")
-  if (skill_table %in% tables) {
+  if (has_rows(skill_table)) {
     player_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
       WITH latest AS (
         SELECT batter_id, bowler_id, match_date,
@@ -137,6 +145,14 @@ load_pre_match_inputs <- function(conn, format) {
     missing <- c(missing, skill_table)
   }
 
+  for (nm in c("matches_dt", "team_elo_dt", "participation_dt", "venue_stats_dt")) {
+    if (nrow(get(nm)) == 0) missing <- c(missing, paste0(nm, " (0 rows)"))
+  }
+  if (length(missing) > 0 && strict) {
+    cli::cli_abort(paste0(
+      "{toupper(format)} pre-match inputs missing or empty: {paste(missing, collapse = ', ')}. ",
+      "Refusing to predict on default features."))
+  }
   if (length(missing) > 0) {
     cli::cli_alert_warning(paste0(
       "{toupper(format)} pre-match inputs not available, features fall back to neutral defaults: ",
@@ -173,7 +189,11 @@ load_pre_match_inputs <- function(conn, format) {
 #' @param home_lookups List from [build_home_lookups()], or NULL.
 #'
 #' @return data.frame, one row per fixture, with the columns
-#'   [calc_match_features()] returns plus `team_type_resolved`.
+#'   [calc_match_features()] returns plus `team_type_resolved`,
+#'   `team1_elo_found` / `team2_elo_found` (the team's id has rating history;
+#'   FALSE means its features are defaults) and `team1_in_history` /
+#'   `team2_in_history` (the team NAME appears in this format's matches).
+#'   In history but no rating found means a lookup is broken.
 #' @keywords internal
 build_fixture_features <- function(fixtures, inputs, home_lookups = NULL) {
   fx <- data.table::as.data.table(fixtures)
@@ -182,11 +202,16 @@ build_fixture_features <- function(fixtures, inputs, home_lookups = NULL) {
   col_or <- function(x, default) if (x %in% names(fx)) fx[[x]] else rep(default, nrow(fx))
 
   fx[, `:=`(match_id = as.character(match_id), match_date = as.Date(match_date),
-            gender = tolower(col_or("gender", "male")))]
+            gender = tolower(col_or("gender", NA_character_)))]
+  if (anyNA(fx$gender) || anyNA(fx$match_date)) {
+    cli::cli_abort("{sum(is.na(fx$gender) | is.na(fx$match_date))} fixture{?s} with no gender or date; team ids cannot be built")
+  }
   # Cricinfo names women's sides "Australia Women"; Cricsheet (and so every
   # history table) calls them "Australia" with gender "female".
   fx[gender == "female", `:=`(team1 = sub(" Women$", "", team1), team2 = sub(" Women$", "", team2))]
   known_ids <- unique(inputs$team_elo_dt$team_id)
+  known_names <- unique(c(paste(inputs$matches_dt$team1, inputs$matches_dt$gender),
+                          paste(inputs$matches_dt$team2, inputs$matches_dt$gender)))
   given_type <- col_or("team_type", NA_character_)
   fx[, team_type := mapply(function(t1, t2, g, given) {
     intl <- make_team_id_vec(c(t1, t2), g, fmt, "international")
@@ -223,6 +248,10 @@ build_fixture_features <- function(fixtures, inputs, home_lookups = NULL) {
                                inputs$venue_stats_dt, inputs$team_skill_dt,
                                inputs$venue_skill_dt, home_lookups = home_lookups)
     out$team_type_resolved <- fx$team_type[k]
+    out$team1_elo_found <- fx$team1_id[k] %in% known_ids
+    out$team2_elo_found <- fx$team2_id[k] %in% known_ids
+    out$team1_in_history <- paste(fx$team1[k], fx$gender[k]) %in% known_names
+    out$team2_in_history <- paste(fx$team2[k], fx$gender[k]) %in% known_names
     out
   })
   data.table::rbindlist(rows, fill = TRUE)
@@ -265,4 +294,48 @@ predict_fixture_probs <- function(features, model, margin_model = NULL) {
     data.frame(match_id = features$match_id, team1_win_prob = raw, draw_prob = 0,
                team2_win_prob = 1 - raw)
   }
+}
+
+
+#' Check Live Fixture Features Before Publishing
+#'
+#' Reports, per format, how many fixtures have rating history for both teams,
+#' and aborts when teams that DO appear in the match history were not found in
+#' the ratings. Teams absent from the history entirely (the Ranji Trophy,
+#' under-19 sides) legitimately get default features; a known team defaulting
+#' means a lookup broke, which is how the live predictions went flat unnoticed
+#' until 2026-10-13.
+#'
+#' @param features data.frame from [build_fixture_features()], with a `format`
+#'   column added.
+#' @param max_broken_share Numeric. Largest allowed share, per format, of
+#'   in-history teams with no rating found.
+#'
+#' @return Invisibly, a data.frame with one row per format: `fixtures`,
+#'   `both_rated`, `teams_in_history`, `in_history_unrated`.
+#' @keywords internal
+check_fixture_coverage <- function(features, max_broken_share = 0.1) {
+  need <- c("format", "team1_elo_found", "team2_elo_found", "team1_in_history", "team2_in_history")
+  stopifnot(nrow(features) > 0, all(need %in% names(features)))
+  rows <- lapply(split(features, features$format), function(f) {
+    in_hist <- c(f$team1_in_history, f$team2_in_history)
+    found <- c(f$team1_elo_found, f$team2_elo_found)
+    data.frame(format = f$format[1], fixtures = nrow(f),
+               both_rated = sum(f$team1_elo_found & f$team2_elo_found),
+               teams_in_history = sum(in_hist), in_history_unrated = sum(in_hist & !found))
+  })
+  cov <- do.call(rbind, rows)
+  for (i in seq_len(nrow(cov))) {
+    cli::cli_alert_info(paste0(
+      "{toupper(cov$format[i])}: {cov$both_rated[i]}/{cov$fixtures[i]} fixtures rated for both teams; ",
+      "{cov$in_history_unrated[i]} of {cov$teams_in_history[i]} known teams unrated"))
+  }
+  bad <- cov[cov$in_history_unrated > max_broken_share * cov$teams_in_history, , drop = FALSE]
+  if (nrow(bad) > 0) {
+    cli::cli_abort(paste0(
+      "Teams in the match history but with no rating found: ",
+      paste(sprintf("%s %d of %d", toupper(bad$format), bad$in_history_unrated, bad$teams_in_history), collapse = ", "),
+      ". A team lookup is probably broken; not publishing."))
+  }
+  invisible(cov)
 }

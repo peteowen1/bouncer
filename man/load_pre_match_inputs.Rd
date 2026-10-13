@@ -4,12 +4,16 @@
 \alias{load_pre_match_inputs}
 \title{Load Pre-Match Model Inputs for One Format}
 \usage{
-load_pre_match_inputs(conn, format)
+load_pre_match_inputs(conn, format, strict = FALSE)
 }
 \arguments{
 \item{conn}{DBI connection.}
 
 \item{format}{Character. "t20", "odi" or "test".}
+
+\item{strict}{Logical. TRUE aborts when any input is missing or empty
+instead of falling back to defaults. The live prediction job uses TRUE:
+defaults hidden behind a green run are how its features went flat.}
 }
 \value{
 List with \code{matches_dt} (format matches with composite team ids),

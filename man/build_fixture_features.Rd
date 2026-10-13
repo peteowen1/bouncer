@@ -17,7 +17,11 @@ build_fixture_features(fixtures, inputs, home_lookups = NULL)
 }
 \value{
 data.frame, one row per fixture, with the columns
-\code{\link[=calc_match_features]{calc_match_features()}} returns plus \code{team_type_resolved}.
+\code{\link[=calc_match_features]{calc_match_features()}} returns plus \code{team_type_resolved},
+\code{team1_elo_found} / \code{team2_elo_found} (the team's id has rating history;
+FALSE means its features are defaults) and \code{team1_in_history} /
+\code{team2_in_history} (the team NAME appears in this format's matches).
+In history but no rating found means a lookup is broken.
 }
 \description{
 Runs each fixture through \code{\link[=calc_match_features]{calc_match_features()}}, the builder the

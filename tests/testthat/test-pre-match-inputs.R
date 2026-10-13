@@ -81,3 +81,70 @@ test_that("predict_fixture_probs gives team2 = 1 - team1 and no draw for binary 
   expect_equal(out$team2_win_prob, 1 - c(0.7, 0.4, 0.55))
   expect_equal(out$draw_prob, c(0, 0, 0))
 })
+
+test_that("build_fixture_features flags teams with no rating history", {
+  fx <- data.frame(match_id = c("f1", "f2"), match_date = as.Date("2026-03-01"),
+                   team1 = c("India", "Nowhere XI"), team2 = c("West Indies", "Elsewhere XI"),
+                   gender = "male")
+  out <- build_fixture_features(fx, make_inputs())
+  expect_equal(out$team1_elo_found, c(TRUE, FALSE))
+  expect_equal(out$team2_elo_found, c(TRUE, FALSE))
+  expect_equal(out$team1_in_history, c(TRUE, FALSE))
+})
+
+test_that("build_fixture_features refuses fixtures with no gender", {
+  fx <- data.frame(match_id = "f1", match_date = as.Date("2026-03-01"),
+                   team1 = "India", team2 = "West Indies", gender = NA_character_)
+  expect_error(build_fixture_features(fx, make_inputs()), "no gender")
+})
+
+test_that("check_fixture_coverage aborts when known teams are unrated, not when teams are new", {
+  # Two unknown sides (no history at all) defaulting is fine
+  new_sides <- data.frame(format = "test", team1_elo_found = c(TRUE, FALSE), team2_elo_found = c(TRUE, FALSE),
+                          team1_in_history = c(TRUE, FALSE), team2_in_history = c(TRUE, FALSE))
+  cov <- suppressMessages(check_fixture_coverage(new_sides))
+  expect_equal(cov$in_history_unrated, 0)
+  expect_equal(cov$both_rated, 1)
+
+  # Known teams whose rating lookup fails: the 2026-10-13 failure
+  broken <- data.frame(format = "t20", team1_elo_found = FALSE, team2_elo_found = c(TRUE, FALSE, FALSE),
+                       team1_in_history = TRUE, team2_in_history = TRUE)
+  expect_error(suppressMessages(check_fixture_coverage(broken)), "lookup is probably broken")
+})
+
+test_that("predict_fixture_probs reads a flat 3-class vector row by row", {
+  feats <- data.frame(match_id = c("a", "b"))
+  local_mocked_bindings(
+    prepare_prediction_features = function(df) df,
+    get_prediction_feature_cols = function() character(0)
+  )
+  # Older xgboost returns softprob as a flat vector, row-major: a's 3 classes, then b's
+  local_mocked_bindings(predict = function(object, newdata, ...) c(0.6, 0.1, 0.3, 0.2, 0.5, 0.3), .package = "stats")
+  local_mocked_bindings(xgb.DMatrix = function(x, ...) x, .package = "xgboost")
+  out <- suppressMessages(predict_fixture_probs(feats, model = NULL, margin_model = NULL))
+  expect_equal(out$team1_win_prob, c(0.6, 0.2))
+  expect_equal(out$draw_prob, c(0.1, 0.5))
+})
+
+test_that("load_pre_match_inputs works without a season column and strict mode refuses missing tables", {
+  skip_if_not_installed("duckdb")
+  con <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(con, shutdown = TRUE), add = TRUE)
+  DBI::dbExecute(con, "CREATE SCHEMA cricsheet")
+  # The prediction cache's fallback matches file has no season column
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.matches AS SELECT '1' AS match_id, DATE '2026-01-01' AS match_date,
+    'T20' AS match_type, 'male' AS gender, 'international' AS team_type, NULL::VARCHAR AS event_name,
+    'V' AS venue, 'India' AS team1, 'West Indies' AS team2, 'India' AS outcome_winner,
+    NULL::VARCHAR AS toss_winner, NULL::VARCHAR AS toss_decision, NULL::INTEGER AS event_match_number,
+    NULL::VARCHAR AS event_group")
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.match_innings AS SELECT '1' AS match_id, 1 AS innings, 180 AS total_runs, 'India' AS batting_team")
+  DBI::dbExecute(con, "CREATE TABLE cricsheet.deliveries AS SELECT '1' AS match_id, DATE '2026-01-01' AS match_date,
+    'T20' AS match_type, 'India' AS batting_team, 'West Indies' AS bowling_team, 'p1' AS batter_id, 'p2' AS bowler_id")
+  DBI::dbExecute(con, "CREATE TABLE team_elo AS SELECT 'india_male_t20_international' AS team_id, '1' AS match_id,
+    DATE '2026-01-01' AS match_date, 1600.0 AS elo_result")
+
+  inp <- suppressMessages(load_pre_match_inputs(con, "t20"))
+  expect_equal(nrow(inp$matches_dt), 1)
+  expect_true(all(c("t20_team_skill", "t20_venue_skill", "t20_player_skill") %in% inp$missing))
+  expect_error(suppressMessages(load_pre_match_inputs(con, "t20", strict = TRUE)), "missing or empty")
+})
