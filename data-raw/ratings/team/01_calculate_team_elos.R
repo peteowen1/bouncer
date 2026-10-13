@@ -75,6 +75,7 @@ if (!dir.exists(output_dir)) {
 
 cli::cli_h2("Connecting to database")
 conn <- get_db_connection(read_only = FALSE)
+margin_lookup <- NULL  # built on first need, shared across categories
 cli::cli_alert_success("Connected to database")
 
 
@@ -100,17 +101,8 @@ query <- "
     m.outcome_by_runs,
     m.outcome_by_wickets,
     m.overs_per_innings,
-    m.unified_margin,
-    -- Get innings scores for margin calculation (if unified_margin is NULL)
-    inn1.total_runs AS team1_score,
-    inn1.total_overs AS team1_overs,
-    inn2.total_runs AS team2_score,
-    inn2.total_overs AS team2_overs
+    m.unified_margin
   FROM cricsheet.matches m
-  LEFT JOIN cricsheet.match_innings inn1
-    ON m.match_id = inn1.match_id AND inn1.innings = 1
-  LEFT JOIN cricsheet.match_innings inn2
-    ON m.match_id = inn2.match_id AND inn2.innings = 2
   WHERE m.outcome_winner IS NOT NULL
     AND m.outcome_winner != ''
     AND m.gender IS NOT NULL
@@ -234,50 +226,19 @@ for (current_format in formats_to_process) {
     n_home <- sum(matches$home_team != 0)
     cli::cli_alert_info("Home matches detected: {n_home}/{nrow(matches)} ({round(n_home/nrow(matches)*100, 1)}%)")
 
-    # 8.2b Calculate unified margin for each match ----
-    cli::cli_alert_info("Calculating unified margins...")
-
-    matches <- matches %>%
-      mutate(
-        # Determine win type from outcome columns
-        win_type = case_when(
-          !is.na(outcome_by_runs) & outcome_by_runs > 0 ~ "runs",
-          !is.na(outcome_by_wickets) & outcome_by_wickets > 0 ~ "wickets",
-          outcome_type %in% c("tie", "draw", "no result") ~ outcome_type,
-          TRUE ~ "unknown"
-        ),
-        # Calculate overs remaining for wickets wins (cricket notation)
-        overs_remaining = case_when(
-          # Count in balls: overs are cricket notation (18.2 = 110 balls), so
-          # 20 - 18.2 is 1.4 overs, not 1.8. Subtracting the decimals was wrong
-          # for every wickets win with a part-over (6,659 of 9,883, 2026-10-12).
-          win_type == "wickets" & !is.na(overs_per_innings) & !is.na(team2_overs) ~
-            balls_to_overs_cricket(pmax(0L, as.integer(overs_per_innings) * 6L - overs_to_balls(team2_overs))),
-          TRUE ~ 0
-        ),
-        # Calculate unified margin (use stored if available, else calculate)
-        calc_unified_margin = mapply(
-          function(t1_score, t2_score, wickets_rem, overs_rem, win_t, fmt, stored_margin) {
-            # Use stored margin if available
-            if (!is.na(stored_margin)) return(stored_margin)
-            # Skip if missing data
-            if (is.na(t1_score) || is.na(t2_score)) return(NA_real_)
-            if (win_t == "unknown") return(NA_real_)
-            # Calculate using package function
-            calculate_unified_margin(
-              team1_score = t1_score,
-              team2_score = t2_score,
-              wickets_remaining = wickets_rem,
-              overs_remaining = overs_rem,
-              win_type = win_t,
-              format = fmt
-            )
-          },
-          team1_score, team2_score,
-          ifelse(is.na(outcome_by_wickets), 0L, outcome_by_wickets),
-          overs_remaining, win_type, format, unified_margin
-        )
-      )
+    # 8.2b Unified margin for each match ----
+    # The stored margin (backfill step 1b); any match without one gets the same
+    # projected run margin computed here (compute_projected_margins(), D-P72),
+    # so there is one margin rule, not a second copy in this script.
+    cli::cli_alert_info("Loading unified margins...")
+    matches$calc_unified_margin <- matches$unified_margin
+    missing_margin <- is.na(matches$calc_unified_margin)
+    if (any(missing_margin)) {
+      if (is.null(margin_lookup)) margin_lookup <- build_runs_to_come_lookup(conn)
+      pm <- compute_projected_margins(conn, match_ids = matches$match_id[missing_margin], lookup = margin_lookup)
+      matches$calc_unified_margin[missing_margin] <- pm$unified_margin[match(matches$match_id[missing_margin], pm$match_id)]
+      cli::cli_alert_info("{sum(missing_margin)} matches had no stored margin; computed {sum(!is.na(matches$calc_unified_margin[missing_margin]))}")
+    }
 
     n_with_margin <- sum(!is.na(matches$calc_unified_margin))
     margin_mean <- mean(abs(matches$calc_unified_margin), na.rm = TRUE)

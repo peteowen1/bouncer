@@ -1,3 +1,16 @@
+# bouncer 0.8.3
+
+## Projected run margin for every decided match (D-P72)
+
+`compute_projected_margins()` replaces the innings-1-minus-innings-2 margin.
+Runs wins use the official runs margin (innings wins and D/L included). Wickets
+wins add the runs the chasing side would still have made, measured from real
+innings by `build_runs_to_come_lookup()`: same balls left and wickets in hand
+in limited overs (revised overs under D/L), or what the last N wickets added in
+all-out 4th innings for Tests. The old rule named the wrong winner in 392 of
+2,109 decided Tests and 207 of 1,002 D/L matches. The backfill
+(`00_backfill_unified_margin.R`) and team Elo now both use it.
+
 # bouncer 0.8.2
 
 ## Career context respects `as_at`
