@@ -168,4 +168,7 @@ test_that("team1_is_home says which side is at home, not just that the venue is 
   # Feature rows from before home_side existed keep their old meaning
   legacy <- base; legacy$home_side <- NULL; legacy$is_neutral_venue <- FALSE
   expect_equal(prepare_prediction_features(legacy)$team1_is_home, 1L)
+  # ...including rows stored before the migration added the column (NA there)
+  stored <- base; stored$home_side <- NA_integer_; stored$is_neutral_venue <- FALSE
+  expect_equal(prepare_prediction_features(stored)$team1_is_home, 1L)
 })

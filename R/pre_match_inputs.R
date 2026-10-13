@@ -98,7 +98,7 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
   # Venue stats
   venue_stats_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
     SELECT m.venue, m.match_date, m.outcome_winner, mi.innings, mi.total_runs, mi.batting_team
-    FROM cricsheet.matches m
+    FROM (SELECT DISTINCT ON (match_id) * FROM cricsheet.matches ORDER BY match_id) m
     JOIN cricsheet.match_innings mi ON m.match_id = mi.match_id
     WHERE m.outcome_winner IS NOT NULL AND m.outcome_winner != ''
       AND LOWER(m.match_type) IN (%s)", types_sql)))

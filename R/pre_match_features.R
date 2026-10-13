@@ -442,10 +442,14 @@ prepare_prediction_features <- function(df) {
                   "team1_team_wicket_skill", "team2_team_wicket_skill",
                   "venue_run_rate_skill", "venue_wicket_rate_skill",
                   "venue_boundary_rate", "venue_dot_rate")
-  # Feature rows built before 2026-10-13 have no home_side; reproduce the old
-  # (either-side-at-home) value for them so old feature files score as before.
-  if (!"home_side" %in% names(df)) {
-    df$home_side <- as.integer(!dplyr::coalesce(as.logical(df$is_neutral_venue), TRUE))
+  # Feature rows built before 2026-10-13 have no home_side (column absent, or
+  # NA in rows stored before the migration added it); reproduce the old
+  # (either-side-at-home) value for them so they score as before.
+  legacy_home <- as.integer(!dplyr::coalesce(as.logical(df$is_neutral_venue), TRUE))
+  df$home_side <- if ("home_side" %in% names(df)) {
+    dplyr::coalesce(as.integer(df$home_side), legacy_home)
+  } else {
+    legacy_home
   }
   for (col in setdiff(skill_cols, names(df))) {
     df[[col]] <- NA_real_
