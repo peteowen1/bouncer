@@ -954,10 +954,8 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
 #' @keywords internal
 get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
   # Look for batting team or bowling team skills
-  idx_batting <- which(team_skill_dt$batting_team_id == team &
-                         team_skill_dt$match_date < as_of_date)
-  idx_bowling <- which(team_skill_dt$bowling_team_id == team &
-                         team_skill_dt$match_date < as_of_date)
+  idx_batting <- .rows_with_key(team_skill_dt, "batting_team_id", team)
+  idx_batting <- idx_batting[team_skill_dt$match_date[idx_batting] < as_of_date]
 
   # Default values (neutral for residual-based)
   runs_skill <- 0
@@ -988,8 +986,8 @@ get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
 #' @return List with run_rate_skill, wicket_rate_skill, boundary_rate, dot_rate
 #' @keywords internal
 get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
-  idx <- which(venue_skill_dt$venue == venue_name &
-                 venue_skill_dt$match_date < as_of_date)
+  idx <- .rows_with_key(venue_skill_dt, "venue", venue_name)
+  idx <- idx[venue_skill_dt$match_date[idx] < as_of_date]
 
   # Default values (neutral for residual-based, format averages for raw EMA)
   if (length(idx) == 0) {

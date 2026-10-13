@@ -96,7 +96,11 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
       AND LOWER(m.match_type) IN (%s)", types_sql)))
   venue_stats_dt[, match_date := as.Date(match_date)]
 
-  # Team and venue per-delivery skills (latest row per team / venue)
+  # Team and venue per-delivery skills: one row per team / venue per match
+  # date, so calc_match_features() takes them AS OF each match. (Until
+  # 2026-10-13 only the latest row was kept: past matches mostly got defaults
+  # while live fixtures got real values.) The prediction cache holds only the
+  # latest row, which is the same thing for an upcoming fixture.
   team_skill_table <- paste0(format, "_team_skill")
   has_rows <- function(tbl) tbl %in% tables &&
     DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", tbl))$n > 0
@@ -106,10 +110,11 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
         SELECT batting_team_id, bowling_team_id, match_date,
                batting_team_runs_skill, batting_team_wicket_skill,
                bowling_team_runs_skill, bowling_team_wicket_skill,
-               ROW_NUMBER() OVER (PARTITION BY batting_team_id ORDER BY match_date DESC, delivery_id DESC) AS rn
+               ROW_NUMBER() OVER (PARTITION BY batting_team_id, match_date ORDER BY delivery_id DESC) AS rn
         FROM %s)
       SELECT * FROM latest WHERE rn = 1", team_skill_table)))
     team_skill_dt[, match_date := as.Date(match_date)]
+    data.table::setkey(team_skill_dt, batting_team_id, match_date)
   } else {
     team_skill_dt <- data.table::data.table(batting_team_id = character())
     missing <- c(missing, team_skill_table)
@@ -119,10 +124,11 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
     venue_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
       WITH latest AS (
         SELECT venue, match_date, venue_run_rate, venue_wicket_rate, venue_boundary_rate, venue_dot_rate,
-               ROW_NUMBER() OVER (PARTITION BY venue ORDER BY match_date DESC, delivery_id DESC) AS rn
+               ROW_NUMBER() OVER (PARTITION BY venue, match_date ORDER BY delivery_id DESC) AS rn
         FROM %s)
       SELECT * FROM latest WHERE rn = 1", venue_skill_table)))
     venue_skill_dt[, match_date := as.Date(match_date)]
+    data.table::setkey(venue_skill_dt, venue, match_date)
   } else {
     venue_skill_dt <- data.table::data.table(venue = character())
     missing <- c(missing, venue_skill_table)
