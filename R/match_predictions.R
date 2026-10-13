@@ -19,6 +19,8 @@
 #'   regression model - as an extra feature. Pass \code{margin_model} so that
 #'   feature is reproduced at prediction time; without it, \code{model} is
 #'   fed one feature short of what it was trained on.
+#' @param home_lookups List from [build_home_lookups()], or NULL. Pass it when
+#'   predicting many matches: NULL rebuilds it for every call (about 10 s each).
 #'
 #' @return List with prediction details
 #' @export
@@ -33,14 +35,15 @@
 predict_match_outcome <- function(match_id, model, conn,
                                    model_version = "v1.0",
                                    model_type = "xgboost",
-                                   margin_model = NULL) {
+                                   margin_model = NULL,
+                                   home_lookups = NULL) {
 
   # Get or calculate features
   features <- get_pre_match_features(match_id = match_id, conn = conn)
 
   if (nrow(features) == 0) {
     # Calculate features if not in database
-    features <- calculate_pre_match_features(match_id, conn)
+    features <- calculate_pre_match_features(match_id, conn, home_lookups = home_lookups)
     if (is.null(features)) {
       cli::cli_alert_warning("Could not calculate features for match {match_id}")
       return(NULL)

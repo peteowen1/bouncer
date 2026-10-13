@@ -286,7 +286,8 @@ calculate_team_result_elo_update <- function(team_elo, opponent_elo, won,
 #'
 #' Retrieves a team's ELO rating as of a specific date.
 #'
-#' @param team_id Character. Team identifier/name
+#' @param team_id Character. Composite team id from [make_team_id()]
+#'   (e.g. "india_male_t20_international"); a plain team name matches nothing.
 #' @param as_of_date Date. Date to get ELO for (uses most recent before this date)
 #' @param elo_type Character. Type of ELO: "result", "roster_batting", "roster_bowling", or "roster_combined"
 #' @param conn DBI connection. Database connection
@@ -297,7 +298,7 @@ calculate_team_result_elo_update <- function(team_elo, opponent_elo, won,
 #' @examples
 #' \dontrun{
 #' conn <- get_db_connection()
-#' elo <- get_team_elo("Mumbai Indians", as.Date("2024-04-01"), "result", conn)
+#' elo <- get_team_elo("mumbai_indians_male_t20_club", as.Date("2024-04-01"), "result", conn)
 #' }
 get_team_elo <- function(team_id, as_of_date, elo_type = "result", conn) {
 
@@ -308,6 +309,12 @@ get_team_elo <- function(team_id, as_of_date, elo_type = "result", conn) {
     "roster_combined" = "elo_roster_combined",
     "elo_result"  # default
   )
+  # The DuckDB team_elo table stores the post-match rating as elo_after; only
+  # the prediction-cache export renames it to elo_result. Accept either.
+  if (elo_column == "elo_result" &&
+      !"elo_result" %in% DBI::dbListFields(conn, "team_elo")) {
+    elo_column <- "elo_after"
+  }
 
   # Ensure as_of_date is properly formatted
   as_of_date_str <- as.character(as.Date(as_of_date))

@@ -341,7 +341,8 @@ for (i in seq_len(nrow(upcoming))) {
       model = model,
       conn = conn,
       model_type = if (!is.null(model)) "xgboost" else "elo",
-      margin_model = margin_model
+      margin_model = margin_model,
+      home_lookups = home_lookups
     )
 
     if (!is.null(pred)) {
