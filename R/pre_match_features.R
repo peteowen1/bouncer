@@ -960,7 +960,8 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
 #' Fast lookup of team per-delivery skill indices from pre-loaded data.
 #' These are the residual-based team skills calculated from the agnostic model.
 #'
-#' @param team Character. Team name
+#' @param team Character. Composite team id ([make_team_id()]), the key of
+#'   `batting_team_id` since 2026-10-13
 #' @param as_of_date Date. Get skills as of this date
 #' @param team_skill_dt data.table. Pre-loaded team skill data (e.g., t20_team_skill table)
 #'
@@ -1081,10 +1082,11 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
   # Venue
   venue_feat <- get_venue_features_fast(venue, match_date, venue_stats_dt)
 
-  # Team per-delivery skills (if available)
+  # Team per-delivery skills (if available). Keyed by composite id since
+  # 2026-10-13, so a women's side no longer reads the men's side's skill.
   if (!is.null(team_skill_dt) && nrow(team_skill_dt) > 0) {
-    t1_team_skill <- get_team_delivery_skill_fast(team1, match_date, team_skill_dt)
-    t2_team_skill <- get_team_delivery_skill_fast(team2, match_date, team_skill_dt)
+    t1_team_skill <- get_team_delivery_skill_fast(team1_id, match_date, team_skill_dt)
+    t2_team_skill <- get_team_delivery_skill_fast(team2_id, match_date, team_skill_dt)
   } else {
     t1_team_skill <- list(runs_skill = 0, wicket_skill = 0)
     t2_team_skill <- list(runs_skill = 0, wicket_skill = 0)
