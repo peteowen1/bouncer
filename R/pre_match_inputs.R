@@ -8,7 +8,7 @@
 # predictions were near-constant. These two functions let the live job build
 # fixture features with the training builder itself.
 
-utils::globalVariables(c("..keep", "batter_rn", "bowler_rn", "team_id", "team_type"))
+utils::globalVariables(c("..keep", "team_id", "team_type", "skill_date", "player_id"))
 
 
 #' Load Pre-Match Model Inputs for One Format
@@ -69,13 +69,23 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
 
   # Player participation (roster inference). The GHA deliveries table is built
   # from recent_lineups and may lack match_type; then it is not filtered.
+  # Gender comes with it: men's and women's sides share names ("Australia").
   del_cols <- DBI::dbListFields(conn, DBI::Id(schema = "cricsheet", table = "deliveries"))
   participation_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-    SELECT DISTINCT match_id, match_date, batting_team, bowling_team, batter_id, bowler_id
-    FROM cricsheet.deliveries %s",
-    if ("match_type" %in% del_cols) sprintf("WHERE LOWER(match_type) IN (%s)", types_sql) else "")))
+    SELECT DISTINCT d.match_id, d.match_date, d.batting_team, d.bowling_team, d.batter_id, d.bowler_id,
+           %s AS gender
+    FROM cricsheet.deliveries d %s %s",
+    if ("gender" %in% del_cols) "d.gender" else "m.gender",
+    if ("gender" %in% del_cols) "" else "LEFT JOIN cricsheet.matches m ON m.match_id = d.match_id",
+    if ("match_type" %in% del_cols) sprintf("WHERE LOWER(d.match_type) IN (%s)", types_sql) else "")))
   participation_dt[, match_date := as.Date(match_date)]
   if (!"match_type" %in% del_cols) missing <- c(missing, "deliveries.match_type (rosters not format-filtered)")
+  # Per-team row index: get_team_skills_fast() would otherwise scan every row
+  # for every match (79% of feature-building time, measured 2026-10-13)
+  n_part <- nrow(participation_dt)
+  team_rows <- split(c(seq_len(n_part), seq_len(n_part)),
+                     c(participation_dt$batting_team, participation_dt$bowling_team))
+  data.table::setattr(participation_dt, "team_rows", lapply(team_rows, unique))
 
   # Venue stats
   venue_stats_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
@@ -86,7 +96,11 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
       AND LOWER(m.match_type) IN (%s)", types_sql)))
   venue_stats_dt[, match_date := as.Date(match_date)]
 
-  # Team and venue per-delivery skills (latest row per team / venue)
+  # Team and venue per-delivery skills: one row per team / venue per match
+  # date, so calc_match_features() takes them AS OF each match. (Until
+  # 2026-10-13 only the latest row was kept: past matches mostly got defaults
+  # while live fixtures got real values.) The prediction cache holds only the
+  # latest row, which is the same thing for an upcoming fixture.
   team_skill_table <- paste0(format, "_team_skill")
   has_rows <- function(tbl) tbl %in% tables &&
     DBI::dbGetQuery(conn, sprintf("SELECT COUNT(*) AS n FROM %s", tbl))$n > 0
@@ -96,10 +110,11 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
         SELECT batting_team_id, bowling_team_id, match_date,
                batting_team_runs_skill, batting_team_wicket_skill,
                bowling_team_runs_skill, bowling_team_wicket_skill,
-               ROW_NUMBER() OVER (PARTITION BY batting_team_id ORDER BY match_date DESC, delivery_id DESC) AS rn
+               ROW_NUMBER() OVER (PARTITION BY batting_team_id, match_date ORDER BY delivery_id DESC) AS rn
         FROM %s)
       SELECT * FROM latest WHERE rn = 1", team_skill_table)))
     team_skill_dt[, match_date := as.Date(match_date)]
+    data.table::setkey(team_skill_dt, batting_team_id, match_date)
   } else {
     team_skill_dt <- data.table::data.table(batting_team_id = character())
     missing <- c(missing, team_skill_table)
@@ -109,36 +124,42 @@ load_pre_match_inputs <- function(conn, format, strict = FALSE) {
     venue_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
       WITH latest AS (
         SELECT venue, match_date, venue_run_rate, venue_wicket_rate, venue_boundary_rate, venue_dot_rate,
-               ROW_NUMBER() OVER (PARTITION BY venue ORDER BY match_date DESC, delivery_id DESC) AS rn
+               ROW_NUMBER() OVER (PARTITION BY venue, match_date ORDER BY delivery_id DESC) AS rn
         FROM %s)
       SELECT * FROM latest WHERE rn = 1", venue_skill_table)))
     venue_skill_dt[, match_date := as.Date(match_date)]
+    data.table::setkey(venue_skill_dt, venue, match_date)
   } else {
     venue_skill_dt <- data.table::data.table(venue = character())
     missing <- c(missing, venue_skill_table)
   }
 
-  # Player skills (latest per batter / bowler)
+  # Player skills: one row per player per match date (the skill after their
+  # last delivery that day), so get_team_skills_fast() can take each player's
+  # skill AS OF a match. The prediction cache holds only the latest row per
+  # player, which is the same thing for an upcoming fixture.
   skill_table <- paste0(format, "_player_skill")
   if (has_rows(skill_table)) {
-    player_skill_dt <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
-      WITH latest AS (
-        SELECT batter_id, bowler_id, match_date,
-               batter_scoring_index, batter_survival_rate, batter_balls_faced,
-               bowler_economy_index, bowler_strike_rate, bowler_balls_bowled,
-               ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) AS batter_rn,
-               ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) AS bowler_rn
-        FROM %s)
-      SELECT * FROM latest WHERE batter_rn = 1 OR bowler_rn = 1", skill_table)))
-    player_skill_dt[, match_date := as.Date(match_date)]
-    batter_skills <- player_skill_dt[batter_rn == 1 & !is.na(batter_id), .(
-      player_id = batter_id, skill_date = match_date, scoring_index = batter_scoring_index,
-      survival_rate = batter_survival_rate, balls_faced = batter_balls_faced)]
-    bowler_skills <- player_skill_dt[bowler_rn == 1 & !is.na(bowler_id), .(
-      player_id = bowler_id, skill_date = match_date, economy_index = bowler_economy_index,
-      strike_rate = bowler_strike_rate, balls_bowled = bowler_balls_bowled)]
-    data.table::setkey(batter_skills, player_id)
-    data.table::setkey(bowler_skills, player_id)
+    batter_skills <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+      WITH r AS (
+        SELECT batter_id, match_date, batter_scoring_index, batter_survival_rate, batter_balls_faced,
+               ROW_NUMBER() OVER (PARTITION BY batter_id, match_date ORDER BY delivery_id DESC) AS rn
+        FROM %s WHERE batter_id IS NOT NULL)
+      SELECT batter_id AS player_id, match_date AS skill_date, batter_scoring_index AS scoring_index,
+             batter_survival_rate AS survival_rate, batter_balls_faced AS balls_faced
+      FROM r WHERE rn = 1", skill_table)))
+    bowler_skills <- data.table::as.data.table(DBI::dbGetQuery(conn, sprintf("
+      WITH r AS (
+        SELECT bowler_id, match_date, bowler_economy_index, bowler_strike_rate, bowler_balls_bowled,
+               ROW_NUMBER() OVER (PARTITION BY bowler_id, match_date ORDER BY delivery_id DESC) AS rn
+        FROM %s WHERE bowler_id IS NOT NULL)
+      SELECT bowler_id AS player_id, match_date AS skill_date, bowler_economy_index AS economy_index,
+             bowler_strike_rate AS strike_rate, bowler_balls_bowled AS balls_bowled
+      FROM r WHERE rn = 1", skill_table)))
+    batter_skills[, skill_date := as.Date(skill_date)]
+    bowler_skills[, skill_date := as.Date(skill_date)]
+    data.table::setkey(batter_skills, player_id, skill_date)
+    data.table::setkey(bowler_skills, player_id, skill_date)
   } else {
     batter_skills <- data.table::data.table(player_id = character(), scoring_index = numeric())
     bowler_skills <- data.table::data.table(player_id = character(), economy_index = numeric())

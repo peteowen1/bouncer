@@ -714,7 +714,8 @@ get_prediction_feature_cols_full <- function(include_margin = TRUE) {
 #' @return List with elo_result and elo_roster
 #' @keywords internal
 get_team_elo_fast <- function(team, as_of_date, team_elo_dt) {
-  idx <- which(team_elo_dt$team_id == team & team_elo_dt$match_date < as_of_date)
+  idx <- .rows_with_key(team_elo_dt, "team_id", team)
+  idx <- idx[team_elo_dt$match_date[idx] < as_of_date]
   if (length(idx) == 0) {
     return(list(elo_result = ELO_START_RATING, elo_roster = ELO_START_RATING))
   }
@@ -841,15 +842,33 @@ get_venue_features_fast <- function(venue_name, as_of_date, venue_stats_dt, min_
 #' @param batter_skills data.table. Pre-loaded batter skill indices
 #' @param bowler_skills data.table. Pre-loaded bowler skill indices
 #' @param n_recent Integer. Number of recent matches to infer roster (default 3)
+#' @param gender Character or NULL. Men's and women's sides share names
+#'   ("Australia"), so the roster is taken from this gender's matches when
+#'   `player_participation_dt` has a `gender` column.
+#'
+#' @details Skills are taken AS OF `as_of_date`: each player's latest skill row
+#'   dated before it, when the skill tables carry a `skill_date` history. Before
+#'   2026-10-13 each player's latest skill in the whole database was used, which
+#'   leaked results after the match into training features.
 #'
 #' @return List with batting and bowling skill aggregates
 #' @keywords internal
 get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
-                                  batter_skills, bowler_skills, n_recent = 3) {
-  idx <- which(
-    (player_participation_dt$batting_team == team | player_participation_dt$bowling_team == team) &
-      player_participation_dt$match_date < as_of_date
-  )
+                                  batter_skills, bowler_skills, n_recent = 3,
+                                  gender = NULL) {
+  # Rows where this team batted or bowled: from the per-team index
+  # load_pre_match_inputs() attaches, else a full scan
+  team_rows <- attr(player_participation_dt, "team_rows")[[team]]
+  if (is.null(attr(player_participation_dt, "team_rows"))) {
+    team_rows <- which(player_participation_dt$batting_team == team |
+                         player_participation_dt$bowling_team == team)
+  }
+  team_rows <- as.integer(team_rows)
+  keep <- player_participation_dt$match_date[team_rows] < as_of_date
+  if (!is.null(gender) && "gender" %in% names(player_participation_dt)) {
+    keep <- keep & player_participation_dt$gender[team_rows] %in% gender
+  }
+  idx <- team_rows[keep]
 
   if (length(idx) == 0) {
     return(list(
@@ -865,22 +884,27 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
   ord <- order(match_dates, decreasing = TRUE)
   recent_match_ids <- names(match_dates)[ord][1:min(n_recent, length(ord))]
 
-  # Get players from recent matches
-  batter_idx <- which(
-    player_participation_dt$match_id %in% recent_match_ids &
-      player_participation_dt$batting_team == team
-  )
+  # Get players from recent matches (all within this team's rows)
+  recent_rows <- team_rows[player_participation_dt$match_id[team_rows] %in% recent_match_ids]
+  batter_idx <- recent_rows[player_participation_dt$batting_team[recent_rows] == team]
   team_batters <- unique(player_participation_dt$batter_id[batter_idx])
 
-  bowler_idx <- which(
-    player_participation_dt$match_id %in% recent_match_ids &
-      player_participation_dt$bowling_team == team
-  )
+  bowler_idx <- recent_rows[player_participation_dt$bowling_team[recent_rows] == team]
   team_bowlers <- unique(player_participation_dt$bowler_id[bowler_idx])
 
-  # Look up skills
-  bat_idx <- which(batter_skills$player_id %in% team_batters & batter_skills$balls_faced >= 30)
-  bowl_idx <- which(bowler_skills$player_id %in% team_bowlers & bowler_skills$balls_bowled >= 30)
+  # Look up each player's skill as of the match date (latest row before it),
+  # then apply the 30-ball experience floor to that row
+  asof_rows <- function(sk, players) {
+    rows <- .rows_with_key(sk, "player_id", players)
+    if (length(rows) == 0 || !"skill_date" %in% names(sk)) return(rows)
+    rows <- rows[!is.na(sk$skill_date[rows]) & sk$skill_date[rows] < as_of_date]
+    rows <- rows[order(sk$skill_date[rows], decreasing = TRUE)]
+    rows[!duplicated(sk$player_id[rows])]
+  }
+  bat_idx <- asof_rows(batter_skills, team_batters)
+  bat_idx <- bat_idx[batter_skills$balls_faced[bat_idx] >= 30]
+  bowl_idx <- asof_rows(bowler_skills, team_bowlers)
+  bowl_idx <- bowl_idx[bowler_skills$balls_bowled[bowl_idx] >= 30]
 
   # Aggregate batting
   if (length(bat_idx) > 0) {
@@ -930,10 +954,8 @@ get_team_skills_fast <- function(team, as_of_date, player_participation_dt,
 #' @keywords internal
 get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
   # Look for batting team or bowling team skills
-  idx_batting <- which(team_skill_dt$batting_team_id == team &
-                         team_skill_dt$match_date < as_of_date)
-  idx_bowling <- which(team_skill_dt$bowling_team_id == team &
-                         team_skill_dt$match_date < as_of_date)
+  idx_batting <- .rows_with_key(team_skill_dt, "batting_team_id", team)
+  idx_batting <- idx_batting[team_skill_dt$match_date[idx_batting] < as_of_date]
 
   # Default values (neutral for residual-based)
   runs_skill <- 0
@@ -964,8 +986,8 @@ get_team_delivery_skill_fast <- function(team, as_of_date, team_skill_dt) {
 #' @return List with run_rate_skill, wicket_rate_skill, boundary_rate, dot_rate
 #' @keywords internal
 get_venue_skill_fast <- function(venue_name, as_of_date, venue_skill_dt) {
-  idx <- which(venue_skill_dt$venue == venue_name &
-                 venue_skill_dt$match_date < as_of_date)
+  idx <- .rows_with_key(venue_skill_dt, "venue", venue_name)
+  idx <- idx[venue_skill_dt$match_date[idx] < as_of_date]
 
   # Default values (neutral for residual-based, format averages for raw EMA)
   if (length(idx) == 0) {
@@ -1038,8 +1060,9 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
   h2h <- get_h2h_fast(team1_id, team2_id, match_date, matches_with_outcome)
 
   # Skills
-  t1_skills <- get_team_skills_fast(team1, match_date, player_participation_dt, batter_skills, bowler_skills)
-  t2_skills <- get_team_skills_fast(team2, match_date, player_participation_dt, batter_skills, bowler_skills)
+  gender <- if ("gender" %in% names(matches_with_outcome)) matches_with_outcome$gender[i] else NULL
+  t1_skills <- get_team_skills_fast(team1, match_date, player_participation_dt, batter_skills, bowler_skills, gender = gender)
+  t2_skills <- get_team_skills_fast(team2, match_date, player_participation_dt, batter_skills, bowler_skills, gender = gender)
 
   # Venue
   venue_feat <- get_venue_features_fast(venue, match_date, venue_stats_dt)
@@ -1132,4 +1155,23 @@ calc_match_features <- function(i, matches_with_outcome, team_elo_dt, batter_ski
     created_at = Sys.time(),
     stringsAsFactors = FALSE
   )
+}
+
+
+#' Row Numbers Matching a Key Value
+#'
+#' Uses a binary search when `dt` is a data.table keyed on `col` first, else
+#' a full scan. Same rows either way, in increasing order.
+#'
+#' @param dt data.frame or data.table.
+#' @param col Character. Column name.
+#' @param values Values to match.
+#' @return Integer vector of row numbers.
+#' @keywords internal
+.rows_with_key <- function(dt, col, values) {
+  if (data.table::is.data.table(dt) && identical(data.table::key(dt)[1], col)) {
+    rows <- dt[list(unique(values)), which = TRUE, nomatch = 0L, on = col]
+    return(sort(as.integer(rows)))
+  }
+  which(dt[[col]] %in% values)
 }

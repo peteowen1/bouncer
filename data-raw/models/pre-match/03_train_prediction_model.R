@@ -107,7 +107,8 @@ bouncerdata_root <- find_bouncerdata_dir(create = FALSE)
 if (is.null(bouncerdata_root)) {
   stop("Cannot locate bouncerdata/ directory. Run from within the bouncer/ workspace with bouncerdata/ as sibling.")
 }
-output_dir <- file.path(bouncerdata_root, "models")
+# PM_OUTPUT_DIR: read features from / write models to a staging folder (trial rebuilds)
+output_dir <- Sys.getenv("PM_OUTPUT_DIR", file.path(bouncerdata_root, "models"))
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
@@ -467,7 +468,9 @@ train_format_model <- function(format, output_dir, xgb_params, xgb_margin_params
 
   if (is_multiclass) {
     # Reshape multiclass probabilities: n_samples × 3 matrix
-    pred_probs_matrix <- matrix(raw_preds, ncol = 3, byrow = TRUE)
+    # xgboost >= 2 returns an n x 3 matrix already; reshaping it byrow scrambled
+    # the classes (saved Test metrics before 2026-10-13 are wrong)
+    pred_probs_matrix <- if (is.matrix(raw_preds)) raw_preds else matrix(raw_preds, ncol = 3, byrow = TRUE)
     colnames(pred_probs_matrix) <- c("team1_win", "draw", "team2_win")
     pred_class <- max.col(pred_probs_matrix) - 1  # 0, 1, or 2
 

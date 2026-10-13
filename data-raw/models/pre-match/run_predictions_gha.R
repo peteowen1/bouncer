@@ -266,7 +266,7 @@ lineups_path <- file.path(cache_dir, "recent_lineups.parquet")
 if (file.exists(lineups_path)) {
   dbExecute(conn, sprintf(
     "CREATE TABLE cricsheet.deliveries AS
-     SELECT match_id, match_date, match_type, team AS batting_team, team AS bowling_team,
+     SELECT match_id, match_date, match_type, gender, team AS batting_team, team AS bowling_team,
             player_id AS batter_id, player_id AS bowler_id
      FROM read_parquet('%s')",
     gsub("\\\\", "/", lineups_path)

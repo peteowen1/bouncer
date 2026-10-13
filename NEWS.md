@@ -1,3 +1,16 @@
+# bouncer 0.8.5
+
+## Pre-match features no longer use results from after the match
+
+Player, team and venue skills are taken as of the match date; before, training
+used each player's latest skill in the database and each team's or venue's
+last-ever row. Rosters are matched by gender (men's and women's sides share
+names). The margin model's target is from team1's side, not the side that
+batted first. `02_calculate_pre_match_features.R` reads its inputs through
+`load_pre_match_inputs()`, shared with the live job, and feature lookups are
+indexed (about 8x faster). Held-out scores barely moved: the leak had not been
+inflating them much.
+
 # bouncer 0.8.4
 
 ## Live match predictions use the training feature builder
