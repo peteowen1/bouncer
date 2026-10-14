@@ -12,7 +12,7 @@ COMPETITION_WC_ASSOCIATES
 }
 \description{
 Derived from the data: teams appearing in "ICC Men's T20 World Cup",
-"ICC World Twenty20" or "World T20" and not in \link{COMPETITION_TOP_NATIONS}.
+"ICC World Twenty20" or "World T20" and not in \code{COMPETITION_TOP_NATIONS}.
 Reaching a World Cup is an observable qualification bar, so this line is a
 fact about results rather than a judgement about reputation.
 }

@@ -98,7 +98,7 @@
 #' Build Leverage for Every Cricinfo Delivery
 #'
 #' Scores every T20/ODI delivery in `cricinfo.balls` with leverage(state) =
-#' Var[WP(state + outcome)], weighted by P(outcome | state) from the agnostic
+#' `Var[WP(state + outcome)]`, weighted by P(outcome | state) from the agnostic
 #' ball-outcome model, over the seven scoreable outcomes in
 #' [.LEVERAGE_OUTCOMES]. Writes `main.bouncer_leverage_from_cricinfo`, joinable to
 #' `main.bouncer_wp_from_cricinfo` on `id`.
@@ -249,8 +249,8 @@ build_ball_leverage <- function(format = c("t20", "odi"),
 #'
 #' Replaces this format's rows in `main.<table_name>`, creating the table on
 #' first use and migrating (never dropping) a stale shape -- see
-#' [.migrate_schema()]'s docstring for why. DELETE and INSERT share one
-#' transaction ([.in_transaction()]), so a failed insert cannot leave a format
+#' `.migrate_schema()`'s docstring for why. DELETE and INSERT share one
+#' transaction (`.in_transaction()`), so a failed insert cannot leave a format
 #' permanently empty.
 #'
 #' @param conn DBI connection with write access.

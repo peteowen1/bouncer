@@ -30,6 +30,11 @@ test_that("tagging does not change the path's behaviour", {
 
 test_that("resolution from inside the repo is the sibling walk, not the fallback", {
   skip_if_not_installed("duckdb")
+  # Under R CMD check the tests run from a temp copy of the package, so the
+  # sibling walk cannot find the repo and resolution legitimately goes via
+  # user_data. The claim only holds inside the source tree.
+  skip_if(nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_")),
+          "running under R CMD check, not inside the source tree")
   p <- get_db_path()
   skip_if(!file.exists(p), "no local database")
   expect_true(.db_resolution(p) %in% c("sibling", "child"),

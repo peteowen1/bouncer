@@ -26,8 +26,8 @@ Number of rows inserted, invisibly.
 \description{
 Replaces this format's rows in \verb{main.<table_name>}, creating the table on
 first use and migrating (never dropping) a stale shape -- see
-\code{\link[=.migrate_schema]{.migrate_schema()}}'s docstring for why. DELETE and INSERT share one
-transaction (\code{\link[=.in_transaction]{.in_transaction()}}), so a failed insert cannot leave a format
+\code{.migrate_schema()}'s docstring for why. DELETE and INSERT share one
+transaction (\code{.in_transaction()}), so a failed insert cannot leave a format
 permanently empty.
 }
 \keyword{internal}

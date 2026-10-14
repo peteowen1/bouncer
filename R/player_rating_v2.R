@@ -221,6 +221,9 @@
 #'   a thin competition degrades toward neutral instead of either being trusted
 #'   in full or dropped entirely.
 #' @param min_players Integer. Bridges required before a competition is rated.
+#' @param basis `"runs"` (default) or `"survival"`. Which rate the factor is fitted
+#'   on: runs per ball, or a survival (dismissal) rate. The choice is stamped
+#'   on the result as the `basis` attribute so a mismatched reuse can be caught.
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin
 #'   cell cannot dominate.
@@ -864,6 +867,8 @@ default_exposure_floor <- function(format, role) {
 #' @param min_balls Integer, or NULL to use the format-and-role floor from
 #'   [EXPOSURE_FLOOR]. A single number across formats meant 3.5 Test bowler
 #'   matches against 33.9 T20 batter matches (#57).
+#' @param metric `"composite"` (default), `"runs"`, `"wickets"` or `"team_score"`.
+#'   Which rating the per-ball values are built from.
 #' @param id_map Output of [build_player_id_map()]; NULL builds it. Player
 #'   careers split across a bare-name id and a hash id are merged first (#43),
 #'   which affects 2,845 players and 4% of appearances.
@@ -1657,6 +1662,9 @@ player_career_context <- function(conn, format = "t20", gender = "male",
 #' warning, not a result.
 #'
 #' @param pm data.table of per-match values with `player_id` and `v`.
+#' @param sh_min_matches,sh_min_players Integer. For the split-half estimate that
+#'   replaces the ANOVA value: matches a player needs to be included, and the
+#'   minimum number of such players. Below that the ANOVA value is kept.
 #' @param min_matches Integer. Players below this are ignored for estimation
 #'   only; they are still rated.
 #' @return list with `k`, `s2_within`, `s2_between`, `players`, `share`.
