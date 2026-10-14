@@ -752,10 +752,8 @@ get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
     "^cricinfo$"
   } else if (type == "foxsports") {
     "^foxsports$"
-  } else if (type == "weekly") {
-    "-weekly$"
   } else {
-    "^v[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}$"  # daily releases
+    "-weekly$"
   }
 
   matching <- Filter(function(r) grepl(pattern, r$tag_name), releases)
