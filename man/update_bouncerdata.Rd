@@ -2,24 +2,20 @@
 % Please edit documentation in R/user_install.R
 \name{update_bouncerdata}
 \alias{update_bouncerdata}
-\title{Update Bouncerdata from Release}
+\title{Update Bouncerdata from Release (defunct)}
 \usage{
-update_bouncerdata(repo = "peteowen1/bouncerdata", data_dir = NULL)
+update_bouncerdata(...)
 }
 \arguments{
-\item{repo}{Character. GitHub repository.}
-
-\item{data_dir}{Character. Data directory to update.}
+\item{...}{Ignored. Kept so calls with the old arguments (\code{repo},
+\code{data_dir}) reach the defunct message.}
 }
 \value{
-Logical. TRUE if update was performed, FALSE if already up to date.
+Never returns; always signals a defunct error.
 }
 \description{
-Checks for new releases and updates local data if available.
+Defunct. This compared against "daily" release tags, which bouncerdata no
+longer publishes. Re-run \code{\link[=install_parquets_from_release]{install_parquets_from_release()}} to refresh the
+parquet data, or \code{\link[=install_all_bouncer_data]{install_all_bouncer_data()}} to rebuild the local database.
 }
-\examples{
-\dontrun{
-# Check for and apply updates
-update_bouncerdata()
-}
-}
+\keyword{internal}

@@ -709,7 +709,7 @@ load_filtered_matches <- function(file_paths,
 #' @param type Character. Release type to find: "cricsheet" (parquet data),
 #'   "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 #'   "foxsports" (Fox Sports ball-by-ball data),
-#'   "daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).
+#'   "weekly" (legacy parquet), or "any" (most recent).
 #'
 #' @return List with release information including tag_name, published_at,
 #'   and assets.
@@ -720,12 +720,9 @@ load_filtered_matches <- function(file_paths,
 #' # Get core release (parquet files from daily scraper)
 #' release <- get_latest_release(type = "cricsheet")
 #' print(release$tag_name)
-#'
-#' # Get latest daily release (JSON archives)
-#' release <- get_latest_release(type = "daily")
 #' }
 get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
-  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "foxsports", "daily", "weekly"))
+  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "foxsports", "weekly"))
 
   # Build API URL
   if (type == "any") {
@@ -867,171 +864,28 @@ download_release_asset <- function(asset_url, dest_path, show_progress = TRUE,
 }
 
 
-#' Install Bouncerdata from GitHub Release
+#' Install Bouncerdata from GitHub Release (defunct)
 #'
-#' Downloads and installs cricket data from the bouncerdata GitHub releases.
-#' This is an alternative to `install_all_bouncer_data()` that downloads
-#' pre-processed data instead of building locally from Cricsheet.
+#' Defunct. This installed JSON archives from "daily" releases, which
+#' bouncerdata no longer publishes. Use [install_parquets_from_release()] to
+#' download the parquet data, or [install_all_bouncer_data()] to build the
+#' local database.
 #'
-#' @param repo Character. GitHub repository. Default "peteowen1/bouncerdata".
-#' @param formats Character vector. Data formats to download:
-#'   - "long_form" = Tests, First-class matches
-#'   - "short_form" = ODIs, T20s, franchise leagues
-#'   - "all" = both (default)
-#' @param genders Character vector. "male", "female", or c("male", "female").
-#'   Default is both.
-#' @param types Character vector. "international", "club", or both.
-#'   Default is both.
-#' @param tag Character. Specific release tag to download, or "latest".
-#' @param data_dir Character. Directory to store data. Default uses
-#'   `find_bouncerdata_dir()`.
-#' @param build_db Logical. If TRUE, build DuckDB from downloaded JSONs.
-#'   Default TRUE.
+#' @param ... Ignored. Kept so calls with the old arguments (`repo`,
+#'   `formats`, `genders`, `types`, `tag`, `data_dir`, `build_db`) reach the
+#'   defunct message.
 #'
-#' @return Invisibly returns the data directory path.
+#' @return Never returns; always signals a defunct error.
 #'
 #' @export
-#' @examples
-#' \dontrun{
-#' # Install all data
-#' install_bouncerdata_from_release()
-#'
-#' # Install only short form (T20s, ODIs)
-#' install_bouncerdata_from_release(formats = "short_form")
-#'
-#' # Install only IPL (short form, male, club)
-#' install_bouncerdata_from_release(
-#'   formats = "short_form",
-#'   genders = "male",
-#'   types = "club"
-#' )
-#' }
-install_bouncerdata_from_release <- function(repo = "peteowen1/bouncerdata",
-                                              formats = "all",
-                                              genders = c("male", "female"),
-                                              types = c("international", "club"),
-                                              tag = "latest",
-                                              data_dir = NULL,
-                                              build_db = TRUE) {
-
-  cli::cli_h1("Installing Bouncerdata from GitHub Release")
-
-  # Setup data directory
-  if (is.null(data_dir)) {
-    data_dir <- find_bouncerdata_dir(create = TRUE)
-  }
-  if (!dir.exists(data_dir)) {
-    dir.create(data_dir, recursive = TRUE)
-  }
-
-  json_dir <- file.path(data_dir, "json_files")
-  dir.create(json_dir, showWarnings = FALSE, recursive = TRUE)
-
-  # Determine which folders to download
-  if ("all" %in% formats) {
-    formats <- c("long_form", "short_form")
-  }
-
-  folders_to_download <- character()
-  for (fmt in formats) {
-    for (gnd in genders) {
-      for (typ in types) {
-        folders_to_download <- c(folders_to_download,
-                                  paste(fmt, gnd, typ, sep = "_"))
-      }
-    }
-  }
-
-  cli::cli_alert_info("Will download {length(folders_to_download)} data categories")
-
-  # Get release
-  cli::cli_h2("Step 1: Finding release")
-  release <- if (tag == "latest") {
-    get_latest_release(repo, type = "daily")
-  } else {
-    url <- sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag)
-    resp <- httr2::request(url) |>
-      httr2::req_headers(Accept = "application/vnd.github.v3+json") |>
-      httr2::req_perform()
-    httr2::resp_body_json(resp)
-  }
-
-  cli::cli_alert_success("Found release: {release$tag_name}")
-
-  # bus_manifest.json when present (legacy mode + one-time warning when
-  # absent - see vb_read_manifest()); each asset below is sha256-verified
-  # against it.
-  manifest <- vb_read_manifest(repo, release$tag_name)
-
-  # Download requested ZIP files
-  cli::cli_h2("Step 2: Downloading data")
-
-  downloaded_count <- 0
-  for (folder in folders_to_download) {
-    zip_name <- paste0(folder, ".zip")
-
-    # Find matching asset
-    asset <- NULL
-    for (a in release$assets) {
-      if (a$name == zip_name) {
-        asset <- a
-        break
-      }
-    }
-
-    if (is.null(asset)) {
-      cli::cli_alert_warning("Asset not found: {zip_name}")
-      next
-    }
-
-    # Download
-    size_mb <- asset$size / 1024 / 1024
-    cli::cli_alert_info("Downloading {zip_name} ({round(size_mb, 1)} MB)...")
-
-    temp_zip <- tempfile(fileext = ".zip")
-    folder_path <- file.path(json_dir, folder)
-    dir.create(folder_path, showWarnings = FALSE, recursive = TRUE)
-
-    # Use tryCatch to ensure temp file cleanup on error
-    tryCatch({
-      download_release_asset(asset$browser_download_url, temp_zip,
-                              manifest = manifest, asset_name = zip_name)
-      zip::unzip(temp_zip, exdir = folder_path)
-    }, finally = {
-      # Always clean up temp file
-      if (file.exists(temp_zip)) unlink(temp_zip)
-    })
-
-    n_files <- length(list.files(folder_path, pattern = "\\.json$"))
-    cli::cli_alert_success("{folder}: {n_files} matches")
-    downloaded_count <- downloaded_count + n_files
-  }
-
-  cli::cli_alert_success("Downloaded {downloaded_count} match files")
-
-  if (downloaded_count == 0) {
-    cli::cli_warn("No match files were downloaded. Check network connectivity or release availability.")
-    return(invisible(data_dir))
-  }
-
-  # Build database if requested
-  if (build_db) {
-    cli::cli_h2("Step 3: Building database")
-
-    json_files <- list.files(json_dir, pattern = "\\.json$",
-                              full.names = TRUE, recursive = TRUE)
-
-    if (length(json_files) > 0) {
-      initialize_bouncer_database(overwrite = TRUE)
-      batch_load_matches(json_files, progress = TRUE)
-      get_data_info()
-    }
-  }
-
-  cli::cli_alert_success("Installation complete!")
-  cli::cli_alert_info("Data directory: {data_dir}")
-
-  invisible(data_dir)
+#' @keywords internal
+install_bouncerdata_from_release <- function(...) {
+  .Defunct("install_parquets_from_release",
+           package = "bouncer",
+           msg = paste0("install_bouncerdata_from_release() is defunct: bouncerdata no longer ",
+                        "publishes daily JSON releases.
+",
+                        "Use install_parquets_from_release() or install_all_bouncer_data()."))
 }
 
 
@@ -1143,66 +997,24 @@ install_parquets_from_release <- function(repo = "peteowen1/bouncerdata",
 }
 
 
-#' Update Bouncerdata from Release
+#' Update Bouncerdata from Release (defunct)
 #'
-#' Checks for new releases and updates local data if available.
+#' Defunct. This compared against "daily" release tags, which bouncerdata no
+#' longer publishes. Re-run [install_parquets_from_release()] to refresh the
+#' parquet data, or [install_all_bouncer_data()] to rebuild the local database.
 #'
-#' @param repo Character. GitHub repository.
-#' @param data_dir Character. Data directory to update.
+#' @param ... Ignored. Kept so calls with the old arguments (`repo`,
+#'   `data_dir`) reach the defunct message.
 #'
-#' @return Logical. TRUE if update was performed, FALSE if already up to date.
+#' @return Never returns; always signals a defunct error.
 #'
 #' @export
-#' @examples
-#' \dontrun{
-#' # Check for and apply updates
-#' update_bouncerdata()
-#' }
-update_bouncerdata <- function(repo = "peteowen1/bouncerdata",
-                                 data_dir = NULL) {
-
-  cli::cli_h1("Checking for Bouncerdata Updates")
-
-  if (is.null(data_dir)) {
-    data_dir <- find_bouncerdata_dir()
-  }
-
-  # Get current version from local manifest
-  manifest_path <- file.path(data_dir, "json_files", "manifest.json")
-  local_version <- if (file.exists(manifest_path)) {
-    manifest <- jsonlite::fromJSON(manifest_path)
-    manifest$release_date %||% "0.0.0"
-  } else {
-    "0.0.0"
-  }
-
-  cli::cli_alert_info("Local version: {local_version}")
-
-  # Get latest release
-  release <- get_latest_release(repo, type = "daily")
-  remote_version <- release$tag_name
-
-  cli::cli_alert_info("Remote version: {remote_version}")
-
-  # Parse as dates for robust comparison. Daily release tags look like
-  # "v2026.02.26" (leading "v", dot-separated %Y.%m.%d) - strip the "v" and
-  # parse explicitly, since as.Date() can't infer that format unassisted.
-  parse_release_tag_date <- function(tag) {
-    d <- tryCatch(as.Date(sub("^v", "", tag), format = "%Y.%m.%d"),
-                  error = function(e) NA)
-    if (is.na(d)) as.Date("1970-01-01") else d
-  }
-  local_date <- parse_release_tag_date(local_version)
-  remote_date <- parse_release_tag_date(remote_version)
-  if (remote_date <= local_date) {
-    cli::cli_alert_success("Already up to date!")
-    return(invisible(FALSE))
-  }
-
-  cli::cli_alert_info("Update available: {local_version} -> {remote_version}")
-
-  # Download and install
-  install_bouncerdata_from_release(repo = repo, data_dir = data_dir)
-
-  invisible(TRUE)
+#' @keywords internal
+update_bouncerdata <- function(...) {
+  .Defunct("install_parquets_from_release",
+           package = "bouncer",
+           msg = paste0("update_bouncerdata() is defunct: bouncerdata no longer ",
+                        "publishes daily JSON releases.
+",
+                        "Use install_parquets_from_release() or install_all_bouncer_data()."))
 }

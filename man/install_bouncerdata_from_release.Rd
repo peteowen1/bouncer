@@ -2,63 +2,22 @@
 % Please edit documentation in R/user_install.R
 \name{install_bouncerdata_from_release}
 \alias{install_bouncerdata_from_release}
-\title{Install Bouncerdata from GitHub Release}
+\title{Install Bouncerdata from GitHub Release (defunct)}
 \usage{
-install_bouncerdata_from_release(
-  repo = "peteowen1/bouncerdata",
-  formats = "all",
-  genders = c("male", "female"),
-  types = c("international", "club"),
-  tag = "latest",
-  data_dir = NULL,
-  build_db = TRUE
-)
+install_bouncerdata_from_release(...)
 }
 \arguments{
-\item{repo}{Character. GitHub repository. Default "peteowen1/bouncerdata".}
-
-\item{formats}{Character vector. Data formats to download:
-\itemize{
-\item "long_form" = Tests, First-class matches
-\item "short_form" = ODIs, T20s, franchise leagues
-\item "all" = both (default)
-}}
-
-\item{genders}{Character vector. "male", "female", or c("male", "female").
-Default is both.}
-
-\item{types}{Character vector. "international", "club", or both.
-Default is both.}
-
-\item{tag}{Character. Specific release tag to download, or "latest".}
-
-\item{data_dir}{Character. Directory to store data. Default uses
-\code{find_bouncerdata_dir()}.}
-
-\item{build_db}{Logical. If TRUE, build DuckDB from downloaded JSONs.
-Default TRUE.}
+\item{...}{Ignored. Kept so calls with the old arguments (\code{repo},
+\code{formats}, \code{genders}, \code{types}, \code{tag}, \code{data_dir}, \code{build_db}) reach the
+defunct message.}
 }
 \value{
-Invisibly returns the data directory path.
+Never returns; always signals a defunct error.
 }
 \description{
-Downloads and installs cricket data from the bouncerdata GitHub releases.
-This is an alternative to \code{install_all_bouncer_data()} that downloads
-pre-processed data instead of building locally from Cricsheet.
+Defunct. This installed JSON archives from "daily" releases, which
+bouncerdata no longer publishes. Use \code{\link[=install_parquets_from_release]{install_parquets_from_release()}} to
+download the parquet data, or \code{\link[=install_all_bouncer_data]{install_all_bouncer_data()}} to build the
+local database.
 }
-\examples{
-\dontrun{
-# Install all data
-install_bouncerdata_from_release()
-
-# Install only short form (T20s, ODIs)
-install_bouncerdata_from_release(formats = "short_form")
-
-# Install only IPL (short form, male, club)
-install_bouncerdata_from_release(
-  formats = "short_form",
-  genders = "male",
-  types = "club"
-)
-}
-}
+\keyword{internal}

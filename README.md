@@ -106,7 +106,7 @@ plot_win_probability(match_id = "1415755")
 
 - `install_all_bouncer_data()` - Install complete dataset from GitHub releases
 - `install_bouncer_data()` - Install specific formats/leagues from Cricsheet
-- `update_bouncerdata()` - Incremental data updates
+- `install_parquets_from_release()` - Download the pre-built parquet data from GitHub releases
 - `connect_to_bouncer()` / `disconnect_bouncer()` - Database connection management
 - `load_matches()`, `load_deliveries()`, `load_players()` - Load data into R
 

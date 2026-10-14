@@ -1,3 +1,13 @@
+# bouncer 0.8.8
+
+## Retired the "daily" release API
+
+bouncerdata has never published the `v<date>` "daily" releases that
+`install_bouncerdata_from_release()` and `update_bouncerdata()` looked for, so
+both always stopped with "No daily releases found". They are now defunct and
+point to `install_parquets_from_release()` / `install_all_bouncer_data()`.
+`get_latest_release()` no longer accepts `type = "daily"`.
+
 # bouncer 0.8.7
 
 ## Team skill is keyed by team id, so men's and women's sides no longer share one
