@@ -222,7 +222,8 @@
 #'   in full or dropped entirely.
 #' @param min_players Integer. Bridges required before a competition is rated.
 #' @param basis `"runs"` (default) or `"survival"`. Which rate the factor is fitted
-#'   on: runs per ball, or a survival (dismissal) rate. The choice is stamped
+#'   on: runs per dismissal (batting average), or balls faced per dismissal. The
+#'   choice is stamped
 #'   on the result as the `basis` attribute so a mismatched reuse can be caught.
 #' @param max_steps Integer. Chaining passes.
 #' @param clamp Numeric length 2. Factors are clipped to this range so one thin

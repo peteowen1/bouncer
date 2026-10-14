@@ -79,7 +79,8 @@ default would score a rating which already knew how the competitions
 turned out, against baselines restricted to pre-origin data.}
 
 \item{basis}{\code{"runs"} (default) or \code{"survival"}. Which rate the factor is fitted
-on: runs per ball, or a survival (dismissal) rate. The choice is stamped
+on: runs per dismissal (batting average), or balls faced per dismissal. The
+choice is stamped
 on the result as the \code{basis} attribute so a mismatched reuse can be caught.}
 }
 \value{
