@@ -180,13 +180,6 @@ build_cricsheet_win_probability <- function(format = c("t20", "odi"),
 }
 
 
-#' Store Per-Ball Win Probability for Cricsheet Deliveries
-#' @param conn DBI connection with write access.
-#' @param data data.table from [build_cricsheet_win_probability()].
-#' @param format Character. Format whose rows are replaced.
-#' @param table_name Character. Target table in the `main` schema.
-#' @return Rows inserted, invisibly.
-#' @keywords internal
 .cricsheet_wp_schema <- c(
   delivery_id = "VARCHAR", match_id = "VARCHAR", match_date = "DATE",
   innings_number = "INTEGER", over_number = "INTEGER", ball_number = "INTEGER",
@@ -195,6 +188,13 @@ build_cricsheet_win_probability <- function(format = c("t20", "odi"),
   delta_wp = "DOUBLE", proj_score_before = "DOUBLE",
   proj_score_after = "DOUBLE", delta_ps = "DOUBLE")
 
+#' Store Per-Ball Win Probability for Cricsheet Deliveries
+#' @param conn DBI connection with write access.
+#' @param data data.table from [build_cricsheet_win_probability()].
+#' @param format Character. Format whose rows are replaced.
+#' @param table_name Character. Target table in the `main` schema.
+#' @return Rows inserted, invisibly.
+#' @keywords internal
 store_cricsheet_wp <- function(conn, data, format,
                                table_name = "bouncer_wp_from_cricsheet") {
   db_format <- toupper(format)

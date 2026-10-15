@@ -226,7 +226,7 @@ COMPETITION_PATHWAY_PATTERN_SQL <- paste(
 #' Nations that have reached a T20 World Cup without being a top-10 side
 #'
 #' Derived from the data: teams appearing in "ICC Men's T20 World Cup",
-#' "ICC World Twenty20" or "World T20" and not in [COMPETITION_TOP_NATIONS].
+#' "ICC World Twenty20" or "World T20" and not in `COMPETITION_TOP_NATIONS`.
 #' Reaching a World Cup is an observable qualification bar, so this line is a
 #' fact about results rather than a judgement about reputation.
 #'

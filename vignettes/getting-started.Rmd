@@ -101,8 +101,8 @@ For the complete experience with all features:
 # Download from Cricsheet and build local DuckDB (30-60 min first time)
 install_all_bouncer_data()
 
-# Or install from GitHub Releases (faster)
-install_bouncerdata_from_release()
+# Or download the pre-built parquet files from GitHub Releases (faster)
+install_parquets_from_release()
 
 # Check what data was loaded
 get_data_info()

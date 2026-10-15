@@ -13,7 +13,7 @@ Default is "peteowen1/bouncerdata".}
 \item{type}{Character. Release type to find: "cricsheet" (parquet data),
 "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 "foxsports" (Fox Sports ball-by-ball data),
-"daily" (JSON archives), "weekly" (legacy parquet), or "any" (most recent).}
+"weekly" (legacy parquet), or "any" (most recent).}
 }
 \value{
 List with release information including tag_name, published_at,
@@ -27,8 +27,5 @@ Fetches metadata about the latest release from the bouncerdata repository.
 # Get core release (parquet files from daily scraper)
 release <- get_latest_release(type = "cricsheet")
 print(release$tag_name)
-
-# Get latest daily release (JSON archives)
-release <- get_latest_release(type = "daily")
 }
 }

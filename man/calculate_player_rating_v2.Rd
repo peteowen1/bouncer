@@ -98,6 +98,9 @@ simply drops the domestic first-class rows a bucket would otherwise blend
 in, without needing its own competition-factor fit (bouncerverse#40 item
 1: a Test bucket built on \code{format = "test"} alone is 68\% domestic
 first-class, and Tom Abell outranks Steve Smith).}
+
+\item{metric}{\code{"composite"} (default), \code{"runs"}, \code{"wickets"} or \code{"team_score"}.
+Which rating the per-ball values are built from.}
 }
 \value{
 data.table of \code{rank}, \code{player_id}, \code{player_name}, \code{rating},

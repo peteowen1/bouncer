@@ -7,7 +7,8 @@
 get_team_delivery_skill_fast(team, as_of_date, team_skill_dt)
 }
 \arguments{
-\item{team}{Character. Team name}
+\item{team}{Character. Composite team id (\code{\link[=make_team_id]{make_team_id()}}), the key of
+\code{batting_team_id} since 2026-10-13}
 
 \item{as_of_date}{Date. Get skills as of this date}
 

@@ -36,7 +36,7 @@ diagnostics). Invisibly when \code{write = TRUE}.
 }
 \description{
 Scores every T20/ODI delivery in \code{cricinfo.balls} with leverage(state) =
-Var\link{WP(state + outcome)}, weighted by P(outcome | state) from the agnostic
+\code{Var[WP(state + outcome)]}, weighted by P(outcome | state) from the agnostic
 ball-outcome model, over the seven scoreable outcomes in
 \link{.LEVERAGE_OUTCOMES}. Writes \code{main.bouncer_leverage_from_cricinfo}, joinable to
 \code{main.bouncer_wp_from_cricinfo} on \code{id}.

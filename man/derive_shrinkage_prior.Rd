@@ -16,6 +16,10 @@ derive_shrinkage_prior(
 
 \item{min_matches}{Integer. Players below this are ignored for estimation
 only; they are still rated.}
+
+\item{sh_min_matches, sh_min_players}{Integer. For the split-half estimate that
+replaces the ANOVA value: matches a player needs to be included, and the
+minimum number of such players. Below that the ANOVA value is kept.}
 }
 \value{
 list with \code{k}, \code{s2_within}, \code{s2_between}, \code{players}, \code{share}.
