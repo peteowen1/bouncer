@@ -469,13 +469,7 @@ aggregate_batting_stats_remote <- function(player_id = NULL,
                           "dismissals", "dots", "fours", "sixes")]
 
   # Calculate derived metrics
-  batting$batting_average <- ifelse(batting$dismissals > 0,
-                                     round(batting$runs_scored / batting$dismissals, 2),
-                                     NA_real_)
-  batting$runs_per_ball <- round(batting$runs_scored / batting$balls_faced, 4)
-  batting$wickets_per_ball <- round(batting$dismissals / batting$balls_faced, 4)
-  batting$strike_rate <- round((batting$runs_scored / batting$balls_faced) * 100, 2)
-  batting$wicket_pct <- round((batting$dismissals / batting$balls_faced) * 100, 4)
+  batting <- .add_batting_rates(batting)
 
   cli::cli_alert_success("Aggregated {nrow(batting)} batters")
   as.data.frame(batting)
@@ -530,13 +524,7 @@ aggregate_batting_stats_remote_legacy <- function(player_id = NULL,
   batting <- batting[, c("batter_id", "player_name", "balls_faced", "runs_scored",
                           "dismissals", "dots", "fours", "sixes")]
 
-  batting$batting_average <- ifelse(batting$dismissals > 0,
-                                     round(batting$runs_scored / batting$dismissals, 2),
-                                     NA_real_)
-  batting$runs_per_ball <- round(batting$runs_scored / batting$balls_faced, 4)
-  batting$wickets_per_ball <- round(batting$dismissals / batting$balls_faced, 4)
-  batting$strike_rate <- round((batting$runs_scored / batting$balls_faced) * 100, 2)
-  batting$wicket_pct <- round((batting$dismissals / batting$balls_faced) * 100, 4)
+  batting <- .add_batting_rates(batting)
 
   as.data.frame(batting)
 }
@@ -638,16 +626,7 @@ aggregate_bowling_stats_remote <- function(player_id = NULL,
                           "wickets", "dots")]
 
   # Calculate derived metrics
-  bowling$bowling_average <- ifelse(bowling$wickets > 0,
-                                     round(bowling$runs_conceded / bowling$wickets, 2),
-                                     NA_real_)
-  bowling$runs_per_ball <- round(bowling$runs_conceded / bowling$balls_bowled, 4)
-  bowling$wickets_per_ball <- round(bowling$wickets / bowling$balls_bowled, 4)
-  bowling$economy_rate <- round((bowling$runs_conceded / bowling$balls_bowled) * 6, 2)
-  bowling$wicket_pct <- round((bowling$wickets / bowling$balls_bowled) * 100, 4)
-  bowling$strike_rate <- ifelse(bowling$wickets > 0,
-                                 round(bowling$balls_bowled / bowling$wickets, 2),
-                                 NA_real_)
+  bowling <- .add_bowling_rates(bowling)
 
   cli::cli_alert_success("Aggregated {nrow(bowling)} bowlers")
   as.data.frame(bowling)
@@ -701,16 +680,7 @@ aggregate_bowling_stats_remote_legacy <- function(player_id = NULL,
   bowling <- bowling[, c("bowler_id", "player_name", "balls_bowled", "runs_conceded",
                           "wickets", "dots")]
 
-  bowling$bowling_average <- ifelse(bowling$wickets > 0,
-                                     round(bowling$runs_conceded / bowling$wickets, 2),
-                                     NA_real_)
-  bowling$runs_per_ball <- round(bowling$runs_conceded / bowling$balls_bowled, 4)
-  bowling$wickets_per_ball <- round(bowling$wickets / bowling$balls_bowled, 4)
-  bowling$economy_rate <- round((bowling$runs_conceded / bowling$balls_bowled) * 6, 2)
-  bowling$wicket_pct <- round((bowling$wickets / bowling$balls_bowled) * 100, 4)
-  bowling$strike_rate <- ifelse(bowling$wickets > 0,
-                                 round(bowling$balls_bowled / bowling$wickets, 2),
-                                 NA_real_)
+  bowling <- .add_bowling_rates(bowling)
 
   as.data.frame(bowling)
 }

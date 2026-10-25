@@ -96,34 +96,7 @@ add_predictions_to_deliveries <- function(model_path,
   }
 
   query <- sprintf("
-    WITH innings_totals AS (
-      SELECT
-        match_id,
-        innings,
-        batting_team,
-        MAX(total_runs) AS innings_total
-      FROM cricsheet.deliveries
-      WHERE %s
-      GROUP BY match_id, innings, batting_team
-    ),
-    cumulative_scores AS (
-      SELECT
-        d.*,
-        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
-        -- the running total post-ball). Subtract the ball's own runs to get the score
-        -- BEFORE it, or runs_difference leaks the target it is used to predict.
-        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
-        COALESCE(
-          (SELECT SUM(it.innings_total)
-           FROM innings_totals it
-           WHERE it.match_id = d.match_id
-             AND it.batting_team = d.bowling_team
-             AND it.innings < d.innings),
-          0
-        ) AS bowling_score
-      FROM cricsheet.deliveries d
-      WHERE %s
-    )
+    WITH %s
     SELECT
       delivery_id,
       match_id,
@@ -143,7 +116,7 @@ add_predictions_to_deliveries <- function(model_path,
     FROM cumulative_scores
     %s
     ORDER BY match_id, innings, over, ball
-  ", format_filter, format_filter,
+  ", .innings_score_ctes_sql(format_filter, format_filter),
      if (!is.null(match_limit)) sprintf("LIMIT %d", match_limit * 1000) else "")
 
   cli::cli_alert_info("Executing query...")

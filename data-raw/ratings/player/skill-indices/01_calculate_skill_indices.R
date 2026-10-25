@@ -181,54 +181,11 @@ if (use_model_for_format) {
   # Need additional features for agnostic model prediction
   # Includes: is_knockout, event_tier from matches table
   base_query <- sprintf("
-    WITH innings_totals AS (
-      SELECT
-        match_id,
-        innings,
-        batting_team,
-        MAX(total_runs) AS innings_total
-      FROM cricsheet.deliveries
-      WHERE LOWER(match_type) IN (%s)
-      GROUP BY match_id, innings, batting_team
-    ),
-    cumulative_scores AS (
-      SELECT
-        d.*,
-        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
-        -- the running total post-ball). Subtract the ball's own runs to get the score
-        -- BEFORE it, or runs_difference leaks the target it is used to predict.
-        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
-        COALESCE(
-          (SELECT SUM(it.innings_total)
-           FROM innings_totals it
-           WHERE it.match_id = d.match_id
-             AND it.batting_team = d.bowling_team
-             AND it.innings < d.innings),
-          0
-        ) AS bowling_score
-      FROM cricsheet.deliveries d
-      WHERE LOWER(d.match_type) IN (%s)
-    ),
+    WITH %s,
     match_context AS (
       SELECT DISTINCT
         m.match_id,
-        CASE
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%eliminator%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%playoff%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%semi%%' THEN 1
-          ELSE 0
-        END AS is_knockout,
-        CASE
-          WHEN LOWER(m.event_name) LIKE '%%world cup%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%ipl%%' OR LOWER(m.event_name) LIKE '%%indian premier%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%big bash%%' OR LOWER(m.event_name) LIKE '%%bbl%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%psl%%' OR LOWER(m.event_name) LIKE '%%super league%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%cpl%%' OR LOWER(m.event_name) LIKE '%%caribbean%%' THEN 2
-          WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
-          ELSE 3
-        END AS event_tier
+        %s
       FROM cricsheet.matches m
     ),
     -- League running averages, lagged to exclude the current match -- the
@@ -281,7 +238,10 @@ if (use_model_for_format) {
     LEFT JOIN league_running_avg lra ON cs.match_id = lra.match_id
     WHERE cs.batter_id IS NOT NULL
       AND cs.bowler_id IS NOT NULL
-  ", match_type_filter, match_type_filter, match_type_filter)
+  ", .innings_score_ctes_sql(
+         sprintf("LOWER(match_type) IN (%s)", match_type_filter),
+         sprintf("LOWER(d.match_type) IN (%s)", match_type_filter)),
+     .match_context_cases_sql(), match_type_filter)
 } else {
   # Simple query without model features
   base_query <- sprintf("
