@@ -19,11 +19,9 @@ Cricket analytics R package with a **5-component prediction pipeline** featuring
 
 ## Installation
 
-```r
-# Install from CRAN
-install.packages("bouncer")
+bouncer is not on CRAN yet. Install it from GitHub:
 
-# Or install the development version from GitHub
+```r
 remotes::install_github("peteowen1/bouncer")
 ```
 
@@ -46,11 +44,12 @@ predict_match(
   team1 = "India",
   team2 = "Australia",
   venue = "MCG",
-  match_type = "T20"
+  format = "t20"
 )
 
 # Step 5: Ball-by-ball match simulation
-quick_match_simulation(format = "t20")
+model <- load_full_model("t20")
+quick_match_simulation(model, format = "t20")
 
 # Step 6: Visualize win probability over a completed match
 plot_win_probability(match_id = "1415755")
@@ -132,14 +131,17 @@ See the [full function reference](https://peteowen1.github.io/bouncer/reference/
 
 ### 3-Way ELO System
 
-The core rating system maintains separate ELO ratings for three entities on every delivery:
+The core rating system maintains separate ELO ratings for three entities on every delivery.
+The weight is each entity's share of the run ELO for men's T20. The weights are fitted
+separately for each format and gender, and differ again for wicket ELO; see
+`get_run_elo_weights()` and `get_wicket_elo_weights()` for the values in use.
 
-| Entity | Weight | What it captures |
+| Entity | Weight (men's T20, runs) | What it captures |
 |--------|--------|-----------------|
-| **Batter** | 52% | Individual batting ability |
-| **Bowler** | 22% | Individual bowling ability |
-| **Venue (session)** | 21% | Short-term pitch conditions (prep, dew, deterioration) |
-| **Venue (permanent)** | 5% | Long-term ground characteristics (size, typical pitch) |
+| **Batter** | 61.2% | Individual batting ability |
+| **Bowler** | 31.1% | Individual bowling ability |
+| **Venue (session)** | 6.2% | Short-term pitch conditions (prep, dew, deterioration) |
+| **Venue (permanent)** | 1.5% | Long-term ground characteristics (size, typical pitch) |
 
 ### PageRank Quality Adjustment
 

@@ -31,7 +31,7 @@ Simulates a match using default player skills (useful for testing).
 }
 \examples{
 \dontrun{
-model <- load_full_model("shortform")
+model <- load_full_model("t20")
 result <- quick_match_simulation(model, format = "t20")
 result <- quick_match_simulation(model, format = "odi",
                                  team1_skill = 0.5, team2_skill = -0.3)

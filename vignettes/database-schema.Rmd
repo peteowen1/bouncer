@@ -491,17 +491,19 @@ The bouncer package provides functions to load these tables into R without writi
 
 ```{r}
 # Load core tables (from cricsheet schema)
-matches <- load_matches(format = "t20", season = "2024")
+matches <- load_matches(match_type = "T20")
+matches_2024 <- matches[matches$season == "2024", ]
 deliveries <- load_deliveries(match_ids = "1234567")
 players <- load_players()
 
 # Load skill tables
-player_skills <- load_player_skill(format = "t20")
-team_skills <- load_team_skill(format = "t20")
-venue_skills <- load_venue_skill(format = "t20")
+player_skills <- load_player_skill(match_type = "t20")
+team_skills <- load_team_skill(match_type = "t20")
+venue_skills <- load_venue_skill(match_type = "t20")
 
 # Load ELO ratings
-team_elo <- load_team_elo(team = "India", format = "t20")
+team_elo <- load_team_elo()
+india_elo <- team_elo[team_elo$team_id == "India", ]
 ```
 
 ## Live Database Statistics

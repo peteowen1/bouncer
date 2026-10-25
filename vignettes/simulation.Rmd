@@ -28,61 +28,90 @@ A single prediction gives one number (e.g., "65% win probability"). Simulation g
 
 ## Match Simulation
 
-Simulate a single match many times:
+The simulator needs the ball-outcome model and each side's players, team
+skills and venue skills. `build_match_simulation_inputs()` assembles the
+player and skill inputs from the database for a recorded match (it uses the
+match's squads), or for a hypothetical fixture when you pass `team1`, `team2`,
+`venue`, `format` and the two player lists.
 
 ```{r}
 library(bouncer)
 
-# Simulate India vs Australia 10,000 times
-results <- simulate_match_ballbyball(
-  team1 = "India",
-  team2 = "Australia",
-  format = "t20",
-  n_sims = 10000
-)
+model <- load_full_model("t20")
+conn <- connect_to_bouncer(read_only = TRUE)
 
-# View summary
-print(results)
+# Pick a recent India T20 match and build its simulation inputs
+india_t20 <- query_matches(match_type = "t20", team = "India")
+inputs <- build_match_simulation_inputs(conn, match_id = india_t20$match_id[1])
+
+disconnect_bouncer(conn)
+
+# simulate_match_ballbyball() plays ONE match, ball by ball
+sim_once <- function() {
+  simulate_match_ballbyball(
+    model,
+    format = inputs$format,
+    team1_batters = inputs$team1$batters,
+    team1_bowlers = inputs$team1$bowlers,
+    team2_batters = inputs$team2$batters,
+    team2_bowlers = inputs$team2$bowlers,
+    team1_skills = inputs$team1$team_skills,
+    team2_skills = inputs$team2$team_skills,
+    venue_skills = inputs$venue_skills
+  )
+}
+
+# Simulate the match 1,000 times
+results <- lapply(seq_len(1000), function(i) sim_once())
+
+# Share of simulations each side won ("team1", "team2" or "tie")
+winners <- vapply(results, function(r) r$winner, character(1))
+prop.table(table(winners))
+
+# Distribution of the first-innings score
+summary(vapply(results, function(r) r$team1_score, numeric(1)))
 ```
 
-The results include:
-- Win percentage for each team
-- Score distribution (mean, median, percentiles)
-- Margin distribution
+Each simulated match includes:
+- The winner and the margin
+- Each side's score, wickets and overs
+- The ball-by-ball detail of both innings
 
 ## Quick Match Simulation
 
-For faster results with less detail:
+For a quick test without the database, `quick_match_simulation()` plays one
+match between two sides of default players. Each side's strength is a single
+number from -1 to 1:
 
 ```{r}
-# Quick simulation (doesn't simulate ball-by-ball)
 quick_results <- quick_match_simulation(
-  team1 = "India",
-  team2 = "Australia",
-  format = "t20"
+  model,
+  format = "t20",
+  team1_skill = 0.3,
+  team2_skill = -0.1
 )
-print(quick_results)
+quick_results$winner
+quick_results$margin
 ```
 
 ## Simulation Configuration
 
-Customize simulation parameters:
+A configuration object records the settings of a simulation run, and is
+what `store_simulation_results()` saves alongside the results:
 
 ```{r}
 # Create custom simulation config
 config <- create_simulation_config(
-  n_sims = 5000,
-  seed = 42,  # For reproducibility
-  format = "t20"
+  simulation_type = "match",
+  event_name = "Indian Premier League",
+  season = "2024",
+  n_simulations = 5000,
+  random_seed = 42  # For reproducibility
 )
 
-# Use in simulation
-results <- simulate_match_ballbyball(
-  team1 = "Mumbai Indians",
-  team2 = "Chennai Super Kings",
-  format = "t20",
-  config = config
-)
+# Use its settings in a simulation run
+set.seed(config$random_seed)
+results <- lapply(seq_len(config$n_simulations), function(i) sim_once())
 ```
 
 ## Innings Simulation
@@ -90,39 +119,54 @@ results <- simulate_match_ballbyball(
 Simulate a single innings:
 
 ```{r}
-# Simulate an innings
+# Simulate an innings: team 1 batting, team 2 bowling
 innings_result <- simulate_innings(
-  batting_team = "India",
-  bowling_team = "Australia",
+  model,
   format = "t20",
-  target = NULL  # First innings, no target
+  innings = 1,
+  target = NULL,  # First innings, no target
+  batting_team_skills = inputs$team1$team_skills$batting,
+  bowling_team_skills = inputs$team2$team_skills$bowling,
+  venue_skills = inputs$venue_skills,
+  batters = inputs$team1$batters,
+  bowlers = inputs$team2$bowlers
 )
-print(innings_result)
+innings_result$total_runs
+innings_result$wickets_lost
 
-# Simulate a chase
+# Simulate a chase: team 2 batting, team 1 bowling
 chase_result <- simulate_innings(
-  batting_team = "Australia",
-  bowling_team = "India",
+  model,
   format = "t20",
-  target = 185
+  innings = 2,
+  target = 185,
+  batting_team_skills = inputs$team2$team_skills$batting,
+  bowling_team_skills = inputs$team1$team_skills$bowling,
+  venue_skills = inputs$venue_skills,
+  batters = inputs$team2$batters,
+  bowlers = inputs$team1$bowlers
 )
-print(chase_result)
+chase_result$result
 ```
 
 ## Season Simulation
 
-Simulate an entire tournament:
+Season simulation works from a fixture list with each match's pre-match win
+probability for `team1`. It needs only the columns `team1`, `team2` and
+`team1_win_prob`:
 
 ```{r}
-# Simulate IPL season
-season_results <- simulate_season(
-  event = "Indian Premier League",
-  season = "2024",
-  n_sims = 1000
+fixtures <- data.frame(
+  team1 = c("Mumbai Indians", "Chennai Super Kings", "Gujarat Titans",
+            "Mumbai Indians", "Chennai Super Kings", "Gujarat Titans"),
+  team2 = c("Chennai Super Kings", "Gujarat Titans", "Lucknow Super Giants",
+            "Gujarat Titans", "Lucknow Super Giants", "Mumbai Indians"),
+  team1_win_prob = c(0.55, 0.50, 0.60, 0.45, 0.58, 0.52)
 )
 
-# View playoff probabilities
-print(season_results$playoff_odds)
+# Simulate the season once: final standings, with who makes the top 4
+season_results <- simulate_season(fixtures)
+print(season_results)
 ```
 
 ### Running Multiple Seasons
@@ -131,17 +175,13 @@ For more accurate playoff odds:
 
 ```{r}
 # Run 10,000 season simulations
-season_n <- simulate_season_n(
-  event = "Indian Premier League",
-  season = "2024",
-  n_sims = 10000
-)
+season_n <- simulate_season_n(fixtures, n_simulations = 10000, seed = 42)
 
-# Each team's probability of:
-# - Making playoffs
-# - Finishing top 2
-# - Winning the tournament
-print(season_n$summary)
+# Each team's percentage chance of:
+# - Making playoffs (playoff_pct)
+# - Finishing top 2 (top2_pct)
+# - Finishing first (championship_pct)
+print(season_n)
 ```
 
 ## IPL Playoff Simulation
@@ -149,16 +189,23 @@ print(season_n$summary)
 Simulate the IPL playoff bracket specifically:
 
 ```{r}
-# Simulate playoffs with the top 4 teams
-playoff_results <- simulate_ipl_playoffs(
-  qualifier1_teams = c("Gujarat Titans", "Chennai Super Kings"),
-  eliminator_teams = c("Lucknow Super Giants", "Mumbai Indians"),
-  n_sims = 10000,
-  format = "t20"
+# The top 4 teams, with their ELO and league position
+top4 <- data.frame(
+  team = c("Gujarat Titans", "Chennai Super Kings",
+           "Lucknow Super Giants", "Mumbai Indians"),
+  elo = c(1600, 1550, 1520, 1480),
+  position = 1:4
 )
 
-# Championship probabilities
-print(playoff_results)
+# Simulate the bracket once (Qualifier 1, Eliminator, Qualifier 2, Final)
+playoff_results <- simulate_ipl_playoffs(top4)
+playoff_results$champion
+
+# Championship probabilities over 10,000 brackets
+champions <- vapply(seq_len(10000),
+                    function(i) simulate_ipl_playoffs(top4)$champion,
+                    character(1))
+prop.table(table(champions))
 ```
 
 ## Interpreting Results
@@ -191,10 +238,10 @@ Simulations also show likely winning margins:
 ```{r}
 # Same seed = same results
 set.seed(42)
-result1 <- simulate_match_ballbyball("India", "Australia", "t20", n_sims = 100)
+result1 <- lapply(seq_len(100), function(i) sim_once())
 
 set.seed(42)
-result2 <- simulate_match_ballbyball("India", "Australia", "t20", n_sims = 100)
+result2 <- lapply(seq_len(100), function(i) sim_once())
 
 # result1 and result2 are identical
 ```
