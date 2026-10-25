@@ -709,7 +709,7 @@ load_filtered_matches <- function(file_paths,
 #' @param type Character. Release type to find: "cricsheet" (parquet data),
 #'   "cricinfo" (Hawkeye ball-by-ball from Cricinfo scraper),
 #'   "foxsports" (Fox Sports ball-by-ball data),
-#'   "weekly" (legacy parquet), or "any" (most recent).
+#'   or "any" (most recent).
 #'
 #' @return List with release information including tag_name, published_at,
 #'   and assets.
@@ -722,7 +722,7 @@ load_filtered_matches <- function(file_paths,
 #' print(release$tag_name)
 #' }
 get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
-  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "foxsports", "weekly"))
+  type <- match.arg(type, c("any", "cricsheet", "cricinfo", "foxsports"))
 
   # Build API URL
   if (type == "any") {
@@ -750,10 +750,8 @@ get_latest_release <- function(repo = "peteowen1/bouncerdata", type = "any") {
     "^cricsheet$"
   } else if (type == "cricinfo") {
     "^cricinfo$"
-  } else if (type == "foxsports") {
-    "^foxsports$"
   } else {
-    "-weekly$"
+    "^foxsports$"
   }
 
   matching <- Filter(function(r) grepl(pattern, r$tag_name), releases)

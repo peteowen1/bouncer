@@ -8,6 +8,9 @@ both always stopped with "No daily releases found". They are now defunct and
 point to `install_parquets_from_release()` / `install_all_bouncer_data()`.
 `get_latest_release()` no longer accepts `type = "daily"`.
 
+`get_latest_release()` also no longer accepts `type = "weekly"`: bouncerdata has no `-weekly`
+releases, so that call always stopped with "No weekly releases found".
+
 # bouncer 0.8.7
 
 ## Team skill is keyed by team id, so men's and women's sides no longer share one
