@@ -324,29 +324,7 @@ create_format_venue_skill_table <- function(format = "t20", conn, overwrite = FA
   # Create table
   cli::cli_alert_info("Creating '{table_name}' table...")
 
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE %s (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      venue VARCHAR,
-
-      -- Venue skill indices (before this delivery)
-      venue_run_rate DOUBLE,        -- EMA of runs per ball at venue
-      venue_wicket_rate DOUBLE,     -- EMA of wickets per ball at venue
-      venue_boundary_rate DOUBLE,   -- EMA of boundaries (4s + 6s) per ball
-      venue_dot_rate DOUBLE,        -- EMA of dot balls per ball
-
-      -- Ball count (for reliability)
-      venue_balls INTEGER,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-      is_boundary BOOLEAN,
-      is_dot BOOLEAN
-    )
-  ", table_name))
+  DBI::dbExecute(conn, .venue_skill_ddl(table_name, if_not_exists = FALSE))
 
   # Create indexes
   DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_venue_skill_match ON %s(match_id)", format, table_name))
@@ -576,76 +554,9 @@ join_venue_skill_indices <- function(deliveries_df, format = "t20", conn,
                                                         "venue_balls")) {
 
   table_name <- get_skill_table_name(format, "venue_skill")
-
-  if (!table_exists(conn, table_name)) {
-    cli::cli_alert_warning("Table '{table_name}' does not exist")
-    cli::cli_alert_info("Run data-raw/ratings/venue/01_calculate_venue_skill_indices.R first")
-    return(deliveries_df)
-  }
-
-  if (!"delivery_id" %in% names(deliveries_df)) {
-    cli::cli_alert_danger("deliveries_df must contain 'delivery_id' column")
-    return(deliveries_df)
-  }
-
-  # Get venue skill indices for matching delivery_ids
-  delivery_ids <- unique(deliveries_df$delivery_id)
-
-  # Query in batches if too many
-  batch_size <- 10000
-  if (length(delivery_ids) > batch_size) {
-    cli::cli_alert_info("Fetching venue skill indices in batches...")
-
-    n_batches <- ceiling(length(delivery_ids) / batch_size)
-    batch_results <- vector("list", n_batches)
-
-    for (i in seq_len(n_batches)) {
-      start_idx <- (i - 1) * batch_size + 1
-      end_idx <- min(i * batch_size, length(delivery_ids))
-      batch_ids <- delivery_ids[start_idx:end_idx]
-
-      # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-      batch_ids_escaped <- escape_sql_quotes(batch_ids)
-
-      batch_results[[i]] <- DBI::dbGetQuery(conn, sprintf("
-        SELECT delivery_id, %s
-        FROM %s
-        WHERE delivery_id IN ('%s')
-      ", paste(skill_columns, collapse = ", "),
-         table_name,
-         paste(batch_ids_escaped, collapse = "','")))
-
-      if (i %% 10 == 0) {
-        cli::cli_alert_info("Fetched {i}/{n_batches} batches...")
-      }
-    }
-
-    skill_data <- fast_rbind(batch_results)
-  } else {
-    # Escape single quotes in delivery IDs
-    delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
-
-    skill_data <- DBI::dbGetQuery(conn, sprintf("
-      SELECT delivery_id, %s
-      FROM %s
-      WHERE delivery_id IN ('%s')
-    ", paste(skill_columns, collapse = ", "),
-       table_name,
-       paste(delivery_ids_escaped, collapse = "','")))
-  }
-
-  if (nrow(skill_data) == 0) {
-    cli::cli_alert_warning("No matching venue skill indices found")
-    return(deliveries_df)
-  }
-
-  # Join to deliveries
-  result <- dplyr::left_join(deliveries_df, skill_data, by = "delivery_id")
-
-  n_matched <- sum(!is.na(result[[skill_columns[1]]]))
-  cli::cli_alert_success("Joined venue skill indices: {n_matched}/{nrow(deliveries_df)} deliveries matched")
-
-  result
+  .join_skill_table(deliveries_df, conn, table_name, skill_columns,
+                    label = "venue skill indices",
+                    run_hint = "Run data-raw/ratings/venue/01_calculate_venue_skill_indices.R first")
 }
 
 

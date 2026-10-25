@@ -13,16 +13,7 @@
 #' @return Invisibly returns TRUE on success
 #' @keywords internal
 create_pipeline_state_table <- function(conn) {
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS pipeline_state (
-      step_name VARCHAR PRIMARY KEY,
-      last_run_at TIMESTAMP,
-      last_match_date DATE,
-      last_match_count INTEGER,
-      last_delivery_count INTEGER,
-      status VARCHAR
-    )
-  ")
+  DBI::dbExecute(conn, .pipeline_state_ddl("pipeline_state"))
   invisible(TRUE)
 }
 
