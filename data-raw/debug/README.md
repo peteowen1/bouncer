@@ -70,7 +70,6 @@ Scripts for debugging ELO calculations and rankings:
 
 ### pagerank/
 Network-based rating analysis:
-- `debug_pagerank_analysis.R` - Core PageRank debugging
 - `investigate_pagerank.R` - Investigate specific PageRank issues
 - `pagerank_distribution.R` - Analyze PageRank value distributions
 - `pagerank_percentile_analysis.R` - Percentile-based analysis

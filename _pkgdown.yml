@@ -243,14 +243,9 @@ reference:
     contents:
     - get_centrality_as_of
     - get_centrality_snapshot_dates
-    - calculate_player_centrality
     - apply_centrality_correction
     - calculate_centrality_regression
-    - get_pagerank_as_of
     - get_pagerank_snapshot_dates
-    - get_top_pagerank_players
-    - print_centrality_summary
-    - print_pagerank_summary
 
   - title: Visualization
     desc: ggplot2-based cricket charts
