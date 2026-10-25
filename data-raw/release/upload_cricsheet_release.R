@@ -39,7 +39,6 @@ devtools::load_all()
 
 REPO <- "peteowen1/bouncerdata"
 TAG <- "cricsheet"
-ZIP_NAME <- "cricsheet-all.zip"
 
 # Database path (uses bouncer's path resolution)
 DB_PATH <- get_db_path()
@@ -273,30 +272,7 @@ manifest_file <- generate_manifest(conn, temp_dir)
 exported_files <- c(exported_files, manifest_file)
 
 # -----------------------------------------------------------------------------
-# Step 9: Create ZIP file for convenience download
-# -----------------------------------------------------------------------------
-
-cli::cli_h2("Creating ZIP archive")
-
-zip_path <- file.path(temp_dir, ZIP_NAME)
-
-# Get just the filenames for ZIP (not full paths)
-files_to_zip <- basename(exported_files)
-
-# Create ZIP from within temp directory
-old_wd <- getwd()
-setwd(temp_dir)
-zip(ZIP_NAME, files = files_to_zip)
-setwd(old_wd)
-
-zip_size <- file.size(zip_path) / (1024^2)  # MB
-cli::cli_alert_success("Created {.file {ZIP_NAME}} ({round(zip_size, 1)} MB)")
-
-# Add ZIP to upload list
-exported_files <- c(exported_files, zip_path)
-
-# -----------------------------------------------------------------------------
-# Step 10: Ensure release exists and upload all files
+# Step 9: Ensure release exists and upload all files
 # -----------------------------------------------------------------------------
 
 cli::cli_h2("Uploading to GitHub")
@@ -328,7 +304,7 @@ for (file_path in exported_files) {
 cli::cli_progress_done()
 
 # -----------------------------------------------------------------------------
-# Step 11: Cleanup
+# Step 10: Cleanup
 # -----------------------------------------------------------------------------
 
 cli::cli_h2("Cleanup")
@@ -343,6 +319,6 @@ cli::cli_alert_success("Removed temp directory")
 cli::cli_h1("Upload Complete")
 cli::cli_alert_success("Uploaded {length(exported_files)} files to {.val {REPO}} release '{TAG}'")
 cli::cli_alert_info("Files: manifest.json, matches.parquet, players.parquet, match_innings.parquet,")
-cli::cli_alert_info("       innings_powerplays.parquet, {partition_count} deliveries_*.parquet, {ZIP_NAME}")
+cli::cli_alert_info("       innings_powerplays.parquet, {partition_count} deliveries_*.parquet")
 cli::cli_alert_info("")
 cli::cli_alert_info("Verify with: {.code piggyback::pb_list(repo = \"{REPO}\", tag = \"{TAG}\")}")
