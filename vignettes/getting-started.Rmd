@@ -75,7 +75,7 @@ Or use the helper functions for common queries:
 
 ```{r helper-queries}
 # Query matches with filters
-matches <- query_matches(match_type = "T20", limit = 20)
+matches <- head(query_matches(match_type = "T20"), 20)
 
 # Query deliveries with filters
 deliveries <- query_deliveries(batter_id = "V Kohli", match_type = "T20")

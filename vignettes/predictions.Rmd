@@ -141,16 +141,17 @@ The 400 divisor means that a 400-point difference corresponds to roughly 10:1 od
 - ELO updates after each match based on result vs expectation
 - Format-specific ELO tracks performance within T20/ODI/Test separately
 
-## Matchup Predictions
+## Batter vs Bowler Matchups
 
-Predict specific batter vs bowler outcomes:
+bouncer has no single-call prediction for one batter against one bowler.
+The closest is the historical record of that matchup:
 
 ```{r}
-# What happens when Kohli faces Bumrah?
-matchup <- predict_matchup_outcome(
-  batter = "V Kohli",
-  bowler = "J Bumrah",
-  format = "t20"
+# How has Kohli fared against Bumrah in T20s?
+matchup <- query_batter_stats(
+  batter_id = "V Kohli",
+  bowler_id = "J Bumrah",
+  match_type = "t20"
 )
 print(matchup)
 ```
