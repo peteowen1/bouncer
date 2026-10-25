@@ -14,7 +14,8 @@ store_centrality_snapshot(
 )
 }
 \arguments{
-\item{centrality_result}{Result from calculate_player_centrality().}
+\item{centrality_result}{List with \code{batters} and \code{bowlers} data frames, as
+built by data-raw/ratings/player/3way-elo/00_compute_centrality_snapshots.R.}
 
 \item{snapshot_date}{Date. The date of this snapshot (typically last match date).}
 

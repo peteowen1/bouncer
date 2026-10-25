@@ -805,3 +805,40 @@ calculate_venue_metrics <- function(result, innings_stats) {
   cli::cli_alert_success("Loaded stats for {nrow(result)} venue(s)")
   result
 }
+
+
+#' Add derived batting rates to per-batter totals
+#'
+#' Shared by query_batter_stats() and the player_metrics.R aggregators.
+#' Needs runs_scored, dismissals and balls_faced columns.
+#' @noRd
+.add_batting_rates <- function(df) {
+  df$batting_average <- ifelse(df$dismissals > 0,
+                               round(df$runs_scored / df$dismissals, 2),
+                               NA_real_)
+  df$runs_per_ball <- round(df$runs_scored / df$balls_faced, 4)
+  df$wickets_per_ball <- round(df$dismissals / df$balls_faced, 4)
+  df$strike_rate <- round((df$runs_scored / df$balls_faced) * 100, 2)
+  df$wicket_pct <- round((df$dismissals / df$balls_faced) * 100, 4)
+  df
+}
+
+
+#' Add derived bowling rates to per-bowler totals
+#'
+#' Shared by query_bowler_stats() and the player_metrics.R aggregators.
+#' Needs runs_conceded, wickets and balls_bowled columns.
+#' @noRd
+.add_bowling_rates <- function(df) {
+  df$bowling_average <- ifelse(df$wickets > 0,
+                               round(df$runs_conceded / df$wickets, 2),
+                               NA_real_)
+  df$runs_per_ball <- round(df$runs_conceded / df$balls_bowled, 4)
+  df$wickets_per_ball <- round(df$wickets / df$balls_bowled, 4)
+  df$economy_rate <- round((df$runs_conceded / df$balls_bowled) * 6, 2)
+  df$wicket_pct <- round((df$wickets / df$balls_bowled) * 100, 4)
+  df$strike_rate <- ifelse(df$wickets > 0,
+                           round(df$balls_bowled / df$wickets, 2),
+                           NA_real_)
+  df
+}

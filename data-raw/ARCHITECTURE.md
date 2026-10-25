@@ -64,8 +64,8 @@ STEP 6:  Team ELO (game-level) ────────────────�
                      STEP 12: Train In-Match Models (projected score + win prob)
                                      │
                      ┌───────────────┘
-                     v (uses Cricinfo data)
-                     STEP 13: Build Player Game Data (per-innings from Cricinfo)
+                     v (uses Cricsheet data + Step 2 RAA + Step 12 WP)
+                     STEP 13: Build Player Game Data (per-innings from Cricsheet)
                      STEP 14: Estimate Stat Ratings (Bayesian per-game)
                      STEP 15: Career Ratings (EPR + BOUNCER composite)
 ```
@@ -569,15 +569,17 @@ Two-stage architecture:
 
 ## Steps 13-15: Player Game Data → Stat Ratings → BOUNCER
 
-### Step 13: Player Game Data (Cricinfo)
+### Step 13: Player Game Data (Cricsheet)
 
-**Purpose:** Build per-innings player stats from Cricinfo ball-by-ball data
+**Purpose:** Build per-innings player stats from Cricsheet ball-by-ball data
 
 **Location:** `R/player_game_data.R`, `R/player_game_data_storage.R`
 
 **Key functions:** `create_player_game_data(format, conn)`, `store_player_game_data(conn, pgd, format)`
 
-Creates per-game batting and bowling records for each player, using Cricinfo as the primary source (richer than Cricsheet for this purpose — includes Hawkeye features, title-parsed player names).
+Creates per-game batting and bowling records for each player. The pipeline calls `create_player_game_data(fmt, conn = conn, source = "cricsheet")`, and `"cricsheet"` is also the function's default (since 2026-08-29, bouncerverse#84, because Cricinfo scraping stalled on 2026-02-20). It reads `cricsheet.deliveries`/`cricsheet.matches`, per-ball runs above average from `main.cricsheet_ball_raa` (scored with the Step 2 agnostic model by `build_cricsheet_raa()`) and win probability from `main.bouncer_wp_from_cricsheet` (scored with the Step 12 in-match models by `build_cricsheet_win_probability()`). `run_full_pipeline.R` does not call either builder; run them before Step 13. If either table is missing, the matching columns come back NA. Cricsheet has no Hawkeye fields, so the Hawkeye columns are still produced but carry no signal under this source.
+
+`source = "cricinfo"` is the original path, kept as an option: richer per-ball metadata (Hawkeye features, title-parsed player names) where Cricinfo has coverage.
 
 ### Step 14: Stat Ratings
 
@@ -615,7 +617,7 @@ Uses Bayesian shrinkage to produce stable per-game ratings that account for samp
 | In-Match | - | - | - | - | - | REQUIRED | - |
 | Simulation | - | REQUIRED | REQUIRED | REQUIRED | - | REQUIRED | - |
 | Attribution | - | REQUIRED | Optional | Optional | - | REQUIRED | - |
-| Player Game Data | - | - | - | - | - | - | REQUIRED |
+| Player Game Data | Via cricsheet_ball_raa (NA RAA without it) | - | - | - | - | - | Optional (`source = "cricinfo"` only) |
 | Stat Ratings | - | - | - | - | - | - | Player Game Data |
 | Career Ratings | - | - | - | - | - | - | Stat Ratings |
 
@@ -668,10 +670,10 @@ Cricsheet data ─→ Step 2 (Agnostic Model)
                                                                               │
                                                                     Steps 9-12 (Predictions + In-Match)
 
-Cricinfo data ──→ Step 13 (Player Game Data) ──→ Step 14 (Stat Ratings) ──→ Step 15 (BOUNCER)
+Cricsheet data + Step 2 RAA + Step 12 WP ──→ Step 13 (Player Game Data) ──→ Step 14 (Stat Ratings) ──→ Step 15 (BOUNCER)
 ```
 
-Steps 3, 4, 5, 5b can conceptually run in parallel (all depend on Step 2's agnostic baseline). Steps 8+ require all prior steps. Steps 13-15 depend on Cricinfo data but are independent of Steps 1-12.
+Steps 3, 4, 5, 5b can conceptually run in parallel (all depend on Step 2's agnostic baseline). Steps 8+ require all prior steps. Steps 13-15 build on Cricsheet data and on two tables scored with earlier steps' models: `main.cricsheet_ball_raa` (Step 2's agnostic model) and `main.bouncer_wp_from_cricsheet` (Step 12's in-match models), built by `build_cricsheet_raa()` and `build_cricsheet_win_probability()` outside `run_full_pipeline.R`. They are not independent of Steps 1-12. Cricinfo data is needed only with `source = "cricinfo"`.
 
 ---
 

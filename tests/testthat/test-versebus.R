@@ -415,3 +415,37 @@ test_that("vb_generation drops NA updated_at before max() instead of letting one
   gen <- vb_generation("test/fixture", "generation-na-tag")
   expect_identical(gen, "2026-03-01T00:00:00Z")
 })
+
+# --- 2026-10-25: gh's own HTTP cache (port of torp#271) ----------------------
+# gh caches every GET for GitHub's max-age=60, so the post-upload verify could
+# re-read a pre-upload listing for up to a minute. vb_publish turns it off via
+# .vb_with_fresh_listing() and restores the caller's setting.
+
+test_that(".vb_with_fresh_listing turns gh's HTTP cache off and restores it", {
+  withr::local_options(gh_cache = TRUE)
+  restore <- .vb_with_fresh_listing()
+  expect_false(getOption("gh_cache"))
+  restore()
+  expect_true(getOption("gh_cache"))
+})
+
+test_that("vb_publish's post-upload verify reads the listing with gh's cache off", {
+  skip_if_not_installed("digest")
+  withr::local_options(gh_cache = TRUE)
+  p <- file.path(withr::local_tempdir(), "a.parquet")
+  writeBin(charToRaw("PAR1........PAR1"), p)
+  testthat::local_mocked_bindings(pb_upload = function(...) invisible(NULL), .package = "piggyback")
+  seen <- logical(0)
+  testthat::local_mocked_bindings(
+    gh = function(...) {
+      seen <<- c(seen, isFALSE(getOption("gh_cache")))
+      list(assets = list(list(name = "a.parquet", size = file.size(p),
+                              updated_at = "2026-01-01T00:00:00Z", id = 1)))
+    },
+    .package = "gh"
+  )
+  suppressMessages(vb_publish(p, repo = "o/r", tag = "t", carry_forward = FALSE))
+  expect_true(length(seen) > 0L)
+  expect_true(all(seen))
+  expect_true(getOption("gh_cache"))
+})

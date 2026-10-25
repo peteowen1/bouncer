@@ -97,23 +97,7 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       SELECT DISTINCT
         m.match_id,
         m.event_name,
-        CASE
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%eliminator%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%playoff%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%semi%%' THEN 1
-          ELSE 0
-        END AS is_knockout,
-        CASE
-          WHEN LOWER(m.event_name) LIKE '%%world cup%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%ipl%%' OR LOWER(m.event_name) LIKE '%%indian premier%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%big bash%%' OR LOWER(m.event_name) LIKE '%%bbl%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%psl%%' OR LOWER(m.event_name) LIKE '%%super league%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%cpl%%' OR LOWER(m.event_name) LIKE '%%caribbean%%' THEN 2
-          WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
-          ELSE 3
-        END AS event_tier
+        %4$s
       FROM cricsheet.matches m
     )
     SELECT
@@ -156,7 +140,7 @@ build_cricsheet_raa <- function(format = c("t20", "odi", "test"),
       AND d.runs_batter <= 6
       AND d.batter_id IS NOT NULL
       AND d.bowler_id IS NOT NULL
-  ", type_list, short_over_filter, max_innings)))
+  ", type_list, short_over_filter, max_innings, .match_context_cases_sql())))
 
   if (nrow(balls) == 0) {
     cli::cli_abort("No scoreable {db_format} deliveries found in {.field cricsheet.deliveries}.")

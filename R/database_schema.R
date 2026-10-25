@@ -18,6 +18,282 @@ create_schemas <- function(conn) {
 }
 
 
+# ============================================================================
+# TABLE DDL BUILDERS
+# ============================================================================
+# Each per-format table family's columns are defined once here. create_schema()
+# and the create_format_*_table() / create_3way_elo_table() helpers all build
+# their CREATE TABLE statements from these, so the copies cannot drift.
+
+.create_table_sql <- function(table_name, if_not_exists, columns_sql) {
+  sprintf("CREATE TABLE %s%s (%s)",
+          if (if_not_exists) "IF NOT EXISTS " else "", table_name, columns_sql)
+}
+
+
+#' DDL for a {format}_player_skill table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.player_skill_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    delivery_id VARCHAR PRIMARY KEY,
+    match_id VARCHAR,
+    match_date DATE,
+    batter_id VARCHAR,
+    bowler_id VARCHAR,
+
+    -- Batter skill indices (before this delivery)
+    batter_scoring_index DOUBLE,    -- EMA of runs per ball
+    batter_survival_rate DOUBLE,    -- EMA of survival (1 - wicket rate)
+
+    -- Bowler skill indices (before this delivery)
+    bowler_economy_index DOUBLE,    -- EMA of runs conceded per ball
+    bowler_strike_rate DOUBLE,      -- EMA of wickets per ball
+
+    -- Expected values (from skill indices)
+    exp_runs DOUBLE,
+    exp_wicket DOUBLE,
+
+    -- Actual outcomes
+    actual_runs INTEGER,
+    is_wicket BOOLEAN,
+
+    -- Ball counts (for reliability)
+    batter_balls_faced INTEGER,
+    bowler_balls_bowled INTEGER
+  ")
+}
+
+
+#' DDL for a {format}_venue_skill table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.venue_skill_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    delivery_id VARCHAR PRIMARY KEY,
+    match_id VARCHAR,
+    match_date DATE,
+    venue VARCHAR,
+
+    -- Venue skill indices (before this delivery)
+    venue_run_rate DOUBLE,        -- EMA of runs per ball at venue
+    venue_wicket_rate DOUBLE,     -- EMA of wickets per ball at venue
+    venue_boundary_rate DOUBLE,   -- EMA of boundaries (4s + 6s) per ball
+    venue_dot_rate DOUBLE,        -- EMA of dot balls per ball
+
+    -- Ball count (for reliability)
+    venue_balls INTEGER,
+
+    -- Actual outcomes
+    actual_runs INTEGER,
+    is_wicket BOOLEAN,
+    is_boundary BOOLEAN,
+    is_dot BOOLEAN
+  ")
+}
+
+
+#' DDL for a {format}_team_skill table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.team_skill_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    delivery_id VARCHAR PRIMARY KEY,
+    match_id VARCHAR,
+    match_date DATE,
+    batting_team_id VARCHAR,
+    bowling_team_id VARCHAR,
+
+    -- Batting team skill indices (before this delivery)
+    batting_team_runs_skill DOUBLE,     -- Residual-based scoring ability
+    batting_team_wicket_skill DOUBLE,   -- Residual-based survival ability
+
+    -- Bowling team skill indices (before this delivery)
+    bowling_team_runs_skill DOUBLE,     -- Residual-based economy (restricting runs)
+    bowling_team_wicket_skill DOUBLE,   -- Residual-based strike ability
+
+    -- Agnostic model expectations (context-only baseline)
+    exp_runs_agnostic DOUBLE,
+    exp_wicket_agnostic DOUBLE,
+
+    -- Actual outcomes
+    actual_runs INTEGER,
+    is_wicket BOOLEAN,
+
+    -- Ball counts (for reliability)
+    batting_team_balls INTEGER,
+    bowling_team_balls INTEGER
+  ")
+}
+
+
+#' DDL for a {format}_score_projection table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.score_projection_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    delivery_id VARCHAR PRIMARY KEY,
+    match_id VARCHAR,
+    match_date DATE,
+    innings INTEGER,
+    batting_team_id VARCHAR,
+
+    -- Current state
+    current_score INTEGER,
+    balls_remaining INTEGER,
+    wickets_remaining INTEGER,
+
+    -- Resource values
+    resource_remaining DOUBLE,
+    resource_used DOUBLE,
+
+    -- Expected initial scores
+    eis_agnostic DOUBLE,
+    eis_full DOUBLE,
+
+    -- Projected scores
+    projected_agnostic DOUBLE,
+    projected_full DOUBLE,
+
+    -- Actual outcome (for validation)
+    final_innings_total INTEGER,
+
+    -- Change from previous delivery (for attribution)
+    projection_change_agnostic DOUBLE,
+    projection_change_full DOUBLE
+  ")
+}
+
+
+#' DDL for a {format}_3way_elo table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.three_way_elo_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    delivery_id VARCHAR PRIMARY KEY,
+    match_id VARCHAR,
+    match_date DATE,
+    batter_id VARCHAR,
+    bowler_id VARCHAR,
+    venue VARCHAR,
+
+    batter_run_elo_before DOUBLE,
+    batter_run_elo_after DOUBLE,
+    bowler_run_elo_before DOUBLE,
+    bowler_run_elo_after DOUBLE,
+
+    batter_wicket_elo_before DOUBLE,
+    batter_wicket_elo_after DOUBLE,
+    bowler_wicket_elo_before DOUBLE,
+    bowler_wicket_elo_after DOUBLE,
+
+    venue_perm_run_elo_before DOUBLE,
+    venue_perm_run_elo_after DOUBLE,
+    venue_perm_wicket_elo_before DOUBLE,
+    venue_perm_wicket_elo_after DOUBLE,
+
+    venue_session_run_elo_before DOUBLE,
+    venue_session_run_elo_after DOUBLE,
+    venue_session_wicket_elo_before DOUBLE,
+    venue_session_wicket_elo_after DOUBLE,
+
+    k_batter_run DOUBLE,
+    k_bowler_run DOUBLE,
+    k_venue_perm_run DOUBLE,
+    k_venue_session_run DOUBLE,
+    k_batter_wicket DOUBLE,
+    k_bowler_wicket DOUBLE,
+    k_venue_perm_wicket DOUBLE,
+    k_venue_session_wicket DOUBLE,
+
+    exp_runs DOUBLE,
+    exp_wicket DOUBLE,
+    actual_runs INTEGER,
+    is_wicket BOOLEAN,
+
+    batter_balls INTEGER,
+    bowler_balls INTEGER,
+    venue_balls INTEGER,
+    balls_in_match INTEGER,
+    days_inactive_batter INTEGER,
+    days_inactive_bowler INTEGER,
+
+    is_knockout BOOLEAN,
+    event_tier INTEGER,
+    phase VARCHAR
+  ")
+}
+
+
+#' DDL for three_way_elo_params (the shape store_3way_elo_params() writes).
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.three_way_elo_params_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    format VARCHAR PRIMARY KEY,
+    k_run_max DOUBLE,
+    k_run_min DOUBLE,
+    k_run_halflife DOUBLE,
+    k_wicket_max DOUBLE,
+    k_wicket_min DOUBLE,
+    k_wicket_halflife DOUBLE,
+    k_venue_perm_max DOUBLE,
+    k_venue_perm_min DOUBLE,
+    k_venue_perm_halflife DOUBLE,
+    k_venue_session_max DOUBLE,
+    k_venue_session_min DOUBLE,
+    k_venue_session_halflife DOUBLE,
+    w_batter DOUBLE,
+    w_bowler DOUBLE,
+    w_venue_perm DOUBLE,
+    w_venue_session DOUBLE,
+    runs_per_100_elo DOUBLE,
+    inactivity_halflife DOUBLE,
+    replacement_level DOUBLE,
+    last_delivery_id VARCHAR,
+    last_match_date DATE,
+    total_deliveries INTEGER,
+    calculated_at TIMESTAMP
+  ")
+}
+
+
+#' DDL for the pipeline_state table.
+#'
+#' @param table_name Character. Table to create.
+#' @param if_not_exists Logical. Emit CREATE TABLE IF NOT EXISTS.
+#' @return Character. A CREATE TABLE statement.
+#' @noRd
+.pipeline_state_ddl <- function(table_name, if_not_exists = TRUE) {
+  .create_table_sql(table_name, if_not_exists, "
+    step_name VARCHAR PRIMARY KEY,
+    last_run_at TIMESTAMP,
+    last_match_date DATE,
+    last_match_count INTEGER,
+    last_delivery_count INTEGER,
+    status VARCHAR
+  ")
+}
+
+
 #' Create Database Schema
 #'
 #' Creates all tables needed for cricket data storage.
@@ -465,35 +741,7 @@ create_schema <- function(conn, verbose = TRUE) {
 
   # Create T20 player skill table (EMA-based, drift-proof)
   log_table("t20_player_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS t20_player_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-
-      -- Batter skill indices (before this delivery)
-      batter_scoring_index DOUBLE,    -- EMA of runs per ball
-      batter_survival_rate DOUBLE,    -- EMA of survival (1 - wicket rate)
-
-      -- Bowler skill indices (before this delivery)
-      bowler_economy_index DOUBLE,    -- EMA of runs conceded per ball
-      bowler_strike_rate DOUBLE,      -- EMA of wickets per ball
-
-      -- Expected values (from skill indices)
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Ball counts (for reliability)
-      batter_balls_faced INTEGER,
-      bowler_balls_bowled INTEGER
-    )
-  ")
+  DBI::dbExecute(conn, .player_skill_ddl("t20_player_skill"))
 
   # Create skill calculation params table
   log_table("skill_calculation_params")
@@ -521,83 +769,12 @@ create_schema <- function(conn, verbose = TRUE) {
     )
   ")
 
-  # Create T20 venue skill table (EMA-based venue characteristics)
-  log_table("t20_venue_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS t20_venue_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      venue VARCHAR,
-
-      -- Venue skill indices (before this delivery)
-      venue_run_rate DOUBLE,        -- EMA of runs per ball at venue
-      venue_wicket_rate DOUBLE,     -- EMA of wickets per ball at venue
-      venue_boundary_rate DOUBLE,   -- EMA of boundaries (4s + 6s) per ball
-      venue_dot_rate DOUBLE,        -- EMA of dot balls per ball
-
-      -- Ball count (for reliability)
-      venue_balls INTEGER,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-      is_boundary BOOLEAN,
-      is_dot BOOLEAN
-    )
-  ")
-
-  # Create ODI venue skill table
-  log_table("odi_venue_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS odi_venue_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      venue VARCHAR,
-
-      -- Venue skill indices (before this delivery)
-      venue_run_rate DOUBLE,
-      venue_wicket_rate DOUBLE,
-      venue_boundary_rate DOUBLE,
-      venue_dot_rate DOUBLE,
-
-      -- Ball count (for reliability)
-      venue_balls INTEGER,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-      is_boundary BOOLEAN,
-      is_dot BOOLEAN
-    )
-  ")
-
-  # Create Test venue skill table
-  log_table("test_venue_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS test_venue_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      venue VARCHAR,
-
-      -- Venue skill indices (before this delivery)
-      venue_run_rate DOUBLE,
-      venue_wicket_rate DOUBLE,
-      venue_boundary_rate DOUBLE,
-      venue_dot_rate DOUBLE,
-
-      -- Ball count (for reliability)
-      venue_balls INTEGER,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-      is_boundary BOOLEAN,
-      is_dot BOOLEAN
-    )
-  ")
+  # Create per-format venue skill tables (EMA-based venue characteristics)
+  for (fmt in c("t20", "odi", "test")) {
+    table_name <- paste0(fmt, "_venue_skill")
+    log_table(table_name)
+    DBI::dbExecute(conn, .venue_skill_ddl(table_name))
+  }
 
   # Create venue skill calculation params table
   log_table("venue_skill_calculation_params")
@@ -616,89 +793,12 @@ create_schema <- function(conn, verbose = TRUE) {
     )
   ")
 
-  # Create T20 team skill table (per-delivery team skill indices)
-  log_table("t20_team_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS t20_team_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batting_team_id VARCHAR,
-      bowling_team_id VARCHAR,
-
-      -- Batting team skill indices (before this delivery)
-      batting_team_runs_skill DOUBLE,    -- EMA of runs residual when batting
-      batting_team_wicket_skill DOUBLE,  -- EMA of wicket residual when batting
-
-      -- Bowling team skill indices (before this delivery)
-      bowling_team_runs_skill DOUBLE,    -- EMA of runs residual when bowling
-      bowling_team_wicket_skill DOUBLE,  -- EMA of wicket residual when bowling
-
-      -- Agnostic model expectations
-      exp_runs_agnostic DOUBLE,
-      exp_wicket_agnostic DOUBLE,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Ball counts (for reliability)
-      batting_team_balls INTEGER,
-      bowling_team_balls INTEGER
-    )
-  ")
-
-  # Create ODI team skill table
-  log_table("odi_team_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS odi_team_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batting_team_id VARCHAR,
-      bowling_team_id VARCHAR,
-
-      batting_team_runs_skill DOUBLE,
-      batting_team_wicket_skill DOUBLE,
-      bowling_team_runs_skill DOUBLE,
-      bowling_team_wicket_skill DOUBLE,
-
-      exp_runs_agnostic DOUBLE,
-      exp_wicket_agnostic DOUBLE,
-
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      batting_team_balls INTEGER,
-      bowling_team_balls INTEGER
-    )
-  ")
-
-  # Create Test team skill table
-  log_table("test_team_skill")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS test_team_skill (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batting_team_id VARCHAR,
-      bowling_team_id VARCHAR,
-
-      batting_team_runs_skill DOUBLE,
-      batting_team_wicket_skill DOUBLE,
-      bowling_team_runs_skill DOUBLE,
-      bowling_team_wicket_skill DOUBLE,
-
-      exp_runs_agnostic DOUBLE,
-      exp_wicket_agnostic DOUBLE,
-
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      batting_team_balls INTEGER,
-      bowling_team_balls INTEGER
-    )
-  ")
+  # Create per-format team skill tables (per-delivery team skill indices)
+  for (fmt in c("t20", "odi", "test")) {
+    table_name <- paste0(fmt, "_team_skill")
+    log_table(table_name)
+    DBI::dbExecute(conn, .team_skill_ddl(table_name))
+  }
 
   # Create team skill calculation params table
   log_table("team_skill_calculation_params")
@@ -744,114 +844,16 @@ create_schema <- function(conn, verbose = TRUE) {
     )
   ")
 
-  # Create T20 score projection table (per-delivery projections)
-  log_table("t20_score_projection")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS t20_score_projection (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      innings INTEGER,
-      batting_team_id VARCHAR,
-
-      -- Current state
-      current_score INTEGER,
-      balls_remaining INTEGER,
-      wickets_remaining INTEGER,
-
-      -- Resource values
-      resource_remaining DOUBLE,
-      resource_used DOUBLE,
-
-      -- Expected initial scores
-      eis_agnostic DOUBLE,
-      eis_full DOUBLE,
-
-      -- Projected scores
-      projected_agnostic DOUBLE,
-      projected_full DOUBLE,
-
-      -- Actual outcome (for validation)
-      final_innings_total INTEGER,
-
-      -- Change from previous delivery (for attribution)
-      projection_change_agnostic DOUBLE,
-      projection_change_full DOUBLE
-    )
-  ")
-
-  # Create ODI score projection table
-  log_table("odi_score_projection")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS odi_score_projection (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      innings INTEGER,
-      batting_team_id VARCHAR,
-
-      current_score INTEGER,
-      balls_remaining INTEGER,
-      wickets_remaining INTEGER,
-
-      resource_remaining DOUBLE,
-      resource_used DOUBLE,
-
-      eis_agnostic DOUBLE,
-      eis_full DOUBLE,
-
-      projected_agnostic DOUBLE,
-      projected_full DOUBLE,
-
-      final_innings_total INTEGER,
-
-      projection_change_agnostic DOUBLE,
-      projection_change_full DOUBLE
-    )
-  ")
-
-  # Create Test score projection table
-  log_table("test_score_projection")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS test_score_projection (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      innings INTEGER,
-      batting_team_id VARCHAR,
-
-      current_score INTEGER,
-      balls_remaining INTEGER,
-      wickets_remaining INTEGER,
-
-      resource_remaining DOUBLE,
-      resource_used DOUBLE,
-
-      eis_agnostic DOUBLE,
-      eis_full DOUBLE,
-
-      projected_agnostic DOUBLE,
-      projected_full DOUBLE,
-
-      final_innings_total INTEGER,
-
-      projection_change_agnostic DOUBLE,
-      projection_change_full DOUBLE
-    )
-  ")
+  # Create per-format score projection tables (per-delivery projections)
+  for (fmt in c("t20", "odi", "test")) {
+    table_name <- paste0(fmt, "_score_projection")
+    log_table(table_name)
+    DBI::dbExecute(conn, .score_projection_ddl(table_name))
+  }
 
   # Create pipeline state table (for smart caching)
   log_table("pipeline_state")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS pipeline_state (
-      step_name VARCHAR PRIMARY KEY,
-      last_run_at TIMESTAMP,
-      last_match_date DATE,
-      last_match_count INTEGER,
-      last_delivery_count INTEGER,
-      status VARCHAR
-    )
-  ")
+  DBI::dbExecute(conn, .pipeline_state_ddl("pipeline_state"))
 
   # Create 3-way ELO tables (delegated to database_3way_elo.R)
   create_3way_elo_schema_tables(conn, verbose)
@@ -1393,229 +1395,16 @@ create_3way_elo_schema_tables <- function(conn, verbose = TRUE) {
     if (verbose) cli::cli_alert_info("Creating {name} table...")
   }
 
-  # Create T20 3-way ELO table
-  log_table("t20_3way_elo")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS t20_3way_elo (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-      venue VARCHAR,
-
-      -- Player Run ELOs (before/after)
-      batter_run_elo_before DOUBLE,
-      batter_run_elo_after DOUBLE,
-      bowler_run_elo_before DOUBLE,
-      bowler_run_elo_after DOUBLE,
-
-      -- Player Wicket ELOs (before/after)
-      batter_wicket_elo_before DOUBLE,
-      batter_wicket_elo_after DOUBLE,
-      bowler_wicket_elo_before DOUBLE,
-      bowler_wicket_elo_after DOUBLE,
-
-      -- Venue PERMANENT ELOs (slow-changing ground characteristics)
-      venue_perm_run_elo_before DOUBLE,
-      venue_perm_run_elo_after DOUBLE,
-      venue_perm_wicket_elo_before DOUBLE,
-      venue_perm_wicket_elo_after DOUBLE,
-
-      -- Venue SESSION ELOs (day-specific conditions, resets each match)
-      venue_session_run_elo_before DOUBLE,
-      venue_session_run_elo_after DOUBLE,
-      venue_session_wicket_elo_before DOUBLE,
-      venue_session_wicket_elo_after DOUBLE,
-
-      -- K-factors used (for analysis/debugging)
-      k_batter_run DOUBLE,
-      k_bowler_run DOUBLE,
-      k_venue_perm_run DOUBLE,
-      k_venue_session_run DOUBLE,
-      k_batter_wicket DOUBLE,
-      k_bowler_wicket DOUBLE,
-      k_venue_perm_wicket DOUBLE,
-      k_venue_session_wicket DOUBLE,
-
-      -- Predictions vs actuals
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Ball counts & context
-      batter_balls INTEGER,
-      bowler_balls INTEGER,
-      venue_balls INTEGER,
-      balls_in_match INTEGER,
-      days_inactive_batter INTEGER,
-      days_inactive_bowler INTEGER,
-
-      -- Situational flags (for analysis)
-      is_knockout BOOLEAN,
-      event_tier INTEGER,
-      phase VARCHAR
-    )
-  ")
-
-  # Create ODI 3-way ELO table
-  log_table("odi_3way_elo")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS odi_3way_elo (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-      venue VARCHAR,
-
-      batter_run_elo_before DOUBLE,
-      batter_run_elo_after DOUBLE,
-      bowler_run_elo_before DOUBLE,
-      bowler_run_elo_after DOUBLE,
-
-      batter_wicket_elo_before DOUBLE,
-      batter_wicket_elo_after DOUBLE,
-      bowler_wicket_elo_before DOUBLE,
-      bowler_wicket_elo_after DOUBLE,
-
-      venue_perm_run_elo_before DOUBLE,
-      venue_perm_run_elo_after DOUBLE,
-      venue_perm_wicket_elo_before DOUBLE,
-      venue_perm_wicket_elo_after DOUBLE,
-
-      venue_session_run_elo_before DOUBLE,
-      venue_session_run_elo_after DOUBLE,
-      venue_session_wicket_elo_before DOUBLE,
-      venue_session_wicket_elo_after DOUBLE,
-
-      k_batter_run DOUBLE,
-      k_bowler_run DOUBLE,
-      k_venue_perm_run DOUBLE,
-      k_venue_session_run DOUBLE,
-      k_batter_wicket DOUBLE,
-      k_bowler_wicket DOUBLE,
-      k_venue_perm_wicket DOUBLE,
-      k_venue_session_wicket DOUBLE,
-
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      batter_balls INTEGER,
-      bowler_balls INTEGER,
-      venue_balls INTEGER,
-      balls_in_match INTEGER,
-      days_inactive_batter INTEGER,
-      days_inactive_bowler INTEGER,
-
-      is_knockout BOOLEAN,
-      event_tier INTEGER,
-      phase VARCHAR
-    )
-  ")
-
-  # Create Test 3-way ELO table
-  log_table("test_3way_elo")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS test_3way_elo (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-      venue VARCHAR,
-
-      batter_run_elo_before DOUBLE,
-      batter_run_elo_after DOUBLE,
-      bowler_run_elo_before DOUBLE,
-      bowler_run_elo_after DOUBLE,
-
-      batter_wicket_elo_before DOUBLE,
-      batter_wicket_elo_after DOUBLE,
-      bowler_wicket_elo_before DOUBLE,
-      bowler_wicket_elo_after DOUBLE,
-
-      venue_perm_run_elo_before DOUBLE,
-      venue_perm_run_elo_after DOUBLE,
-      venue_perm_wicket_elo_before DOUBLE,
-      venue_perm_wicket_elo_after DOUBLE,
-
-      venue_session_run_elo_before DOUBLE,
-      venue_session_run_elo_after DOUBLE,
-      venue_session_wicket_elo_before DOUBLE,
-      venue_session_wicket_elo_after DOUBLE,
-
-      k_batter_run DOUBLE,
-      k_bowler_run DOUBLE,
-      k_venue_perm_run DOUBLE,
-      k_venue_session_run DOUBLE,
-      k_batter_wicket DOUBLE,
-      k_bowler_wicket DOUBLE,
-      k_venue_perm_wicket DOUBLE,
-      k_venue_session_wicket DOUBLE,
-
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      batter_balls INTEGER,
-      bowler_balls INTEGER,
-      venue_balls INTEGER,
-      balls_in_match INTEGER,
-      days_inactive_batter INTEGER,
-      days_inactive_bowler INTEGER,
-
-      is_knockout BOOLEAN,
-      event_tier INTEGER,
-      phase VARCHAR
-    )
-  ")
+  # Create legacy unprefixed 3-way ELO tables
+  for (fmt in c("t20", "odi", "test")) {
+    table_name <- paste0(fmt, "_3way_elo")
+    log_table(table_name)
+    DBI::dbExecute(conn, .three_way_elo_ddl(table_name))
+  }
 
   # Create 3-way ELO params table (for storing optimized parameters)
   log_table("three_way_elo_params")
-  DBI::dbExecute(conn, "
-    CREATE TABLE IF NOT EXISTS three_way_elo_params (
-      format VARCHAR PRIMARY KEY,
-
-      -- Player K-factor parameters
-      k_run_max DOUBLE,
-      k_run_min DOUBLE,
-      k_run_halflife DOUBLE,
-      k_wicket_max DOUBLE,
-      k_wicket_min DOUBLE,
-      k_wicket_halflife DOUBLE,
-
-      -- Venue K-factor parameters
-      k_venue_perm_max DOUBLE,
-      k_venue_perm_min DOUBLE,
-      k_venue_perm_halflife DOUBLE,
-      k_venue_session_base DOUBLE,
-      k_venue_session_min DOUBLE,
-      k_venue_session_halflife DOUBLE,
-
-      -- Attribution weights
-      w_batter DOUBLE,
-      w_bowler DOUBLE,
-      w_venue DOUBLE,
-      venue_w_permanent DOUBLE,
-      venue_w_session DOUBLE,
-
-      -- Other parameters
-      runs_per_100_elo DOUBLE,
-      inactivity_halflife DOUBLE,
-      replacement_level DOUBLE,
-
-      -- Tracking
-      last_delivery_id VARCHAR,
-      last_match_date DATE,
-      total_deliveries INTEGER,
-      calculated_at TIMESTAMP
-    )
-  ")
+  DBI::dbExecute(conn, .three_way_elo_params_ddl("three_way_elo_params"))
 
   # Create 3-way ELO drift metrics table (for monitoring)
   log_table("three_way_elo_drift_metrics")
@@ -1656,61 +1445,7 @@ create_3way_elo_table <- function(format, conn, overwrite = FALSE) {
   }
 
   # Create the table
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE IF NOT EXISTS %s (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-      venue VARCHAR,
-
-      batter_run_elo_before DOUBLE,
-      batter_run_elo_after DOUBLE,
-      bowler_run_elo_before DOUBLE,
-      bowler_run_elo_after DOUBLE,
-
-      batter_wicket_elo_before DOUBLE,
-      batter_wicket_elo_after DOUBLE,
-      bowler_wicket_elo_before DOUBLE,
-      bowler_wicket_elo_after DOUBLE,
-
-      venue_perm_run_elo_before DOUBLE,
-      venue_perm_run_elo_after DOUBLE,
-      venue_perm_wicket_elo_before DOUBLE,
-      venue_perm_wicket_elo_after DOUBLE,
-
-      venue_session_run_elo_before DOUBLE,
-      venue_session_run_elo_after DOUBLE,
-      venue_session_wicket_elo_before DOUBLE,
-      venue_session_wicket_elo_after DOUBLE,
-
-      k_batter_run DOUBLE,
-      k_bowler_run DOUBLE,
-      k_venue_perm_run DOUBLE,
-      k_venue_session_run DOUBLE,
-      k_batter_wicket DOUBLE,
-      k_bowler_wicket DOUBLE,
-      k_venue_perm_wicket DOUBLE,
-      k_venue_session_wicket DOUBLE,
-
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      batter_balls INTEGER,
-      bowler_balls INTEGER,
-      venue_balls INTEGER,
-      balls_in_match INTEGER,
-      days_inactive_batter INTEGER,
-      days_inactive_bowler INTEGER,
-
-      is_knockout BOOLEAN,
-      event_tier INTEGER,
-      phase VARCHAR
-    )
-  ", table_name))
+  DBI::dbExecute(conn, .three_way_elo_ddl(table_name))
 
   # Create indexes
   DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_match ON %s(match_id)",
@@ -1792,505 +1527,6 @@ get_3way_elo_stats <- function(format, conn) {
   ", table_name))
 
   as.list(stats)
-}
-
-
-#' Delete 3-Way ELO Data for Matches
-#'
-#' Deletes 3-way ELO data for specified matches.
-#'
-#' @param match_ids Character vector of match IDs to delete.
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#' @param verbose Logical. Print progress messages. Default TRUE.
-#'
-#' @return Invisibly returns number of rows deleted.
-#' @keywords internal
-delete_3way_elo_matches <- function(match_ids, format, conn, verbose = TRUE) {
-  if (length(match_ids) == 0) {
-    return(invisible(0))
-  }
-
-  table_name <- paste0(tolower(format), "_3way_elo")
-
-  if (!table_exists(conn, table_name)) {
-    return(invisible(0))
-  }
-
-  match_ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
-  sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
-
-  n_deleted <- tryCatch({
-    DBI::dbExecute(conn, sql)
-  }, error = function(e) {
-    if (verbose) cli::cli_alert_warning("Could not delete from {table_name}: {e$message}")
-    0
-  })
-
-  if (n_deleted > 0 && verbose) {
-    cli::cli_alert_success("Deleted {n_deleted} rows from {table_name}")
-  }
-
-  invisible(n_deleted)
-}
-
-
-#' Get Latest 3-Way ELO State for Players
-#'
-#' Returns the most recent ELO values for all players in a format.
-#'
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#' @param elo_type Character. "run" or "wicket". Default "run".
-#'
-#' @return data.frame with player_id, role (batter/bowler), and latest ELO.
-#' @keywords internal
-get_latest_3way_player_elos <- function(format, conn, elo_type = "run") {
-  table_name <- paste0(tolower(format), "_3way_elo")
-
-  if (!table_exists(conn, table_name)) {
-    return(data.frame())
-  }
-
-  elo_col <- if (elo_type == "run") "run_elo_after" else "wicket_elo_after"
-
-  # Get latest batter ELOs
-  batters <- DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        batter_id as player_id,
-        batter_%s as elo,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT player_id, elo, match_date, 'batter' as role
-    FROM ranked
-    WHERE rn = 1
-  ", elo_col, table_name))
-
-  # Get latest bowler ELOs
-  bowlers <- DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        bowler_id as player_id,
-        bowler_%s as elo,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT player_id, elo, match_date, 'bowler' as role
-    FROM ranked
-    WHERE rn = 1
-  ", elo_col, table_name))
-
-  rbind(batters, bowlers)
-}
-
-
-#' Get Latest 3-Way ELO State for Venues
-#'
-#' Returns the most recent ELO values for all venues in a format.
-#'
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#'
-#' @return data.frame with venue, permanent ELOs, and latest match date.
-#' @keywords internal
-get_latest_3way_venue_elos <- function(format, conn) {
-  table_name <- paste0(tolower(format), "_3way_elo")
-
-  if (!table_exists(conn, table_name)) {
-    return(data.frame())
-  }
-
-  DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        venue,
-        venue_perm_run_elo_after,
-        venue_perm_wicket_elo_after,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY venue ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT
-      venue,
-      venue_perm_run_elo_after as perm_run_elo,
-      venue_perm_wicket_elo_after as perm_wicket_elo,
-      match_date as last_match_date
-    FROM ranked
-    WHERE rn = 1
-  ", table_name))
-}
-
-
-# ============================================================================
-# SKILL INDICES TABLE SCHEMA (from database_skill_indices.R)
-# ============================================================================
-
-create_3way_skill_table <- function(format, conn, overwrite = FALSE) {
-  # Keep gender prefix in table name to avoid overwrites between men's and women's
-  # e.g., "mens_t20" -> "mens_t20_3way_skill", "womens_t20" -> "womens_t20_3way_skill"
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  if (overwrite) {
-    DBI::dbExecute(conn, sprintf("DROP TABLE IF EXISTS %s", table_name))
-    cli::cli_alert_info("Dropped existing table: {table_name}")
-  }
-
-  # Check if table exists
-  if (table_exists(conn, table_name)) {
-    cli::cli_alert_info("Table {table_name} already exists")
-    return(invisible(TRUE))
-  }
-
-  # Create the table - columns use "skill" suffix instead of "elo"
-  # Values are now centered at 0 (neutral) with typical range ±0.5
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE IF NOT EXISTS %s (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-      venue VARCHAR,
-
-      -- Player Run Skills (deviation from expected runs/ball)
-      batter_run_skill_before DOUBLE,
-      batter_run_skill_after DOUBLE,
-      bowler_run_skill_before DOUBLE,
-      bowler_run_skill_after DOUBLE,
-
-      -- Player Wicket Skills (deviation from expected wicket probability)
-      batter_wicket_skill_before DOUBLE,
-      batter_wicket_skill_after DOUBLE,
-      bowler_wicket_skill_before DOUBLE,
-      bowler_wicket_skill_after DOUBLE,
-
-      -- Venue Permanent Skills (long-term venue characteristics)
-      venue_perm_run_skill_before DOUBLE,
-      venue_perm_run_skill_after DOUBLE,
-      venue_perm_wicket_skill_before DOUBLE,
-      venue_perm_wicket_skill_after DOUBLE,
-
-      -- Venue Session Skills (current match conditions, resets each match)
-      venue_session_run_skill_before DOUBLE,
-      venue_session_run_skill_after DOUBLE,
-      venue_session_wicket_skill_before DOUBLE,
-      venue_session_wicket_skill_after DOUBLE,
-
-      -- Learning Rates (alpha, equivalent to K-factors)
-      alpha_batter_run DOUBLE,
-      alpha_bowler_run DOUBLE,
-      alpha_venue_perm_run DOUBLE,
-      alpha_venue_session_run DOUBLE,
-      alpha_batter_wicket DOUBLE,
-      alpha_bowler_wicket DOUBLE,
-      alpha_venue_perm_wicket DOUBLE,
-      alpha_venue_session_wicket DOUBLE,
-
-      -- Predictions/actuals (from agnostic model)
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Context
-      batter_balls INTEGER,
-      bowler_balls INTEGER,
-      venue_balls INTEGER,
-      balls_in_match INTEGER,
-      days_inactive_batter INTEGER,
-      days_inactive_bowler INTEGER,
-
-      is_knockout BOOLEAN,
-      event_tier INTEGER,
-      phase VARCHAR
-    )
-  ", table_name))
-
-  # Create indexes
-  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_match ON %s(match_id)",
-                               gsub("_3way_skill", "_3way_sk", table_name), table_name))
-  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_batter ON %s(batter_id)",
-                               gsub("_3way_skill", "_3way_sk", table_name), table_name))
-  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_bowler ON %s(bowler_id)",
-                               gsub("_3way_skill", "_3way_sk", table_name), table_name))
-  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_venue ON %s(venue)",
-                               gsub("_3way_skill", "_3way_sk", table_name), table_name))
-  DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_date ON %s(match_date)",
-                               gsub("_3way_skill", "_3way_sk", table_name), table_name))
-
-  cli::cli_alert_success("Created table: {table_name}")
-  invisible(TRUE)
-}
-
-
-#' Insert 3-Way Skill Index Data
-#'
-#' Inserts 3-way skill index data into the format-specific table.
-#'
-#' @param df data.frame/data.table with 3-way skill columns.
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#'
-#' @return Invisibly returns TRUE on success.
-#' @keywords internal
-insert_3way_skills <- function(df, format, conn) {
-  # Keep gender prefix in table name
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  # Check table exists
-  if (!table_exists(conn, table_name)) {
-    cli::cli_alert_danger("Table {table_name} does not exist")
-    return(invisible(FALSE))
-  }
-
-  # Use DBI::dbWriteTable with append mode
-  DBI::dbWriteTable(conn, table_name, df, append = TRUE, row.names = FALSE)
-
-  invisible(TRUE)
-}
-
-
-#' Get 3-Way Skill Index Statistics
-#'
-#' Returns summary statistics for the 3-way skill index table.
-#'
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#'
-#' @return List with statistics or NULL if table doesn't exist.
-#' @keywords internal
-get_3way_skill_stats <- function(format, conn) {
-  # Keep gender prefix in table name
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  # Check table exists
-  if (!table_exists(conn, table_name)) {
-    return(NULL)
-  }
-
-  stats <- DBI::dbGetQuery(conn, sprintf("
-    SELECT
-      COUNT(*) as total_records,
-      COUNT(DISTINCT batter_id) as unique_batters,
-      COUNT(DISTINCT bowler_id) as unique_bowlers,
-      COUNT(DISTINCT venue) as unique_venues,
-      MIN(match_date) as first_date,
-      MAX(match_date) as last_date,
-      AVG(batter_run_skill_after) as mean_batter_run_skill,
-      AVG(bowler_run_skill_after) as mean_bowler_run_skill,
-      AVG(batter_wicket_skill_after) as mean_batter_wicket_skill,
-      AVG(bowler_wicket_skill_after) as mean_bowler_wicket_skill,
-      AVG(venue_perm_run_skill_after) as mean_venue_perm_run_skill,
-      AVG(venue_session_run_skill_after) as mean_venue_session_run_skill,
-      STDDEV(batter_run_skill_after) as sd_batter_run_skill,
-      STDDEV(bowler_run_skill_after) as sd_bowler_run_skill,
-      AVG(exp_runs) as mean_exp_runs,
-      AVG(actual_runs) as mean_actual_runs,
-      AVG(exp_wicket) as mean_exp_wicket,
-      AVG(CAST(is_wicket AS DOUBLE)) as actual_wicket_rate
-    FROM %s
-  ", table_name))
-
-  as.list(stats)
-}
-
-
-#' Delete 3-Way Skill Index Data for Matches
-#'
-#' Deletes 3-way skill index data for specified matches.
-#'
-#' @param match_ids Character vector of match IDs to delete.
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#' @param verbose Logical. Print progress messages. Default TRUE.
-#'
-#' @return Invisibly returns number of rows deleted.
-#' @keywords internal
-delete_3way_skill_matches <- function(match_ids, format, conn, verbose = TRUE) {
-  if (length(match_ids) == 0) {
-    return(invisible(0))
-  }
-
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  if (!table_exists(conn, table_name)) {
-    return(invisible(0))
-  }
-
-  match_ids_sql <- paste0("'", escape_sql_quotes(match_ids), "'", collapse = ", ")
-  sql <- sprintf("DELETE FROM %s WHERE match_id IN (%s)", table_name, match_ids_sql)
-
-  n_deleted <- tryCatch({
-    DBI::dbExecute(conn, sql)
-  }, error = function(e) {
-    if (verbose) cli::cli_alert_warning("Could not delete from {table_name}: {e$message}")
-    0
-  })
-
-  if (n_deleted > 0 && verbose) {
-    cli::cli_alert_success("Deleted {n_deleted} rows from {table_name}")
-  }
-
-  invisible(n_deleted)
-}
-
-
-#' Get Latest 3-Way Skill Index State for Players
-#'
-#' Returns the most recent skill values for all players in a format.
-#'
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#' @param skill_type Character. "run" or "wicket". Default "run".
-#'
-#' @return data.frame with player_id, role (batter/bowler), and latest skill.
-#' @keywords internal
-get_latest_3way_player_skills <- function(format, conn, skill_type = "run") {
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  if (!table_exists(conn, table_name)) {
-    return(data.frame())
-  }
-
-  skill_col <- if (skill_type == "run") "run_skill_after" else "wicket_skill_after"
-
-  # Get latest batter skills
-  batters <- DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        batter_id as player_id,
-        batter_%s as skill,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT player_id, skill, match_date, 'batter' as role
-    FROM ranked
-    WHERE rn = 1
-  ", skill_col, table_name))
-
-  # Get latest bowler skills
-  bowlers <- DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        bowler_id as player_id,
-        bowler_%s as skill,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT player_id, skill, match_date, 'bowler' as role
-    FROM ranked
-    WHERE rn = 1
-  ", skill_col, table_name))
-
-  rbind(batters, bowlers)
-}
-
-
-#' Get Latest 3-Way Skill Index State for Venues
-#'
-#' Returns the most recent skill values for all venues in a format.
-#'
-#' @param format Character. Format identifier (e.g., "t20", "mens_t20").
-#' @param conn A DuckDB connection object.
-#'
-#' @return data.frame with venue, permanent skills, and latest match date.
-#' @keywords internal
-get_latest_3way_venue_skills <- function(format, conn) {
-  table_name <- paste0(tolower(format), "_3way_skill")
-
-  if (!table_exists(conn, table_name)) {
-    return(data.frame())
-  }
-
-  DBI::dbGetQuery(conn, sprintf("
-    WITH ranked AS (
-      SELECT
-        venue,
-        venue_perm_run_skill_after,
-        venue_perm_wicket_skill_after,
-        match_date,
-        ROW_NUMBER() OVER (PARTITION BY venue ORDER BY match_date DESC, delivery_id DESC) as rn
-      FROM %s
-    )
-    SELECT
-      venue,
-      venue_perm_run_skill_after as perm_run_skill,
-      venue_perm_wicket_skill_after as perm_wicket_skill,
-      match_date as last_match_date
-    FROM ranked
-    WHERE rn = 1
-  ", table_name))
-}
-
-
-#' Store 3-Way Skill Index Parameters
-#'
-#' Stores the parameters used for skill index calculation for reproducibility.
-#'
-#' @param params List of parameters used for calculation.
-#' @param last_delivery_id Character. ID of last processed delivery.
-#' @param last_match_date Date. Date of last processed match.
-#' @param total_deliveries Integer. Total deliveries processed.
-#' @param conn A DuckDB connection object.
-#'
-#' @return Invisibly returns TRUE on success.
-#' @keywords internal
-store_3way_skill_params <- function(params, last_delivery_id, last_match_date,
-                                     total_deliveries, conn) {
-  # Ensure table exists
-  if (!table_exists(conn, "skill_index_params")) {
-    DBI::dbExecute(conn, "
-      CREATE TABLE IF NOT EXISTS skill_index_params (
-        format VARCHAR PRIMARY KEY,
-        alpha_run_max DOUBLE,
-        alpha_run_min DOUBLE,
-        alpha_run_halflife DOUBLE,
-        alpha_wicket_max DOUBLE,
-        alpha_wicket_min DOUBLE,
-        alpha_wicket_halflife DOUBLE,
-        decay_rate DOUBLE,
-        w_batter_run DOUBLE,
-        w_bowler_run DOUBLE,
-        w_venue_session_run DOUBLE,
-        w_venue_perm_run DOUBLE,
-        last_delivery_id VARCHAR,
-        last_match_date DATE,
-        total_deliveries INTEGER,
-        calculated_at TIMESTAMP
-      )
-    ")
-  }
-
-  # Delete existing entry for this format
-  DBI::dbExecute(conn, "DELETE FROM skill_index_params WHERE format = ?",
-                 params = list(params$format))
-
-  # Insert new parameters
-  DBI::dbExecute(conn, "
-    INSERT INTO skill_index_params
-    (format, alpha_run_max, alpha_run_min, alpha_run_halflife,
-     alpha_wicket_max, alpha_wicket_min, alpha_wicket_halflife,
-     decay_rate, w_batter_run, w_bowler_run, w_venue_session_run, w_venue_perm_run,
-     last_delivery_id, last_match_date, total_deliveries, calculated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ", params = list(
-    params$format,
-    params$alpha_run_max, params$alpha_run_min, params$alpha_run_halflife,
-    params$alpha_wicket_max, params$alpha_wicket_min, params$alpha_wicket_halflife,
-    params$decay_rate,
-    params$w_batter_run, params$w_bowler_run,
-    params$w_venue_session_run, params$w_venue_perm_run,
-    last_delivery_id, as.character(last_match_date),
-    total_deliveries, Sys.time()
-  ))
-
-  invisible(TRUE)
 }
 
 

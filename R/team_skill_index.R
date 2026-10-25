@@ -100,35 +100,7 @@ create_format_team_skill_table <- function(format = "t20", conn, overwrite = FAL
   # Create table
   cli::cli_alert_info("Creating '{table_name}' table...")
 
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE %s (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batting_team_id VARCHAR,
-      bowling_team_id VARCHAR,
-
-      -- Batting team skill indices (before this delivery)
-      batting_team_runs_skill DOUBLE,     -- Residual-based scoring ability
-      batting_team_wicket_skill DOUBLE,   -- Residual-based survival ability
-
-      -- Bowling team skill indices (before this delivery)
-      bowling_team_runs_skill DOUBLE,     -- Residual-based economy (restricting runs)
-      bowling_team_wicket_skill DOUBLE,   -- Residual-based strike ability
-
-      -- Agnostic model expectations (context-only baseline)
-      exp_runs_agnostic DOUBLE,
-      exp_wicket_agnostic DOUBLE,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Ball counts (for reliability)
-      batting_team_balls INTEGER,
-      bowling_team_balls INTEGER
-    )
-  ", table_name))
+  DBI::dbExecute(conn, .team_skill_ddl(table_name, if_not_exists = FALSE))
 
   # Create indexes
   DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_team_skill_match ON %s(match_id)", format, table_name))
@@ -500,44 +472,9 @@ join_team_skill_indices <- function(deliveries_df, format = "t20", conn,
                                                        "bowling_team_balls")) {
 
   table_name <- get_skill_table_name(format, "team_skill")
-
-  if (!table_exists(conn, table_name)) {
-    cli::cli_alert_warning("Table '{table_name}' does not exist")
-    cli::cli_alert_info("Run 02_calculate_team_skill_indices.R first")
-    return(deliveries_df)
-  }
-
-  if (!"delivery_id" %in% names(deliveries_df)) {
-    cli::cli_alert_danger("deliveries_df must contain 'delivery_id' column")
-    return(deliveries_df)
-  }
-
-  # Get skill indices for matching delivery_ids
-  delivery_ids <- unique(deliveries_df$delivery_id)
-
-  # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-  delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
-
-  skill_data <- DBI::dbGetQuery(conn, sprintf("
-    SELECT delivery_id, %s
-    FROM %s
-    WHERE delivery_id IN ('%s')
-  ", paste(skill_columns, collapse = ", "),
-     table_name,
-     paste(delivery_ids_escaped, collapse = "','")))
-
-  if (nrow(skill_data) == 0) {
-    cli::cli_alert_warning("No matching team skill indices found")
-    return(deliveries_df)
-  }
-
-  # Join to deliveries
-  result <- dplyr::left_join(deliveries_df, skill_data, by = "delivery_id")
-
-  n_matched <- sum(!is.na(result[[skill_columns[1]]]))
-  cli::cli_alert_success("Joined team skill indices: {n_matched}/{nrow(deliveries_df)} deliveries matched")
-
-  result
+  .join_skill_table(deliveries_df, conn, table_name, skill_columns,
+                    label = "team skill indices",
+                    run_hint = "Run 02_calculate_team_skill_indices.R first")
 }
 
 

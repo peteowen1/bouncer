@@ -197,6 +197,105 @@ build_remote_where_clause <- function(match_type = NULL, season = NULL, team = N
 }
 
 
+#' Build the shared WHERE clause for delivery queries
+#'
+#' Used by query_deliveries(), query_batter_stats() and query_bowler_stats().
+#' Every filter is optional; NULL means "no filter".
+#'
+#' @return List with `clauses` (character vector of conditions on
+#'   cricsheet.deliveries aliased `d`, plus `m` for the event filter),
+#'   `params` (list of bound values, in placeholder order) and
+#'   `needs_match_join` (TRUE when the query must join cricsheet.matches as `m`).
+#' @noRd
+.build_delivery_where <- function(match_id = NULL, match_type = NULL,
+                                  player_id = NULL, batter_id = NULL,
+                                  bowler_id = NULL, season = NULL, venue = NULL,
+                                  city = NULL, country = NULL, event = NULL,
+                                  date_range = NULL, batting_team = NULL,
+                                  bowling_team = NULL) {
+  where_clauses <- character()
+  params <- list()
+
+  if (!is.null(match_id)) {
+    where_clauses <- c(where_clauses, "d.match_id = ?")
+    params <- c(params, list(match_id))
+  }
+
+  if (!is.null(match_type)) {
+    match_type <- normalize_format(match_type)
+    where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
+    params <- c(params, list(match_type))
+  }
+
+  if (!is.null(player_id)) {
+    where_clauses <- c(where_clauses, "(d.batter_id = ? OR d.bowler_id = ?)")
+    params <- c(params, list(player_id, player_id))
+  }
+
+  if (!is.null(batter_id)) {
+    where_clauses <- c(where_clauses, "d.batter_id = ?")
+    params <- c(params, list(batter_id))
+  }
+
+  if (!is.null(bowler_id)) {
+    where_clauses <- c(where_clauses, "d.bowler_id = ?")
+    params <- c(params, list(bowler_id))
+  }
+
+  if (!is.null(season)) {
+    where_clauses <- c(where_clauses, "d.season = ?")
+    params <- c(params, list(as.character(season)))
+  }
+
+  if (!is.null(venue)) {
+    where_clauses <- c(where_clauses, "LOWER(d.venue) LIKE LOWER(?)")
+    params <- c(params, list(paste0("%", venue, "%")))
+  }
+
+  if (!is.null(city)) {
+    where_clauses <- c(where_clauses, "LOWER(d.city) LIKE LOWER(?)")
+    params <- c(params, list(paste0("%", city, "%")))
+  }
+
+  if (!is.null(country)) {
+    # Get venues in the specified country using the venue-country map
+    venue_map <- get_venue_country_map()
+    venues_in_country <- names(venue_map)[tolower(venue_map) == tolower(country)]
+    if (length(venues_in_country) > 0) {
+      placeholders <- paste(rep("?", length(venues_in_country)), collapse = ", ")
+      where_clauses <- c(where_clauses, sprintf("d.venue IN (%s)", placeholders))
+      params <- c(params, as.list(venues_in_country))
+    } else {
+      # No venues found for this country - return empty result
+      where_clauses <- c(where_clauses, "1 = 0")
+    }
+  }
+
+  if (!is.null(event)) {
+    where_clauses <- c(where_clauses, "LOWER(m.event_name) LIKE LOWER(?)")
+    params <- c(params, list(paste0("%", event, "%")))
+  }
+
+  if (!is.null(date_range) && length(date_range) == 2) {
+    where_clauses <- c(where_clauses, "d.match_date BETWEEN ? AND ?")
+    params <- c(params, list(date_range[1], date_range[2]))
+  }
+
+  if (!is.null(batting_team)) {
+    where_clauses <- c(where_clauses, "d.batting_team = ?")
+    params <- c(params, list(batting_team))
+  }
+
+  if (!is.null(bowling_team)) {
+    where_clauses <- c(where_clauses, "d.bowling_team = ?")
+    params <- c(params, list(bowling_team))
+  }
+
+  list(clauses = where_clauses, params = params,
+       needs_match_join = !is.null(event))
+}
+
+
 #' Query Deliveries
 #'
 #' Query ball-by-ball delivery data with flexible filters.
@@ -283,87 +382,15 @@ query_deliveries <- function(match_id = NULL,
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Determine if we need to join with matches table (for event filter)
-  needs_match_join <- !is.null(event)
-
-  # Build WHERE clause
-  where_clauses <- character()
-  params <- list()
-
-  if (!is.null(match_id)) {
-    where_clauses <- c(where_clauses, "d.match_id = ?")
-    params <- c(params, list(match_id))
-  }
-
-  if (!is.null(match_type)) {
-    match_type <- normalize_format(match_type)
-    where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
-    params <- c(params, list(match_type))
-  }
-
-  if (!is.null(player_id)) {
-    where_clauses <- c(where_clauses, "(d.batter_id = ? OR d.bowler_id = ?)")
-    params <- c(params, list(player_id, player_id))
-  }
-
-  if (!is.null(batter_id)) {
-    where_clauses <- c(where_clauses, "d.batter_id = ?")
-    params <- c(params, list(batter_id))
-  }
-
-  if (!is.null(bowler_id)) {
-    where_clauses <- c(where_clauses, "d.bowler_id = ?")
-    params <- c(params, list(bowler_id))
-  }
-
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, "d.season = ?")
-    params <- c(params, list(as.character(season)))
-  }
-
-  if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, "LOWER(d.venue) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", venue, "%")))
-  }
-
-  if (!is.null(city)) {
-    where_clauses <- c(where_clauses, "LOWER(d.city) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", city, "%")))
-  }
-
-  if (!is.null(country)) {
-    # Get venues in the specified country using the venue-country map
-    venue_map <- get_venue_country_map()
-    venues_in_country <- names(venue_map)[tolower(venue_map) == tolower(country)]
-    if (length(venues_in_country) > 0) {
-      placeholders <- paste(rep("?", length(venues_in_country)), collapse = ", ")
-      where_clauses <- c(where_clauses, sprintf("d.venue IN (%s)", placeholders))
-      params <- c(params, as.list(venues_in_country))
-    } else {
-      # No venues found for this country - return empty result
-      where_clauses <- c(where_clauses, "1 = 0")
-    }
-  }
-
-  if (!is.null(event)) {
-    where_clauses <- c(where_clauses, "LOWER(m.event_name) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", event, "%")))
-  }
-
-  if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, "d.match_date BETWEEN ? AND ?")
-    params <- c(params, list(date_range[1], date_range[2]))
-  }
-
-  if (!is.null(batting_team)) {
-    where_clauses <- c(where_clauses, "d.batting_team = ?")
-    params <- c(params, list(batting_team))
-  }
-
-  if (!is.null(bowling_team)) {
-    where_clauses <- c(where_clauses, "d.bowling_team = ?")
-    params <- c(params, list(bowling_team))
-  }
+  w <- .build_delivery_where(
+    match_id = match_id, match_type = match_type, player_id = player_id,
+    batter_id = batter_id, bowler_id = bowler_id, season = season, venue = venue, city = city,
+    country = country, event = event, date_range = date_range,
+    batting_team = batting_team, bowling_team = bowling_team
+  )
+  needs_match_join <- w$needs_match_join
+  where_clauses <- w$clauses
+  params <- w$params
 
   # Build query with optional JOIN
  if (needs_match_join) {
@@ -623,78 +650,18 @@ query_batter_stats <- function(batter_id = NULL,
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Determine if we need to join with matches table (for event filter)
-  needs_match_join <- !is.null(event)
-
   # Determine if we're querying single player or all players
   single_player <- !is.null(batter_id)
 
-  # Build WHERE clause
-  where_clauses <- character()
-  params <- list()
-
-  if (single_player) {
-    where_clauses <- c(where_clauses, "d.batter_id = ?")
-    params <- c(params, list(batter_id))
-  }
-
-  if (!is.null(bowler_id)) {
-    where_clauses <- c(where_clauses, "d.bowler_id = ?")
-    params <- c(params, list(bowler_id))
-  }
-
-  if (!is.null(match_type)) {
-    match_type <- normalize_format(match_type)
-    where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
-    params <- c(params, list(match_type))
-  }
-
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, "d.season = ?")
-    params <- c(params, list(as.character(season)))
-  }
-
-  if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, "LOWER(d.venue) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", venue, "%")))
-  }
-
-  if (!is.null(city)) {
-    where_clauses <- c(where_clauses, "LOWER(d.city) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", city, "%")))
-  }
-
-  if (!is.null(country)) {
-    venue_map <- get_venue_country_map()
-    venues_in_country <- names(venue_map)[tolower(venue_map) == tolower(country)]
-    if (length(venues_in_country) > 0) {
-      placeholders <- paste(rep("?", length(venues_in_country)), collapse = ", ")
-      where_clauses <- c(where_clauses, sprintf("d.venue IN (%s)", placeholders))
-      params <- c(params, as.list(venues_in_country))
-    } else {
-      where_clauses <- c(where_clauses, "1 = 0")
-    }
-  }
-
-  if (!is.null(event)) {
-    where_clauses <- c(where_clauses, "LOWER(m.event_name) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", event, "%")))
-  }
-
-  if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, "d.match_date BETWEEN ? AND ?")
-    params <- c(params, list(date_range[1], date_range[2]))
-  }
-
-  if (!is.null(batting_team)) {
-    where_clauses <- c(where_clauses, "d.batting_team = ?")
-    params <- c(params, list(batting_team))
-  }
-
-  if (!is.null(bowling_team)) {
-    where_clauses <- c(where_clauses, "d.bowling_team = ?")
-    params <- c(params, list(bowling_team))
-  }
+  w <- .build_delivery_where(
+    batter_id = batter_id, bowler_id = bowler_id, match_type = match_type,
+    season = season, venue = venue, city = city,
+    country = country, event = event, date_range = date_range,
+    batting_team = batting_team, bowling_team = bowling_team
+  )
+  needs_match_join <- w$needs_match_join
+  where_clauses <- w$clauses
+  params <- w$params
 
   # Build FROM clause (always join players table for names)
   if (needs_match_join) {
@@ -784,13 +751,7 @@ query_batter_stats <- function(batter_id = NULL,
   }
 
   # Calculate derived metrics (vectorized for multiple players)
-  result$batting_average <- ifelse(result$dismissals > 0,
-                                    round(result$runs_scored / result$dismissals, 2),
-                                    NA_real_)
-  result$runs_per_ball <- round(result$runs_scored / result$balls_faced, 4)
-  result$wickets_per_ball <- round(result$dismissals / result$balls_faced, 4)
-  result$strike_rate <- round((result$runs_scored / result$balls_faced) * 100, 2)
-  result$wicket_pct <- round((result$dismissals / result$balls_faced) * 100, 4)
+  result <- .add_batting_rates(result)
 
   # Add batter_id to result if single player query
   if (single_player) {
@@ -871,78 +832,18 @@ query_bowler_stats <- function(bowler_id = NULL,
   conn <- get_db_connection(path = db_path, read_only = TRUE)
   on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
 
-  # Determine if we need to join with matches table (for event filter)
-  needs_match_join <- !is.null(event)
-
   # Determine if we're querying single player or all players
   single_player <- !is.null(bowler_id)
 
-  # Build WHERE clause
-  where_clauses <- character()
-  params <- list()
-
-  if (single_player) {
-    where_clauses <- c(where_clauses, "d.bowler_id = ?")
-    params <- c(params, list(bowler_id))
-  }
-
-  if (!is.null(batter_id)) {
-    where_clauses <- c(where_clauses, "d.batter_id = ?")
-    params <- c(params, list(batter_id))
-  }
-
-  if (!is.null(match_type)) {
-    match_type <- normalize_format(match_type)
-    where_clauses <- c(where_clauses, "LOWER(d.match_type) = ?")
-    params <- c(params, list(match_type))
-  }
-
-  if (!is.null(season)) {
-    where_clauses <- c(where_clauses, "d.season = ?")
-    params <- c(params, list(as.character(season)))
-  }
-
-  if (!is.null(venue)) {
-    where_clauses <- c(where_clauses, "LOWER(d.venue) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", venue, "%")))
-  }
-
-  if (!is.null(city)) {
-    where_clauses <- c(where_clauses, "LOWER(d.city) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", city, "%")))
-  }
-
-  if (!is.null(country)) {
-    venue_map <- get_venue_country_map()
-    venues_in_country <- names(venue_map)[tolower(venue_map) == tolower(country)]
-    if (length(venues_in_country) > 0) {
-      placeholders <- paste(rep("?", length(venues_in_country)), collapse = ", ")
-      where_clauses <- c(where_clauses, sprintf("d.venue IN (%s)", placeholders))
-      params <- c(params, as.list(venues_in_country))
-    } else {
-      where_clauses <- c(where_clauses, "1 = 0")
-    }
-  }
-
-  if (!is.null(event)) {
-    where_clauses <- c(where_clauses, "LOWER(m.event_name) LIKE LOWER(?)")
-    params <- c(params, list(paste0("%", event, "%")))
-  }
-
-  if (!is.null(date_range) && length(date_range) == 2) {
-    where_clauses <- c(where_clauses, "d.match_date BETWEEN ? AND ?")
-    params <- c(params, list(date_range[1], date_range[2]))
-  }
-
-  if (!is.null(batting_team)) {
-    where_clauses <- c(where_clauses, "d.batting_team = ?")
-    params <- c(params, list(batting_team))
-  }
-
-  if (!is.null(bowling_team)) {
-    where_clauses <- c(where_clauses, "d.bowling_team = ?")
-    params <- c(params, list(bowling_team))
-  }
+  w <- .build_delivery_where(
+    bowler_id = bowler_id, batter_id = batter_id, match_type = match_type,
+    season = season, venue = venue, city = city,
+    country = country, event = event, date_range = date_range,
+    batting_team = batting_team, bowling_team = bowling_team
+  )
+  needs_match_join <- w$needs_match_join
+  where_clauses <- w$clauses
+  params <- w$params
 
   # Build FROM clause (always join players table for names)
   if (needs_match_join) {
@@ -1034,16 +935,7 @@ query_bowler_stats <- function(bowler_id = NULL,
   }
 
   # Calculate derived metrics (vectorized for multiple players)
-  result$bowling_average <- ifelse(result$wickets > 0,
-                                    round(result$runs_conceded / result$wickets, 2),
-                                    NA_real_)
-  result$runs_per_ball <- round(result$runs_conceded / result$balls_bowled, 4)
-  result$wickets_per_ball <- round(result$wickets / result$balls_bowled, 4)
-  result$economy_rate <- round((result$runs_conceded / result$balls_bowled) * 6, 2)
-  result$wicket_pct <- round((result$wickets / result$balls_bowled) * 100, 4)
-  result$strike_rate <- ifelse(result$wickets > 0,
-                                round(result$balls_bowled / result$wickets, 2),
-                                NA_real_)
+  result <- .add_bowling_rates(result)
 
   # Add bowler_id to result if single player query
   if (single_player) {

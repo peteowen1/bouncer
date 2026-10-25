@@ -1533,34 +1533,7 @@ ensure_3way_drift_table <- function(conn) {
 #' @keywords internal
 ensure_3way_params_table <- function(conn) {
   if (!table_exists(conn, "three_way_elo_params")) {
-    DBI::dbExecute(conn, "
-      CREATE TABLE IF NOT EXISTS three_way_elo_params (
-        format VARCHAR PRIMARY KEY,
-        k_run_max DOUBLE,
-        k_run_min DOUBLE,
-        k_run_halflife DOUBLE,
-        k_wicket_max DOUBLE,
-        k_wicket_min DOUBLE,
-        k_wicket_halflife DOUBLE,
-        k_venue_perm_max DOUBLE,
-        k_venue_perm_min DOUBLE,
-        k_venue_perm_halflife DOUBLE,
-        k_venue_session_max DOUBLE,
-        k_venue_session_min DOUBLE,
-        k_venue_session_halflife DOUBLE,
-        w_batter DOUBLE,
-        w_bowler DOUBLE,
-        w_venue_perm DOUBLE,
-        w_venue_session DOUBLE,
-        runs_per_100_elo DOUBLE,
-        inactivity_halflife DOUBLE,
-        replacement_level DOUBLE,
-        last_delivery_id VARCHAR,
-        last_match_date DATE,
-        total_deliveries INTEGER,
-        calculated_at TIMESTAMP
-      )
-    ")
+    DBI::dbExecute(conn, .three_way_elo_params_ddl("three_way_elo_params"))
   }
   invisible(TRUE)
 }

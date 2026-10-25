@@ -96,35 +96,7 @@ create_format_skill_table <- function(format = "t20", conn, overwrite = FALSE) {
   # Create table
   cli::cli_alert_info("Creating '{table_name}' table...")
 
-  DBI::dbExecute(conn, sprintf("
-    CREATE TABLE %s (
-      delivery_id VARCHAR PRIMARY KEY,
-      match_id VARCHAR,
-      match_date DATE,
-      batter_id VARCHAR,
-      bowler_id VARCHAR,
-
-      -- Batter skill indices (before this delivery)
-      batter_scoring_index DOUBLE,    -- EMA of runs per ball
-      batter_survival_rate DOUBLE,    -- EMA of survival (1 - wicket rate)
-
-      -- Bowler skill indices (before this delivery)
-      bowler_economy_index DOUBLE,    -- EMA of runs conceded per ball
-      bowler_strike_rate DOUBLE,      -- EMA of wickets per ball
-
-      -- Expected values (from skill indices)
-      exp_runs DOUBLE,
-      exp_wicket DOUBLE,
-
-      -- Actual outcomes
-      actual_runs INTEGER,
-      is_wicket BOOLEAN,
-
-      -- Ball counts (for reliability)
-      batter_balls_faced INTEGER,
-      bowler_balls_bowled INTEGER
-    )
-  ", table_name))
+  DBI::dbExecute(conn, .player_skill_ddl(table_name, if_not_exists = FALSE))
 
   # Create indexes
   DBI::dbExecute(conn, sprintf("CREATE INDEX IF NOT EXISTS idx_%s_skill_match ON %s(match_id)", format, table_name))
@@ -376,196 +348,9 @@ join_skill_indices <- function(deliveries_df, format = "t20", conn,
                                                 "bowler_balls_bowled")) {
 
   table_name <- get_skill_table_name(format, "player_skill")
-
-  if (!table_exists(conn, table_name)) {
-    cli::cli_alert_warning("Table '{table_name}' does not exist")
-    cli::cli_alert_info("Run 03_calculate_t20_skill_indices.R first")
-    return(deliveries_df)
-  }
-
-  if (!"delivery_id" %in% names(deliveries_df)) {
-    cli::cli_alert_danger("deliveries_df must contain 'delivery_id' column")
-    return(deliveries_df)
-  }
-
-  # Get skill indices for matching delivery_ids
-  delivery_ids <- unique(deliveries_df$delivery_id)
-
-  # Query in batches if too many
-  batch_size <- 10000
-  if (length(delivery_ids) > batch_size) {
-    cli::cli_alert_info("Fetching skill indices in batches...")
-
-    n_batches <- ceiling(length(delivery_ids) / batch_size)
-    batch_results <- vector("list", n_batches)
-
-    for (i in seq_len(n_batches)) {
-      start_idx <- (i - 1) * batch_size + 1
-      end_idx <- min(i * batch_size, length(delivery_ids))
-      batch_ids <- delivery_ids[start_idx:end_idx]
-
-      # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
-      batch_ids_escaped <- escape_sql_quotes(batch_ids)
-
-      batch_results[[i]] <- DBI::dbGetQuery(conn, sprintf("
-        SELECT delivery_id, %s
-        FROM %s
-        WHERE delivery_id IN ('%s')
-      ", paste(skill_columns, collapse = ", "),
-         table_name,
-         paste(batch_ids_escaped, collapse = "','")))
-
-      if (i %% 10 == 0) {
-        cli::cli_alert_info("Fetched {i}/{n_batches} batches...")
-      }
-    }
-
-    skill_data <- fast_rbind(batch_results)
-  } else {
-    # Escape single quotes in delivery IDs
-    delivery_ids_escaped <- escape_sql_quotes(delivery_ids)
-
-    skill_data <- DBI::dbGetQuery(conn, sprintf("
-      SELECT delivery_id, %s
-      FROM %s
-      WHERE delivery_id IN ('%s')
-    ", paste(skill_columns, collapse = ", "),
-       table_name,
-       paste(delivery_ids_escaped, collapse = "','")))
-  }
-
-  if (nrow(skill_data) == 0) {
-    cli::cli_alert_warning("No matching skill indices found")
-    return(deliveries_df)
-  }
-
-  # Join to deliveries
-  result <- dplyr::left_join(deliveries_df, skill_data, by = "delivery_id")
-
-  n_matched <- sum(!is.na(result[[skill_columns[1]]]))
-  cli::cli_alert_success("Joined skill indices: {n_matched}/{nrow(deliveries_df)} deliveries matched")
-
-  result
-}
-
-
-#' Get Current Player Skill Index
-#'
-#' Gets the most recent skill index for a player.
-#'
-#' @param player_id Character. Player identifier
-#' @param role Character. "batter" or "bowler"
-#' @param format Character. Format: "t20", "odi", or "test"
-#' @param conn DBI connection. Database connection
-#'
-#' @return Named list with skill indices, or NULL if not found
-#' @keywords internal
-get_player_skill <- function(player_id, role = "batter", format = "t20", conn) {
-
-  table_name <- paste0(format, "_player_skill")
-
-  if (!table_exists(conn, table_name)) {
-    return(NULL)
-  }
-
-  # Escape player_id to prevent SQL injection
-  player_id_escaped <- escape_sql_quotes(player_id)
-
-  if (role == "batter") {
-    result <- DBI::dbGetQuery(conn, sprintf("
-      SELECT
-        batter_id as player_id,
-        batter_scoring_index as scoring_index,
-        batter_survival_rate as survival_rate,
-        batter_balls_faced as balls,
-        match_date
-      FROM %s
-      WHERE batter_id = '%s'
-      ORDER BY match_date DESC, delivery_id DESC
-      LIMIT 1
-    ", table_name, player_id_escaped))
-  } else {
-    result <- DBI::dbGetQuery(conn, sprintf("
-      SELECT
-        bowler_id as player_id,
-        bowler_economy_index as economy_index,
-        bowler_strike_rate as strike_rate,
-        bowler_balls_bowled as balls,
-        match_date
-      FROM %s
-      WHERE bowler_id = '%s'
-      ORDER BY match_date DESC, delivery_id DESC
-      LIMIT 1
-    ", table_name, player_id_escaped))
-  }
-
-  if (nrow(result) == 0) {
-    return(NULL)
-  }
-
-  as.list(result)
-}
-
-
-#' Get Skill Indices for Multiple Players
-#'
-#' Batch fetch of current skill indices for multiple players.
-#'
-#' @param player_ids Character vector. Player identifiers
-#' @param role Character. "batter" or "bowler"
-#' @param format Character. Format: "t20", "odi", or "test"
-#' @param conn DBI connection. Database connection
-#'
-#' @return Data frame with player_id and skill indices
-#' @keywords internal
-get_players_skills <- function(player_ids, role = "batter", format = "t20", conn) {
-
-  table_name <- paste0(format, "_player_skill")
-
-  if (!table_exists(conn, table_name)) {
-    return(NULL)
-  }
-
-  # Escape player_ids to prevent SQL injection
-  player_ids_escaped <- escape_sql_quotes(player_ids)
-
-  if (role == "batter") {
-    result <- DBI::dbGetQuery(conn, sprintf("
-      WITH ranked AS (
-        SELECT
-          batter_id as player_id,
-          batter_scoring_index as scoring_index,
-          batter_survival_rate as survival_rate,
-          batter_balls_faced as balls,
-          match_date,
-          ROW_NUMBER() OVER (PARTITION BY batter_id ORDER BY match_date DESC, delivery_id DESC) as rn
-        FROM %s
-        WHERE batter_id IN ('%s')
-      )
-      SELECT player_id, scoring_index, survival_rate, balls, match_date
-      FROM ranked
-      WHERE rn = 1
-    ", table_name, paste(player_ids_escaped, collapse = "','")))
-  } else {
-    result <- DBI::dbGetQuery(conn, sprintf("
-      WITH ranked AS (
-        SELECT
-          bowler_id as player_id,
-          bowler_economy_index as economy_index,
-          bowler_strike_rate as strike_rate,
-          bowler_balls_bowled as balls,
-          match_date,
-          ROW_NUMBER() OVER (PARTITION BY bowler_id ORDER BY match_date DESC, delivery_id DESC) as rn
-        FROM %s
-        WHERE bowler_id IN ('%s')
-      )
-      SELECT player_id, economy_index, strike_rate, balls, match_date
-      FROM ranked
-      WHERE rn = 1
-    ", table_name, paste(player_ids_escaped, collapse = "','")))
-  }
-
-  result
+  .join_skill_table(deliveries_df, conn, table_name, skill_columns,
+                    label = "skill indices",
+                    run_hint = "Run 03_calculate_t20_skill_indices.R first")
 }
 
 
@@ -640,22 +425,6 @@ get_skill_table_name <- function(format, entity_type) {
 }
 
 
-#' Check Skill Table Exists
-#'
-#' Checks if a skill table exists in the database.
-#'
-#' @param conn DBI connection
-#' @param format Character. Format name
-#' @param entity_type Character. One of "player_skill", "team_skill", "venue_skill"
-#'
-#' @return Logical. TRUE if table exists
-#' @keywords internal
-skill_table_exists <- function(conn, format, entity_type) {
-  table_name <- get_skill_table_name(format, entity_type)
-  table_exists(conn, table_name)
-}
-
-
 #' Batch Process Delivery IDs for Skill Join
 #'
 #' Helper function to handle batch processing of large delivery ID lists.
@@ -693,6 +462,61 @@ batch_skill_query <- function(delivery_ids, query_fn, batch_size = 10000, verbos
   }
 
   fast_rbind(all_results)
+}
+
+
+#' Join One Skill Table to Deliveries
+#'
+#' Shared body of the join_*_skill_indices functions: checks the table and
+#' the delivery_id column, fetches the requested columns for the deliveries'
+#' IDs in batches via batch_skill_query(), then left-joins and reports.
+#'
+#' @param deliveries_df Data frame. Must contain delivery_id column.
+#' @param conn DBI connection
+#' @param table_name Character. Skill table to read
+#' @param skill_columns Character vector. Columns to join
+#' @param label Character. Used in messages, e.g. "venue skill indices"
+#' @param run_hint Character. Message shown when the table is missing
+#'
+#' @return deliveries_df with skill columns joined (unchanged on failure)
+#' @noRd
+.join_skill_table <- function(deliveries_df, conn, table_name, skill_columns,
+                              label, run_hint) {
+  if (!table_exists(conn, table_name)) {
+    cli::cli_alert_warning("Table '{table_name}' does not exist")
+    cli::cli_alert_info(run_hint)
+    return(deliveries_df)
+  }
+
+  if (!"delivery_id" %in% names(deliveries_df)) {
+    cli::cli_alert_danger("deliveries_df must contain 'delivery_id' column")
+    return(deliveries_df)
+  }
+
+  delivery_ids <- unique(deliveries_df$delivery_id)
+  select_cols <- paste(skill_columns, collapse = ", ")
+
+  skill_data <- batch_skill_query(delivery_ids, function(ids) {
+    # Escape single quotes in delivery IDs (e.g., Durban's_Super_Giants)
+    DBI::dbGetQuery(conn, sprintf("
+      SELECT delivery_id, %s
+      FROM %s
+      WHERE delivery_id IN ('%s')
+    ", select_cols, table_name,
+       paste(escape_sql_quotes(ids), collapse = "','")))
+  })
+
+  if (nrow(skill_data) == 0) {
+    cli::cli_alert_warning("No matching {label} found")
+    return(deliveries_df)
+  }
+
+  result <- dplyr::left_join(deliveries_df, skill_data, by = "delivery_id")
+
+  n_matched <- sum(!is.na(result[[skill_columns[1]]]))
+  cli::cli_alert_success("Joined {label}: {n_matched}/{nrow(deliveries_df)} deliveries matched")
+
+  result
 }
 
 
