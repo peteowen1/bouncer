@@ -88,7 +88,14 @@ dir.create(cricinfo_dir, showWarnings = FALSE, recursive = TRUE)
 for (f in c("fixtures.parquet", "matches.parquet", "innings.parquet")) {
   tryCatch({
     pb_download(file = f, repo = REPO, tag = "cricinfo", dest = cricinfo_dir)
-    cli_alert_success("Downloaded cricinfo/{f}")
+    # pb_download only warns when an asset is missing from the release, so
+    # check the file landed before reporting success.
+    if (file.exists(file.path(cricinfo_dir, f))) {
+      cli_alert_success("Downloaded cricinfo/{f}")
+    } else {
+      tbl <- tools::file_path_sans_ext(f)
+      cli_alert_warning("Cricinfo {f} not found in the cricinfo release; cricinfo.{tbl} will not be loaded")
+    }
   }, error = function(e) {
     cli_alert_warning("Cricinfo {f} not available: {e$message}")
   })
