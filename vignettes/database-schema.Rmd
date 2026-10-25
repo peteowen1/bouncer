@@ -241,7 +241,7 @@ Game-level team ELO ratings (updated after each match).
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `team_id` | VARCHAR | **Primary Key (part)** - Team name |
+| `team_id` | VARCHAR | **Primary Key (part)** - Composite team id, `{team}_{gender}_{format}_{team_type}` in snake_case (e.g. `india_male_t20_international`) |
 | `match_id` | VARCHAR | **Primary Key (part)** - Match identifier |
 | `match_date` | DATE | Match date |
 | `match_type` | VARCHAR | Format code |
@@ -503,7 +503,8 @@ venue_skills <- load_venue_skill(match_type = "t20")
 
 # Load ELO ratings
 team_elo <- load_team_elo()
-india_elo <- team_elo[team_elo$team_id == "India", ]
+# team_id is a composite id: snake_case(team)_gender_format_team_type
+india_elo <- team_elo[team_elo$team_id == "india_male_t20_international", ]
 ```
 
 ## Live Database Statistics
