@@ -2,14 +2,13 @@
 # upload_cricsheet_release.R - Upload Cricsheet data to GitHub release
 #
 # This script exports raw Cricsheet data from the local DuckDB database to
-# parquet files and uploads them individually (plus ZIP) to the "cricsheet"
+# parquet files and uploads them individually to the "cricsheet"
 # GitHub release.
 #
 # Key features:
 #   - Partitions by match_type × gender (12 partitions max)
 #   - Uploads individual parquet files for remote loading
 #   - Generates manifest.json for quick match_id lookup
-#   - Includes ZIP for convenience bulk download
 #
 # Prerequisites:
 #   - Database populated via install_all_bouncer_data()
@@ -172,7 +171,7 @@ temp_dir <- tempfile("cricsheet_export_")
 dir.create(temp_dir, recursive = TRUE)
 cli::cli_alert_info("Temp directory: {.file {temp_dir}}")
 
-# Track exported files for ZIP creation and upload
+# Track exported files for upload
 exported_files <- character()
 
 # -----------------------------------------------------------------------------
