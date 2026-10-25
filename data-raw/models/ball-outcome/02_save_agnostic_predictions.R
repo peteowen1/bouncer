@@ -156,55 +156,12 @@ for (format in FORMATS_TO_PROCESS) {
   # Build query for features (same structure as training) ----
   # This query matches 01_train_agnostic_model.R feature extraction
   base_query <- sprintf("
-    WITH innings_totals AS (
-      SELECT
-        match_id,
-        innings,
-        batting_team,
-        MAX(total_runs) AS innings_total
-      FROM cricsheet.deliveries
-      WHERE %s
-      GROUP BY match_id, innings, batting_team
-    ),
-    cumulative_scores AS (
-      SELECT
-        d.*,
-        -- FIX: total_runs is the innings score AFTER this delivery (the parser writes
-        -- the running total post-ball). Subtract the ball's own runs to get the score
-        -- BEFORE it, or runs_difference leaks the target it is used to predict.
-        (d.total_runs - (d.runs_batter + d.runs_extras)) AS batting_score,
-        COALESCE(
-          (SELECT SUM(it.innings_total)
-           FROM innings_totals it
-           WHERE it.match_id = d.match_id
-             AND it.batting_team = d.bowling_team
-             AND it.innings < d.innings),
-          0
-        ) AS bowling_score
-      FROM cricsheet.deliveries d
-      WHERE %s
-    ),
+    WITH %s,
     match_context AS (
       SELECT DISTINCT
         m.match_id,
         m.event_name,
-        CASE
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%final%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%qualifier%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%eliminator%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%playoff%%' THEN 1
-          WHEN LOWER(CAST(m.event_match_number AS VARCHAR)) LIKE '%%semi%%' THEN 1
-          ELSE 0
-        END AS is_knockout,
-        CASE
-          WHEN LOWER(m.event_name) LIKE '%%world cup%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%ipl%%' OR LOWER(m.event_name) LIKE '%%indian premier%%' THEN 1
-          WHEN LOWER(m.event_name) LIKE '%%big bash%%' OR LOWER(m.event_name) LIKE '%%bbl%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%psl%%' OR LOWER(m.event_name) LIKE '%%super league%%' THEN 2
-          WHEN LOWER(m.event_name) LIKE '%%cpl%%' OR LOWER(m.event_name) LIKE '%%caribbean%%' THEN 2
-          WHEN LOWER(m.match_type) IN ('test', 'odi', 't20i', 'it20') THEN 1
-          ELSE 3
-        END AS event_tier
+        %s
       FROM cricsheet.matches m
     )
     SELECT
@@ -225,7 +182,8 @@ for (format in FORMATS_TO_PROCESS) {
     WHERE cs.runs_batter NOT IN (5)
       AND cs.runs_batter <= 6
     ORDER BY cs.match_id, cs.delivery_id
-  ", format_filter_bare, format_filter_d)
+  ", .innings_score_ctes_sql(format_filter_bare, format_filter_d),
+     .match_context_cases_sql())
 
   # Process in batches ----
   cli::cli_h3("Processing deliveries in batches")
