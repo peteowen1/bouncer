@@ -1,3 +1,15 @@
+# bouncer 0.8.9
+
+## Release uploads never delete before replacing
+
+`vb_publish()` (versebus 1.2.0, synced from torp) uploads each data file and `bus_manifest.json`
+under a temporary `vbnew-` name, confirms it on GitHub at the local size, and only then replaces
+the old copy, so a failed upload leaves the previous file for readers. It also stops at once
+when no GitHub token is visible, and a refused upload fails straight away.
+
+`data-raw/release/upload_cricsheet_release.R` no longer builds `cricsheet-all.zip`, which
+nothing reads (#73).
+
 # bouncer 0.8.8
 
 ## Retired the "daily" release API
