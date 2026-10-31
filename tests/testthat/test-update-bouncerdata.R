@@ -24,3 +24,7 @@ test_that("update_bouncerdata() is defunct", {
 test_that("get_latest_release() rejects type = 'daily' before any network call", {
   expect_error(get_latest_release(type = "daily"), "should be one of")
 })
+
+test_that("get_latest_release() rejects type = 'weekly' before any network call", {
+  expect_error(get_latest_release(type = "weekly"), "should be one of")
+})
