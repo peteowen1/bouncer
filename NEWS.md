@@ -1,3 +1,13 @@
+# bouncer (development version)
+
+## Predictions keep a dated history
+
+Each prediction publish now also uploads `predictions_<UTC timestamp>.parquet` as a new asset to
+the `predictions-history` release. Each file has one row per outcome (team1, Draw, team2) with
+`verse`, `event`, `market`, `selection`, `probability`, `published_utc` and `model_version`.
+Files are never replaced: if a file with the same name is already there, the run stops before
+touching `predictions-latest` (#88).
+
 # bouncer 0.8.9
 
 ## Release uploads never delete before replacing
