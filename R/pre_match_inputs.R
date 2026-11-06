@@ -378,3 +378,48 @@ check_fixture_coverage <- function(features, max_broken_share = 0.1) {
   }
   invisible(cov)
 }
+
+
+#' Drop Fixtures With an Unrated Team Before Publishing
+#'
+#' A fixture where either team has no rating history is priced off default
+#' features, so its "favourite" is an artefact: on 2026-11-06 Zimbabwe v
+#' Afghanistan was published as 87.4% Zimbabwe because Afghanistan is missing
+#' from the Cricsheet data (#89). [check_fixture_coverage()] only aborts for
+#' teams that DO appear in the match history, so teams with no history at all
+#' (Afghanistan, under-19 and "A" sides, domestic provinces) passed silently.
+#' This removes those fixtures from the published set and warns, naming every
+#' team and format, so the gap is visible in the run log instead of on a page.
+#'
+#' Rows are dropped rather than given NA probabilities because the accuracy
+#' tracker sums and logs `predicted_winner`/`team1_win_prob` without NA
+#' handling.
+#'
+#' @param features data.frame with `format`, `team1`, `team2`, `team1_elo_found`,
+#'   `team2_elo_found`, `team1_in_history`, `team2_in_history`.
+#'
+#' @return The rows of `features` where both teams have a rating.
+#' @keywords internal
+drop_unrated_fixtures <- function(features) {
+  need <- c("format", "team1", "team2", "team1_elo_found", "team2_elo_found",
+            "team1_in_history", "team2_in_history")
+  stopifnot(all(need %in% names(features)))
+  rated <- features$team1_elo_found & features$team2_elo_found
+  dropped <- features[!rated, , drop = FALSE]
+  if (nrow(dropped) > 0) {
+    unrated <- rbind(
+      data.frame(format = dropped$format, team = dropped$team1, found = dropped$team1_elo_found,
+                 in_history = dropped$team1_in_history),
+      data.frame(format = dropped$format, team = dropped$team2, found = dropped$team2_elo_found,
+                 in_history = dropped$team2_in_history))
+    unrated <- unrated[!unrated$found, , drop = FALSE]
+    unrated <- unique(unrated[order(unrated$format, unrated$team), , drop = FALSE])
+    lines <- sprintf("%s %s (%s)", toupper(unrated$format), unrated$team,
+                     ifelse(unrated$in_history, "in match history but no rating", "no match history"))
+    cli::cli_alert_warning(paste0(
+      "Withholding {nrow(dropped)} of {nrow(features)} fixture{?s}: a team has no rating, ",
+      "so the prediction would be priced off default features."))
+    cli::cli_alert_warning("Unrated teams: {paste(lines, collapse = '; ')}")
+  }
+  features[rated, , drop = FALSE]
+}

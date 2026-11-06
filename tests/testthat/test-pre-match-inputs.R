@@ -112,6 +112,26 @@ test_that("check_fixture_coverage aborts when known teams are unrated, not when 
   expect_error(suppressMessages(check_fixture_coverage(broken)), "lookup is probably broken")
 })
 
+test_that("drop_unrated_fixtures withholds fixtures with an unrated team and names the teams", {
+  f <- data.frame(
+    format = "t20", match_id = c("1555123", "2", "3"),
+    team1 = c("Zimbabwe", "India", "England Lions"), team2 = c("Afghanistan", "Australia", "Zimbabwe"),
+    team1_elo_found = c(TRUE, TRUE, FALSE), team2_elo_found = c(FALSE, TRUE, TRUE),
+    team1_in_history = c(TRUE, TRUE, FALSE), team2_in_history = c(FALSE, TRUE, TRUE),
+    stringsAsFactors = FALSE)
+  msgs <- character(0)
+  out <- withCallingHandlers(drop_unrated_fixtures(f),
+    message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") })
+  expect_equal(out$match_id, "2")
+  expect_true(any(grepl("Withholding 2 of 3", msgs)))
+  expect_true(any(grepl("T20 Afghanistan \\(no match history\\)", msgs)))
+  expect_true(any(grepl("T20 England Lions", msgs)))
+  # Everything rated: untouched and silent
+  all_ok <- f[2, ]
+  expect_silent(res <- drop_unrated_fixtures(all_ok))
+  expect_equal(res, all_ok)
+})
+
 test_that("predict_fixture_probs reads a flat 3-class vector row by row", {
   feats <- data.frame(match_id = c("a", "b"))
   local_mocked_bindings(

@@ -376,6 +376,10 @@ if (is.null(pred_all) || nrow(pred_all) != n_expected) {
   cli_abort("Predicted {NROW(pred_all)} of {n_expected} fixtures in supported formats")
 }
 check_fixture_coverage(pred_all)
+# Teams with no history at all pass the check above (they legitimately get
+# defaults), but a prediction built on defaults is a wrong favourite, not a
+# prediction (Zimbabwe v Afghanistan 87.4%, 2026-11-06, #89): withhold it.
+pred_all <- drop_unrated_fixtures(pred_all)
 
 # Cleanup DB (on.exit handles disconnect, just remove temp file)
 if (file.exists(db_path)) file.remove(db_path)
