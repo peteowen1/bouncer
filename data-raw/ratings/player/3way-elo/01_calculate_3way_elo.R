@@ -1108,6 +1108,26 @@ result_dt <- data.table(
 ## 4.11 Batch Insert ----
 cli::cli_h2("Inserting to database")
 
+# MEMORY (2026-11-08): mens_test (5.4M deliveries) was stopped twice at about
+# 35% of this loop with the machine down to 0.6 GB free. result_mat and the raw
+# deliveries frame were still alive next to result_dt, which copies every
+# column out of them, and DuckDB's own memory kept growing as batches were
+# appended. Nothing below reads either object (only the scalar n_deliveries),
+# so free them, cap DuckDB, and checkpoint as the loop goes.
+# checkpoint_data (section 4.9 and the LOAD_FROM_CHECKPOINT path) holds the
+# SAME matrix and the id vectors, so rm(result_mat) alone freed almost nothing
+# (review 2026-11-08). result_dt now owns copies of every column.
+rm(result_mat)
+for (.obj in c("checkpoint_data", "deliveries", "delivery_ids", "match_ids", "match_dates",
+               "batter_ids", "bowler_ids", "venues")) {
+  if (exists(.obj, inherits = FALSE)) rm(list = .obj)
+}
+invisible(gc())
+# 4 GB, not 3: delivery_id is a PRIMARY KEY and DuckDB keeps that index in
+# memory; promotion holds the staging and live indexes at once. Reset after
+# the promote so later queries and the next category get the default back.
+DBI::dbExecute(conn, "SET memory_limit = '4GB'")
+
 n_batches <- ceiling(n_deliveries / BATCH_SIZE)
 cli::cli_progress_bar("Inserting batches", total = n_batches)
 
@@ -1117,6 +1137,10 @@ for (b in seq_len(n_batches)) {
 
   batch_df <- as.data.frame(result_dt[start_idx:end_idx])
   insert_3way_elos(batch_df, build_category, conn)
+  rm(batch_df)
+  # Flush the WAL into the file every 50 batches (500k rows at the default
+  # BATCH_SIZE) so DuckDB does not hold the whole insert in memory.
+  if (b %% 50L == 0L) DBI::dbExecute(conn, "CHECKPOINT")
 
   cli::cli_progress_update()
 }
@@ -1130,6 +1154,7 @@ cli::cli_alert_success("Inserted {format(n_deliveries, big.mark = ',')} deliveri
 # transaction, and only if the staging table is plausibly full.
 promote_3way_elo_staging(current_category, conn,
                          min_rows = max(1L, floor(n_deliveries * 0.99)))
+DBI::dbExecute(conn, "RESET memory_limit")
 
 ## 4.12 Store Parameters ----
 cli::cli_h2("Storing parameters")
