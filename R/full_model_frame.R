@@ -42,6 +42,63 @@
   cli::cli_alert_success("{n}/{total} ({round(100*cov, 1)}%) have {what}")
 }
 
+#' Abort When a Skill Table Stops Short of the Data
+#'
+#' `.assert_skill_coverage()` measures coverage over ALL history, so a table
+#' that stopped updating months ago still passes: on 2026-10-29 the ODI
+#' player, venue and ELO tables ended 2026-08-05, the all-history check read
+#' ~96%, and 100% of September-October deliveries trained on the neutral
+#' fill. The retrained model lost 5.7% log-loss to the agnostic one on the 48
+#' matches neither had seen. This checks the most recent `window_days` of
+#' deliveries on their own.
+#'
+#' @param has_value Logical, one per row: the join found a real value
+#'   (measured BEFORE any fill).
+#' @param match_date Date (or ISO character), one per row.
+#' @param what Character. Which join, for the message.
+#' @param window_days Integer. Days back from the newest match.
+#' @param min_cov Numeric. Floor for the recent window.
+#' @param allow_stale Logical. TRUE warns instead of aborting.
+#' @keywords internal
+.assert_recent_skill_coverage <- function(has_value, match_date, what,
+                                          window_days = 90L, min_cov = 0.5,
+                                          allow_stale = FALSE) {
+  d <- .as_match_date(match_date)
+  if (all(is.na(d))) {
+    # Cannot check, so say so loudly rather than pass.
+    cli::cli_warn("{what}: no match dates in the frame, so the recent-coverage check could not run.")
+    return(invisible(NA_real_))
+  }
+  if (anyNA(d)) {
+    cli::cli_alert_warning("{what}: {sum(is.na(d))} row(s) have no match date and are left out of the recent-coverage check.")
+  }
+  newest <- max(d, na.rm = TRUE)
+  recent <- !is.na(d) & d > newest - window_days
+  n_recent <- sum(recent)
+  cov <- sum(has_value[recent]) / n_recent
+  if (cov < min_cov) {
+    # Monthly coverage for the last six months, so the message shows where
+    # the table stops rather than one number.
+    keep <- !is.na(d) & d > newest - 183L
+    month <- format(d[keep], "%Y-%m")
+    by_month <- tapply(has_value[keep], month, mean)
+    detail <- paste0(names(by_month), " ", round(100 * by_month, 1), "%", collapse = ", ")
+    msg <- c(
+      "{what}: only {round(100*cov, 1)}% of the {n_recent} deliveries in the last {window_days} days (to {newest}) have a real value.",
+      "x" = "The table stops short of the data, so recent deliveries train on the neutral fill.",
+      "i" = "By month: {detail}.",
+      "i" = "Rebuild the skill tables (pipeline steps 3 and 5b) before training.")
+    if (allow_stale) {
+      cli::cli_warn(msg)
+    } else {
+      cli::cli_abort(c(msg, "i" = "Pass {.code allow_stale_skills = TRUE} to build the frame anyway."))
+    }
+  } else {
+    cli::cli_alert_success("{what}: {round(100*cov, 1)}% of the last {window_days} days' {n_recent} deliveries have a real value")
+  }
+  invisible(cov)
+}
+
 #' Build the Full Outcome Model's Training Frame
 #'
 #' Context features from cricsheet, then player/team/venue skills, then the
@@ -54,6 +111,10 @@
 #' @param include_elo Logical. Join the 3-way ELO features. When FALSE the
 #'   three ELO columns are present and zeroed, matching the trainer's
 #'   INCLUDE_ELO_FEATURES = FALSE path.
+#' @param allow_stale_skills Logical. When FALSE (the default) the build
+#'   aborts if a skill table covers under half of the most recent 90 days of
+#'   deliveries. TRUE downgrades that to a warning, for diagnostic scripts
+#'   that need to look at a stale frame.
 #'
 #' @return A data frame of one row per delivery.
 #
@@ -66,7 +127,8 @@
 # qualified.
 #' @keywords internal
 build_full_model_frame <- function(conn, format, match_limit = NULL,
-                                   include_elo = TRUE) {
+                                   include_elo = TRUE,
+                                   allow_stale_skills = FALSE) {
 
   format <- match.arg(tolower(format), c("t20", "odi", "test"))
   MATCH_LIMIT <- match_limit
@@ -90,6 +152,7 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
     match_context AS (
       SELECT DISTINCT
         m.match_id,
+        m.match_date,
         %s
       FROM cricsheet.matches m
     )
@@ -115,6 +178,9 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
       (cs.batting_score - cs.bowling_score) AS runs_difference,
       COALESCE(mc.is_knockout, 0) AS is_knockout,
       COALESCE(mc.event_tier, 3) AS event_tier,
+      -- Not a model feature (the trainer selects features by name). Carried
+      -- for the date-ordered split and the stale-tail coverage check.
+      mc.match_date,
       cs.wides,
       cs.is_free_hit
     FROM cumulative_scores cs
@@ -167,6 +233,10 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
                                    fill_missing = FALSE)
   n_player <- sum(!is.na(model_data$batter_scoring_index))
   .assert_skill_coverage(n_player, nrow(model_data), "player skills")
+  .assert_recent_skill_coverage(!is.na(model_data$batter_scoring_index) &
+                                  !is.na(model_data$bowler_economy_index),
+                                model_data$match_date, "player skills",
+                                allow_stale = allow_stale_skills)
   # Fill now, using the same start values add_skill_features() would apply.
   .sv <- get_skill_start_values(format)
   model_data <- model_data %>%
@@ -202,6 +272,9 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
   })
   n_team <- sum(!is.na(model_data$batting_team_runs_skill))
   .assert_skill_coverage(n_team, nrow(model_data), "team skills")
+  .assert_recent_skill_coverage(!is.na(model_data$batting_team_runs_skill),
+                                model_data$match_date, "team skills",
+                                allow_stale = allow_stale_skills)
   # Fill missing with 0 (neutral for residual-based)
   model_data <- model_data %>%
     dplyr::mutate(
@@ -227,6 +300,9 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
   })
   n_venue <- sum(!is.na(model_data$venue_run_rate))
   .assert_skill_coverage(n_venue, nrow(model_data), "venue skills")
+  .assert_recent_skill_coverage(!is.na(model_data$venue_run_rate),
+                                model_data$match_date, "venue skills",
+                                allow_stale = allow_stale_skills)
   # Fill missing with neutral values
   # For residual-based (run_rate, wicket_rate): 0
   # For raw EMA (boundary_rate, dot_rate): use format defaults
@@ -303,6 +379,9 @@ build_full_model_frame <- function(conn, format, match_limit = NULL,
           "i" = "Set INCLUDE_ELO_FEATURES <- FALSE to train without them deliberately."))
       }
       cli::cli_alert_success("{n_elo}/{nrow(model_data)} ({round(100*cov, 1)}%) have ELO features")
+      .assert_recent_skill_coverage(!is.na(model_data$batter_run_elo),
+                                    model_data$match_date, "3-way ELO",
+                                    allow_stale = allow_stale_skills)
       has_elo_features <- TRUE
     }
   }

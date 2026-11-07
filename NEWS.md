@@ -1,3 +1,43 @@
+# bouncer 0.8.10
+
+## Ball-outcome trainers hold out the latest matches by date
+
+Both trainers and `data-raw/validation/full_vs_agnostic_matched.R` now hold out
+the latest 20% of matches by date (`date_ordered_match_split()`, ties broken by
+`match_id`). The agnostic trainer shuffled match ids and the full trainer took
+them in DuckDB row order, so the two were scored on different, unrepeatable
+test sets.
+
+## `build_full_model_frame()` refuses stale skill tables
+
+Each skill join (player, team, venue, 3-way ELO) must cover at least half of
+the last 90 days of deliveries with real values, or the build aborts and prints
+coverage by month (`allow_stale_skills = TRUE` downgrades it to a warning). The
+all-history check passed at ~96% while 100% of Sep-Oct 2026 ODI deliveries
+trained on the neutral fill.
+
+## Pipeline step 15 skips Test by name
+
+Test has no fitted impact kappa yet (bouncerverse#24), so step 15 now skips it
+with a warning instead of failing after T20 and ODI finish.
+
+
+## Predictions keep a dated history
+
+Each prediction publish now also uploads `predictions_<UTC timestamp>.parquet` as a new asset to
+the `predictions-history` release. Each file has one row per outcome (team1, Draw, team2) with
+`verse`, `event`, `market`, `selection`, `probability`, `published_utc` and `model_version`.
+Files are never replaced: if a file with the same name is already there, the run stops before
+touching `predictions-latest` (#88).
+
+## Live predictions withhold fixtures with an unrated team (#89)
+
+`run_predictions_gha.R` now drops any fixture where either team has no rating
+(`drop_unrated_fixtures()`) and logs every team and format dropped, instead of
+publishing a probability priced off default features (Zimbabwe v Afghanistan came out as
+87.4% Zimbabwe). Root cause of that fixture: Afghanistan has no rows in the Cricsheet
+data at all, so no code change can rate it until the data is collected another way.
+
 # bouncer 0.8.9
 
 ## Release uploads never delete before replacing

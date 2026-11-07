@@ -376,6 +376,10 @@ if (is.null(pred_all) || nrow(pred_all) != n_expected) {
   cli_abort("Predicted {NROW(pred_all)} of {n_expected} fixtures in supported formats")
 }
 check_fixture_coverage(pred_all)
+# Teams with no history at all pass the check above (they legitimately get
+# defaults), but a prediction built on defaults is a wrong favourite, not a
+# prediction (Zimbabwe v Afghanistan 87.4%, 2026-11-06, #89): withhold it.
+pred_all <- drop_unrated_fixtures(pred_all)
 
 # Cleanup DB (on.exit handles disconnect, just remove temp file)
 if (file.exists(db_path)) file.remove(db_path)
@@ -397,10 +401,30 @@ if (length(predictions) > 0) {
   write.csv(pred_df, pred_csv_path, row.names = FALSE)
   cli_alert_success("Saved predictions CSV")
 
+  # Dated history (issue #88): one new file per publish, never replaced. Written
+  # on every run; uploaded before predictions-latest so that if the history
+  # upload fails, the run stops with predictions-latest still unchanged.
+  published_utc <- as.POSIXct(Sys.time(), tz = "UTC")
+  history <- build_prediction_history(pred_df, published_utc)
+  history_path <- write_prediction_history(history, output_dir, published_utc)
+  cli_alert_success("Saved {nrow(history)} history rows to {basename(history_path)}")
+
   # Upload to predictions-latest release
   upload_predictions <- as.logical(Sys.getenv("UPLOAD_PREDICTIONS", "true"))
   if (upload_predictions) {
     cli_h2("Uploading predictions")
+    tryCatch(
+      pb_release_create(repo = REPO, tag = "predictions-history", name = "Prediction history"),
+      error = function(e) cli_alert_info("Release predictions-history already exists")
+    )
+    history_name <- basename(history_path)
+    existing <- pb_list(repo = REPO, tag = "predictions-history")
+    if (history_name %in% existing$file_name) {
+      cli_abort("{history_name} is already in predictions-history. History files are never replaced; predictions-latest was not touched.")
+    }
+    pb_upload(history_path, repo = REPO, tag = "predictions-history", overwrite = FALSE)
+    cli_alert_success("Uploaded {history_name} to predictions-history")
+
     tryCatch(
       pb_release_create(repo = REPO, tag = "predictions-latest", name = "Match Predictions"),
       error = function(e) cli_alert_info("Release already exists")
