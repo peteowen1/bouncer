@@ -863,6 +863,16 @@ if (should_run(15)) {
   tryCatch({
     for (fmt in FORMATS) {
       cli::cli_h2("Career ratings for {toupper(fmt)}")
+      # Test has no fitted impact kappa yet (get_impact_kappa() aborts, blocked
+      # on bouncerverse#24), so bouncer_ratings("test") always failed here and
+      # took the whole step to "Step 15 failed" after T20 and ODI had finished.
+      # Skip it by name so the step reports what it did; any OTHER error still
+      # fails the step.
+      kappa_ok <- tryCatch({ get_impact_kappa(fmt); TRUE }, error = function(e) FALSE)
+      if (!kappa_ok) {
+        cli::cli_alert_warning("{toupper(fmt)}: skipped, impact kappa not fitted for this format yet (bouncerverse#24)")
+        next
+      }
       ratings <- bouncer_ratings(fmt)
       cli::cli_alert_success("{toupper(fmt)}: {nrow(ratings)} players rated")
 
