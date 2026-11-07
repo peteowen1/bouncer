@@ -79,7 +79,11 @@ new_skill = (1 - alpha) * old_skill + alpha * residual
 
 **3-Way ELO Formula:**
 ```r
-expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) * runs_per_100_elo)
+# Linear (the default, THREE_WAY_USE_LOGISTIC_CONVERSION = FALSE in R/constants_3way.R):
+combined_elo_diff = weighted batter + venue (perm + session) - bowler ELO difference
+expected_runs = agnostic_baseline + combined_elo_diff * runs_per_100_elo / 100   # capped to [0, 6]
+# Logistic (opt-in): expected_runs = agnostic_baseline * logistic_multiplier(combined_elo_diff)
+# Source: calculate_3way_expected_runs(), R/three_way_elo.R
 ```
 
 ## Code Organization
