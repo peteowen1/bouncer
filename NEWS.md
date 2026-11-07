@@ -1,4 +1,26 @@
-# bouncer (development version)
+# bouncer 0.8.10
+
+## Ball-outcome trainers hold out the latest matches by date
+
+Both trainers and `data-raw/validation/full_vs_agnostic_matched.R` now hold out
+the latest 20% of matches by date (`date_ordered_match_split()`, ties broken by
+`match_id`). The agnostic trainer shuffled match ids and the full trainer took
+them in DuckDB row order, so the two were scored on different, unrepeatable
+test sets.
+
+## `build_full_model_frame()` refuses stale skill tables
+
+Each skill join (player, team, venue, 3-way ELO) must cover at least half of
+the last 90 days of deliveries with real values, or the build aborts and prints
+coverage by month (`allow_stale_skills = TRUE` downgrades it to a warning). The
+all-history check passed at ~96% while 100% of Sep-Oct 2026 ODI deliveries
+trained on the neutral fill.
+
+## Pipeline step 15 skips Test by name
+
+Test has no fitted impact kappa yet (bouncerverse#24), so step 15 now skips it
+with a warning instead of failing after T20 and ODI finish.
+
 
 ## Predictions keep a dated history
 
