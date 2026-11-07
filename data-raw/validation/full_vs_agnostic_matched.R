@@ -58,9 +58,14 @@ for (fmt in fmts) {
   # split lands on different matches -- set.seed() on a query result reproduces
   # nothing. Two runs of this script gave T20 +1.625% and +1.804% on held-out
   # sets of 636,371 and 631,464 deliveries before this line existed.
+  #
+  # 2026-11-07: the trainers now hold out the latest 20% of matches BY DATE
+  # (date_ordered_match_split(), R/date_ordered_split.R). This script must use
+  # the same rule, or its "held-out" set overlaps their training matches and
+  # both scores are inflated. Sorting by match_id no longer matches anything.
   set.seed(SEED)
-  mids <- sort(unique(d$match_id))
-  te <- d[match_id %in% mids[(floor(0.8 * length(mids)) + 1L):length(mids)]]
+  split <- date_ordered_match_split(d$match_id, d$match_date, test_frac = 0.2)
+  te <- d[match_id %in% split$test_matches]
   cli::cli_alert_info("held-out {format(nrow(te), big.mark=',')} deliveries, {format(uniqueN(te$match_id), big.mark=',')} matches; ELO non-zero {round(100*nz,1)}%")
 
   ff <- as.matrix(prepare_full_features(te, fmt))
