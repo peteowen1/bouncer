@@ -8,6 +8,14 @@ the `predictions-history` release. Each file has one row per outcome (team1, Dra
 Files are never replaced: if a file with the same name is already there, the run stops before
 touching `predictions-latest` (#88).
 
+## Live predictions withhold fixtures with an unrated team (#89)
+
+`run_predictions_gha.R` now drops any fixture where either team has no rating
+(`drop_unrated_fixtures()`) and logs every team and format dropped, instead of
+publishing a probability priced off default features (Zimbabwe v Afghanistan came out as
+87.4% Zimbabwe). Root cause of that fixture: Afghanistan has no rows in the Cricsheet
+data at all, so no code change can rate it until the data is collected another way.
+
 # bouncer 0.8.9
 
 ## Release uploads never delete before replacing
