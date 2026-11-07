@@ -398,6 +398,11 @@ check_fixture_coverage <- function(features, max_broken_share = 0.1) {
 #' @param features data.frame with `format`, `team1`, `team2`, `team1_elo_found`,
 #'   `team2_elo_found`, `team1_in_history`, `team2_in_history`.
 #'
+#' A team that IS in the match history but has no rating is not a data gap, it
+#' means a team lookup is broken, so that case aborts instead of dropping. The
+#' function also aborts when no fixture is left, so an empty file is never
+#' published over the last good one.
+#'
 #' @return The rows of `features` where both teams have a rating.
 #' @keywords internal
 drop_unrated_fixtures <- function(features) {
@@ -405,6 +410,7 @@ drop_unrated_fixtures <- function(features) {
             "team1_in_history", "team2_in_history")
   stopifnot(all(need %in% names(features)))
   rated <- features$team1_elo_found & features$team2_elo_found
+  rated <- !is.na(rated) & rated
   dropped <- features[!rated, , drop = FALSE]
   if (nrow(dropped) > 0) {
     unrated <- rbind(
@@ -414,6 +420,13 @@ drop_unrated_fixtures <- function(features) {
                  in_history = dropped$team2_in_history))
     unrated <- unrated[!unrated$found, , drop = FALSE]
     unrated <- unique(unrated[order(unrated$format, unrated$team), , drop = FALSE])
+    broken <- unrated[unrated$in_history, , drop = FALSE]
+    if (nrow(broken) > 0) {
+      cli::cli_abort(paste0(
+        "Teams in the match history but with no rating found: ",
+        paste(sprintf("%s %s", toupper(broken$format), broken$team), collapse = "; "),
+        ". A team lookup is probably broken; not publishing."))
+    }
     lines <- sprintf("%s %s (%s)", toupper(unrated$format), unrated$team,
                      ifelse(unrated$in_history, "in match history but no rating", "no match history"))
     cli::cli_alert_warning(paste0(
@@ -421,5 +434,9 @@ drop_unrated_fixtures <- function(features) {
       "so the prediction would be priced off default features."))
     cli::cli_alert_warning("Unrated teams: {paste(lines, collapse = '; ')}")
   }
-  features[rated, , drop = FALSE]
+  out <- features[rated, , drop = FALSE]
+  if (nrow(out) == 0) {
+    cli::cli_abort("All {nrow(features)} fixture{?s} lack a rating for a team; refusing to publish an empty predictions file.")
+  }
+  out
 }

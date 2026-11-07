@@ -132,6 +132,26 @@ test_that("drop_unrated_fixtures withholds fixtures with an unrated team and nam
   expect_equal(res, all_ok)
 })
 
+test_that("drop_unrated_fixtures aborts for an in-history unrated team and for an empty result", {
+  base <- data.frame(
+    format = "t20", match_id = c("1", "2"), team1 = c("India", "Afghanistan"),
+    team2 = c("Australia", "Nepal"),
+    team1_elo_found = TRUE, team2_elo_found = TRUE,
+    team1_in_history = TRUE, team2_in_history = TRUE, stringsAsFactors = FALSE)
+  # In match history but no rating: lookup broken, must stop (not drop)
+  broken <- base
+  broken$team1_elo_found[2] <- FALSE
+  expect_error(suppressMessages(drop_unrated_fixtures(broken)), "lookup is probably broken")
+  # Every fixture has a no-history team: nothing left to publish
+  none <- base
+  none$team1_elo_found <- FALSE; none$team1_in_history <- FALSE
+  expect_error(suppressMessages(drop_unrated_fixtures(none)), "refusing to publish")
+  # Mixed: no-history team dropped, the rest kept
+  some <- base
+  some$team1_elo_found[2] <- FALSE; some$team1_in_history[2] <- FALSE
+  expect_equal(suppressMessages(drop_unrated_fixtures(some))$match_id, "1")
+})
+
 test_that("predict_fixture_probs reads a flat 3-class vector row by row", {
   feats <- data.frame(match_id = c("a", "b"))
   local_mocked_bindings(
