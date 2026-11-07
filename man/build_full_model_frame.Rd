@@ -4,7 +4,13 @@
 \alias{build_full_model_frame}
 \title{Build the Full Outcome Model's Training Frame}
 \usage{
-build_full_model_frame(conn, format, match_limit = NULL, include_elo = TRUE)
+build_full_model_frame(
+  conn,
+  format,
+  match_limit = NULL,
+  include_elo = TRUE,
+  allow_stale_skills = FALSE
+)
 }
 \arguments{
 \item{conn}{A DBI connection.}
@@ -16,6 +22,11 @@ build_full_model_frame(conn, format, match_limit = NULL, include_elo = TRUE)
 \item{include_elo}{Logical. Join the 3-way ELO features. When FALSE the
 three ELO columns are present and zeroed, matching the trainer's
 INCLUDE_ELO_FEATURES = FALSE path.}
+
+\item{allow_stale_skills}{Logical. When FALSE (the default) the build
+aborts if a skill table covers under half of the most recent 90 days of
+deliveries. TRUE downgrades that to a warning, for diagnostic scripts
+that need to look at a stale frame.}
 }
 \value{
 A data frame of one row per delivery.
