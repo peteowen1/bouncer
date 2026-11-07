@@ -132,16 +132,31 @@ test_that("drop_unrated_fixtures withholds fixtures with an unrated team and nam
   expect_equal(res, all_ok)
 })
 
-test_that("drop_unrated_fixtures aborts for an in-history unrated team and for an empty result", {
+test_that("drop_unrated_fixtures withholds an in-history unrated team loudly, and aborts on an empty result", {
   base <- data.frame(
     format = "t20", match_id = c("1", "2"), team1 = c("India", "Afghanistan"),
     team2 = c("Australia", "Nepal"),
     team1_elo_found = TRUE, team2_elo_found = TRUE,
     team1_in_history = TRUE, team2_in_history = TRUE, stringsAsFactors = FALSE)
-  # In match history but no rating: lookup broken, must stop (not drop)
+  # In match history but no rating: check_fixture_coverage() aborts above its
+  # 10% share; below it the fixture is withheld and named as a possible
+  # broken lookup (one glitch must not block every prediction).
   broken <- base
   broken$team1_elo_found[2] <- FALSE
-  expect_error(suppressMessages(drop_unrated_fixtures(broken)), "lookup is probably broken")
+  msgs <- character(0)
+  out <- withCallingHandlers(drop_unrated_fixtures(broken),
+    message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") })
+  expect_equal(out$match_id, "1")
+  expect_true(any(grepl("possible broken team lookup", msgs)))
+  expect_true(any(grepl("T20 Afghanistan", msgs)))
+  # NA flags are "not found", and never become an all-NA row in the message.
+  na_flag <- base
+  na_flag$team1_elo_found[2] <- NA; na_flag$team1_in_history[2] <- NA
+  msgs <- character(0)
+  out <- withCallingHandlers(drop_unrated_fixtures(na_flag),
+    message = function(m) { msgs <<- c(msgs, conditionMessage(m)); invokeRestart("muffleMessage") })
+  expect_equal(out$match_id, "1")
+  expect_false(any(grepl("NA NA", msgs)))
   # Every fixture has a no-history team: nothing left to publish
   none <- base
   none$team1_elo_found <- FALSE; none$team1_in_history <- FALSE

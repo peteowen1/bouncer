@@ -398,10 +398,11 @@ check_fixture_coverage <- function(features, max_broken_share = 0.1) {
 #' @param features data.frame with `format`, `team1`, `team2`, `team1_elo_found`,
 #'   `team2_elo_found`, `team1_in_history`, `team2_in_history`.
 #'
-#' A team that IS in the match history but has no rating is not a data gap, it
-#' means a team lookup is broken, so that case aborts instead of dropping. The
-#' function also aborts when no fixture is left, so an empty file is never
-#' published over the last good one.
+#' A team that IS in the match history but has no rating suggests a broken
+#' team lookup. [check_fixture_coverage()] aborts when that passes its
+#' per-format share; below it those fixtures are withheld too and named on a
+#' separate line. The function aborts when no fixture is left, so an empty file
+#' is never published over the last good one.
 #'
 #' @return The rows of `features` where both teams have a rating.
 #' @keywords internal
@@ -418,14 +419,22 @@ drop_unrated_fixtures <- function(features) {
                  in_history = dropped$team1_in_history),
       data.frame(format = dropped$format, team = dropped$team2, found = dropped$team2_elo_found,
                  in_history = dropped$team2_in_history))
-    unrated <- unrated[!unrated$found, , drop = FALSE]
+    # NA flags count as "not found" / "not in history", never as a dropped row
+    # of NAs: `!NA` is NA, and subsetting by it inserts an all-NA row.
+    unrated <- unrated[!(unrated$found %in% TRUE), , drop = FALSE]
+    unrated$in_history <- unrated$in_history %in% TRUE
     unrated <- unique(unrated[order(unrated$format, unrated$team), , drop = FALSE])
+    # A team that IS in the match history but has no rating points at a broken
+    # lookup. check_fixture_coverage() (run before this) already aborts when
+    # that exceeds its max_broken_share per format; below it, a few such teams
+    # are tolerated on purpose so one glitch does not block every prediction.
+    # Here they are withheld like the rest, but named on their own line so the
+    # possible lookup break is visible.
     broken <- unrated[unrated$in_history, , drop = FALSE]
     if (nrow(broken) > 0) {
-      cli::cli_abort(paste0(
-        "Teams in the match history but with no rating found: ",
-        paste(sprintf("%s %s", toupper(broken$format), broken$team), collapse = "; "),
-        ". A team lookup is probably broken; not publishing."))
+      cli::cli_alert_danger(paste0(
+        "In the match history but no rating (possible broken team lookup): ",
+        paste(sprintf("%s %s", toupper(broken$format), broken$team), collapse = "; ")))
     }
     lines <- sprintf("%s %s (%s)", toupper(unrated$format), unrated$team,
                      ifelse(unrated$in_history, "in match history but no rating", "no match history"))
