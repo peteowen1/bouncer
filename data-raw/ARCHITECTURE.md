@@ -210,11 +210,15 @@ Positive = performs better than context-expected, Negative = worse.
 
 The primary per-delivery rating system. Decomposes each delivery outcome into batter, bowler, and venue contributions using dual session/permanent ratings.
 
-**Output Tables:** `{format}_3way_elo` (e.g., `t20_3way_elo`)
+**Output Tables:** `{gender}_{format}_3way_elo` (e.g., `mens_t20_3way_elo`), name from `three_way_elo_table()`. Built in a staging table and promoted in one transaction. The unprefixed `{format}_3way_elo` tables are a legacy, unpopulated set (bouncerverse#63).
 
 **Formula:**
 ```r
-expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) * runs_per_100_elo)
+# Linear (the default, THREE_WAY_USE_LOGISTIC_CONVERSION = FALSE in R/constants_3way.R):
+combined_elo_diff = weighted batter + venue (perm + session) - bowler ELO difference
+expected_runs = agnostic_baseline + combined_elo_diff * runs_per_100_elo / 100   # capped to [0, 6]
+# Logistic (opt-in): expected_runs = agnostic_baseline * logistic_multiplier(combined_elo_diff)
+# Source: calculate_3way_expected_runs(), R/three_way_elo.R
 ```
 
 **Attribution Weights** (Men's T20 run ELO shown; varies by format, gender, and dimension):
@@ -433,7 +437,7 @@ Uses DuckDB schemas: `cricsheet.*`, `cricinfo.*`, `main.*`
 | Table | Description |
 |-------|-------------|
 | `main.{format}_player_skill` | Player skill indices (residual-based) |
-| `main.{format}_3way_elo` | 3-way ELO ratings (batter, bowler, venue) |
+| `main.{gender}_{format}_3way_elo` | 3-way ELO ratings (batter, bowler, venue); e.g. `mens_t20_3way_elo` |
 | `main.{format}_team_skill` | Team skill indices (residual-based) |
 | `main.{format}_venue_skill` | Venue skill indices |
 | `main.{format}_score_projection` | Per-delivery score projections |

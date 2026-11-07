@@ -378,3 +378,74 @@ check_fixture_coverage <- function(features, max_broken_share = 0.1) {
   }
   invisible(cov)
 }
+
+
+#' Drop Fixtures With an Unrated Team Before Publishing
+#'
+#' A fixture where either team has no rating history is priced off default
+#' features, so its "favourite" is an artefact: on 2026-11-06 Zimbabwe v
+#' Afghanistan was published as 87.4% Zimbabwe because Afghanistan is missing
+#' from the Cricsheet data (#89). [check_fixture_coverage()] only aborts for
+#' teams that DO appear in the match history, so teams with no history at all
+#' (Afghanistan, under-19 and "A" sides, domestic provinces) passed silently.
+#' This removes those fixtures from the published set and warns, naming every
+#' team and format, so the gap is visible in the run log instead of on a page.
+#'
+#' Rows are dropped rather than given NA probabilities because the accuracy
+#' tracker sums and logs `predicted_winner`/`team1_win_prob` without NA
+#' handling.
+#'
+#' @param features data.frame with `format`, `team1`, `team2`, `team1_elo_found`,
+#'   `team2_elo_found`, `team1_in_history`, `team2_in_history`.
+#'
+#' A team that IS in the match history but has no rating suggests a broken
+#' team lookup. [check_fixture_coverage()] aborts when that passes its
+#' per-format share; below it those fixtures are withheld too and named on a
+#' separate line. The function aborts when no fixture is left, so an empty file
+#' is never published over the last good one.
+#'
+#' @return The rows of `features` where both teams have a rating.
+#' @keywords internal
+drop_unrated_fixtures <- function(features) {
+  need <- c("format", "team1", "team2", "team1_elo_found", "team2_elo_found",
+            "team1_in_history", "team2_in_history")
+  stopifnot(all(need %in% names(features)))
+  rated <- features$team1_elo_found & features$team2_elo_found
+  rated <- !is.na(rated) & rated
+  dropped <- features[!rated, , drop = FALSE]
+  if (nrow(dropped) > 0) {
+    unrated <- rbind(
+      data.frame(format = dropped$format, team = dropped$team1, found = dropped$team1_elo_found,
+                 in_history = dropped$team1_in_history),
+      data.frame(format = dropped$format, team = dropped$team2, found = dropped$team2_elo_found,
+                 in_history = dropped$team2_in_history))
+    # NA flags count as "not found" / "not in history", never as a dropped row
+    # of NAs: `!NA` is NA, and subsetting by it inserts an all-NA row.
+    unrated <- unrated[!(unrated$found %in% TRUE), , drop = FALSE]
+    unrated$in_history <- unrated$in_history %in% TRUE
+    unrated <- unique(unrated[order(unrated$format, unrated$team), , drop = FALSE])
+    # A team that IS in the match history but has no rating points at a broken
+    # lookup. check_fixture_coverage() (run before this) already aborts when
+    # that exceeds its max_broken_share per format; below it, a few such teams
+    # are tolerated on purpose so one glitch does not block every prediction.
+    # Here they are withheld like the rest, but named on their own line so the
+    # possible lookup break is visible.
+    broken <- unrated[unrated$in_history, , drop = FALSE]
+    if (nrow(broken) > 0) {
+      cli::cli_alert_danger(paste0(
+        "In the match history but no rating (possible broken team lookup): ",
+        paste(sprintf("%s %s", toupper(broken$format), broken$team), collapse = "; ")))
+    }
+    lines <- sprintf("%s %s (%s)", toupper(unrated$format), unrated$team,
+                     ifelse(unrated$in_history, "in match history but no rating", "no match history"))
+    cli::cli_alert_warning(paste0(
+      "Withholding {nrow(dropped)} of {nrow(features)} fixture{?s}: a team has no rating, ",
+      "so the prediction would be priced off default features."))
+    cli::cli_alert_warning("Unrated teams: {paste(lines, collapse = '; ')}")
+  }
+  out <- features[rated, , drop = FALSE]
+  if (nrow(out) == 0) {
+    cli::cli_abort("All {nrow(features)} fixture{?s} lack a rating for a team; refusing to publish an empty predictions file.")
+  }
+  out
+}

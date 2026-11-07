@@ -79,7 +79,11 @@ new_skill = (1 - alpha) * old_skill + alpha * residual
 
 **3-Way ELO Formula:**
 ```r
-expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) * runs_per_100_elo)
+# Linear (the default, THREE_WAY_USE_LOGISTIC_CONVERSION = FALSE in R/constants_3way.R):
+combined_elo_diff = weighted batter + venue (perm + session) - bowler ELO difference
+expected_runs = agnostic_baseline + combined_elo_diff * runs_per_100_elo / 100   # capped to [0, 6]
+# Logistic (opt-in): expected_runs = agnostic_baseline * logistic_multiplier(combined_elo_diff)
+# Source: calculate_3way_expected_runs(), R/three_way_elo.R
 ```
 
 ## Code Organization
@@ -106,7 +110,7 @@ expected_runs = agnostic_baseline * (1 + (batter_elo + venue_elo - bowler_elo) *
 | **Utilities** | `format_utils.R`, `validation_helpers.R`, `pipeline_state.R`, `pipeline_benchmark.R`, `event_tiers.R`, `team_ids.R` | Helpers, validation, pipeline state, benchmarks |
 | **Weather** | `weather.R` | Weather data (Open-Meteo API, venue geocoding) |
 | **Tuning** | `xgb_tuning.R` | XGBoost hyperparameter tuning utilities |
-| **Vendored** | `versebus.R` | Canonical copy is `torpverse/torp/R/versebus.R`; `test-versebus-sync.R` pins this file's contents to it byte-for-byte — never edit locally, sync from torp instead |
+| **Vendored** | `versebus.R` | Canonical copy is `torpverse/torp/R/versebus.R`; `test-versebus-sync.R` pins only the `SHARED_VERSEBUS_FUNCTIONS` list (function by function, not the whole file) to it — never hand-edit those functions, sync them from torp instead. Two constants, `VB_TRUE_SIZE_TIMEOUT_SECS` and `VB_ASSET_CONFIRMED_ABSENT`, are defined locally at the top of the file (torp keeps them in `constants_data.R`); their values must match torp's |
 | **Visualization** | `visualization.R` | ggplot2-based plotting functions |
 
 ### tests/testthat/

@@ -43,6 +43,13 @@ make_full_frame_fixture <- function(conn) {
        'bat2', 'bowl2', 'England', 'India', 6, 0, FALSE, 6, 0)
   ")
 
+  # Dated matches, so build_full_model_frame()'s recent-coverage check runs
+  # for real instead of warning that it could not (added 2026-11-07).
+  DBI::dbExecute(conn, "
+    INSERT INTO cricsheet.matches (match_id, match_type, match_date)
+    VALUES ('m1', 'T20', DATE '2026-10-01'), ('m2', 'T20', DATE '2026-10-08')
+  ")
+
   DBI::dbExecute(conn, "
     INSERT INTO t20_player_skill
       (delivery_id, batter_scoring_index, batter_survival_rate,
@@ -141,6 +148,26 @@ test_that("build_full_model_frame returns one row per delivery with the expected
                      "event_tier", "elo_run_diff") %in% names(frame)))
   # include_elo = FALSE must zero the ELO features rather than omit them.
   expect_true(all(frame$elo_run_diff == 0))
+})
+
+test_that("a player-skill table that stops before the newest matches aborts the build", {
+  # The 2026-10-29 ODI failure in miniature. The table covers m1 (three of the
+  # four rows, 75%, so the all-history check passes) and stops before m2, the
+  # newest match. With m1 one week before m2, the 90-day window holds both and
+  # reads 75%: a pass. With m1 a year earlier, the window holds m2 alone: 0%.
+  conn <- DBI::dbConnect(duckdb::duckdb())
+  on.exit(DBI::dbDisconnect(conn, shutdown = TRUE), add = TRUE)
+  make_full_frame_fixture(conn)
+  DBI::dbExecute(conn, "DELETE FROM t20_player_skill WHERE delivery_id LIKE 'm2_%'")
+  expect_no_error(build_full_model_frame(conn, "t20", include_elo = FALSE))
+
+  DBI::dbExecute(conn, "UPDATE cricsheet.matches SET match_date = DATE '2025-10-01' WHERE match_id = 'm1'")
+  expect_error(build_full_model_frame(conn, "t20", include_elo = FALSE),
+               "player skills: only 0% of the")
+  expect_warning(frame <- build_full_model_frame(conn, "t20", include_elo = FALSE,
+                                                 allow_stale_skills = TRUE),
+                 "stops short")
+  expect_equal(nrow(frame), 4)
 })
 
 test_that("an empty format returns an empty frame instead of erroring", {

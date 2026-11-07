@@ -173,11 +173,15 @@ for (format in FORMATS_TO_TRAIN) {
   # Train-Test Split ----
   cli::cli_h3("Creating train-test split")
 
-  set.seed(RANDOM_SEED)
-  unique_matches <- unique(model_data$match_id)
-  n_train <- floor(0.8 * length(unique_matches))
-  train_matches <- unique_matches[1:n_train]
-  test_matches <- unique_matches[(n_train + 1):length(unique_matches)]
+  # Held-out set = the latest 20% of matches by date (R/date_ordered_split.R).
+  # Was a random shuffle here and row order in 02, so the two models were
+  # scored on different, unrepeatable test sets (bouncerverse NEXT-STEPS,
+  # ODI retrain 2026-10-29). Both trainers now use the same rule.
+  split <- date_ordered_match_split(model_data$match_id, model_data$match_date,
+                                    test_frac = 0.2)
+  train_matches <- split$train_matches
+  test_matches <- split$test_matches
+  cli::cli_alert_info("Test set: matches from {.val {format(split$cutoff_date)}} on")
 
   train_data <- model_data %>% filter(match_id %in% train_matches)
   test_data <- model_data %>% filter(match_id %in% test_matches)

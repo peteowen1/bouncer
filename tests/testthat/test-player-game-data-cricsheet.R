@@ -47,7 +47,7 @@ test_that("create_player_game_data(source='cricsheet') matches an independently-
 
   # Kagiso Rabada, IPL 2026 -- cross-checked independently (2026-08-29) via a
   # standalone query joining cricsheet.deliveries/cricsheet_ball_raa/
-  # bouncer_wp_from_cricsheet by hand: 388 balls, RAA/100b -18.55,
+  # bouncer_wp_from_cricsheet by hand: 388 balls, RAA/100b +13.92 (was -18.55 before the 268b0cf rescore; see below),
   # WPA/100b 0.1417. This test asserts create_player_game_data() reproduces
   # that exactly, not just "runs without erroring" -- the two computations
   # were written independently and agreeing to this precision is the real
@@ -60,7 +60,15 @@ test_that("create_player_game_data(source='cricsheet') matches an independently-
   wpa_100b <- 100 * sum(rabada$bowling_wpa, na.rm = TRUE) / total_balls
 
   expect_equal(total_balls, 388L)
-  expect_equal(raa_100b, -18.55, tolerance = 0.05)
+  # RE-CROSS-CHECKED 2026-11-07: the -18.55 first written here was measured
+  # against main.cricsheet_ball_raa BEFORE that table was rescored by 268b0cf
+  # (same day, "Fix IPL 2026 calibration gap"), which raised IPL 2026 expected
+  # runs. A standalone query of the rescored table (-SUM(raa) over Rabada's 388
+  # balls = 53.99: run part +41.82 conceded above expectation, wicket part
+  # -95.81 from 29 wickets vs 18.35 expected) gives +13.9; the aggregation
+  # agrees with it, which is what this test checks. If the table is rescored
+  # again, re-derive this by the same query rather than editing the number.
+  expect_equal(raa_100b, 13.92, tolerance = 0.05)
   expect_equal(wpa_100b, 0.1417, tolerance = 0.001)
 })
 
