@@ -1,3 +1,11 @@
+# bouncer 0.8.11
+
+## 3-way ELO build fits in laptop memory
+
+`data-raw/player/3way-elo/01_calculate_3way_elo.R` frees the results matrix and
+caps DuckDB memory during the batch insert, so all six 3-way ELO tables rebuild
+on the laptop. No package code changes.
+
 # bouncer 0.8.10
 
 ## Ball-outcome trainers hold out the latest matches by date
