@@ -1,0 +1,320 @@
+{
+ "repo": "peteowen1/bouncer",
+ "doc_path": ".github/CI-PIPELINE.md",
+ "title": "bouncer predictions pipeline",
+ "about": "What GitHub Actions runs in this repo for the cricket models: the daily Predictions Pipeline, which turns the trained models and ratings already on the bouncerdata releases, plus the upcoming fixtures from Cricinfo, into win-probability and margin predictions for upcoming matches. The models themselves are NOT trained here: the 15-step training pipeline (data-raw/ARCHITECTURE.md) runs by hand on Pete's machine and its cached outputs sit on the bouncerdata predictions-cache release. The other workflows in this repo (pkgdown, rhub, test-package) are package checks, not part of the data pipeline, so they are left out. The data that arrives before this run (the Cricsheet sync and the Cricinfo scrape) and the blog build that follows it are in the bouncerdata repo's guide (docs/CI-PIPELINE.md there). This config lives under .github/ rather than docs/ because docs/ is gitignored here (pkgdown writes its site there).",
+ "newest_run_utc": "2026-11-24T22:29:14Z",
+ "newest_run_sydney": "25 Nov 2026, 9:29am",
+ "pipelines": [
+  {
+   "name": "Predictions pipeline",
+   "workflow": "predictions-pipeline.yml",
+   "about": "Loads the latest trained models and rating caches, builds a small temporary database, finds the matches coming up in the next 14 days, predicts each one and publishes the predictions. Only runs started by the Cricinfo scrape's dispatch are counted (that is every day's normal run); manual runs, which can ask for a different number of days ahead, are not.",
+   "triggers": "Started by the bouncerdata repo: when its Cricinfo Scrape workflow finishes it sends a 'cricinfo-complete' repository dispatch here (the Cricsheet sync does not start it; it only supplies files this run reads). When this run succeeds with at least one prediction it sends a 'predictions-complete' dispatch back to bouncerdata, which starts that repo's Build blog data workflow. Those runs are not stitched into this one.",
+   "median_s": 125.0,
+   "min_s": 110.0,
+   "max_s": 141.0,
+   "runs": [
+    {
+     "id": 45501366431,
+     "url": "https://github.com/peteowen1/bouncer/actions/runs/45501366431",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "cricinfo-complete",
+     "started_utc": "2026-11-24T22:29:14Z",
+     "started_sydney": "25 Nov 2026, 9:29am",
+     "wall_s": 125.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45293144010,
+     "url": "https://github.com/peteowen1/bouncer/actions/runs/45293144010",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "cricinfo-complete",
+     "started_utc": "2026-11-23T23:57:22Z",
+     "started_sydney": "24 Nov 2026, 10:57am",
+     "wall_s": 110.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45061788134,
+     "url": "https://github.com/peteowen1/bouncer/actions/runs/45061788134",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "cricinfo-complete",
+     "started_utc": "2026-11-22T19:37:14Z",
+     "started_sydney": "23 Nov 2026, 6:37am",
+     "wall_s": 114.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 44939907422,
+     "url": "https://github.com/peteowen1/bouncer/actions/runs/44939907422",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "cricinfo-complete",
+     "started_utc": "2026-11-21T19:15:04Z",
+     "started_sydney": "22 Nov 2026, 6:15am",
+     "wall_s": 141.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 44808763616,
+     "url": "https://github.com/peteowen1/bouncer/actions/runs/44808763616",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "cricinfo-complete",
+     "started_utc": "2026-11-20T20:09:22Z",
+     "started_sydney": "21 Nov 2026, 7:09am",
+     "wall_s": 130.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "predict",
+     "about": "Installs R and the packages, runs data-raw/models/pre-match/run_predictions_gha.R, and starts the blog data build",
+     "legs": 1,
+     "median_s": 125.0,
+     "min_s": 110.0,
+     "max_s": 141.0,
+     "leg_median_s": 125.0,
+     "slowest_leg_median_s": 125.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 4.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs the current release of R (using the public package mirror)",
+       "source": "config",
+       "median_s": 32.0,
+       "min_s": 25.0,
+       "max_s": 40.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Install system dependencies",
+       "about": "Installs the Linux libraries (curl, ssl, xml) the R packages need to compile",
+       "source": "config",
+       "median_s": 7.0,
+       "min_s": 6.0,
+       "max_s": 7.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the script uses (devtools, piggyback, arrow, xgboost, dplyr, DBI, duckdb, cli, httr2) plus this package's own dependencies, from a cache when it can",
+       "source": "config",
+       "median_s": 45.0,
+       "min_s": 37.0,
+       "max_s": 47.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run predictions",
+       "about": "Runs data-raw/models/pre-match/run_predictions_gha.R: downloads the model and rating files and the Cricinfo and Cricsheet data from the bouncerdata releases, predicts every upcoming match in the next 14 days, and uploads the predictions (stages in the next table)",
+       "source": "config",
+       "median_s": 33.0,
+       "min_s": 30.0,
+       "max_s": 35.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Pipeline summary",
+       "about": "Writes the date, what started the run and the number of predictions to the run's summary page",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Trigger blog data build",
+       "about": "Sends a 'predictions-complete' event to the bouncerdata repo, which starts its Build blog data workflow (only when at least one prediction was made)",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 3.0,
+       "min_s": 3.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {
+      "the stages of run_predictions_gha.R": [
+       {
+        "name": "Downloading prediction caches",
+        "median_s": 8.981279,
+        "min_s": 7.406088,
+        "max_s": 11.512276,
+        "n": 5
+       },
+       {
+        "name": "Downloading Cricinfo data (primary source)",
+        "median_s": 3.022988,
+        "min_s": 2.692061,
+        "max_s": 3.254679,
+        "n": 5
+       },
+       {
+        "name": "Downloading Cricsheet data (secondary source)",
+        "median_s": 0.433891,
+        "min_s": 0.359653,
+        "max_s": 0.557823,
+        "n": 5
+       },
+       {
+        "name": "Building temporary DuckDB from caches",
+        "median_s": 1.167214,
+        "min_s": 1.112379,
+        "max_s": 2.279708,
+        "n": 5
+       },
+       {
+        "name": "Loading upcoming fixtures",
+        "median_s": 1.051465,
+        "min_s": 0.95654,
+        "max_s": 1.076933,
+        "n": 5
+       },
+       {
+        "name": "Generating predictions",
+        "median_s": 12.267858,
+        "min_s": 9.372206,
+        "max_s": 12.656095,
+        "n": 5
+       },
+       {
+        "name": "Exporting predictions",
+        "median_s": 0.044991,
+        "min_s": 0.041638,
+        "max_s": 0.06694,
+        "n": 5
+       },
+       {
+        "name": "Uploading predictions",
+        "median_s": 3.356765,
+        "min_s": 2.99331,
+        "max_s": 4.4191,
+        "n": 5
+       }
+      ]
+     },
+     "stage_notes": {},
+     "stage_about": {
+      "Downloading prediction caches": "Downloads the prediction and margin models for each format, player skills and ELO ratings, team and venue skills and recent lineups from the bouncerdata predictions-cache release",
+      "Downloading Cricinfo data (primary source)": "Downloads the Cricinfo fixtures, matches and innings files from the cricinfo release: the up-to-date fixtures and recent results",
+      "Downloading Cricsheet data (secondary source)": "Downloads matches.parquet from the cricsheet release for older match history (form, head-to-head, venue)",
+      "Building temporary DuckDB from caches": "Loads all the downloaded files into a throwaway database, so the usual SQL feature code runs unchanged",
+      "Loading upcoming fixtures": "Gets the matches starting in the next 14 days from the Cricinfo fixtures (if none are found, or the load fails, it makes no predictions, the run still succeeds and the blog build is not started)",
+      "Generating predictions": "Builds each match's features and runs the models for it (T20, ODI and Test); stops the run if fewer fixtures were predicted than expected",
+      "Exporting predictions": "Writes the predictions parquet and CSV and a dated history file",
+      "Uploading predictions": "Adds the dated history file to the predictions-history release (never overwritten) and replaces the files on the predictions-latest release"
+     }
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "predict"
+     ],
+     "median_s": 125.0,
+     "min_s": 110.0,
+     "max_s": 141.0,
+     "slowest": "predict",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "predict"
+   ],
+   "slowest_steps": [
+    {
+     "job": "predict",
+     "step": "Setup R dependencies",
+     "about": "Installs the R packages the script uses (devtools, piggyback, arrow, xgboost, dplyr, DBI, duckdb, cli, httr2) plus this package's own dependencies, from a cache when it can",
+     "median_s": 45.0
+    },
+    {
+     "job": "predict",
+     "step": "Run predictions",
+     "about": "Runs data-raw/models/pre-match/run_predictions_gha.R: downloads the model and rating files and the Cricinfo and Cricsheet data from the bouncerdata releases, predicts every upcoming match in the next 14 days, and uploads the predictions (stages in the next table)",
+     "median_s": 33.0
+    },
+    {
+     "job": "predict",
+     "step": "Setup R",
+     "about": "Installs the current release of R (using the public package mirror)",
+     "median_s": 32.0
+    },
+    {
+     "job": "predict",
+     "step": "Install system dependencies",
+     "about": "Installs the Linux libraries (curl, ssl, xml) the R packages need to compile",
+     "median_s": 7.0
+    },
+    {
+     "job": "predict",
+     "step": "Post Setup R dependencies",
+     "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+     "median_s": 3.0
+    }
+   ]
+  }
+ ],
+ "warnings": []
+}
