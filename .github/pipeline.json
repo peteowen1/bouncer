@@ -1,0 +1,55 @@
+{
+  "repo": "peteowen1/bouncer",
+  "title": "bouncer predictions pipeline",
+  "output": ".github/CI-PIPELINE.md",
+  "summary_output": ".github/pipeline-summary.json",
+  "about": "What GitHub Actions runs in this repo for the cricket models: the daily Predictions Pipeline, which turns the trained models and ratings already on the bouncerdata releases, plus the upcoming fixtures from Cricinfo, into win-probability and margin predictions for upcoming matches. The models themselves are NOT trained here: the 15-step training pipeline (data-raw/ARCHITECTURE.md) runs by hand on Pete's machine and its cached outputs sit on the bouncerdata predictions-cache release. The other workflows in this repo (pkgdown, rhub, test-package) are package checks, not part of the data pipeline, so they are left out. The data that arrives before this run (the Cricsheet sync and the Cricinfo scrape) and the blog build that follows it are in the bouncerdata repo's guide (docs/CI-PIPELINE.md there). This config lives under .github/ rather than docs/ because docs/ is gitignored here (pkgdown writes its site there).",
+  "runs": 5,
+  "pipelines": [
+    {
+      "name": "Predictions pipeline",
+      "workflow": "predictions-pipeline.yml",
+      "about": "Loads the latest trained models and rating caches, builds a small temporary database, finds the matches coming up in the next 14 days, predicts each one and publishes the predictions. Only runs started by the Cricinfo scrape's dispatch are counted (that is every day's normal run); manual runs, which can ask for a different number of days ahead, are not.",
+      "triggers": "Started by the bouncerdata repo: when its Cricinfo Scrape workflow finishes it sends a 'cricinfo-complete' repository dispatch here (the Cricsheet sync does not start it; it only supplies files this run reads). When this run succeeds with at least one prediction it sends a 'predictions-complete' dispatch back to bouncerdata, which starts that repo's Build blog data workflow. Those runs are not stitched into this one.",
+      "select": {
+        "events": [
+          "repository_dispatch"
+        ]
+      },
+      "jobs": [
+        {
+          "name": "predict",
+          "match": "^predict$",
+          "about": "Installs R and the packages, runs data-raw/models/pre-match/run_predictions_gha.R, and starts the blog data build",
+          "steps": {
+            "Setup R": "Installs the current release of R (using the public package mirror)",
+            "Install system dependencies": "Installs the Linux libraries (curl, ssl, xml) the R packages need to compile",
+            "Setup R dependencies": "Installs the R packages the script uses (devtools, piggyback, arrow, xgboost, dplyr, DBI, duckdb, cli, httr2) plus this package's own dependencies, from a cache when it can",
+            "Run predictions": "Runs data-raw/models/pre-match/run_predictions_gha.R: downloads the model and rating files and the Cricinfo and Cricsheet data from the bouncerdata releases, predicts every upcoming match in the next 14 days, and uploads the predictions (stages in the next table)",
+            "Pipeline summary": "Writes the date, what started the run and the number of predictions to the run's summary page",
+            "Trigger blog data build": "Sends a 'predictions-complete' event to the bouncerdata repo, which starts its Build blog data workflow (only when at least one prediction was made)",
+            "Create issue on failure": "If the run failed, opens one GitHub issue for the day (skipped when everything worked)"
+          },
+          "log": {
+            "headers": [
+              {
+                "regex": "^── (?P<name>(?!R CMD build)(?!Bouncer Predictions)(?!Predictions Complete)[^─]+?) ──",
+                "label": "the stages of run_predictions_gha.R"
+              }
+            ],
+            "about": {
+              "Downloading prediction caches": "Downloads the prediction and margin models for each format, player skills and ELO ratings, team and venue skills and recent lineups from the bouncerdata predictions-cache release",
+              "Downloading Cricinfo data (primary source)": "Downloads the Cricinfo fixtures, matches and innings files from the cricinfo release: the up-to-date fixtures and recent results",
+              "Downloading Cricsheet data (secondary source)": "Downloads matches.parquet from the cricsheet release for older match history (form, head-to-head, venue)",
+              "Building temporary DuckDB from caches": "Loads all the downloaded files into a throwaway database, so the usual SQL feature code runs unchanged",
+              "Loading upcoming fixtures": "Gets the matches starting in the next 14 days from the Cricinfo fixtures (if none are found, or the load fails, it makes no predictions, the run still succeeds and the blog build is not started)",
+              "Generating predictions": "Builds each match's features and runs the models for it (T20, ODI and Test); stops the run if fewer fixtures were predicted than expected",
+              "Exporting predictions": "Writes the predictions parquet and CSV and a dated history file",
+              "Uploading predictions": "Adds the dated history file to the predictions-history release (never overwritten) and replaces the files on the predictions-latest release"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
