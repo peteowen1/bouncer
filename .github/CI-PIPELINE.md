@@ -99,4 +99,4 @@ _Hand-kept. Anything written between the two markers survives regeneration: what
 python C:/dev/ops/scripts/pipeline_guide.py build --repo-dir <this repo> --config .github/pipeline.json
 ```
 
-It reads `docs/pipeline.json` (which workflows and jobs are the pipeline, one line per step) and the latest successful runs through `gh`, saves every response raw, and rewrites this file and `docs/pipeline-summary.json`. It fails if the config names a job, step or log pattern that no longer appears, so a renamed step cannot leave a stale description behind. Steps marked **(not confirmed)** were not checked against the script they run.
+It reads `.github/pipeline.json` (which workflows and jobs are the pipeline, one line per step) and the latest successful runs through `gh`, saves every response raw, and rewrites this file and `.github/pipeline-summary.json`. It fails if the config names a job, step or log pattern that no longer appears, so a renamed step cannot leave a stale description behind. Steps marked **(not confirmed)** were not checked against the script they run.
